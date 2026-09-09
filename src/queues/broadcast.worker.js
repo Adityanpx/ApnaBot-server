@@ -54,10 +54,15 @@ const worker = new Worker('broadcast-outbound', async (job) => {
   // Per-recipient failures (e.g. a single bad number) must not fail the
   // whole job - attempts:1 on this queue means a thrown job error loses
   // progress tracking for the batch, not just a retry.
+  // The header component (if any) has no per-recipient variables - it's built
+  // once in broadcast.controller.js and passed through unchanged, same as the
+  // non-mapped `components` path below.
+  const headerComponent = (components || []).find((c) => c.type === 'header');
+
   for (const recipient of recipients) {
     try {
       const recipientComponents = variableMapping
-        ? resolveRecipientComponents(variableMapping, recipient)
+        ? [...(headerComponent ? [headerComponent] : []), ...resolveRecipientComponents(variableMapping, recipient)]
         : components;
       await whatsappService.sendTemplateMessage(phoneNumberId, encryptedAccessToken, recipient.whatsappNumber, templateName, language, recipientComponents);
       sent += 1;

@@ -197,6 +197,10 @@ const sendBroadcast = async (req, res, next) => {
       ? [{ type: 'body', parameters: templateVariables.map((v) => ({ type: 'text', text: String(v) })) }]
       : [];
 
+    if (templateRow.header_type === 'IMAGE') {
+      components.unshift({ type: 'header', parameters: [{ type: 'image', image: { link: templateRow.header_image_url } }] });
+    }
+
     const batches = chunk(customers, BATCH_SIZE);
     await Promise.all(batches.map((batch) => addToBroadcastQueue({
       broadcastId: id,

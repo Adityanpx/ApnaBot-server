@@ -2,10 +2,17 @@ const axios = require('axios');
 const supabase = require('../config/supabase');
 const { toCamelCase } = require('../utils/caseConvert');
 const businessService = require('../services/business.service');
+const r2 = require('../services/r2.service');
 const { decrypt } = require('../utils/crypto');
 const { META_API_BASE } = require('../services/whatsapp.service');
+const config = require('../config/env');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
+
+// Meta's resumable Upload API (used to get a header_handle for template
+// header images) is a different API family from the Graph API version
+// whatsapp.service.js/META_API_BASE targets - hardcoded separately here.
+const META_UPLOAD_API_BASE = 'https://graph.facebook.com/v20.0';
 
 // Meta requires template names to be lowercase, alphanumeric + underscores only
 const TEMPLATE_NAME_REGEX = /^[a-z0-9_]+$/;
@@ -42,7 +49,7 @@ const getMessageTemplates = async (req, res, next) => {
 const createMessageTemplate = async (req, res, next) => {
   try {
     const businessId = req.user.businessId;
-    const { name, category, language, bodyText, variableSamples } = req.body;
+    const { name, category, language, bodyText, variableSamples, headerType, headerImageUrl, headerImageR2Key } = req.body;
 
     if (!name || !bodyText) {
       return errorResponse(res, 400, 'name and bodyText are required');
@@ -50,6 +57,14 @@ const createMessageTemplate = async (req, res, next) => {
 
     if (!TEMPLATE_NAME_REGEX.test(name)) {
       return errorResponse(res, 400, 'name must be lowercase_snake_case, alphanumeric characters and underscores only');
+    }
+
+    if (headerType !== undefined && headerType !== 'NONE' && headerType !== 'IMAGE') {
+      return errorResponse(res, 400, "headerType must be 'NONE' or 'IMAGE'");
+    }
+
+    if (headerType === 'IMAGE' && !headerImageUrl) {
+      return errorResponse(res, 400, 'headerImageUrl is required when headerType is IMAGE');
     }
 
     const variableCount = countTemplateVariables(bodyText);
@@ -68,13 +83,41 @@ const createMessageTemplate = async (req, res, next) => {
       language: language || 'en_US',
       body_text: bodyText,
       variable_count: variableCount,
-      variable_samples: variableSamples !== undefined ? variableSamples : null
+      variable_samples: variableSamples !== undefined ? variableSamples : null,
+      header_type: headerType || 'NONE',
+      header_image_url: headerType === 'IMAGE' ? headerImageUrl : null,
+      header_image_r2_key: headerType === 'IMAGE' ? headerImageR2Key : null
     }).select().single();
     if (error) throw error;
 
     return successResponse(res, 201, toCamelCase(template), 'Message template created successfully');
   } catch (error) {
     logger.error('Error in createMessageTemplate:', error);
+    next(error);
+  }
+};
+
+/**
+ * POST /api/message-templates/upload-header-image
+ * Upload a template header image to R2. Does not touch a template row -
+ * the returned { url, key } are passed into createMessageTemplate.
+ */
+const uploadHeaderImage = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return errorResponse(res, 400, 'No image provided');
+    }
+
+    const result = await r2.uploadImage(
+      req.file.buffer,
+      'template-headers',
+      `header-${Date.now()}`,
+      req.file.mimetype
+    );
+
+    return successResponse(res, 200, { url: result.url, key: result.key });
+  } catch (error) {
+    logger.error('Error in uploadHeaderImage:', error);
     next(error);
   }
 };
@@ -116,6 +159,46 @@ const submitMessageTemplate = async (req, res, next) => {
       bodyComponent.example = { body_text: [template.variableSamples] };
     }
 
+    const components = [bodyComponent];
+
+    if (template.headerType === 'IMAGE') {
+      try {
+        const appAccessToken = `${config.META_APP_ID}|${config.META_APP_SECRET}`;
+
+        const imageResponse = await axios.get(template.headerImageUrl, { responseType: 'arraybuffer' });
+        const fileBuffer = Buffer.from(imageResponse.data);
+        const fileType = imageResponse.headers['content-type'];
+
+        const sessionResponse = await axios.post(
+          `${META_UPLOAD_API_BASE}/${config.META_APP_ID}/uploads`,
+          null,
+          { params: { file_length: fileBuffer.length, file_type: fileType, access_token: appAccessToken } }
+        );
+        const uploadSessionId = sessionResponse.data.id;
+
+        const handleResponse = await axios.post(
+          `${META_UPLOAD_API_BASE}/${uploadSessionId}`,
+          fileBuffer,
+          {
+            headers: {
+              Authorization: `OAuth ${appAccessToken}`,
+              file_offset: '0'
+            }
+          }
+        );
+        const headerHandle = handleResponse.data.h;
+
+        components.unshift({ type: 'HEADER', format: 'IMAGE', example: { header_handle: [headerHandle] } });
+      } catch (error) {
+        logger.error('Error uploading header image to Meta:', {
+          businessId,
+          templateId: id,
+          error: error.response?.data || error.message
+        });
+        return errorResponse(res, 400, 'Failed to upload header image to Meta', error.response?.data || error.message);
+      }
+    }
+
     let metaResponse;
     try {
       const response = await axios.post(
@@ -124,9 +207,7 @@ const submitMessageTemplate = async (req, res, next) => {
           name: template.name,
           category: template.category,
           language: template.language,
-          components: [
-            bodyComponent
-          ]
+          components
         },
         {
           headers: {
@@ -177,7 +258,7 @@ const deleteMessageTemplate = async (req, res, next) => {
     const businessId = req.user.businessId;
 
     const { data: template, error: fetchErr } = await supabase
-      .from('message_templates').select('status').eq('id', id).eq('business_id', businessId).maybeSingle();
+      .from('message_templates').select('status, header_image_r2_key').eq('id', id).eq('business_id', businessId).maybeSingle();
     if (fetchErr) throw fetchErr;
     if (!template) {
       return errorResponse(res, 404, 'Message template not found');
@@ -190,6 +271,18 @@ const deleteMessageTemplate = async (req, res, next) => {
     const { error } = await supabase.from('message_templates').delete().eq('id', id);
     if (error) throw error;
 
+    if (template.header_image_r2_key) {
+      try {
+        await r2.deleteImage(template.header_image_r2_key);
+      } catch (r2Err) {
+        logger.error('Failed to delete header image from R2 after template delete:', {
+          templateId: id,
+          key: template.header_image_r2_key,
+          error: r2Err.message
+        });
+      }
+    }
+
     return successResponse(res, 200, null, 'Message template deleted successfully');
   } catch (error) {
     logger.error('Error in deleteMessageTemplate:', error);
@@ -200,6 +293,7 @@ const deleteMessageTemplate = async (req, res, next) => {
 module.exports = {
   getMessageTemplates,
   createMessageTemplate,
+  uploadHeaderImage,
   submitMessageTemplate,
   deleteMessageTemplate
 };
