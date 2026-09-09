@@ -330,21 +330,83 @@ const rebuildOrFallback = async (businessId, nodes, currentNode, session, served
 
 /**
  * Start a booking session by following the booking_trigger reply node's
- * single unconditional edge to the first question node.
+ * single unconditional edge to the first question node. A reply node with
+ * no such edge (or one whose edge targets a node that can't be resolved)
+ * means the business has nothing wired to ask — confirm immediately using
+ * only what's already known (customer.name, customer_number), mirroring
+ * advanceGraphSession's own "zero outgoing edges = done" signal at the
+ * very start instead of mid-flow. Fully generic/per-business — never
+ * assumes any particular business's graph shape.
  * @param {string} businessId
  * @param {string} replyNodeId - the matched reply node's id (today's ruleId)
  * @param {string} [languageCode]
- * @returns {Promise<{session: Object, field: Object}>}
+ * @returns {Promise<{session: Object, result: Object|{done:true,collected:Object}}>}
+ *   result shape matches advanceGraphSession's own contract: either the
+ *   next field to ask, or {done:true, collected}.
  */
 const startGraphSession = async (businessId, replyNodeId, languageCode) => {
   const { nodes, edges } = await loadGraph(businessId);
   const entryEdge = edges.find(e => e.fromNodeId === replyNodeId && !e.condition);
   if (!entryEdge) {
-    throw new Error(`bookingGraph: no booking-trigger edge found from reply node ${replyNodeId}`);
+    // No question wired after this trigger - nothing to ask, confirm
+    // immediately using only what's already known (customer.name,
+    // customer_number). Mirrors advanceGraphSession's own "zero
+    // outgoing edges = done" signal, just at the very start instead of
+    // mid-flow.
+    const session = {
+      currentNodeId: null,
+      collected: {},
+      answeredFields: [],
+      ruleId: replyNodeId,
+      startedAt: new Date().toISOString(),
+      localRentalUnconfigured: false,
+      rentalPackageKeyByLabel: null,
+      currentNodeComputedOptions: null,
+      displayOverrides: {}
+    };
+    return { session, result: { done: true, collected: {} } };
   }
+
   const entryNode = nodes.find(n => n.id === entryEdge.toNodeId);
   if (!entryNode) {
-    throw new Error(`bookingGraph: booking-trigger edge targets missing node ${entryEdge.toNodeId}`);
+    // Dangling edge: entryEdge exists but its target node can't be found.
+    // flow_edges.to_node_id is `not null references flow_nodes(id) on
+    // delete cascade` (20260829140000_flow_nodes_edges.sql) - deleting a
+    // node deletes every edge pointing at it in the same transaction, so
+    // this branch should be UNREACHABLE via the canvas editor in normal
+    // operation. Kept as a defensive fallback (not removed) in case of a
+    // manual DB edit or a future migration that bypasses the FK - same
+    // immediate-confirm behavior as the !entryEdge case above, but logged
+    // as an error since a dangling edge is a data-integrity problem, not
+    // a deliberate "no question configured" design choice. entryEdge's
+    // preset (if any) is still applied below - the edge itself carried
+    // real authored configuration even though its destination is gone.
+    logger.error('bookingGraph: booking-trigger edge targets missing node — confirming immediately instead of throwing', {
+      businessId,
+      replyNodeId,
+      toNodeId: entryEdge.toNodeId
+    });
+
+    const collected = {};
+    const answeredFields = [];
+    if (entryEdge.preset) {
+      collected[entryEdge.preset.field] = entryEdge.preset.value;
+      const label = entryEdge.preset.summaryLabel || humanize(entryEdge.preset.field);
+      answeredFields.push({ fieldKey: entryEdge.preset.field, label, summaryLabel: label });
+    }
+
+    const session = {
+      currentNodeId: null,
+      collected,
+      answeredFields,
+      ruleId: replyNodeId,
+      startedAt: new Date().toISOString(),
+      localRentalUnconfigured: false,
+      rentalPackageKeyByLabel: null,
+      currentNodeComputedOptions: null,
+      displayOverrides: {}
+    };
+    return { session, result: { done: true, collected } };
   }
 
   const business = await businessService.getBusinessById(businessId);
@@ -387,7 +449,7 @@ const startGraphSession = async (businessId, replyNodeId, languageCode) => {
     displayOverrides: {}
   };
 
-  return { session, field: nodeToFieldLocalized(entryNode, business.servedCities || [], null, languageCode) };
+  return { session, result: nodeToFieldLocalized(entryNode, business.servedCities || [], null, languageCode) };
 };
 
 /**

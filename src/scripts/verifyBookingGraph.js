@@ -285,7 +285,7 @@ async function main() {
     // mutates session.collected in place rather than cloning it, so reusing
     // one session object across branches would leak the first branch's
     // answers into the second.
-    const { field: firstFieldPeek } = await bookingGraph.startGraphSession(business.id, entryNode.id, null);
+    const { result: firstFieldPeek } = await bookingGraph.startGraphSession(business.id, entryNode.id, null);
 
     // Branch enumeration: one branch per option on the first question if
     // it's a multi-option buttons/list field, else a single branch.
@@ -298,7 +298,7 @@ async function main() {
 
       let outcome;
       try {
-        const { session: startSession, field: startField } = await bookingGraph.startGraphSession(business.id, entryNode.id, null);
+        const { session: startSession, result: startField } = await bookingGraph.startGraphSession(business.id, entryNode.id, null);
         outcome = await runBranch(business.id, startSession, startField, branch.reply, null);
       } catch (err) {
         console.error('  Auto-walk FAILED:', err.message);

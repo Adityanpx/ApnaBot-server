@@ -192,9 +192,24 @@ const handleNoActiveSession = async (business, messageText, buttonReplyId) => {
     }
 
     if (matchedNode.replyKind === 'booking_trigger') {
-      const { session: newBookingSession, field: firstField } = await bookingGraphService.startGraphSession(business.id, matchedNode.id, null);
-      const replyText = applyMessageTemplateWithFooter(firstField.label, business, null);
-      const rendered = buildFieldOptions(firstField);
+      const { session: newBookingSession, result } = await bookingGraphService.startGraphSession(business.id, matchedNode.id, null);
+
+      if (result.done) {
+        // Mirrors handleActiveSession's {done:true} handling above - NEVER
+        // call finalizeGraphBooking/createBookingAndConfirmation here, that
+        // would insert a real `bookings` row for a canvas preview click.
+        const displayCollected = { ...result.collected, ...(newBookingSession.displayOverrides || {}) };
+        const summaryBody = bookingService.buildBookingSummaryBody(
+          displayCollected,
+          newBookingSession.answeredFields,
+          newBookingSession.localRentalUnconfigured
+        );
+        const replyText = '✅ This is where a real booking would be created.\n\n' + summaryBody;
+        return { replyText, buttons: [], listOptions: [], session: null };
+      }
+
+      const replyText = applyMessageTemplateWithFooter(result.label, business, null);
+      const rendered = buildFieldOptions(result);
       return { replyText, buttons: rendered.buttons, listOptions: rendered.listOptions, session: newBookingSession };
     }
 

@@ -379,6 +379,54 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
 };
 
 /**
+ * Send a single graceful fallback text message to the customer — the
+ * generic "something went wrong" message shared by every booking-failure
+ * path (mid-session finalize, immediate-confirm finalize, and any other
+ * unexpected failure starting/advancing a booking session). Does not
+ * itself swallow failures: saveMessage/addToWhatsappQueue still throw on
+ * error exactly as every call site this replaces did, so a double failure
+ * still propagates to that call site's own surrounding catch.
+ * @param {Object} ctx - { tenant, customer, customerNumber, triggeredRuleId }
+ * @param {string} text
+ */
+const sendFallbackTextMessage = async (ctx, text) => {
+  const { tenant, customer, customerNumber, triggeredRuleId } = ctx;
+
+  const fallbackMsg = await saveMessage({
+    business_id: tenant.businessId,
+    customer_id: customer.id,
+    customer_number: customerNumber,
+    direction: 'outbound',
+    type: 'text',
+    content: text,
+    status: 'sent',
+    triggered_rule_id: triggeredRuleId,
+    is_read: true
+  });
+  await addToWhatsappQueue({
+    businessId: tenant.businessId,
+    phoneNumberId: tenant.phoneNumberId,
+    encryptedAccessToken: tenant.accessToken,
+    to: customerNumber,
+    message: text,
+    type: 'text',
+    messageId: fallbackMsg.id
+  });
+  usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
+    logger.error('Error incrementing outbound usage:', err)
+  );
+  try {
+    socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
+      customer,
+      message: fallbackMsg,
+      customerNumber
+    });
+  } catch (socketError) {
+    logger.error('Error emitting socket event:', socketError);
+  }
+};
+
+/**
  * GET /api/webhook/verify
  * Meta webhook verification
  */
@@ -1021,38 +1069,10 @@ const receiveWebhook = async (req, res) => {
           });
 
           const fallbackText = 'Sorry, something went wrong confirming your booking — our team will reach out to you shortly.';
-          const fallbackMsg = await saveMessage({
-            business_id: tenant.businessId,
-            customer_id: customer.id,
-            customer_number: customerNumber,
-            direction: 'outbound',
-            type: 'text',
-            content: fallbackText,
-            status: 'sent',
-            triggered_rule_id: activeSession.ruleId,
-            is_read: true
-          });
-          await addToWhatsappQueue({
-            businessId: tenant.businessId,
-            phoneNumberId: tenant.phoneNumberId,
-            encryptedAccessToken: tenant.accessToken,
-            to: customerNumber,
-            message: fallbackText,
-            type: 'text',
-            messageId: fallbackMsg.id
-          });
-          usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-            logger.error('Error incrementing outbound usage:', err)
+          await sendFallbackTextMessage(
+            { tenant, customer, customerNumber, triggeredRuleId: activeSession.ruleId },
+            fallbackText
           );
-          try {
-            socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
-              customer,
-              message: fallbackMsg,
-              customerNumber
-            });
-          } catch (socketError) {
-            logger.error('Error emitting socket event:', socketError);
-          }
 
           return; // Do not run rule matching
         }
@@ -1419,21 +1439,105 @@ const receiveWebhook = async (req, res) => {
         replyText = applyMessageTemplateWithFooter(localizedReply, tenant, customer);
 
       } else if (matchedNode.replyKind === 'booking_trigger') {
-        // Start booking flow — ask first question. startGraphSession is
-        // side-effect-free (mirrors advanceGraphSession) — unlike the old
-        // startBookingSession, which saved the session internally, the
-        // session it returns must be persisted here.
-        const { session: newBookingSession, field: firstField } = await bookingGraphService.startGraphSession(
-          tenant.businessId,
-          matchedNode.id,
-          customer.preferredLanguage
-        );
-        await bookingService.saveBookingSession(tenant.businessId, customerNumber, newBookingSession, tenant.phoneNumberId, tenant.accessToken);
-        bookingService.recordBookingLead(tenant.businessId, customer.id).catch(err =>
-          logger.error('Error recording booking lead:', err)
-        );
-        bookingField = firstField;
-        replyText = applyMessageTemplateWithFooter(firstField.label, tenant, customer);
+        // Start booking flow. startGraphSession is side-effect-free
+        // (mirrors advanceGraphSession) — unlike the old startBookingSession,
+        // which saved the session internally, the session it returns must be
+        // persisted here. Wrapped in its own try/catch, separate from the
+        // outer catch-all below, because an unexpected failure here needs
+        // the same customer-facing fallback message as the mid-session
+        // finalize try/catch above (Step 12).
+        try {
+          const { session: newBookingSession, result } = await bookingGraphService.startGraphSession(
+            tenant.businessId,
+            matchedNode.id,
+            customer.preferredLanguage
+          );
+
+          if (result.done) {
+            // No question wired after this trigger — confirm immediately
+            // using only what's already known. No session to persist.
+            bookingService.recordBookingLead(tenant.businessId, customer.id).catch(err =>
+              logger.error('Error recording booking lead:', err)
+            );
+
+            let confirmationText;
+            try {
+              confirmationText = await bookingService.finalizeGraphBooking(tenant.businessId, customerNumber, newBookingSession);
+            } catch (finalizeError) {
+              logger.error('bookingGraph: error finalizing immediate-confirm booking', {
+                businessId: tenant.businessId,
+                replyNodeId: matchedNode.id,
+                customerNumber,
+                message: finalizeError.message,
+                stack: finalizeError.stack
+              });
+
+              await sendFallbackTextMessage(
+                { tenant, customer, customerNumber, triggeredRuleId: matchedNode.id },
+                'Sorry, something went wrong confirming your booking — our team will reach out to you shortly.'
+              );
+
+              return; // Do not run rule matching
+            }
+
+            const outboundMsg = await saveMessage({
+              business_id: tenant.businessId,
+              customer_id: customer.id,
+              customer_number: customerNumber,
+              direction: 'outbound',
+              type: 'text',
+              content: confirmationText,
+              status: 'sent',
+              triggered_rule_id: matchedNode.id,
+              is_read: true
+            });
+            await addToWhatsappQueue({
+              businessId: tenant.businessId,
+              phoneNumberId: tenant.phoneNumberId,
+              encryptedAccessToken: tenant.accessToken,
+              to: customerNumber,
+              message: confirmationText,
+              type: 'text',
+              messageId: outboundMsg.id
+            });
+            usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
+              logger.error('Error incrementing outbound usage:', err)
+            );
+            try {
+              socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
+                customer,
+                message: outboundMsg,
+                customerNumber
+              });
+            } catch (socketError) {
+              logger.error('Error emitting socket event:', socketError);
+            }
+
+            return; // Do not run rule matching
+          }
+
+          const firstField = result;
+          await bookingService.saveBookingSession(tenant.businessId, customerNumber, newBookingSession, tenant.phoneNumberId, tenant.accessToken);
+          bookingService.recordBookingLead(tenant.businessId, customer.id).catch(err =>
+            logger.error('Error recording booking lead:', err)
+          );
+          bookingField = firstField;
+          replyText = applyMessageTemplateWithFooter(firstField.label, tenant, customer);
+        } catch (bookingTriggerError) {
+          logger.error('bookingGraph: unexpected error starting booking session', {
+            businessId: tenant.businessId,
+            replyNodeId: matchedNode.id,
+            message: bookingTriggerError.message,
+            stack: bookingTriggerError.stack
+          });
+
+          await sendFallbackTextMessage(
+            { tenant, customer, customerNumber, triggeredRuleId: matchedNode.id },
+            'Sorry, something went wrong confirming your booking — our team will reach out to you shortly.'
+          );
+
+          return; // Do not run rule matching
+        }
 
       } else if (matchedNode.replyKind === 'payment_trigger') {
         replyText = applyMessageTemplateWithFooter(matchedNode.label, tenant, customer) || 'Please complete your payment.';
