@@ -13,6 +13,7 @@ const {
   extendSubscription,
   grantSubscription,
   getSubscriptionHistory,
+  getBusinessFlowSnapshots,
   grantPreviewCredits,
   getPlatformStats,
   getRevenueReport,
@@ -36,6 +37,7 @@ router.put('/businesses/:id/extend',     extendSubscription);
 // Manual subscription grants (superadmin override — bypasses payment)
 router.post('/businesses/:id/grant-subscription',     grantSubscription);
 router.get('/businesses/:id/subscription-history',    getSubscriptionHistory);
+router.get('/businesses/:businessId/flow-snapshots',   getBusinessFlowSnapshots);
 
 // Manual preview-credit grants (additive - tops up previewCreditsPurchased)
 router.put('/businesses/:id/preview-credits',          grantPreviewCredits);

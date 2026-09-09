@@ -456,6 +456,37 @@ const getSubscriptionHistory = async (req, res, next) => {
 };
 
 /**
+ * GET /api/admin/businesses/:businessId/flow-snapshots
+ * This business's own saved flow versions (is_category_template: false) —
+ * light list-view shape, no nodes/edges. Powers the "Clone from Business"
+ * modal's choice between the live graph and one of this business's saved
+ * Versions-tab snapshots.
+ */
+const getBusinessFlowSnapshots = async (req, res, next) => {
+  try {
+    const { businessId } = req.params;
+
+    const { data: business, error: bizErr } = await supabase
+      .from('businesses').select('id').eq('id', businessId).maybeSingle();
+    if (bizErr) throw bizErr;
+    if (!business) return errorResponse(res, 404, 'Business not found');
+
+    const { data, error } = await supabase
+      .from('flow_snapshots')
+      .select('id, name, description, created_at, updated_at')
+      .eq('business_id', businessId)
+      .eq('is_category_template', false)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+
+    return successResponse(res, 200, { snapshots: (data || []).map(toCamelCase) });
+  } catch (error) {
+    logger.error('Error in getBusinessFlowSnapshots:', error);
+    next(error);
+  }
+};
+
+/**
  * PUT /api/admin/businesses/:id/preview-credits
  * Grant additional purchased preview credits to a business — superadmin-only.
  * Additive: adds `amount` to the business's existing previewCreditsPurchased
@@ -674,6 +705,7 @@ module.exports = {
   extendSubscription,
   grantSubscription,
   getSubscriptionHistory,
+  getBusinessFlowSnapshots,
   grantPreviewCredits,
   getPlatformStats,
   getRevenueReport,

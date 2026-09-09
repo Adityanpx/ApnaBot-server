@@ -31,15 +31,20 @@ const getCategoryTemplates = async (req, res, next) => {
 
 /**
  * POST /api/admin/category-templates/clone-from-business
- * Body: { businessId, category, name, description? }. Reads businessId's
- * CURRENT flow_nodes/flow_edges (same read helper createSnapshot uses) and
- * stores them as a NEW category-template row, alongside any existing
- * templates for that category — multiple templates per category are
- * expected now, this always ADDS one, never replaces.
+ * Body: { businessId, category, name, description?, sourceSnapshotId? }.
+ * When sourceSnapshotId is omitted, reads businessId's CURRENT
+ * flow_nodes/flow_edges (same read helper createSnapshot uses) — unchanged
+ * from before. When sourceSnapshotId is given, clones that specific
+ * flow_snapshots row's stored nodes/edges instead (one of the business
+ * owner's own saved Versions-tab snapshots), scoped to business_id =
+ * businessId so a snapshot id can't be guessed across businesses. Either
+ * way the result is stored as a NEW category-template row, alongside any
+ * existing templates for that category — multiple templates per category
+ * are expected now, this always ADDS one, never replaces.
  */
 const cloneFromBusiness = async (req, res, next) => {
   try {
-    const { businessId, category, name, description } = req.body;
+    const { businessId, category, name, description, sourceSnapshotId } = req.body;
 
     if (!businessId || typeof businessId !== 'string') {
       return errorResponse(res, 400, 'businessId is required');
@@ -50,6 +55,9 @@ const cloneFromBusiness = async (req, res, next) => {
     if (!name || typeof name !== 'string' || !name.trim()) {
       return errorResponse(res, 400, 'name is required');
     }
+    if (sourceSnapshotId !== undefined && (typeof sourceSnapshotId !== 'string' || !sourceSnapshotId.trim())) {
+      return errorResponse(res, 400, 'sourceSnapshotId must be a string');
+    }
 
     const { data: business, error: businessErr } = await supabase
       .from('businesses').select('id').eq('id', businessId).maybeSingle();
@@ -58,7 +66,20 @@ const cloneFromBusiness = async (req, res, next) => {
       return errorResponse(res, 404, 'Business not found');
     }
 
-    const { nodes, edges } = await readBusinessGraphRows(businessId);
+    let nodes, edges;
+    if (sourceSnapshotId) {
+      const { data: sourceSnapshot, error: snapshotErr } = await supabase
+        .from('flow_snapshots').select('nodes, edges')
+        .eq('id', sourceSnapshotId).eq('business_id', businessId).eq('is_category_template', false)
+        .maybeSingle();
+      if (snapshotErr) throw snapshotErr;
+      if (!sourceSnapshot) {
+        return errorResponse(res, 404, 'Source snapshot not found');
+      }
+      ({ nodes, edges } = sourceSnapshot);
+    } else {
+      ({ nodes, edges } = await readBusinessGraphRows(businessId));
+    }
 
     const { data: template, error: insertErr } = await supabase.from('flow_snapshots').insert({
       business_id: null,
