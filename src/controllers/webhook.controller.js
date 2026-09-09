@@ -1094,7 +1094,7 @@ const receiveWebhook = async (req, res) => {
       } else {
         // Non-terminal turn — persist the advanced session before sending
         // anything (advanceGraphSession never writes to Redis itself).
-        await bookingService.saveBookingSession(tenant.businessId, customerNumber, updatedSession);
+        await bookingService.saveBookingSession(tenant.businessId, customerNumber, updatedSession, tenant.phoneNumberId, tenant.accessToken);
 
         if (typeof result === 'string') {
           if (result.startsWith('Sorry, that vehicle is no longer available')) {
@@ -1403,7 +1403,7 @@ const receiveWebhook = async (req, res) => {
         customer.preferredLanguage,
         directBookingEntry.edge
       );
-      await bookingService.saveBookingSession(tenant.businessId, customerNumber, newBookingSession);
+      await bookingService.saveBookingSession(tenant.businessId, customerNumber, newBookingSession, tenant.phoneNumberId, tenant.accessToken);
       bookingService.recordBookingLead(tenant.businessId, customer.id).catch(err =>
         logger.error('Error recording booking lead:', err)
       );
@@ -1428,7 +1428,7 @@ const receiveWebhook = async (req, res) => {
           matchedNode.id,
           customer.preferredLanguage
         );
-        await bookingService.saveBookingSession(tenant.businessId, customerNumber, newBookingSession);
+        await bookingService.saveBookingSession(tenant.businessId, customerNumber, newBookingSession, tenant.phoneNumberId, tenant.accessToken);
         bookingService.recordBookingLead(tenant.businessId, customer.id).catch(err =>
           logger.error('Error recording booking lead:', err)
         );

@@ -1,3 +1,4 @@
+const crypto = require('crypto');
 const redis = require('../config/redis');
 const supabase = require('../config/supabase');
 const { toCamelCase } = require('../utils/caseConvert');
@@ -5,6 +6,7 @@ const { getLocalizedText } = require('../utils/localization');
 const businessService = require('./business.service');
 const paymentService = require('./payment.service');
 const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
+const { addToSessionTimeoutQueue } = require('../queues/sessionTimeout.queue');
 const usageService = require('./usage.service');
 const socketService = require('./socket.service');
 const distanceMatrixService = require('./distanceMatrix.service');
@@ -75,7 +77,11 @@ const resolveTravelDateOption = (option) => {
   return formatDateDDMMYYYY(date);
 };
 
-const BOOKING_SESSION_TTL = 1800; // 30 minutes in seconds
+// Matches the session-timeout notification window (SESSION_TIMEOUT_DELAY_MS
+// below) so an expired-and-silently-gone session and a notified session
+// happen at the same time - see saveBookingSession.
+const BOOKING_SESSION_TTL = 300; // 5 minutes in seconds
+const SESSION_TIMEOUT_DELAY_MS = 300000; // 5 minutes in ms
 
 const FREE_MONTHLY_PREVIEW_CREDITS = 20;
 
@@ -327,15 +333,32 @@ const getBookingSession = async (businessId, customerNumber) => {
 };
 
 /**
- * Save booking session to Redis
+ * Save booking session to Redis, and schedule a proactive "session ended"
+ * WhatsApp notification for SESSION_TIMEOUT_DELAY_MS from now. A fresh
+ * timeoutToken is minted on every save and stamped onto sessionData before
+ * it's written - the delayed job re-checks this token against whatever is
+ * live in Redis when it fires, so only the most recent save's job (the one
+ * matching the session's current token) ever actually notifies; every
+ * earlier step's job for this session finds a rotated (or deleted) token
+ * and no-ops.
  * @param {string} businessId
  * @param {string} customerNumber
  * @param {Object} sessionData
+ * @param {string} phoneNumberId - business's WhatsApp phone number id, for the timeout notification
+ * @param {string} encryptedAccessToken - business's encrypted WhatsApp access token, for the timeout notification
  */
-const saveBookingSession = async (businessId, customerNumber, sessionData) => {
+const saveBookingSession = async (businessId, customerNumber, sessionData, phoneNumberId, encryptedAccessToken) => {
   try {
     const sessionKey = getSessionKey(businessId, customerNumber);
+    sessionData.timeoutToken = crypto.randomUUID();
     await redis.set(sessionKey, JSON.stringify(sessionData), 'EX', BOOKING_SESSION_TTL);
+    await addToSessionTimeoutQueue({
+      businessId,
+      customerNumber,
+      phoneNumberId,
+      encryptedAccessToken,
+      expectedToken: sessionData.timeoutToken
+    }, { delay: SESSION_TIMEOUT_DELAY_MS });
   } catch (error) {
     logger.error('Error saving booking session:', error);
     throw error;
