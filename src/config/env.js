@@ -82,6 +82,16 @@ module.exports = {
   // need to be kept apart too.
   QUEUE_NAMESPACE: process.env.QUEUE_NAMESPACE || process.env.NODE_ENV,
   SUPABASE_URL: process.env.SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY
+  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
+  // Wallet billing is off while Averix is a Meta Tech Provider - clients pay
+  // Meta directly for message costs, so debiting an internal wallet nobody
+  // can see or top up just breaks broadcasts once balance hits zero. Flip
+  // WALLET_BILLING_ENABLED=true once we're a Solution Partner and start
+  // invoicing clients directly.
+  WALLET_BILLING_ENABLED: process.env.WALLET_BILLING_ENABLED === 'true',
+  // Optional: configurable ceiling on recipients per broadcast send. See the
+  // comment above MAX_BROADCAST_RECIPIENTS' usage in broadcast.controller.js
+  // for why this isn't tied to any real Meta/infra limit.
+  MAX_BROADCAST_RECIPIENTS: parseInt(process.env.MAX_BROADCAST_RECIPIENTS || '2000', 10)
 };
 

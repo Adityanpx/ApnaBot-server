@@ -1,4 +1,5 @@
 const supabase = require('../config/supabase');
+const config = require('../config/env');
 const { toCamelCase } = require('../utils/caseConvert');
 const businessService = require('../services/business.service');
 const walletService = require('../services/wallet.service');
@@ -11,11 +12,6 @@ const logger = require('../utils/logger');
 // existing batching precedent to follow, so this is a new, conservative
 // default for broadcast fan-out).
 const BATCH_SIZE = 50;
-
-// Temporary safety cap: ApnaBot is flat-fee with no per-message billing yet,
-// so an uncapped broadcast could run up uncapped Meta marketing-rate spend.
-// Adjust or remove once usage-based billing/wallet limits are in place.
-const MAX_BROADCAST_RECIPIENTS = 100;
 
 const chunk = (arr, size) => {
   const batches = [];
@@ -157,8 +153,13 @@ const sendBroadcast = async (req, res, next) => {
       }
     }
 
-    if (customers.length > MAX_BROADCAST_RECIPIENTS) {
-      return errorResponse(res, 400, `This broadcast has ${customers.length} eligible recipients, which exceeds the current limit of ${MAX_BROADCAST_RECIPIENTS}. Contact support to send larger broadcasts.`);
+    // Configurable safety ceiling, not tied to any real Meta or infrastructure
+    // limit - the actual constraint is the business's WhatsApp phone number
+    // messaging tier (250/1K/10K/100K recipients per 24h based on quality
+    // rating), which Meta enforces independently. This is just a guardrail
+    // against a single broadcast running away; adjust via MAX_BROADCAST_RECIPIENTS.
+    if (customers.length > config.MAX_BROADCAST_RECIPIENTS) {
+      return errorResponse(res, 400, `This broadcast has ${customers.length} eligible recipients, which exceeds the current limit of ${config.MAX_BROADCAST_RECIPIENTS}. Contact support to send larger broadcasts.`);
     }
 
     // India-only for now — the rate_cards table only has IN rows today;
@@ -168,7 +169,7 @@ const sendBroadcast = async (req, res, next) => {
     const ratePerMessage = await rateCardService.getRateForMessage(countryCode, category);
     const estimatedCostPaise = ratePerMessage * customers.length;
 
-    if (estimatedCostPaise > 0) {
+    if (config.WALLET_BILLING_ENABLED && estimatedCostPaise > 0) {
       try {
         await walletService.debitWallet(
           businessId,
@@ -224,6 +225,55 @@ const sendBroadcast = async (req, res, next) => {
 };
 
 /**
+ * GET /api/broadcasts/:id/recipients-preview
+ * Preview the opted-in audience a draft broadcast would send to, without
+ * actually sending: total eligible count, a small sample, and a
+ * missing-name warning if the template's variable mapping needs it.
+ */
+const getBroadcastRecipientsPreview = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const businessId = req.user.businessId;
+
+    const { data: broadcastRow, error: fetchErr } = await supabase
+      .from('broadcasts').select('*').eq('id', id).eq('business_id', businessId).maybeSingle();
+    if (fetchErr) throw fetchErr;
+    if (!broadcastRow) {
+      return errorResponse(res, 404, 'Broadcast not found');
+    }
+    if (broadcastRow.status !== 'draft') {
+      return errorResponse(res, 400, 'Only draft broadcasts can be previewed');
+    }
+
+    const { data: customers, error: customersErr } = await supabase
+      .from('customers').select('id, whatsapp_number, name')
+      .eq('business_id', businessId).eq('opted_in', true).eq('is_blocked', false);
+    if (customersErr) throw customersErr;
+
+    const eligibleCustomers = customers || [];
+
+    const result = {
+      totalCount: eligibleCustomers.length,
+      preview: eligibleCustomers.slice(0, 20).map((c) => ({
+        id: c.id,
+        name: c.name,
+        whatsappNumber: c.whatsapp_number
+      }))
+    };
+
+    const usesCustomerNameMapping = (broadcastRow.variable_mapping || []).some((entry) => entry.source === 'customer.name');
+    if (usesCustomerNameMapping) {
+      result.missingNameCount = eligibleCustomers.filter((c) => !c.name || !c.name.trim()).length;
+    }
+
+    return successResponse(res, 200, result);
+  } catch (error) {
+    logger.error('Error in getBroadcastRecipientsPreview:', error);
+    next(error);
+  }
+};
+
+/**
  * GET /api/broadcasts/:id
  * Status + sent_count/failed_count for polling
  */
@@ -250,5 +300,6 @@ module.exports = {
   getBroadcasts,
   createBroadcast,
   sendBroadcast,
+  getBroadcastRecipientsPreview,
   getBroadcast
 };
