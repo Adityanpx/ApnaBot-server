@@ -650,7 +650,7 @@ const uploadProfileImage = async (req, res, next) => {
   }
 };
 
-const VALID_FLOW_FIELD_TYPES = ['dropdown', 'radio', 'date', 'text', 'textarea'];
+const VALID_FLOW_FIELD_TYPES = ['dropdown', 'radio', 'date', 'text', 'textarea', 'toggle', 'icon_select'];
 
 /**
  * Validates a business's proposed flow_fields array (the web-form booking
@@ -658,6 +658,9 @@ const VALID_FLOW_FIELD_TYPES = ['dropdown', 'radio', 'date', 'text', 'textarea']
  * - Every field needs a non-empty name and label.
  * - type must be one of VALID_FLOW_FIELD_TYPES.
  * - dropdown/radio need at least 2 options.
+ * - icon_select needs source: 'vehicle_catalog' (its real options are this
+ *   business's live Vehicle Catalog rows, looked up at render/submit time,
+ *   never hand-typed into the stored field definition).
  * - visibleWhen.field must reference an EARLIER field in the array (by
  *   name) — never itself, never a field defined later — since the form
  *   renders fields top-to-bottom and a later/self reference could never
@@ -700,6 +703,10 @@ const validateFlowFields = (fields) => {
           options.some(opt => typeof opt !== 'string' || !opt.trim())) {
         return `fields[${i}] ("${name}") is ${type} and needs at least 2 non-empty options`;
       }
+    }
+
+    if (type === 'icon_select' && field.source !== 'vehicle_catalog') {
+      return `fields[${i}] ("${name}") is icon_select and needs source: 'vehicle_catalog'`;
     }
 
     if (visibleWhen !== undefined && visibleWhen !== null) {
@@ -771,6 +778,40 @@ const updateFlowFields = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/business/vehicle-options
+ * This business's active vehicles, for the flow-fields builder to preview
+ * icon_select fields. Same shape as the public
+ * GET /api/public/service-form/:token/vehicle-options counterpart.
+ */
+const getVehicleOptions = async (req, res, next) => {
+  try {
+    const businessId = req.user.businessId;
+    if (!businessId) {
+      return errorResponse(res, 404, 'No business found');
+    }
+
+    const { data, error } = await supabase
+      .from('vehicles')
+      .select('id, custom_name, custom_photo_url, catalog:vehicle_type_catalog(name, photo_url)')
+      .eq('business_id', businessId)
+      .eq('is_active', true)
+      .order('order', { ascending: true });
+    if (error) throw error;
+
+    const vehicleOptions = (data || []).map(vehicle => ({
+      id: vehicle.id,
+      name: vehicle.custom_name || vehicle.catalog.name,
+      imageUrl: vehicle.custom_photo_url || vehicle.catalog.photo_url || null
+    }));
+
+    return successResponse(res, 200, { vehicleOptions });
+  } catch (error) {
+    logger.error('Error in getVehicleOptions:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getBusiness,
   createBusiness,
@@ -783,5 +824,6 @@ module.exports = {
   getDashboardStats,
   uploadProfileImage,
   getFlowFields,
-  updateFlowFields
+  updateFlowFields,
+  getVehicleOptions
 };

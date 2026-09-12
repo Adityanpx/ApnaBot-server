@@ -27,4 +27,9 @@ router.get('/service-form/:token', publicServiceFormController.getServiceForm);
 // Body: { values: { [fieldName]: string } }
 router.post('/service-form/:token/submit', publicServiceFormController.submitServiceForm);
 
+// GET /api/public/service-form/:token/vehicle-options
+// Same shape as GET /api/business/vehicle-options, scoped by token — lets
+// the public page render icon_select fields with real vehicle photos.
+router.get('/service-form/:token/vehicle-options', publicServiceFormController.getVehicleOptions);
+
 module.exports = router;

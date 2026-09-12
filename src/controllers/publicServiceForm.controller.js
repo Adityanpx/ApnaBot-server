@@ -157,4 +157,46 @@ const submitServiceForm = async (req, res, next) => {
   }
 };
 
-module.exports = { getServiceForm, submitServiceForm };
+/**
+ * GET /api/public/service-form/:token/vehicle-options
+ * Same shape as the owner-facing GET /api/business/vehicle-options, scoped
+ * by token instead of auth — lets the public page render icon_select fields
+ * with real vehicle photos without requiring login.
+ */
+const getVehicleOptions = async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const { row: formToken, status } = await loadToken(token);
+
+    if (status === 'not_found') {
+      return errorResponse(res, 404, 'This booking link is invalid.');
+    }
+    if (status === 'expired') {
+      return errorResponse(res, 410, 'This booking link has expired.');
+    }
+    if (status === 'used') {
+      return errorResponse(res, 410, 'This booking link has already been used.');
+    }
+
+    const { data, error } = await supabase
+      .from('vehicles')
+      .select('id, custom_name, custom_photo_url, catalog:vehicle_type_catalog(name, photo_url)')
+      .eq('business_id', formToken.businessId)
+      .eq('is_active', true)
+      .order('order', { ascending: true });
+    if (error) throw error;
+
+    const vehicleOptions = (data || []).map(vehicle => ({
+      id: vehicle.id,
+      name: vehicle.custom_name || vehicle.catalog.name,
+      imageUrl: vehicle.custom_photo_url || vehicle.catalog.photo_url || null
+    }));
+
+    return successResponse(res, 200, { vehicleOptions });
+  } catch (error) {
+    logger.error('Error in getVehicleOptions:', error);
+    next(error);
+  }
+};
+
+module.exports = { getServiceForm, submitServiceForm, getVehicleOptions };

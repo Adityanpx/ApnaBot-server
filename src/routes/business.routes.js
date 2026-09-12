@@ -16,6 +16,7 @@ const { uploadSingle } = require('../middleware/upload.middleware');
 // GET    /dashboard-stats     → protect, requireBusiness, business.controller.getDashboardStats
 // GET    /flow-fields         → protect, requireBusiness, requireRole('owner'), business.controller.getFlowFields
 // PUT    /flow-fields         → protect, requireBusiness, requireRole('owner'), business.controller.updateFlowFields
+// GET    /vehicle-options     → protect, requireBusiness, requireRole('owner'), business.controller.getVehicleOptions
 // POST   /upload-image        → protect, requireBusiness, requireRole('owner'), upload, business.controller.uploadProfileImage
 
 // GET / - Get business profile
@@ -68,6 +69,11 @@ router.get('/flow-fields', protect, requireBusiness, requireRole('owner'), busin
 // PUT /flow-fields - Replace the business's web-form booking link field config
 // Body: { fields: [{ name, type, label, required, options?, visibleWhen? }] }
 router.put('/flow-fields', protect, requireBusiness, requireRole('owner'), businessController.updateFlowFields);
+
+// GET /vehicle-options - This business's active vehicles, for the
+// flow-fields builder to preview icon_select fields (owner-only, matching
+// /flow-fields's access level)
+router.get('/vehicle-options', protect, requireBusiness, requireRole('owner'), businessController.getVehicleOptions);
 
 // POST /upload-image - Upload profile image
 router.post(
