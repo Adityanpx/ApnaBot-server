@@ -40,9 +40,10 @@ router.post('/question-nodes', requireRole('owner'), flowGraphController.createQ
 // (computed nodes are unreachable through this endpoint - see controller)
 router.put('/question-nodes/:id', requireRole('owner'), flowGraphController.updateQuestionNode);
 
-// DELETE /question-nodes/:id - Delete an authored question node (blocked by
-// the reserved-key/incoming-edge/fallback-sibling/reachability guards - see
-// flowGraph.controller.js#deleteQuestionNode)
+// DELETE /question-nodes/:id - Delete a question/vehicle_carousel/
+// rentalPackage node (blocked by the reserved-key/fallback-sibling guards;
+// the reachability guard alone accepts { force: true } to proceed anyway -
+// see flowGraph.controller.js#deleteQuestionNode)
 router.delete('/question-nodes/:id', requireRole('owner'), flowGraphController.deleteQuestionNode);
 
 // GET /full - Entire graph in one response (all reply nodes, all question

@@ -52,14 +52,25 @@ const RESERVED_TRAVEL_FIELD_KEYS = ['tripType', 'pickupLocation', 'dropLocation'
  * not-yet-wired-in node exists — found the hard way while testing this
  * step against a throwaway isolated node. Only reject when THIS edit newly
  * strands a node that was reachable before it ran.
+ *
+ * `force` (default false) downgrades a reachability violation from a
+ * blocking error to a reported list the caller must log before proceeding.
+ * Cycles are NEVER force-overridable — a cycle means a customer can get
+ * stuck answering the same questions forever, an actual bug, not a
+ * judgment call to push through deliberately.
+ *
+ * @returns {{ error: string|null, newlyUnreachableNodeIds: string[] }}
  */
-const assertGraphStillValid = async (businessId, transformFn) => {
+const assertGraphStillValid = async (businessId, transformFn, { force = false } = {}) => {
   const { nodes, edges } = await bookingGraphService.loadGraph(businessId);
   const hypothetical = transformFn({ nodes, edges });
 
   const cyclicNodeIds = findCycles(hypothetical.nodes, hypothetical.edges);
   if (cyclicNodeIds.length > 0) {
-    return `This change would create a cycle in the booking flow involving ${cyclicNodeIds.length} node(s) — a customer could get stuck answering the same questions forever.`;
+    return {
+      error: `This change would create a cycle in the booking flow involving ${cyclicNodeIds.length} node(s) — a customer could get stuck answering the same questions forever.`,
+      newlyUnreachableNodeIds: []
+    };
   }
 
   const beforeEntryNodeIds = resolveBookingTriggerEntryNodeIds(nodes, edges);
@@ -69,11 +80,29 @@ const assertGraphStillValid = async (businessId, transformFn) => {
   const afterUnreachable = findUnreachableNodes(hypothetical.nodes, hypothetical.edges, afterEntryNodeIds);
   const newlyUnreachable = afterUnreachable.filter(id => !beforeUnreachable.has(id));
 
-  if (newlyUnreachable.length > 0) {
-    return `This change would make ${newlyUnreachable.length} previously-reachable booking question(s) unreachable — a customer could never reach them.`;
+  if (newlyUnreachable.length > 0 && !force) {
+    return {
+      error: `This change would make ${newlyUnreachable.length} previously-reachable booking question(s) unreachable — a customer could never reach them.`,
+      newlyUnreachableNodeIds: newlyUnreachable
+    };
   }
 
-  return null;
+  return { error: null, newlyUnreachableNodeIds: newlyUnreachable };
+};
+
+/**
+ * Audit trail for a force-overridden reachability check — a deliberate
+ * destructive action (stranding a previously-reachable booking question),
+ * unlike a normal edit, so it gets logged rather than passing silently.
+ */
+const logForcedStranding = (req, endpoint, newlyUnreachableNodeIds) => {
+  logger.warn('flowGraph: force override used — stranding previously-reachable booking question(s)', {
+    endpoint,
+    businessId: req.user.businessId,
+    userId: req.user.userId,
+    email: req.user.email,
+    strandedNodeIds: newlyUnreachableNodeIds
+  });
 };
 
 /**
@@ -284,7 +313,7 @@ const createReplyNode = async (req, res, next) => {
 const updateReplyNode = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, hindiAliases, label, labelTranslations } = req.body;
+    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, hindiAliases, label, labelTranslations, force } = req.body;
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
@@ -337,12 +366,15 @@ const updateReplyNode = async (req, res, next) => {
     // entry point the moment replyKind no longer marks it as one, even
     // though the edge row itself is untouched).
     if (replyKind !== undefined && replyKind !== node.reply_kind && node.reply_kind === 'booking_trigger') {
-      const validationError = await assertGraphStillValid(businessId, ({ nodes, edges }) => ({
+      const { error: validationError, newlyUnreachableNodeIds } = await assertGraphStillValid(businessId, ({ nodes, edges }) => ({
         nodes: nodes.map(n => n.id === id ? { ...n, replyKind } : n),
         edges
-      }));
+      }), { force: force === true });
       if (validationError) {
         return errorResponse(res, 400, validationError);
+      }
+      if (newlyUnreachableNodeIds.length > 0) {
+        logForcedStranding(req, 'PUT /api/flow-graph/reply-nodes/:id', newlyUnreachableNodeIds);
       }
     }
 
@@ -396,6 +428,7 @@ const updateReplyNode = async (req, res, next) => {
 const deleteReplyNode = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const { force } = req.body;
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
@@ -428,12 +461,15 @@ const deleteReplyNode = async (req, res, next) => {
     // every reply-node delete (not just booking_trigger ones) for one
     // consistent code path rather than special-casing by replyKind; it's a
     // cheap dashboard-frequency check either way.
-    const validationError = await assertGraphStillValid(businessId, ({ nodes, edges }) => ({
+    const { error: validationError, newlyUnreachableNodeIds } = await assertGraphStillValid(businessId, ({ nodes, edges }) => ({
       nodes: nodes.filter(n => n.id !== id),
       edges: edges.filter(e => e.fromNodeId !== id && e.toNodeId !== id)
-    }));
+    }), { force: force === true });
     if (validationError) {
       return errorResponse(res, 400, validationError);
+    }
+    if (newlyUnreachableNodeIds.length > 0) {
+      logForcedStranding(req, 'DELETE /api/flow-graph/reply-nodes/:id', newlyUnreachableNodeIds);
     }
 
     const { error } = await supabase.from('flow_nodes').delete().eq('id', id);
@@ -483,7 +519,9 @@ const toggleReplyNode = async (req, res, next) => {
  * GET /api/flow-graph/question-nodes
  * List question/vehicle_carousel/rentalPackage flow_nodes for the business
  * (paginated). Computed nodes are included for visibility (the dashboard
- * needs to show them exist) but PUT/DELETE below refuse to touch them.
+ * needs to show them exist). PUT below still refuses to edit them; DELETE
+ * now allows removing them through the same reachability-guard + force flow
+ * as any other question node (see deleteQuestionNode's doc comment).
  */
 const getQuestionNodes = async (req, res, next) => {
   try {
@@ -646,7 +684,7 @@ const createQuestionNode = async (req, res, next) => {
 const updateQuestionNode = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { fieldKey, contentType, label, labelTranslations, summaryLabel, required, order, options, imageUrl } = req.body;
+    const { fieldKey, contentType, label, labelTranslations, summaryLabel, required, order, options, imageUrl, force } = req.body;
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
@@ -718,12 +756,15 @@ const updateQuestionNode = async (req, res, next) => {
     // the only edit here that affects findUnreachableNodes' sibling-
     // exemption pairing (see flowGraphValidation.js).
     if (fieldKey !== undefined && fieldKey !== node.field_key) {
-      const validationError = await assertGraphStillValid(businessId, ({ nodes, edges }) => ({
+      const { error: validationError, newlyUnreachableNodeIds } = await assertGraphStillValid(businessId, ({ nodes, edges }) => ({
         nodes: nodes.map(n => n.id === id ? { ...n, fieldKey } : n),
         edges
-      }));
+      }), { force: force === true });
       if (validationError) {
         return errorResponse(res, 400, validationError);
+      }
+      if (newlyUnreachableNodeIds.length > 0) {
+        logForcedStranding(req, 'PUT /api/flow-graph/question-nodes/:id', newlyUnreachableNodeIds);
       }
     }
 
@@ -751,11 +792,29 @@ const updateQuestionNode = async (req, res, next) => {
 
 /**
  * DELETE /api/flow-graph/question-nodes/:id
- * Scoped to node_type='question' — computed nodes can't be deleted through
- * this endpoint either. Three guards, in order: reserved-key, fallback-
+ * Covers node_type 'question', 'vehicle_carousel', and 'rentalPackage' —
+ * computed nodes go through the exact same three guards as an authored
+ * question node, no special-casing. (Previously this endpoint 404'd for
+ * computed nodes outright; that wall is gone. Deleting a vehicle_carousel/
+ * rentalPackage node never touches route_fares/rental_packages — those are
+ * looked up live by business/vehicle/route id at runtime, not by this
+ * node's id, so no extra cleanup is needed for this node type specifically.)
+ * Three guards, in order: reserved-key, fallback-
  * sibling (a node with NO incoming edge can still be load-bearing — see
  * flowGraphValidation.js#findFallbackSiblingNodeIds), then full reachability
  * re-validation for everything else.
+ *
+ * The reserved-key and fallback-sibling guards are NOT force-overridable —
+ * the former guards hardcoded engine logic unrelated to reachability, and
+ * the latter guards a live-session crash risk that the reachability check
+ * structurally cannot see (see findFallbackSiblingNodeIds' doc comment).
+ * Only the final reachability re-validation accepts `force: true` in the
+ * body — for a vehicle_carousel/rentalPackage delete specifically, that's
+ * also where "this would silently disable live fare computation for the
+ * flow" surfaces: if a static fallback sibling for the same fieldKey
+ * exists, removing the only live-reached node with that fieldKey causes
+ * the sibling to lose its reachability exemption and get reported here,
+ * same as for any other question node.
  *
  * Deliberately does NOT separately block "other node(s)' edges still target
  * this node, remove/retarget them first" the way deleteReplyNode does.
@@ -783,13 +842,15 @@ const updateQuestionNode = async (req, res, next) => {
 const deleteQuestionNode = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const { force } = req.body;
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
-      .from('flow_nodes').select('*').eq('id', id).eq('business_id', businessId).eq('node_type', 'question').maybeSingle();
+      .from('flow_nodes').select('*').eq('id', id).eq('business_id', businessId)
+      .in('node_type', ['question', 'vehicle_carousel', 'rentalPackage']).maybeSingle();
     if (findErr) throw findErr;
     if (!node) {
-      return errorResponse(res, 404, 'Question node not found (vehicle_carousel/rentalPackage nodes cannot be deleted through this endpoint)');
+      return errorResponse(res, 404, 'Question node not found');
     }
 
     if (TRAVEL_CATEGORIES_WITH_RESERVED_FIELDS.includes(req.graphBusiness.businessCategory) &&
@@ -818,12 +879,15 @@ const deleteQuestionNode = async (req, res, next) => {
       );
     }
 
-    const validationError = await assertGraphStillValid(businessId, ({ nodes: n, edges: e }) => ({
+    const { error: validationError, newlyUnreachableNodeIds } = await assertGraphStillValid(businessId, ({ nodes: n, edges: e }) => ({
       nodes: n.filter(x => x.id !== id),
       edges: e.filter(x => x.fromNodeId !== id && x.toNodeId !== id)
-    }));
+    }), { force: force === true });
     if (validationError) {
       return errorResponse(res, 400, validationError);
+    }
+    if (newlyUnreachableNodeIds.length > 0) {
+      logForcedStranding(req, 'DELETE /api/flow-graph/question-nodes/:id', newlyUnreachableNodeIds);
     }
 
     const { error } = await supabase.from('flow_nodes').delete().eq('id', id);
@@ -895,15 +959,19 @@ const getFullGraph = async (req, res, next) => {
  *
  * Deliberate deviations from a literal per-instruction port, flagged rather
  * than silently decided:
- *   - Computed nodes (is_computed=true: vehicle_carousel/rentalPackage) have
- *     no delete path ANYWHERE in this API today (createQuestionNode can
- *     create one, updateQuestionNode/deleteQuestionNode are both scoped to
- *     node_type='question' and simply 404 for one). Letting "omitted from
- *     the payload" silently delete one here would be a first-ever, unguarded
- *     way to remove a node bookingGraph.service.js's fallbackToStaticSibling
- *     can throw on mid-booking if it goes missing. Blocked outright instead
- *     (see the nodeDeletes check below) — the only edit batch save accepts
- *     for one of these is position.
+ *   - Computed nodes (is_computed=true: vehicle_carousel/rentalPackage) can
+ *     now be deleted via the single-node deleteQuestionNode endpoint (with
+ *     its reachability-guard + force flow), but batch save still has no
+ *     delete path for one — letting "omitted from the payload" silently
+ *     delete one here, with no explicit per-node confirmation and no force
+ *     flag threaded through this diff logic, would be a much easier way to
+ *     accidentally remove a node bookingGraph.service.js's
+ *     fallbackToStaticSibling can throw on mid-booking if it goes missing.
+ *     Blocked outright instead (see the nodeDeletes check below) — the only
+ *     edit batch save accepts for one of these is position. Revisit if the
+ *     canvas editor ever needs to delete one; not done as part of adding
+ *     force to the single-node endpoints (different risk shape — deletes
+ *     here are implicit-by-omission, not an explicit DELETE call).
  *   - findFallbackSiblingNodeIds is run against the CURRENT graph (pre-edit),
  *     not the proposed end state, then cross-referenced against this diff's
  *     node deletes — running it against the proposed state the way
@@ -1222,7 +1290,12 @@ const saveFullGraph = async (req, res, next) => {
     // node/edge write already goes through. transformFn ignores the graph
     // assertGraphStillValid loads for its own "before" baseline and returns
     // this diff's already-computed proposed state instead.
-    const validationError = await assertGraphStillValid(businessId, () => ({
+    // No force option here — batch save is intentionally out of scope for
+    // the force-override flow added to the 7 surgical endpoints (see
+    // deleteQuestionNode's doc comment for why); this call site otherwise
+    // must still adapt to assertGraphStillValid's { error, ... } return
+    // shape like every other caller.
+    const { error: validationError } = await assertGraphStillValid(businessId, () => ({
       nodes: proposedNodes,
       edges: proposedEdges
     }));
@@ -1297,7 +1370,7 @@ const createEdge = async (req, res, next) => {
   try {
     const {
       fromNodeId, toNodeId, label = null, labelTranslations = null,
-      description = null, descriptionTranslations = null, condition = null, preset = null, displayOrder
+      description = null, descriptionTranslations = null, condition = null, preset = null, displayOrder, force
     } = req.body;
     const businessId = req.user.businessId;
 
@@ -1352,12 +1425,15 @@ const createEdge = async (req, res, next) => {
       return errorResponse(res, 400, 'displayOrder must be a number');
     }
 
-    const validationError = await assertGraphStillValid(businessId, ({ nodes, edges }) => ({
+    const { error: validationError, newlyUnreachableNodeIds } = await assertGraphStillValid(businessId, ({ nodes, edges }) => ({
       nodes,
       edges: [...edges, { id: '__pending__', businessId, fromNodeId, toNodeId, condition: condition || null }]
-    }));
+    }), { force: force === true });
     if (validationError) {
       return errorResponse(res, 400, validationError);
+    }
+    if (newlyUnreachableNodeIds.length > 0) {
+      logForcedStranding(req, 'POST /api/flow-graph/edges', newlyUnreachableNodeIds);
     }
 
     const { data: edge, error } = await supabase.from('flow_edges').insert({
@@ -1400,7 +1476,7 @@ const createEdge = async (req, res, next) => {
 const updateEdge = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { toNodeId, label, labelTranslations, description, descriptionTranslations, condition, preset, displayOrder } = req.body;
+    const { toNodeId, label, labelTranslations, description, descriptionTranslations, condition, preset, displayOrder, force } = req.body;
     const businessId = req.user.businessId;
 
     const { data: edge, error: findErr } = await supabase
@@ -1464,16 +1540,19 @@ const updateEdge = async (req, res, next) => {
     // label/description/displayOrder edits can't create a cycle or strand a
     // node, so skip the reload+walk for those.
     if (updateData.to_node_id !== undefined || updateData.condition !== undefined) {
-      const validationError = await assertGraphStillValid(businessId, ({ nodes, edges }) => ({
+      const { error: validationError, newlyUnreachableNodeIds } = await assertGraphStillValid(businessId, ({ nodes, edges }) => ({
         nodes,
         edges: edges.map(e => e.id === id ? {
           ...e,
           toNodeId: updateData.to_node_id !== undefined ? updateData.to_node_id : e.toNodeId,
           condition: updateData.condition !== undefined ? updateData.condition : e.condition
         } : e)
-      }));
+      }), { force: force === true });
       if (validationError) {
         return errorResponse(res, 400, validationError);
+      }
+      if (newlyUnreachableNodeIds.length > 0) {
+        logForcedStranding(req, 'PUT /api/flow-graph/edges/:id', newlyUnreachableNodeIds);
       }
     }
 
@@ -1498,6 +1577,7 @@ const updateEdge = async (req, res, next) => {
 const deleteEdge = async (req, res, next) => {
   try {
     const { id } = req.params;
+    const { force } = req.body;
     const businessId = req.user.businessId;
 
     const { data: edge, error: findErr } = await supabase
@@ -1507,12 +1587,15 @@ const deleteEdge = async (req, res, next) => {
       return errorResponse(res, 404, 'Edge not found');
     }
 
-    const validationError = await assertGraphStillValid(businessId, ({ nodes, edges }) => ({
+    const { error: validationError, newlyUnreachableNodeIds } = await assertGraphStillValid(businessId, ({ nodes, edges }) => ({
       nodes,
       edges: edges.filter(e => e.id !== id)
-    }));
+    }), { force: force === true });
     if (validationError) {
       return errorResponse(res, 400, validationError);
+    }
+    if (newlyUnreachableNodeIds.length > 0) {
+      logForcedStranding(req, 'DELETE /api/flow-graph/edges/:id', newlyUnreachableNodeIds);
     }
 
     const { error } = await supabase.from('flow_edges').delete().eq('id', id);
