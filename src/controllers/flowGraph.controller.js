@@ -313,7 +313,7 @@ const createReplyNode = async (req, res, next) => {
 const updateReplyNode = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, hindiAliases, label, labelTranslations, force } = req.body;
+    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, hindiAliases, label, labelTranslations, force } = req.body || {};
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
@@ -428,7 +428,7 @@ const updateReplyNode = async (req, res, next) => {
 const deleteReplyNode = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { force } = req.body;
+    const { force } = req.body || {};
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
@@ -684,7 +684,7 @@ const createQuestionNode = async (req, res, next) => {
 const updateQuestionNode = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { fieldKey, contentType, label, labelTranslations, summaryLabel, required, order, options, imageUrl, force } = req.body;
+    const { fieldKey, contentType, label, labelTranslations, summaryLabel, required, order, options, imageUrl, force } = req.body || {};
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
@@ -842,7 +842,7 @@ const updateQuestionNode = async (req, res, next) => {
 const deleteQuestionNode = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { force } = req.body;
+    const { force } = req.body || {};
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
@@ -1371,7 +1371,7 @@ const createEdge = async (req, res, next) => {
     const {
       fromNodeId, toNodeId, label = null, labelTranslations = null,
       description = null, descriptionTranslations = null, condition = null, preset = null, displayOrder, force
-    } = req.body;
+    } = req.body || {};
     const businessId = req.user.businessId;
 
     if (!fromNodeId || !toNodeId) {
@@ -1476,7 +1476,7 @@ const createEdge = async (req, res, next) => {
 const updateEdge = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { toNodeId, label, labelTranslations, description, descriptionTranslations, condition, preset, displayOrder, force } = req.body;
+    const { toNodeId, label, labelTranslations, description, descriptionTranslations, condition, preset, displayOrder, force } = req.body || {};
     const businessId = req.user.businessId;
 
     const { data: edge, error: findErr } = await supabase
@@ -1577,7 +1577,7 @@ const updateEdge = async (req, res, next) => {
 const deleteEdge = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { force } = req.body;
+    const { force } = req.body || {};
     const businessId = req.user.businessId;
 
     const { data: edge, error: findErr } = await supabase
