@@ -650,6 +650,127 @@ const uploadProfileImage = async (req, res, next) => {
   }
 };
 
+const VALID_FLOW_FIELD_TYPES = ['dropdown', 'radio', 'date', 'text', 'textarea'];
+
+/**
+ * Validates a business's proposed flow_fields array (the web-form booking
+ * link's field config). Returns an error message, or null if valid.
+ * - Every field needs a non-empty name and label.
+ * - type must be one of VALID_FLOW_FIELD_TYPES.
+ * - dropdown/radio need at least 2 options.
+ * - visibleWhen.field must reference an EARLIER field in the array (by
+ *   name) — never itself, never a field defined later — since the form
+ *   renders fields top-to-bottom and a later/self reference could never
+ *   resolve. If that earlier field is dropdown/radio, visibleWhen.equals
+ *   must be one of its options.
+ * - names must be unique — not explicitly asked for, but `name` doubles as
+ *   both the visibleWhen back-reference key and the submitted-value key
+ *   (fieldKey) downstream, so a duplicate would make both ambiguous.
+ */
+const validateFlowFields = (fields) => {
+  if (!Array.isArray(fields)) {
+    return 'fields must be an array';
+  }
+
+  const seenNames = new Map(); // name -> field, in array order (earlier fields only, built up as we go)
+
+  for (let i = 0; i < fields.length; i++) {
+    const field = fields[i];
+    if (!field || typeof field !== 'object') {
+      return `fields[${i}] must be an object`;
+    }
+
+    const { name, type, label, options, visibleWhen } = field;
+
+    if (typeof name !== 'string' || !name.trim()) {
+      return `fields[${i}] must have a non-empty name`;
+    }
+    if (seenNames.has(name)) {
+      return `fields[${i}] ("${name}") duplicates an earlier field's name — names must be unique`;
+    }
+    if (typeof label !== 'string' || !label.trim()) {
+      return `fields[${i}] ("${name}") must have a non-empty label`;
+    }
+    if (!VALID_FLOW_FIELD_TYPES.includes(type)) {
+      return `fields[${i}] ("${name}") type must be one of: ${VALID_FLOW_FIELD_TYPES.join(', ')}`;
+    }
+
+    if (type === 'dropdown' || type === 'radio') {
+      if (!Array.isArray(options) || options.length < 2 ||
+          options.some(opt => typeof opt !== 'string' || !opt.trim())) {
+        return `fields[${i}] ("${name}") is ${type} and needs at least 2 non-empty options`;
+      }
+    }
+
+    if (visibleWhen !== undefined && visibleWhen !== null) {
+      if (typeof visibleWhen !== 'object' || typeof visibleWhen.field !== 'string' || typeof visibleWhen.equals !== 'string') {
+        return `fields[${i}] ("${name}") visibleWhen must be { field, equals }`;
+      }
+      const earlierField = seenNames.get(visibleWhen.field);
+      if (!earlierField) {
+        return `fields[${i}] ("${name}") visibleWhen.field "${visibleWhen.field}" must reference an earlier field in the array, not itself or a later one`;
+      }
+      if ((earlierField.type === 'dropdown' || earlierField.type === 'radio') &&
+          !earlierField.options.includes(visibleWhen.equals)) {
+        return `fields[${i}] ("${name}") visibleWhen.equals "${visibleWhen.equals}" must be one of "${visibleWhen.field}"'s options`;
+      }
+    }
+
+    seenNames.set(name, field);
+  }
+
+  return null;
+};
+
+/**
+ * GET /api/business/flow-fields
+ * Get the logged-in business's flow_fields (web-form booking link config)
+ */
+const getFlowFields = async (req, res, next) => {
+  try {
+    const businessId = req.user.businessId;
+
+    if (!businessId) {
+      return errorResponse(res, 404, 'No business found');
+    }
+
+    const flowFields = await businessService.getFlowFields(businessId);
+
+    return successResponse(res, 200, { flowFields: flowFields || [] });
+  } catch (error) {
+    logger.error('Error in getFlowFields:', error);
+    next(error);
+  }
+};
+
+/**
+ * PUT /api/business/flow-fields
+ * Replace the business's flow_fields
+ * Body: { fields: [...] }
+ */
+const updateFlowFields = async (req, res, next) => {
+  try {
+    const businessId = req.user.businessId;
+
+    if (!businessId) {
+      return errorResponse(res, 404, 'No business found');
+    }
+
+    const { fields } = req.body;
+    const validationError = validateFlowFields(fields);
+    if (validationError) {
+      return errorResponse(res, 400, validationError);
+    }
+
+    const flowFields = await businessService.updateFlowFields(businessId, fields);
+
+    return successResponse(res, 200, { flowFields: flowFields || [] });
+  } catch (error) {
+    logger.error('Error in updateFlowFields:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getBusiness,
   createBusiness,
@@ -660,5 +781,7 @@ module.exports = {
   connectWhatsapp,
   disconnectWhatsapp,
   getDashboardStats,
-  uploadProfileImage
+  uploadProfileImage,
+  getFlowFields,
+  updateFlowFields
 };

@@ -14,6 +14,8 @@ const { uploadSingle } = require('../middleware/upload.middleware');
 // POST   /connect-whatsapp   → protect, requireBusiness, requireRole('owner'), business.controller.connectWhatsapp
 // DELETE /disconnect-whatsapp → protect, requireBusiness, requireRole('owner'), business.controller.disconnectWhatsapp
 // GET    /dashboard-stats     → protect, requireBusiness, business.controller.getDashboardStats
+// GET    /flow-fields         → protect, requireBusiness, requireRole('owner'), business.controller.getFlowFields
+// PUT    /flow-fields         → protect, requireBusiness, requireRole('owner'), business.controller.updateFlowFields
 // POST   /upload-image        → protect, requireBusiness, requireRole('owner'), upload, business.controller.uploadProfileImage
 
 // GET / - Get business profile
@@ -59,6 +61,13 @@ router.delete(
 
 // GET /dashboard-stats - Get dashboard statistics
 router.get('/dashboard-stats', protect, requireBusiness, businessController.getDashboardStats);
+
+// GET /flow-fields - Get the business's web-form booking link field config
+router.get('/flow-fields', protect, requireBusiness, requireRole('owner'), businessController.getFlowFields);
+
+// PUT /flow-fields - Replace the business's web-form booking link field config
+// Body: { fields: [{ name, type, label, required, options?, visibleWhen? }] }
+router.put('/flow-fields', protect, requireBusiness, requireRole('owner'), businessController.updateFlowFields);
 
 // POST /upload-image - Upload profile image
 router.post(

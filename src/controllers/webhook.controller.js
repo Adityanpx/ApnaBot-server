@@ -1541,6 +1541,50 @@ const receiveWebhook = async (req, res) => {
 
       } else if (matchedNode.replyKind === 'payment_trigger') {
         replyText = applyMessageTemplateWithFooter(matchedNode.label, tenant, customer) || 'Please complete your payment.';
+
+      } else if (matchedNode.replyKind === 'web_form_trigger') {
+        // Alternative to a Meta WhatsApp Flow: send a link to a plain
+        // authenticated web page (publicServiceForm.controller.js) instead
+        // of starting a graph booking session or asking for payment. Wrapped
+        // in its own try/catch, same graceful-fallback pattern as
+        // booking_trigger above — a failed token insert must not fall
+        // through to Step 15/16 with a null replyText.
+        try {
+          const expiresAt = new Date(Date.now() + 30 * 60 * 1000).toISOString();
+          const { data: formToken, error: formTokenError } = await supabase
+            .from('booking_form_tokens')
+            .insert({
+              business_id: tenant.businessId,
+              customer_id: customer.id,
+              customer_number: customerNumber,
+              expires_at: expiresAt
+            })
+            .select('token')
+            .single();
+          if (formTokenError) throw formTokenError;
+
+          const formLink = `${config.FRONTEND_URL}/book/${formToken.token}`;
+          replyText = applyMessageTemplateWithFooter(
+            `Tap here to fill in your request: ${formLink}\n\nThis link expires in 30 minutes.`,
+            tenant,
+            customer
+          );
+        } catch (webFormError) {
+          logger.error('web_form_trigger: error generating booking form link', {
+            businessId: tenant.businessId,
+            replyNodeId: matchedNode.id,
+            customerNumber,
+            message: webFormError.message,
+            stack: webFormError.stack
+          });
+
+          await sendFallbackTextMessage(
+            { tenant, customer, customerNumber, triggeredRuleId: matchedNode.id },
+            'Sorry, something went wrong generating your booking link — our team will reach out to you shortly.'
+          );
+
+          return; // Do not run rule matching
+        }
       }
     } else {
       // No rule matched — try an AI-generated fallback (opt-in per business),

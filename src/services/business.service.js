@@ -178,6 +178,41 @@ const updateServedCities = async (businessId, cities) => {
 };
 
 /**
+ * Get a business's flowFields list (the web-form booking link's field config)
+ * @param {string} businessId - The business ID
+ * @returns {Promise<Array|null>}
+ */
+const getFlowFields = async (businessId) => {
+  try {
+    const { data, error } = await supabase
+      .from('businesses').select('flow_fields').eq('id', businessId).maybeSingle();
+    if (error) throw error;
+    return data ? (data.flow_fields || []) : null;
+  } catch (error) {
+    logger.error('Error in getFlowFields:', error);
+    throw error;
+  }
+};
+
+/**
+ * Replace a business's flowFields list
+ * @param {string} businessId - The business ID
+ * @param {Array} fields - Validated field list (see business.controller.js#validateFlowFields)
+ * @returns {Promise<Array|null>}
+ */
+const updateFlowFields = async (businessId, fields) => {
+  try {
+    const { data, error } = await supabase
+      .from('businesses').update({ flow_fields: fields }).eq('id', businessId).select('flow_fields').single();
+    if (error) throw error;
+    return data ? (data.flow_fields || []) : null;
+  } catch (error) {
+    logger.error('Error in updateFlowFields:', error);
+    throw error;
+  }
+};
+
+/**
  * Title-case a lowercase city name for display (RouteFare stores fromCity/toCity lowercased).
  */
 const toTitleCase = (str) => str.replace(/\w\S*/g, word => word.charAt(0).toUpperCase() + word.slice(1));
@@ -335,6 +370,8 @@ module.exports = {
   updateBusiness,
   getServedCities,
   updateServedCities,
+  getFlowFields,
+  updateFlowFields,
   getServedCitySuggestions,
   connectWhatsapp,
   disconnectWhatsapp,

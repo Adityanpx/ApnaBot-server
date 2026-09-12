@@ -729,6 +729,10 @@ module.exports = {
   // function's own doc comment for why this lives here instead of in
   // bookingGraph.service.js or inline in webhook.controller.js.
   finalizeGraphBooking,
+  // Exported for publicServiceForm.controller.js — the web-form booking
+  // link submits generic (collected, orderedFields) directly, bypassing the
+  // graph session shape finalizeGraphBooking expects.
+  createBookingAndConfirmation,
   // Pure formatting reused by flowGraphPreview.controller.js for its
   // synthetic "booking would be created" summary — see its own doc comment.
   buildBookingSummaryBody

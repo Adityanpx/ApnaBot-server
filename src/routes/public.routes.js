@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const config = require('../config/env');
+const publicServiceFormController = require('../controllers/publicServiceForm.controller');
 
 // GET /api/public/whatsapp-embedded-signup-config
 // Returns non-secret Meta app config needed by the client-side Facebook JS SDK
@@ -15,5 +16,15 @@ router.get('/whatsapp-embedded-signup-config', (req, res) => {
     }
   });
 });
+
+// GET /api/public/service-form/:token
+// Web-form booking link (alternative to a Meta WhatsApp Flow) — token-gated,
+// not auth-gated. Returns the business name + flow_fields needed to render
+// the form.
+router.get('/service-form/:token', publicServiceFormController.getServiceForm);
+
+// POST /api/public/service-form/:token/submit
+// Body: { values: { [fieldName]: string } }
+router.post('/service-form/:token/submit', publicServiceFormController.submitServiceForm);
 
 module.exports = router;

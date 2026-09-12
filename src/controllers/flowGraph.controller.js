@@ -18,7 +18,7 @@ const logger = require('../utils/logger');
 
 const VALID_MATCH_TYPES = ['exact', 'contains', 'startsWith'];
 const VALID_CONTENT_TYPES = ['text', 'buttons', 'list', 'location'];
-const VALID_REPLY_KINDS = ['text', 'booking_trigger', 'payment_trigger'];
+const VALID_REPLY_KINDS = ['text', 'booking_trigger', 'payment_trigger', 'web_form_trigger'];
 // 'rentalPackage' deliberately excluded — still engine-internal/migration-only,
 // per PRD.md's "NOT done yet" note. Only vehicle_carousel has a create path.
 const VALID_QUESTION_NODE_TYPES = ['question', 'vehicle_carousel'];
