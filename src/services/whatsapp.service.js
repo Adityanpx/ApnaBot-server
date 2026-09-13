@@ -239,6 +239,46 @@ const sendRuleListMessage = async (phoneNumberId, encryptedAccessToken, to, body
 };
 
 /**
+ * Send a native WhatsApp CTA-URL interactive message (a single button that
+ * opens `url` directly in the device browser when tapped — no separate
+ * text message with a tappable link needed).
+ * @param {string} phoneNumberId - The WhatsApp phone number ID
+ * @param {string} encryptedAccessToken - Encrypted Meta access token
+ * @param {string} to - Recipient phone number
+ * @param {string} bodyText - Message body text
+ * @param {string} buttonText - Text on the CTA button
+ * @param {string} url - URL opened when the button is tapped
+ * @returns {Promise<Object>}
+ */
+const sendCtaUrlButton = async (phoneNumberId, encryptedAccessToken, to, bodyText, buttonText, url) => {
+  try {
+    const accessToken = decrypt(encryptedAccessToken);
+    const response = await axios.post(
+      `${META_API_BASE}/${phoneNumberId}/messages`,
+      {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'interactive',
+        interactive: {
+          type: 'cta_url',
+          body: { text: (bodyText || '').slice(0, 1024) },
+          action: {
+            name: 'cta_url',
+            parameters: { display_text: (buttonText || '').slice(0, 20), url }
+          }
+        }
+      },
+      { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
+    );
+    return response.data;
+  } catch (error) {
+    logger.error('Error sending CTA URL button:', { phoneNumberId, to, error: error.response?.data || error.message });
+    throw error;
+  }
+};
+
+/**
  * Send a template message via WhatsApp
  * @param {string} phoneNumberId - The WhatsApp phone number ID
  * @param {string} encryptedAccessToken - Encrypted Meta access token
@@ -332,6 +372,7 @@ module.exports = {
   sendInteractiveButtons,
   sendListMessage,
   sendRuleListMessage,
+  sendCtaUrlButton,
   sendTemplateMessage,
   markMessageAsRead,
   META_API_BASE

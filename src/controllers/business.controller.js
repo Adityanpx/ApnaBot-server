@@ -650,7 +650,7 @@ const uploadProfileImage = async (req, res, next) => {
   }
 };
 
-const VALID_FLOW_FIELD_TYPES = ['dropdown', 'radio', 'date', 'text', 'textarea', 'toggle', 'icon_select'];
+const VALID_FLOW_FIELD_TYPES = ['dropdown', 'radio', 'date', 'text', 'textarea', 'toggle', 'icon_select', 'address_autocomplete'];
 
 /**
  * Validates a business's proposed flow_fields array (the web-form booking
@@ -661,6 +661,16 @@ const VALID_FLOW_FIELD_TYPES = ['dropdown', 'radio', 'date', 'text', 'textarea',
  * - icon_select needs source: 'vehicle_catalog' (its real options are this
  *   business's live Vehicle Catalog rows, looked up at render/submit time,
  *   never hand-typed into the stored field definition).
+ * - address_autocomplete stores like text/date — no extra config here — but
+ *   its SUBMITTED VALUE is structurally different from every other field
+ *   type: instead of a plain string, it's a JSON string encoding
+ *   { description, lat, lng } (see publicServiceForm.controller.js's
+ *   places-autocomplete/place-details endpoints, which the public form
+ *   calls to build that JSON before submit, and submitServiceForm, which
+ *   parses it back out). May also carry an optional role: 'pickup'|'drop'
+ *   (only valid on this type), used to identify which address_autocomplete
+ *   field feeds the vehicle-quote endpoint's pickup/drop pair — at most one
+ *   field per role across the whole array.
  * - visibleWhen.field must reference an EARLIER field in the array (by
  *   name) — never itself, never a field defined later — since the form
  *   renders fields top-to-bottom and a later/self reference could never
@@ -676,6 +686,7 @@ const validateFlowFields = (fields) => {
   }
 
   const seenNames = new Map(); // name -> field, in array order (earlier fields only, built up as we go)
+  const seenRoles = new Map(); // 'pickup'|'drop' -> name of the field that already claimed it
 
   for (let i = 0; i < fields.length; i++) {
     const field = fields[i];
@@ -707,6 +718,19 @@ const validateFlowFields = (fields) => {
 
     if (type === 'icon_select' && field.source !== 'vehicle_catalog') {
       return `fields[${i}] ("${name}") is icon_select and needs source: 'vehicle_catalog'`;
+    }
+
+    if (field.role !== undefined && field.role !== null) {
+      if (type !== 'address_autocomplete') {
+        return `fields[${i}] ("${name}") has a role but role is only valid on address_autocomplete fields`;
+      }
+      if (field.role !== 'pickup' && field.role !== 'drop') {
+        return `fields[${i}] ("${name}") role must be 'pickup' or 'drop'`;
+      }
+      if (seenRoles.has(field.role)) {
+        return `fields[${i}] ("${name}") duplicates role '${field.role}', already used by "${seenRoles.get(field.role)}" — at most one field may have each role`;
+      }
+      seenRoles.set(field.role, name);
     }
 
     if (visibleWhen !== undefined && visibleWhen !== null) {

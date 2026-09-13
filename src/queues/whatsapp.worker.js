@@ -25,7 +25,7 @@ const worker = new Worker('whatsapp-outbound', async (job) => {
   const { businessId, phoneNumberId, encryptedAccessToken, to, message, messageId,
           type = 'text', imageUrl = null, buttons = [], listOptions = [],
           interactiveButtons = null, interactiveList = null, listButtonLabel = 'Choose',
-          step = null, location = null } = job.data;
+          step = null, location = null, ctaButton = null } = job.data;
 
   try {
     if (location) {
@@ -33,6 +33,11 @@ const worker = new Worker('whatsapp-outbound', async (job) => {
       // location-content-type branches). Distinct payload shape, so checked
       // before the message/imageUrl-based dispatch below.
       await whatsappService.sendLocationMessage(phoneNumberId, encryptedAccessToken, to, location.latitude, location.longitude, location.name, location.address);
+    } else if (ctaButton) {
+      // web_form_trigger's booking-link send (see webhook.controller.js) —
+      // a single button that opens ctaButton.url directly, instead of a
+      // plain text message with the link inline.
+      await whatsappService.sendCtaUrlButton(phoneNumberId, encryptedAccessToken, to, message, ctaButton.buttonText, ctaButton.url);
     } else if (Array.isArray(interactiveList) && interactiveList.length > 0) {
       // Booking-field choice question rendered as a tappable list (Part C/D/E).
       await whatsappService.sendListMessage(phoneNumberId, encryptedAccessToken, to, message, listButtonLabel, interactiveList, step);

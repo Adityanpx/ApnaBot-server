@@ -8,6 +8,8 @@ const supabase = require('../config/supabase');
 const businessService = require('../services/business.service');
 const bookingService = require('../services/booking.service');
 const whatsappService = require('../services/whatsapp.service');
+const placesService = require('../services/places.service');
+const distanceMatrixService = require('../services/distanceMatrix.service');
 const { toCamelCase } = require('../utils/caseConvert');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
@@ -108,7 +110,27 @@ const submitServiceForm = async (req, res, next) => {
 
     const collected = {};
     for (const field of flowFields) {
-      if (values[field.name] !== undefined) {
+      if (values[field.name] === undefined) continue;
+
+      if (field.type === 'address_autocomplete') {
+        // Value is a JSON string encoding { description, lat, lng } (see
+        // business.controller.js's VALID_FLOW_FIELD_TYPES doc comment) —
+        // client-submitted, so never trust it's well-formed.
+        let parsed;
+        try {
+          parsed = JSON.parse(values[field.name]);
+        } catch (parseError) {
+          return errorResponse(res, 400, `${field.label} has an invalid value`);
+        }
+        if (!parsed || typeof parsed.description !== 'string' || !parsed.description.trim()) {
+          return errorResponse(res, 400, `${field.label} has an invalid value`);
+        }
+        // Only the human-readable description goes into `collected`,
+        // matching every other field type's plain-string value used for
+        // the confirmation message; parsed.lat/parsed.lng are validated
+        // above but not needed anywhere else in this handler today.
+        collected[field.name] = parsed.description;
+      } else {
         collected[field.name] = values[field.name];
       }
     }
@@ -199,4 +221,131 @@ const getVehicleOptions = async (req, res, next) => {
   }
 };
 
-module.exports = { getServiceForm, submitServiceForm, getVehicleOptions };
+/**
+ * POST /api/public/service-form/:token/places-autocomplete
+ * Body: { input: string }
+ */
+const placesAutocomplete = async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const { status } = await loadToken(token);
+
+    if (status === 'not_found') {
+      return errorResponse(res, 404, 'This booking link is invalid.');
+    }
+    if (status === 'expired') {
+      return errorResponse(res, 410, 'This booking link has expired.');
+    }
+    if (status === 'used') {
+      return errorResponse(res, 410, 'This booking link has already been used.');
+    }
+
+    const input = req.body?.input;
+    if (typeof input !== 'string' || !input.trim()) {
+      return errorResponse(res, 400, 'input must be a non-empty string');
+    }
+
+    const predictions = await placesService.getAutocompletePredictions(input.trim());
+    if (predictions === null) {
+      return errorResponse(res, 502, 'Could not fetch address suggestions right now.');
+    }
+
+    return successResponse(res, 200, { predictions });
+  } catch (error) {
+    logger.error('Error in placesAutocomplete:', error);
+    next(error);
+  }
+};
+
+/**
+ * POST /api/public/service-form/:token/place-details
+ * Body: { placeId: string }
+ */
+const placeDetails = async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const { status } = await loadToken(token);
+
+    if (status === 'not_found') {
+      return errorResponse(res, 404, 'This booking link is invalid.');
+    }
+    if (status === 'expired') {
+      return errorResponse(res, 410, 'This booking link has expired.');
+    }
+    if (status === 'used') {
+      return errorResponse(res, 410, 'This booking link has already been used.');
+    }
+
+    const placeId = req.body?.placeId;
+    if (typeof placeId !== 'string' || !placeId.trim()) {
+      return errorResponse(res, 400, 'placeId must be a non-empty string');
+    }
+
+    const details = await placesService.getPlaceDetails(placeId.trim());
+    if (details === null) {
+      return errorResponse(res, 502, 'Could not fetch address details right now.');
+    }
+
+    return successResponse(res, 200, details);
+  } catch (error) {
+    logger.error('Error in placeDetails:', error);
+    next(error);
+  }
+};
+
+/**
+ * POST /api/public/service-form/:token/vehicle-quote
+ * Body: { pickupLat, pickupLng, dropLat, dropLng }
+ * Same fare-rounding pattern as booking.service.js's distance-based vehicle
+ * options (nearest ₹10) — no round-trip/driver-DA term here, since the web
+ * form's address_autocomplete fields carry no tripType concept.
+ */
+const getVehicleQuote = async (req, res, next) => {
+  try {
+    const { token } = req.params;
+    const { row: formToken, status } = await loadToken(token);
+
+    if (status === 'not_found') {
+      return errorResponse(res, 404, 'This booking link is invalid.');
+    }
+    if (status === 'expired') {
+      return errorResponse(res, 410, 'This booking link has expired.');
+    }
+    if (status === 'used') {
+      return errorResponse(res, 410, 'This booking link has already been used.');
+    }
+
+    const { pickupLat, pickupLng, dropLat, dropLng } = req.body || {};
+    if ([pickupLat, pickupLng, dropLat, dropLng].some((v) => typeof v !== 'number' || Number.isNaN(v))) {
+      return errorResponse(res, 400, 'pickupLat, pickupLng, dropLat, dropLng must all be numbers');
+    }
+
+    const distanceKm = await distanceMatrixService.getDistanceKm(`${pickupLat},${pickupLng}`, `${dropLat},${dropLng}`);
+    if (distanceKm === null) {
+      return errorResponse(res, 502, 'Could not calculate distance right now.');
+    }
+
+    const { data, error } = await supabase
+      .from('vehicles')
+      .select('id, custom_name, custom_photo_url, per_km_rate, catalog:vehicle_type_catalog(name, photo_url)')
+      .eq('business_id', formToken.businessId)
+      .eq('is_active', true)
+      .not('per_km_rate', 'is', null)
+      .order('order', { ascending: true });
+    if (error) throw error;
+
+    const vehicleQuotes = (data || []).map((vehicle) => ({
+      id: vehicle.id,
+      name: vehicle.custom_name || vehicle.catalog.name,
+      imageUrl: vehicle.custom_photo_url || vehicle.catalog.photo_url || null,
+      estimatedFare: Math.round((distanceKm * vehicle.per_km_rate) / 10) * 10
+    }));
+
+    return successResponse(res, 200, { vehicleQuotes });
+  } catch (error) {
+    logger.error('Error in getVehicleQuote:', error);
+    next(error);
+  }
+};
+
+module.exports = { getServiceForm, submitServiceForm, getVehicleOptions, placesAutocomplete, placeDetails, getVehicleQuote };

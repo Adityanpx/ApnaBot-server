@@ -1411,6 +1411,9 @@ const receiveWebhook = async (req, res) => {
     // purposes, only its buttons are reused.
     let fallbackMenuNode = null;
     let fallbackMenuEdges = [];
+    // Set only when web_form_trigger fires — carries the booking-link CTA
+    // button rendered at Step 16 instead of a plain text reply.
+    let ctaButton = null;
 
     if (directBookingEntry) {
       // Button targeted a question node directly — start the graph right
@@ -1565,10 +1568,11 @@ const receiveWebhook = async (req, res) => {
 
           const formLink = `${config.FRONTEND_URL}/book/${formToken.token}`;
           replyText = applyMessageTemplateWithFooter(
-            `Tap here to fill in your request: ${formLink}\n\nThis link expires in 30 minutes.`,
+            'Tap below to fill in your request. This link expires in 30 minutes.',
             tenant,
             customer
           );
+          ctaButton = { buttonText: 'Fill booking form', url: formLink };
         } catch (webFormError) {
           logger.error('web_form_trigger: error generating booking form link', {
             businessId: tenant.businessId,
@@ -1668,6 +1672,7 @@ const receiveWebhook = async (req, res) => {
       imageUrl: matchedNode?.imageUrl || null,
       buttons: localizedButtons,
       listOptions: localizedListOptions,
+      ctaButton,
       messageId: outboundMsg.id
     };
     if (bookingField && (bookingField.fieldType === 'buttons' || bookingField.fieldType === 'list')) {
