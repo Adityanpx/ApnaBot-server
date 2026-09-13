@@ -341,7 +341,7 @@ const getVehicleQuote = async (req, res, next) => {
       estimatedFare: Math.round((distanceKm * vehicle.per_km_rate) / 10) * 10
     }));
 
-    return successResponse(res, 200, { vehicleQuotes });
+    return successResponse(res, 200, { distanceKm, vehicleQuotes });
   } catch (error) {
     logger.error('Error in getVehicleQuote:', error);
     next(error);
