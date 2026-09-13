@@ -652,6 +652,15 @@ const uploadProfileImage = async (req, res, next) => {
 
 const VALID_FLOW_FIELD_TYPES = ['dropdown', 'radio', 'date', 'text', 'textarea', 'toggle', 'icon_select', 'address_autocomplete'];
 
+// Which field types each vehicle-quote role may be attached to — see
+// validateFlowFields' doc comment. Keyed by role value.
+const ROLE_ALLOWED_TYPES = {
+  pickup: ['address_autocomplete'],
+  drop: ['address_autocomplete'],
+  tripType: ['dropdown', 'radio'],
+  numberOfDays: ['text', 'textarea']
+};
+
 /**
  * Validates a business's proposed flow_fields array (the web-form booking
  * link's field config). Returns an error message, or null if valid.
@@ -667,10 +676,14 @@ const VALID_FLOW_FIELD_TYPES = ['dropdown', 'radio', 'date', 'text', 'textarea',
  *   { description, lat, lng } (see publicServiceForm.controller.js's
  *   places-autocomplete/place-details endpoints, which the public form
  *   calls to build that JSON before submit, and submitServiceForm, which
- *   parses it back out). May also carry an optional role: 'pickup'|'drop'
- *   (only valid on this type), used to identify which address_autocomplete
- *   field feeds the vehicle-quote endpoint's pickup/drop pair — at most one
- *   field per role across the whole array.
+ *   parses it back out).
+ * - Any field may also carry an optional role, used by the vehicle-quote
+ *   flow to find the fields it needs without guessing by name: 'pickup'|
+ *   'drop' (address_autocomplete only), 'tripType' (dropdown|radio only —
+ *   its options should include booking.service.js's tripTypeMap values,
+ *   e.g. 'One Way'/'Round Trip', for the round-trip day-based fare
+ *   estimate to kick in; not enforced here), 'numberOfDays' (text|textarea
+ *   only). At most one field per role across the whole array.
  * - visibleWhen.field must reference an EARLIER field in the array (by
  *   name) — never itself, never a field defined later — since the form
  *   renders fields top-to-bottom and a later/self reference could never
@@ -721,11 +734,12 @@ const validateFlowFields = (fields) => {
     }
 
     if (field.role !== undefined && field.role !== null) {
-      if (type !== 'address_autocomplete') {
-        return `fields[${i}] ("${name}") has a role but role is only valid on address_autocomplete fields`;
+      const allowedTypes = ROLE_ALLOWED_TYPES[field.role];
+      if (!allowedTypes) {
+        return `fields[${i}] ("${name}") role must be one of: ${Object.keys(ROLE_ALLOWED_TYPES).join(', ')}`;
       }
-      if (field.role !== 'pickup' && field.role !== 'drop') {
-        return `fields[${i}] ("${name}") role must be 'pickup' or 'drop'`;
+      if (!allowedTypes.includes(type)) {
+        return `fields[${i}] ("${name}") has role '${field.role}' but that role is only valid on ${allowedTypes.join('/')} fields`;
       }
       if (seenRoles.has(field.role)) {
         return `fields[${i}] ("${name}") duplicates role '${field.role}', already used by "${seenRoles.get(field.role)}" — at most one field may have each role`;

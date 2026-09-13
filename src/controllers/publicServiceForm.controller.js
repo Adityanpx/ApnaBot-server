@@ -9,7 +9,6 @@ const businessService = require('../services/business.service');
 const bookingService = require('../services/booking.service');
 const whatsappService = require('../services/whatsapp.service');
 const placesService = require('../services/places.service');
-const distanceMatrixService = require('../services/distanceMatrix.service');
 const { toCamelCase } = require('../utils/caseConvert');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
@@ -139,6 +138,51 @@ const submitServiceForm = async (req, res, next) => {
       label: field.label,
       summaryLabel: field.label
     }));
+
+    // If this business has a distance-fare Vehicle Picker (icon_select +
+    // pickup/drop address fields), re-derive the fare server-side from the
+    // live route/vehicle data instead of trusting whatever the client
+    // submitted — the client never sends a fare at all in this flow, only
+    // field values, so this is where the fare enters `collected` at all.
+    const vehicleField = flowFields.find(f => f.type === 'icon_select' && f.source === 'vehicle_catalog');
+    const pickupField = flowFields.find(f => f.role === 'pickup');
+    const dropField = flowFields.find(f => f.role === 'drop');
+    if (vehicleField && pickupField && dropField) {
+      const tripTypeField = flowFields.find(f => f.role === 'tripType');
+      const numberOfDaysField = flowFields.find(f => f.role === 'numberOfDays');
+
+      const options = await bookingService.findDistanceBasedVehicleOptions(
+        formToken.businessId,
+        collected[pickupField.name],
+        collected[dropField.name],
+        tripTypeField ? collected[tripTypeField.name] : undefined,
+        numberOfDaysField ? collected[numberOfDaysField.name] : undefined
+      );
+      const matchedOption = options.find(opt => opt.name === collected[vehicleField.name]);
+      if (!matchedOption) {
+        logger.warn('Vehicle-quote re-verification failed at submit', {
+          businessId: formToken.businessId,
+          submittedVehicle: collected[vehicleField.name],
+          availableVehicles: options.map(opt => opt.name)
+        });
+        return errorResponse(res, 400, 'Could not verify a fare for the selected vehicle. Please go back and choose again.');
+      }
+
+      collected.vehicleFare = matchedOption.fare;
+      collected.fareSource = 'distance_estimate';
+      collected.distanceKm = matchedOption.distanceKm;
+      if (matchedOption.driverDaTotal) {
+        collected.driverDaTotal = matchedOption.driverDaTotal;
+        collected.driverDaDays = matchedOption.driverDaDays;
+        collected.driverDaPerDay = matchedOption.driverDaPerDay;
+      }
+      // Decorate the vehicle field's own display value with its per-km rate
+      // (e.g. "Swift Dzire (₹13/km)") rather than adding a separate line —
+      // buildBookingSummaryBody renders orderedFields verbatim, one line per
+      // field, so this is the one place that string can be attached to the
+      // vehicle's line specifically.
+      collected[vehicleField.name] = `${matchedOption.name} (₹${matchedOption.perKmRate}/km)`;
+    }
 
     const confirmationText = await bookingService.createBookingAndConfirmation(
       formToken.businessId,
@@ -295,10 +339,14 @@ const placeDetails = async (req, res, next) => {
 
 /**
  * POST /api/public/service-form/:token/vehicle-quote
- * Body: { pickupLat, pickupLng, dropLat, dropLng }
- * Same fare-rounding pattern as booking.service.js's distance-based vehicle
- * options (nearest ₹10) — no round-trip/driver-DA term here, since the web
- * form's address_autocomplete fields carry no tripType concept.
+ * Body: { pickupDescription, dropDescription, tripType, numberOfDays }
+ * Delegates to booking.service.js's findDistanceBasedVehicleOptions — the
+ * same distance-fare logic the graph/WhatsApp engine uses — instead of
+ * hand-rolling fare math a second time, so Round Trip's day-based distance
+ * estimate, driver DA, and real per_km_rate values all come from one place.
+ * That function requires business.enableDistanceFares to be turned on; if
+ * it isn't, this now returns an empty vehicleQuotes list rather than the
+ * unconditional per_km_rate quote this endpoint used to give.
  */
 const getVehicleQuote = async (req, res, next) => {
   try {
@@ -315,30 +363,23 @@ const getVehicleQuote = async (req, res, next) => {
       return errorResponse(res, 410, 'This booking link has already been used.');
     }
 
-    const { pickupLat, pickupLng, dropLat, dropLng } = req.body || {};
-    if ([pickupLat, pickupLng, dropLat, dropLng].some((v) => typeof v !== 'number' || Number.isNaN(v))) {
-      return errorResponse(res, 400, 'pickupLat, pickupLng, dropLat, dropLng must all be numbers');
+    const { pickupDescription, dropDescription, tripType, numberOfDays } = req.body || {};
+    if (typeof pickupDescription !== 'string' || !pickupDescription.trim() ||
+        typeof dropDescription !== 'string' || !dropDescription.trim()) {
+      return errorResponse(res, 400, 'pickupDescription and dropDescription must be non-empty strings');
     }
 
-    const distanceKm = await distanceMatrixService.getDistanceKm(`${pickupLat},${pickupLng}`, `${dropLat},${dropLng}`);
-    if (distanceKm === null) {
-      return errorResponse(res, 502, 'Could not calculate distance right now.');
-    }
+    const options = await bookingService.findDistanceBasedVehicleOptions(
+      formToken.businessId, pickupDescription, dropDescription, tripType, numberOfDays
+    );
 
-    const { data, error } = await supabase
-      .from('vehicles')
-      .select('id, custom_name, custom_photo_url, per_km_rate, catalog:vehicle_type_catalog(name, photo_url)')
-      .eq('business_id', formToken.businessId)
-      .eq('is_active', true)
-      .not('per_km_rate', 'is', null)
-      .order('order', { ascending: true });
-    if (error) throw error;
-
-    const vehicleQuotes = (data || []).map((vehicle) => ({
-      id: vehicle.id,
-      name: vehicle.custom_name || vehicle.catalog.name,
-      imageUrl: vehicle.custom_photo_url || vehicle.catalog.photo_url || null,
-      estimatedFare: Math.round((distanceKm * vehicle.per_km_rate) / 10) * 10
+    const distanceKm = options.length > 0 ? options[0].distanceKm : null;
+    const vehicleQuotes = options.map((option) => ({
+      id: option.vehicleId,
+      name: option.name,
+      imageUrl: option.photoUrl,
+      estimatedFare: option.fare,
+      perKmRate: option.perKmRate
     }));
 
     return successResponse(res, 200, { distanceKm, vehicleQuotes });

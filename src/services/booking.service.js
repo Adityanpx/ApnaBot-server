@@ -219,7 +219,8 @@ const findDistanceBasedVehicleOptions = async (businessId, pickupLocation, dropL
       seats: vehicle.catalog.seats || null,
       fare: baseFare + driverDaTotal,
       source: 'distance_estimate',
-      distanceKm: Math.round(distanceKm * 10) / 10
+      distanceKm: Math.round(distanceKm * 10) / 10,
+      perKmRate: vehicle.per_km_rate
     };
     if (driverDaTotal > 0) {
       option.driverDaIncluded = true;
@@ -714,6 +715,10 @@ module.exports = {
   deleteBookingSession,
   recordBookingLead,
   findMatchingVehicleOptions,
+  // Exported for publicServiceForm.controller.js's vehicle-quote endpoint —
+  // the only caller that needs the distance-estimate tier in isolation
+  // rather than via the route-fare-first findBestVehicleCarouselOptions.
+  findDistanceBasedVehicleOptions,
   getVehicleCarouselPreview,
   getPreviewCreditsStatus,
   checkAndConsumeManualPreviewCredit,
