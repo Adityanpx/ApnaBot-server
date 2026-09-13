@@ -816,6 +816,107 @@ const updateFlowFields = async (req, res, next) => {
   }
 };
 
+// Hardcoded starter templates for POST /flow-fields/load-starter-template,
+// keyed by business_category. Only categories with a real template belong
+// here — loadFlowFieldsStarterTemplate 404s for anything else rather than
+// inventing a template nobody asked for.
+const FLOW_FIELDS_STARTER_TEMPLATES = {
+  travels: [
+    {
+      name: 'trip_type',
+      type: 'radio',
+      label: 'Trip Type',
+      options: ['One Way', 'Round Trip', 'Local Rental'],
+      role: 'tripType',
+      required: true
+    },
+    {
+      name: 'pickup_location',
+      type: 'address_autocomplete',
+      label: 'Pickup Location',
+      role: 'pickup',
+      required: true
+    },
+    {
+      name: 'drop_location',
+      type: 'address_autocomplete',
+      label: 'Drop Location',
+      role: 'drop',
+      required: false
+    },
+    {
+      name: 'travel_date',
+      type: 'date',
+      label: 'Travel Date',
+      required: true
+    },
+    {
+      // No role: ROLE_ALLOWED_TYPES above only recognizes pickup/drop/
+      // tripType/numberOfDays, and nothing server-side reads a travelDate/
+      // returnDate role today — adding one here would just fail
+      // validateFlowFields the moment this template is PUT back.
+      name: 'return_date',
+      type: 'date',
+      label: 'Return Date',
+      visibleWhen: { field: 'trip_type', equals: 'Round Trip' },
+      required: true
+    },
+    {
+      // Placeholder options, not real pricing — this project has no fixed
+      // default package list (rental_packages is a real per-business DB
+      // table with owner-configured pricing). Owner is expected to edit
+      // these before going live.
+      name: 'rental_package',
+      type: 'dropdown',
+      label: 'Rental Package',
+      options: ['4 Hrs / 40 KM', '8 Hrs / 80 KM', '12 Hrs / 120 KM', 'Full Day (24 Hrs)', 'Custom'],
+      visibleWhen: { field: 'trip_type', equals: 'Local Rental' },
+      required: true
+    },
+    {
+      name: 'choose_a_vehicle',
+      type: 'icon_select',
+      label: 'Choose a Vehicle',
+      source: 'vehicle_catalog',
+      required: true
+    },
+    {
+      name: 'note',
+      type: 'textarea',
+      label: 'Note',
+      required: false
+    }
+  ]
+};
+
+/**
+ * POST /api/business/flow-fields/load-starter-template
+ * Body: { category }
+ * Returns a hardcoded starter flow_fields array for the given category.
+ * Does NOT save anything — the frontend shows this to the owner for
+ * review/editing, and PUT /flow-fields (already validated) is what actually
+ * persists it once confirmed.
+ */
+const loadFlowFieldsStarterTemplate = async (req, res, next) => {
+  try {
+    const { category } = req.body;
+
+    if (!category || typeof category !== 'string') {
+      return errorResponse(res, 400, 'category is required');
+    }
+
+    const template = FLOW_FIELDS_STARTER_TEMPLATES[category];
+    if (!template) {
+      return errorResponse(res, 404, 'No starter template available for this category yet');
+    }
+
+    return successResponse(res, 200, { fields: template });
+  } catch (error) {
+    logger.error('Error in loadFlowFieldsStarterTemplate:', error);
+    next(error);
+  }
+};
+
 /**
  * GET /api/business/vehicle-options
  * This business's active vehicles, for the flow-fields builder to preview
@@ -863,5 +964,6 @@ module.exports = {
   uploadProfileImage,
   getFlowFields,
   updateFlowFields,
+  loadFlowFieldsStarterTemplate,
   getVehicleOptions
 };

@@ -16,6 +16,7 @@ const { uploadSingle } = require('../middleware/upload.middleware');
 // GET    /dashboard-stats     → protect, requireBusiness, business.controller.getDashboardStats
 // GET    /flow-fields         → protect, requireBusiness, requireRole('owner'), business.controller.getFlowFields
 // PUT    /flow-fields         → protect, requireBusiness, requireRole('owner'), business.controller.updateFlowFields
+// POST   /flow-fields/load-starter-template → protect, requireBusiness, requireRole('owner'), business.controller.loadFlowFieldsStarterTemplate
 // GET    /vehicle-options     → protect, requireBusiness, requireRole('owner'), business.controller.getVehicleOptions
 // POST   /upload-image        → protect, requireBusiness, requireRole('owner'), upload, business.controller.uploadProfileImage
 
@@ -69,6 +70,17 @@ router.get('/flow-fields', protect, requireBusiness, requireRole('owner'), busin
 // PUT /flow-fields - Replace the business's web-form booking link field config
 // Body: { fields: [{ name, type, label, required, options?, visibleWhen? }] }
 router.put('/flow-fields', protect, requireBusiness, requireRole('owner'), businessController.updateFlowFields);
+
+// POST /flow-fields/load-starter-template - Body: { category }. Returns a
+// hardcoded starter flow_fields array for the category (does NOT save it) so
+// the owner can review/edit before confirming via PUT /flow-fields above.
+router.post(
+  '/flow-fields/load-starter-template',
+  protect,
+  requireBusiness,
+  requireRole('owner'),
+  businessController.loadFlowFieldsStarterTemplate
+);
 
 // GET /vehicle-options - This business's active vehicles, for the
 // flow-fields builder to preview icon_select fields (owner-only, matching
