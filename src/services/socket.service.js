@@ -1,9 +1,14 @@
 const { Server } = require('socket.io');
 const config = require('../config/env');
 const authService = require('./auth.service');
+const supabase = require('../config/supabase');
 const logger = require('../utils/logger');
 
 let io = null;
+
+// socket.id -> Set<customerId> currently being viewed by that staff socket
+// In-memory only, by design: presence doesn't need to survive a restart.
+const viewingBySocket = new Map();
 
 /**
  * Initialize Socket.io with the HTTP server
@@ -37,8 +42,20 @@ const initialize = (httpServer) => {
       socket.user = {
         userId: decoded.userId,
         businessId: decoded.businessId,
-        role: decoded.role
+        role: decoded.role,
+        name: null
       };
+
+      // JWT payload doesn't carry name; fetch it once per connection for presence display
+      if (decoded.userId) {
+        try {
+          const { data: user } = await supabase
+            .from('users').select('name').eq('id', decoded.userId).maybeSingle();
+          socket.user.name = user?.name || null;
+        } catch (err) {
+          logger.error('Failed to fetch user name for socket presence:', err);
+        }
+      }
 
       next();
     } catch (error) {
@@ -59,8 +76,40 @@ const initialize = (httpServer) => {
       logger.info(`Business ${businessId} connected to socket`);
     }
 
+    socket.on('conversation:viewing:start', ({ customerId } = {}) => {
+      if (!businessId || !customerId) return;
+      if (!viewingBySocket.has(socket.id)) viewingBySocket.set(socket.id, new Set());
+      viewingBySocket.get(socket.id).add(customerId);
+      emitToBusiness(businessId, 'conversation:viewer:joined', {
+        customerId,
+        staffId: userId,
+        staffName: socket.user.name
+      });
+    });
+
+    socket.on('conversation:viewing:stop', ({ customerId } = {}) => {
+      if (!businessId || !customerId) return;
+      viewingBySocket.get(socket.id)?.delete(customerId);
+      emitToBusiness(businessId, 'conversation:viewer:left', {
+        customerId,
+        staffId: userId,
+        staffName: socket.user.name
+      });
+    });
+
     socket.on('disconnect', () => {
       logger.info(`Socket disconnected: ${socket.id}`);
+      const viewing = viewingBySocket.get(socket.id);
+      if (viewing && businessId) {
+        for (const customerId of viewing) {
+          emitToBusiness(businessId, 'conversation:viewer:left', {
+            customerId,
+            staffId: userId,
+            staffName: socket.user.name
+          });
+        }
+      }
+      viewingBySocket.delete(socket.id);
     });
   });
 
