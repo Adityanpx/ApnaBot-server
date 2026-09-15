@@ -1579,6 +1579,7 @@ const receiveWebhook = async (req, res) => {
               business_id: tenant.businessId,
               customer_id: customer.id,
               customer_number: customerNumber,
+              flow_node_id: matchedNode.id,
               expires_at: expiresAt
             })
             .select('token')

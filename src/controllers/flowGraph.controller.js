@@ -10,6 +10,7 @@ const {
   validateConditionField
 } = require('../utils/flowGraphValidation');
 const { validateLabelTranslations } = require('../utils/bookingFieldValidation');
+const { validateFlowFields } = require('../utils/flowFieldsValidation');
 const { successResponse, errorResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
 const { toCamelCase } = require('../utils/caseConvert');
@@ -313,7 +314,7 @@ const createReplyNode = async (req, res, next) => {
 const updateReplyNode = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, hindiAliases, label, labelTranslations, force } = req.body || {};
+    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, hindiAliases, label, labelTranslations, formFields, force } = req.body || {};
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
@@ -338,6 +339,12 @@ const updateReplyNode = async (req, res, next) => {
     const labelTranslationsError = validateTranslationsMap(labelTranslations, 'labelTranslations');
     if (labelTranslationsError) {
       return errorResponse(res, 400, labelTranslationsError);
+    }
+    if (formFields !== undefined) {
+      const formFieldsError = validateFlowFields(formFields);
+      if (formFieldsError) {
+        return errorResponse(res, 400, formFieldsError);
+      }
     }
 
     // Switching a node's contentType away from buttons/list to text would
@@ -399,6 +406,7 @@ const updateReplyNode = async (req, res, next) => {
     if (imageUrl !== undefined) updateData.image_url = imageUrl || null;
     if (labelTranslations !== undefined) updateData.label_translations = labelTranslations || null;
     if (label !== undefined) updateData.label = label;
+    if (formFields !== undefined) updateData.form_fields = formFields;
     if (hindiAliases !== undefined) {
       updateData.hindi_aliases = hindiAliases.map(a => a.trim()).filter(Boolean);
     }

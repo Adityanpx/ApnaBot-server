@@ -29,9 +29,34 @@ const loadToken = async (token) => {
 };
 
 /**
+ * Resolves which field list a token should render/submit against. A token
+ * minted from a specific flow_node (flow_node_id set — see
+ * webhook.controller.js's web_form_trigger branch) uses that node's own
+ * form_fields when it has any configured; otherwise (no flow_node_id at all,
+ * a pre-migration token, or a node that exists but has no form_fields set)
+ * falls back to the business-wide businesses.flow_fields, same as before
+ * per-node fields existed. Kept as an explicit fallback chain rather than
+ * silently collapsing "node with no fields configured" into "business-wide
+ * default" without it being visible here.
+ */
+const resolveFlowFields = async (formToken, business) => {
+  if (formToken.flowNodeId) {
+    const { data: node, error } = await supabase
+      .from('flow_nodes').select('form_fields').eq('id', formToken.flowNodeId).maybeSingle();
+    if (error) throw error;
+    if (node?.form_fields && node.form_fields.length > 0) {
+      return node.form_fields;
+    }
+    return business.flowFields || [];
+  }
+  return business.flowFields || [];
+};
+
+/**
  * GET /api/public/service-form/:token
  * Returns just enough to render the form: the business's name and its
- * configured flow_fields — not the whole business row.
+ * configured fields (node-scoped form_fields when the token's flow node has
+ * any configured, else the business's flow_fields — see resolveFlowFields).
  */
 const getServiceForm = async (req, res, next) => {
   try {
@@ -55,7 +80,7 @@ const getServiceForm = async (req, res, next) => {
 
     return successResponse(res, 200, {
       businessName: business.name,
-      flowFields: business.flowFields || []
+      flowFields: await resolveFlowFields(formToken, business)
     });
   } catch (error) {
     logger.error('Error in getServiceForm:', error);
@@ -91,7 +116,7 @@ const submitServiceForm = async (req, res, next) => {
     if (!business) {
       return errorResponse(res, 404, 'This booking link is invalid.');
     }
-    const flowFields = business.flowFields || [];
+    const flowFields = await resolveFlowFields(formToken, business);
 
     // A required field hidden by an unmet visibleWhen condition (e.g.
     // "Number of days" when Trip Type isn't "Round Trip") must not block
@@ -113,7 +138,7 @@ const submitServiceForm = async (req, res, next) => {
 
       if (field.type === 'address_autocomplete') {
         // Value is a JSON string encoding { description, lat, lng } (see
-        // business.controller.js's VALID_FLOW_FIELD_TYPES doc comment) —
+        // utils/flowFieldsValidation.js's validateFlowFields doc comment) —
         // client-submitted, so never trust it's well-formed.
         let parsed;
         try {

@@ -197,7 +197,7 @@ const getFlowFields = async (businessId) => {
 /**
  * Replace a business's flowFields list
  * @param {string} businessId - The business ID
- * @param {Array} fields - Validated field list (see business.controller.js#validateFlowFields)
+ * @param {Array} fields - Validated field list (see utils/flowFieldsValidation.js#validateFlowFields)
  * @returns {Promise<Array|null>}
  */
 const updateFlowFields = async (businessId, fields) => {
