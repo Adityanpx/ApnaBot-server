@@ -95,7 +95,7 @@ const getBusiness = async (req, res, next) => {
  */
 const createBusiness = async (req, res, next) => {
   try {
-    const { name, businessCategory, displayName, address, city } = req.body;
+    const { name, businessCategory, subCategories, displayName, address, city } = req.body;
 
     // Check if user already has a business
     if (req.user.businessId) {
@@ -117,10 +117,33 @@ const createBusiness = async (req, res, next) => {
       return errorResponse(res, 400, `Invalid business category. Must be one of: ${enabledCategories.map((category) => category.value).join(', ')}`);
     }
 
+    // Validate sub-categories (only meaningful when businessCategory is
+    // 'multi_brand', but accepted/validated whenever present). A sub-category
+    // just needs to exist in the known category list (isKnownCategory) — it
+    // doesn't need to be independently enabled for direct signup, since it's
+    // tagging what this business also does rather than opening its own
+    // standalone signup path (e.g. 'cab' can be a sub-category tag even
+    // while direct 'cab' signup stays disabled).
+    if (subCategories !== undefined) {
+      if (!Array.isArray(subCategories) || subCategories.some((c) => typeof c !== 'string')) {
+        return errorResponse(res, 400, 'subCategories must be an array of category strings');
+      }
+      if (subCategories.includes('multi_brand')) {
+        return errorResponse(res, 400, "subCategories cannot include 'multi_brand'");
+      }
+      const allCategories = await businessCategoryService.getAllCategories();
+      const knownValues = new Set(allCategories.map((category) => category.value));
+      const unknownCategories = subCategories.filter((c) => !knownValues.has(c));
+      if (unknownCategories.length > 0) {
+        return errorResponse(res, 400, `Unknown sub-categories: ${unknownCategories.join(', ')}`);
+      }
+    }
+
     // Create business
     const business = await businessService.createBusiness(req.user.userId, {
       name,
       businessCategory,
+      subCategories,
       displayName,
       address,
       city

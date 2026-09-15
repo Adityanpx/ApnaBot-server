@@ -2,6 +2,7 @@ const supabase = require('../config/supabase');
 const { generateWebhookToken } = require('../utils/crypto');
 const { encrypt } = require('../utils/crypto');
 const { toCamelCase } = require('../utils/caseConvert');
+const { computeFeatureFlags } = require('../config/categoryFeatures');
 const logger = require('../utils/logger');
 
 const businessFieldMap = {
@@ -79,13 +80,14 @@ const getBusinessByPhoneNumberId = async (phoneNumberId) => {
  */
 const createBusiness = async (ownerUserId, data) => {
   try {
-    const { name, businessCategory, address, city, displayName } = data;
+    const { name, businessCategory, subCategories, address, city, displayName } = data;
 
     const webhookVerifyToken = generateWebhookToken();
 
     const { data: business, error } = await supabase.from('businesses').insert({
       name,
       business_category: businessCategory,
+      sub_categories: subCategories || [],
       address,
       city,
       display_name: displayName || name,
@@ -94,7 +96,7 @@ const createBusiness = async (ownerUserId, data) => {
       is_active: true,
       is_whatsapp_connected: false,
       booking_engine: 'graph',
-      enable_fleet: businessCategory === 'travels'
+      ...computeFeatureFlags({ businessCategory, subCategories })
     }).select().single();
     if (error) throw error;
 
