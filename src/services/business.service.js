@@ -9,6 +9,7 @@ const businessFieldMap = {
   profileImage: 'profile_image', upiId: 'upi_id', fallbackReply: 'fallback_reply',
   welcomeMessage: 'welcome_message',
   enableDistanceFares: 'enable_distance_fares', enableSmartFallback: 'enable_smart_fallback',
+  enableFleet: 'enable_fleet',
   roundTripPerDayKm: 'round_trip_per_day_km', roundTripDriverDaEnabled: 'round_trip_driver_da_enabled',
   roundTripDriverDaAmount: 'round_trip_driver_da_amount', disabledBookingFields: 'disabled_booking_fields',
   enabledLanguages: 'enabled_languages', welcomeMessageTranslations: 'welcome_message_translations',
@@ -92,7 +93,8 @@ const createBusiness = async (ownerUserId, data) => {
       webhook_verify_token: webhookVerifyToken,
       is_active: true,
       is_whatsapp_connected: false,
-      booking_engine: 'graph'
+      booking_engine: 'graph',
+      enable_fleet: businessCategory === 'travels'
     }).select().single();
     if (error) throw error;
 
