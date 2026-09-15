@@ -14,7 +14,7 @@ const getLocalizedText = (record, field, languageCode) => {
   if (languageCode) {
     const translations = record[`${field}Translations`] ?? record[`${field}_translations`];
     const translated = translations?.[languageCode];
-    if (translated !== undefined && translated !== null) {
+    if (translated !== undefined && translated !== null && String(translated).trim() !== '') {
       return translated;
     }
   }

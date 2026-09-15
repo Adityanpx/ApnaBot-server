@@ -39,6 +39,12 @@ const ESCAPE_KEYWORDS = new Set(['menu', 'cancel', 'exit', 'restart']);
 const STOP_KEYWORDS = new Set(['stop', 'unsubscribe']);
 const START_KEYWORDS = new Set(['start']);
 
+// replyKind values that trigger their own dedicated branch below. Any other
+// value on a matched 'reply' node (including null/undefined from bad data)
+// falls back to plain-text-reply behavior rather than silently sending no
+// reply text at all — see TRIGGER_REPLY_KINDS's use below.
+const TRIGGER_REPLY_KINDS = new Set(['booking_trigger', 'payment_trigger', 'web_form_trigger']);
+
 // Lets a customer re-open the language picker at any time, not just on their
 // very first message (see the change-language check in receiveWebhook, and
 // Step 12.6 below for the first-time version of this same picker).
@@ -1436,8 +1442,21 @@ const receiveWebhook = async (req, res) => {
     } else if (matchedNode) {
       triggeredRuleId = matchedNode.id;
 
-      if (matchedNode.replyKind === 'text') {
-        // Simple text reply (may also carry an image and/or buttons).
+      if (!TRIGGER_REPLY_KINDS.has(matchedNode.replyKind)) {
+        // Simple text reply (may also carry an image and/or buttons). Also
+        // the fallback for any replyKind that isn't one of the recognized
+        // trigger kinds (e.g. null) — falling through here with no branch
+        // ever setting replyText left it null all the way to Step 16,
+        // producing an empty interactive.body.text that Meta rejects
+        // outright. Found 2026-09-15 via a Multi-Brand Router node that
+        // shipped with replyKind=null from bad upstream data.
+        if (matchedNode.replyKind !== 'text') {
+          logger.warn('Reply node has unrecognized replyKind — falling back to text-reply behavior', {
+            businessId: tenant.businessId,
+            nodeId: matchedNode.id,
+            replyKind: matchedNode.replyKind
+          });
+        }
         const localizedReply = getLocalizedText(matchedNode, 'label', customer.preferredLanguage);
         replyText = applyMessageTemplateWithFooter(localizedReply, tenant, customer);
 
