@@ -487,6 +487,7 @@ const handlePaymentLinkPaid = async (payload) => {
         type: 'text',
         content: confirmationText,
         status: 'sent',
+        sender_type: 'bot',
         is_read: true
       }).select().single();
       if (msgErr) throw msgErr;

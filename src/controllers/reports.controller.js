@@ -47,7 +47,32 @@ const getRevenueByTag = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/reports/response-time?period=week|month
+ */
+const getResponseTime = async (req, res, next) => {
+  try {
+    const businessId = req.user.businessId;
+    if (!businessId) {
+      return errorResponse(res, 404, 'No business found');
+    }
+
+    const { period } = req.query;
+    if (!VALID_PERIODS.includes(period)) {
+      return errorResponse(res, 400, `Invalid period. Must be one of: ${VALID_PERIODS.join(', ')}`);
+    }
+
+    const responseTime = await reportsService.getResponseTimeStats(businessId, period);
+
+    return successResponse(res, 200, responseTime);
+  } catch (error) {
+    logger.error('Error in getResponseTime:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getSummary,
-  getRevenueByTag
+  getRevenueByTag,
+  getResponseTime
 };

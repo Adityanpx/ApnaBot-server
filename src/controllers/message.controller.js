@@ -178,6 +178,7 @@ const sendMessage = async (req, res, next) => {
       type: 'text',
       content: message.trim(),
       status: 'sent',
+      sender_type: 'human',
       is_read: true
     }).select().single();
     if (msgErr) throw msgErr;

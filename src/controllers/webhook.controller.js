@@ -169,6 +169,7 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
         content: introText,
         status: 'sent',
         triggered_rule_id: triggeredRuleId,
+        sender_type: 'bot',
         is_read: true
       }, 'carousel intro');
 
@@ -225,6 +226,7 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
           content: caption,
           status: 'sent',
           triggered_rule_id: triggeredRuleId,
+          sender_type: 'bot',
           is_read: true
         }, 'carousel vehicle');
 
@@ -287,6 +289,7 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
         content: otherOptionsText,
         status: 'sent',
         triggered_rule_id: triggeredRuleId,
+        sender_type: 'bot',
         is_read: true
       }, 'carousel other-options');
 
@@ -346,6 +349,7 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
     content: templatedLabel,
     status: 'sent',
     triggered_rule_id: triggeredRuleId,
+    sender_type: 'bot',
     is_read: true
   });
 
@@ -407,6 +411,7 @@ const sendFallbackTextMessage = async (ctx, text) => {
     content: text,
     status: 'sent',
     triggered_rule_id: triggeredRuleId,
+    sender_type: 'bot',
     is_read: true
   });
   await addToWhatsappQueue({
@@ -727,6 +732,7 @@ const receiveWebhook = async (req, res) => {
         type: 'text',
         content: stopText,
         status: 'sent',
+        sender_type: 'bot',
         is_read: true
       });
       await addToWhatsappQueue({
@@ -775,6 +781,7 @@ const receiveWebhook = async (req, res) => {
         type: 'text',
         content: startText,
         status: 'sent',
+        sender_type: 'bot',
         is_read: true
       });
       await addToWhatsappQueue({
@@ -847,6 +854,7 @@ const receiveWebhook = async (req, res) => {
           type: 'text',
           content: onlyLanguageText,
           status: 'sent',
+          sender_type: 'bot',
           is_read: true
         });
         await addToWhatsappQueue({
@@ -900,6 +908,7 @@ const receiveWebhook = async (req, res) => {
         type: 'text',
         content: languagePromptText,
         status: 'sent',
+        sender_type: 'bot',
         is_read: true
       });
       await addToWhatsappQueue({
@@ -969,6 +978,7 @@ const receiveWebhook = async (req, res) => {
           type: 'text',
           content: cancelText,
           status: 'sent',
+          sender_type: 'bot',
           is_read: true
         });
         await addToWhatsappQueue({
@@ -1092,6 +1102,7 @@ const receiveWebhook = async (req, res) => {
           content: confirmationText,
           status: 'sent',
           triggered_rule_id: activeSession.ruleId,
+          sender_type: 'bot',
           is_read: true
         });
         await addToWhatsappQueue({
@@ -1149,6 +1160,7 @@ const receiveWebhook = async (req, res) => {
               content: result,
               status: 'sent',
               triggered_rule_id: activeSession.ruleId,
+              sender_type: 'bot',
               is_read: true
             });
             await addToWhatsappQueue({
@@ -1226,6 +1238,7 @@ const receiveWebhook = async (req, res) => {
           type: 'text',
           content: languagePromptText,
           status: 'sent',
+          sender_type: 'bot',
           is_read: true
         });
         await addToWhatsappQueue({
@@ -1331,6 +1344,7 @@ const receiveWebhook = async (req, res) => {
           type: 'text',
           content: greetingReplyText,
           status: 'sent',
+          sender_type: 'bot',
           is_read: true
         });
 
@@ -1511,6 +1525,7 @@ const receiveWebhook = async (req, res) => {
               content: confirmationText,
               status: 'sent',
               triggered_rule_id: matchedNode.id,
+              sender_type: 'bot',
               is_read: true
             });
             await addToWhatsappQueue({
@@ -1652,6 +1667,7 @@ const receiveWebhook = async (req, res) => {
       content: replyText,
       status: 'sent',
       triggered_rule_id: triggeredRuleId,
+      sender_type: 'bot',
       is_read: true
     });
 
