@@ -11,6 +11,7 @@ const businessFieldMap = {
   welcomeMessage: 'welcome_message',
   enableDistanceFares: 'enable_distance_fares', enableSmartFallback: 'enable_smart_fallback',
   enableFleet: 'enable_fleet',
+  vipEnabled: 'vip_enabled', vipCriteria: 'vip_criteria', vipThreshold: 'vip_threshold',
   roundTripPerDayKm: 'round_trip_per_day_km', roundTripDriverDaEnabled: 'round_trip_driver_da_enabled',
   roundTripDriverDaAmount: 'round_trip_driver_da_amount', disabledBookingFields: 'disabled_booking_fields',
   enabledLanguages: 'enabled_languages', welcomeMessageTranslations: 'welcome_message_translations',

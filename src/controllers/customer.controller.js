@@ -2,9 +2,15 @@ const supabase = require('../config/supabase');
 const { successResponse, errorResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
 const { toCamelCase } = require('../utils/caseConvert');
+const businessService = require('../services/business.service');
 const logger = require('../utils/logger');
 
 const WINDOW_DURATION_MS = 24 * 60 * 60 * 1000;
+
+// A booking only counts toward VIP status (either criteria) once it actually
+// went through — cancelled/pending bookings aren't "business done" with this
+// customer. Confirmed with the user rather than guessed.
+const BOOKING_STATUSES_FOR_VIP = ['confirmed', 'completed'];
 
 // windowExpiresAt is derived, not stored — recomputed at read time from last_message_at
 const withWindowExpiresAt = (customer) => ({
@@ -13,6 +19,34 @@ const withWindowExpiresAt = (customer) => ({
     ? new Date(new Date(customer.lastMessageAt).getTime() + WINDOW_DURATION_MS).toISOString()
     : null
 });
+
+// Mirrors broadcast.controller.js's exact send-audience filter
+// (opted_in=true AND is_blocked=false) — kept in one place so the two can't
+// drift apart. Takes a raw (snake_case) customer row.
+const isBroadcastEligible = (customer) => customer.opted_in === true && customer.is_blocked !== true;
+
+const buildBookingStatsByCustomer = (bookingRows) => {
+  const stats = {};
+  for (const row of bookingRows || []) {
+    const stat = stats[row.customer_id] || { count: 0, spend: 0 };
+    stat.count += 1;
+    stat.spend += Number(row.fare_amount) || 0;
+    stats[row.customer_id] = stat;
+  }
+  return stats;
+};
+
+// isVip is never stored — always computed live against the business's
+// current vip_enabled/vip_criteria/vip_threshold. Uses fare_amount (the
+// booking's actual value) for 'spend', not payment_amount (which is only the
+// advance-payment-due amount and is 0/unset for most bookings).
+const computeIsVip = (business, stat) => {
+  if (!business?.vipEnabled || !business.vipCriteria || business.vipThreshold === null || business.vipThreshold === undefined) {
+    return false;
+  }
+  const value = business.vipCriteria === 'spend' ? stat.spend : stat.count;
+  return value >= business.vipThreshold;
+};
 
 /**
  * GET /api/customers
@@ -42,10 +76,73 @@ const getCustomers = async (req, res, next) => {
       .range((pageNum - 1) * limitNum, pageNum * limitNum - 1);
     if (error) throw error;
 
+    const business = await businessService.getBusinessById(businessId);
+
+    // One grouped query for just this page's customer ids, not one query per row.
+    let bookingStatsByCustomer = {};
+    if (business?.vipEnabled && data && data.length > 0) {
+      const customerIds = data.map((c) => c.id);
+      const { data: bookingRows, error: bookingErr } = await supabase
+        .from('bookings').select('customer_id, fare_amount')
+        .eq('business_id', businessId).in('customer_id', customerIds).in('status', BOOKING_STATUSES_FOR_VIP);
+      if (bookingErr) throw bookingErr;
+      bookingStatsByCustomer = buildBookingStatsByCustomer(bookingRows);
+    }
+
+    const customers = (data || []).map((c) => withWindowExpiresAt({
+      ...toCamelCase(c),
+      isVip: computeIsVip(business, bookingStatsByCustomer[c.id] || { count: 0, spend: 0 }),
+      broadcastEligible: isBroadcastEligible(c)
+    }));
+
     const pagination = getPagination(count, pageNum, limitNum);
-    return successResponse(res, 200, { customers: (data || []).map(toCamelCase).map(withWindowExpiresAt), pagination });
+    return successResponse(res, 200, { customers, pagination });
   } catch (error) {
     logger.error('Error in getCustomers:', error);
+    next(error);
+  }
+};
+
+/**
+ * GET /api/customers/summary
+ * Aggregate counts (total/vip/optedIn/broadcastEligible) against the
+ * business's FULL customer set — independent of whatever page/limit the
+ * list view is currently using.
+ */
+const getCustomerSummary = async (req, res, next) => {
+  try {
+    const businessId = req.user.businessId;
+
+    const [totalRes, optedInRes, broadcastEligibleRes] = await Promise.all([
+      supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId),
+      supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).eq('opted_in', true),
+      supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).eq('opted_in', true).eq('is_blocked', false)
+    ]);
+    if (totalRes.error) throw totalRes.error;
+    if (optedInRes.error) throw optedInRes.error;
+    if (broadcastEligibleRes.error) throw broadcastEligibleRes.error;
+
+    const business = await businessService.getBusinessById(businessId);
+
+    let vip = 0;
+    if (business?.vipEnabled && business.vipCriteria && business.vipThreshold !== null && business.vipThreshold !== undefined) {
+      const { data: bookingRows, error: bookingErr } = await supabase
+        .from('bookings').select('customer_id, fare_amount')
+        .eq('business_id', businessId).in('status', BOOKING_STATUSES_FOR_VIP);
+      if (bookingErr) throw bookingErr;
+
+      const statsByCustomer = buildBookingStatsByCustomer(bookingRows);
+      vip = Object.values(statsByCustomer).filter((stat) => computeIsVip(business, stat)).length;
+    }
+
+    return successResponse(res, 200, {
+      total: totalRes.count || 0,
+      vip,
+      optedIn: optedInRes.count || 0,
+      broadcastEligible: broadcastEligibleRes.count || 0
+    });
+  } catch (error) {
+    logger.error('Error in getCustomerSummary:', error);
     next(error);
   }
 };
@@ -222,10 +319,12 @@ const toggleCustomerOptIn = async (req, res, next) => {
 
 module.exports = {
   getCustomers,
+  getCustomerSummary,
   getCustomerById,
   updateCustomer,
   blockCustomer,
   unblockCustomer,
   toggleCustomerOptIn,
-  withWindowExpiresAt
+  withWindowExpiresAt,
+  isBroadcastEligible
 };
