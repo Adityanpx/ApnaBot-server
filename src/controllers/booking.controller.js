@@ -12,7 +12,7 @@ const bookingService = require('../services/booking.service');
  */
 const getBookings = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, status, date, customerNumber } = req.query;
+    const { page = 1, limit = 20, status, date, customerNumber, customerId } = req.query;
     const businessId = req.user.businessId;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
@@ -36,6 +36,10 @@ const getBookings = async (req, res, next) => {
 
     if (customerNumber) {
       query = query.ilike('customer_number', `%${customerNumber}%`);
+    }
+
+    if (customerId) {
+      query = query.eq('customer_id', customerId);
     }
 
     const { data, error, count } = await query
