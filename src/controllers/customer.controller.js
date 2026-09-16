@@ -58,11 +58,12 @@ const computeIsVip = (business, stat) => {
  * GET /api/customers
  * List all customers for business — paginated + searchable by name or number.
  * Optional filters: isBlocked ('true'/'false'), optedIn ('true'/'false'),
- * broadcastEligible ('true'), isVip ('true').
+ * broadcastEligible ('true'), isVip ('true'), pipelineStage
+ * ('new'/'contacted'/'converted'/'lost').
  */
 const getCustomers = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, search, isBlocked, optedIn, broadcastEligible, isVip } = req.query;
+    const { page = 1, limit = 20, search, isBlocked, optedIn, broadcastEligible, isVip, pipelineStage } = req.query;
     const businessId = req.user.businessId;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
@@ -91,6 +92,12 @@ const getCustomers = async (req, res, next) => {
       // Mirrors isBroadcastEligible() below — opted_in && !is_blocked are
       // both real columns, so this filters at the query level like isBlocked.
       query = query.eq('opted_in', true).eq('is_blocked', false);
+    }
+    if (pipelineStage !== undefined) {
+      if (!PIPELINE_STAGES.includes(pipelineStage)) {
+        return errorResponse(res, 400, `pipelineStage must be one of: ${PIPELINE_STAGES.join(', ')}`);
+      }
+      query = query.eq('pipeline_stage', pipelineStage);
     }
 
     query = query.order('last_message_at', { ascending: false });
