@@ -12,4 +12,7 @@ router.get('/revenue-by-tag', protect, requireBusiness, reportsController.getRev
 // GET /response-time - Average/median minutes to a human (non-bot) reply, with sample size
 router.get('/response-time', protect, requireBusiness, reportsController.getResponseTime);
 
+// GET /funnel - Current snapshot count of customers per pipeline stage
+router.get('/funnel', protect, requireBusiness, reportsController.getFunnel);
+
 module.exports = router;

@@ -5,6 +5,13 @@ const { toCamelCase } = require('../utils/caseConvert');
 const logger = require('../utils/logger');
 const socketService = require('../services/socket.service');
 const bookingService = require('../services/booking.service');
+const customerPipelineService = require('../services/customerPipeline.service');
+
+// Statuses that count as the Contacted->Converted trigger (see
+// customerPipeline.service.js) — mirrors reports.service.js's
+// CONFIRMED_STATUSES, kept local since the two files don't otherwise share
+// constants.
+const CONVERTING_STATUSES = ['confirmed', 'completed'];
 
 /**
  * GET /api/bookings
@@ -107,6 +114,10 @@ const updateBookingStatus = async (req, res, next) => {
     const { data: booking, error } = await supabase
       .from('bookings').update({ status }).eq('id', id).select().single();
     if (error) throw error;
+
+    if (CONVERTING_STATUSES.includes(status)) {
+      await customerPipelineService.advancePipelineStage(booking.customer_id, 'converted');
+    }
 
     try {
       socketService.emitToBusiness(businessId, 'booking_updated', {

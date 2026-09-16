@@ -6,6 +6,7 @@ const { getPagination } = require('../utils/pagination');
 const { toCamelCase } = require('../utils/caseConvert');
 const { withWindowExpiresAt } = require('./customer.controller');
 const { INDEFINITE_PAUSE_SENTINEL, isIndefinitePause } = require('../utils/botPause');
+const customerPipelineService = require('../services/customerPipeline.service');
 const logger = require('../utils/logger');
 
 /**
@@ -196,6 +197,11 @@ const sendMessage = async (req, res, next) => {
     });
 
     logger.info(`Manual message queued to ${customerNumber} for business ${businessId}`);
+
+    // A genuine staff reply is the New->Contacted trigger (see
+    // customerPipeline.service.js) — a no-op if the customer is already past
+    // 'new' or has been manually marked 'lost'.
+    await customerPipelineService.advancePipelineStage(customer.id, 'contacted');
 
     // A staff reply implies the bot should stay quiet for this customer for
     // a while — pause it the same way the explicit pause endpoint does.

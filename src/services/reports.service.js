@@ -2,6 +2,8 @@ const supabase = require('../config/supabase');
 
 const CONFIRMED_STATUSES = ['confirmed', 'completed'];
 
+const PIPELINE_STAGES = ['new', 'contacted', 'converted', 'lost'];
+
 // Longest gap between an unanswered inbound message and the human reply that
 // finally resolves it that we'll still count as "the reply to that message."
 // Chosen to comfortably span a normal weekend/overnight gap (Fri night ->
@@ -128,6 +130,28 @@ const getRevenueByTag = async (businessId) => {
   }
 
   return Object.values(statsByTag).sort((a, b) => b.revenue - a.revenue);
+};
+
+/**
+ * GET /reports/funnel — current snapshot count of customers per pipeline
+ * stage, business-wide. Deliberately a point-in-time count, not a true
+ * time-scoped funnel (which would need a stage-history table tracking when
+ * each customer entered each stage) — that's real added schema/write cost
+ * for a trend nobody's asked to see yet; revisit if that changes.
+ * Always returns all 4 stages, even ones with 0 customers, so the frontend
+ * can draw a complete funnel without special-casing missing entries.
+ */
+const getPipelineFunnel = async (businessId) => {
+  const { data, error } = await supabase
+    .from('customers').select('pipeline_stage').eq('business_id', businessId);
+  if (error) throw error;
+
+  const counts = Object.fromEntries(PIPELINE_STAGES.map((stage) => [stage, 0]));
+  for (const row of data || []) {
+    if (counts[row.pipeline_stage] !== undefined) counts[row.pipeline_stage] += 1;
+  }
+
+  return PIPELINE_STAGES.map((stage) => ({ stage, count: counts[stage] }));
 };
 
 /**
@@ -264,5 +288,6 @@ const getResponseTimeStats = async (businessId, period) => {
 module.exports = {
   getReportsSummary,
   getRevenueByTag,
-  getResponseTimeStats
+  getResponseTimeStats,
+  getPipelineFunnel
 };

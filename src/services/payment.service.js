@@ -7,6 +7,7 @@ const socketService = require('./socket.service');
 const subscriptionService = require('./subscription.service');
 const tenantService = require('./tenant.service');
 const subscriptionNotifications = require('./subscriptionNotifications.service');
+const customerPipelineService = require('./customerPipeline.service');
 const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
 const { toCamelCase } = require('../utils/caseConvert');
 const logger = require('../utils/logger');
@@ -454,6 +455,11 @@ const handlePaymentLinkPaid = async (payload) => {
       }
     }).eq('id', booking.id);
     if (updateErr) throw updateErr;
+
+    // Contacted->Converted trigger (see customerPipeline.service.js) — the
+    // other place a booking can reach 'confirmed'/'completed', alongside
+    // booking.controller.js#updateBookingStatus.
+    await customerPipelineService.advancePipelineStage(booking.customer_id, 'converted');
 
     logger.info('Payment completed for booking:', booking.id);
 

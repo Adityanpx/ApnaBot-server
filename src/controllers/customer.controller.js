@@ -12,6 +12,12 @@ const WINDOW_DURATION_MS = 24 * 60 * 60 * 1000;
 // customer. Confirmed with the user rather than guessed.
 const BOOKING_STATUSES_FOR_VIP = ['confirmed', 'completed'];
 
+// Manual-override values for updateCustomer's pipelineStage — always allowed
+// regardless of the current stage. This is the explicit human action that
+// customerPipeline.service.js's rank guard exists to defer to, so no
+// forward-only check applies here.
+const PIPELINE_STAGES = ['new', 'contacted', 'converted', 'lost'];
+
 // windowExpiresAt is derived, not stored — recomputed at read time from last_message_at
 const withWindowExpiresAt = (customer) => ({
   ...customer,
@@ -204,12 +210,12 @@ const getCustomerById = async (req, res, next) => {
 
 /**
  * PUT /api/customers/:id
- * Update customer name, tags, notes
+ * Update customer name, tags, notes, pipelineStage
  */
 const updateCustomer = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { name, tags, notes } = req.body;
+    const { name, tags, notes, pipelineStage } = req.body;
     const businessId = req.user.businessId;
 
     const { data: existing, error: findErr } = await supabase
@@ -232,6 +238,12 @@ const updateCustomer = async (req, res, next) => {
       updateData.tags = tags.map(t => t.trim()).filter(Boolean);
     }
     if (notes !== undefined) updateData.notes = notes;
+    if (pipelineStage !== undefined) {
+      if (!PIPELINE_STAGES.includes(pipelineStage)) {
+        return errorResponse(res, 400, `pipelineStage must be one of: ${PIPELINE_STAGES.join(', ')}`);
+      }
+      updateData.pipeline_stage = pipelineStage;
+    }
 
     const { data: customer, error } = await supabase
       .from('customers').update(updateData).eq('id', id).select().single();

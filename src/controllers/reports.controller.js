@@ -71,8 +71,28 @@ const getResponseTime = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/reports/funnel
+ */
+const getFunnel = async (req, res, next) => {
+  try {
+    const businessId = req.user.businessId;
+    if (!businessId) {
+      return errorResponse(res, 404, 'No business found');
+    }
+
+    const funnel = await reportsService.getPipelineFunnel(businessId);
+
+    return successResponse(res, 200, funnel);
+  } catch (error) {
+    logger.error('Error in getFunnel:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getSummary,
   getRevenueByTag,
-  getResponseTime
+  getResponseTime,
+  getFunnel
 };
