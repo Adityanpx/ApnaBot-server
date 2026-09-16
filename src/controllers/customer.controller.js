@@ -50,14 +50,22 @@ const computeIsVip = (business, stat) => {
 
 /**
  * GET /api/customers
- * List all customers for business — paginated + searchable by name or number
+ * List all customers for business — paginated + searchable by name or number.
+ * Optional filters: isBlocked ('true'/'false'), optedIn ('true'/'false'),
+ * broadcastEligible ('true'), isVip ('true').
  */
 const getCustomers = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, search, isBlocked } = req.query;
+    const { page = 1, limit = 20, search, isBlocked, optedIn, broadcastEligible, isVip } = req.query;
     const businessId = req.user.businessId;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
+    // isVip depends on aggregated booking data, not a real column, so it
+    // can't be a .eq() filter — we have to know every matching row's VIP
+    // status before we can correctly slice a page. When it's requested we
+    // fetch the full filtered set (no .range()) and paginate in memory
+    // instead of at the query level.
+    const filterVip = isVip === 'true';
 
     let query = supabase.from('customers').select('*', { count: 'exact' }).eq('business_id', businessId);
 
@@ -70,15 +78,26 @@ const getCustomers = async (req, res, next) => {
     if (isBlocked !== undefined) {
       query = query.eq('is_blocked', isBlocked === 'true');
     }
+    if (optedIn !== undefined) {
+      query = query.eq('opted_in', optedIn === 'true');
+    }
+    if (broadcastEligible === 'true') {
+      // Mirrors isBroadcastEligible() below — opted_in && !is_blocked are
+      // both real columns, so this filters at the query level like isBlocked.
+      query = query.eq('opted_in', true).eq('is_blocked', false);
+    }
 
-    const { data, error, count } = await query
-      .order('last_message_at', { ascending: false })
-      .range((pageNum - 1) * limitNum, pageNum * limitNum - 1);
+    query = query.order('last_message_at', { ascending: false });
+    if (!filterVip) {
+      query = query.range((pageNum - 1) * limitNum, pageNum * limitNum - 1);
+    }
+
+    const { data, error, count } = await query;
     if (error) throw error;
 
     const business = await businessService.getBusinessById(businessId);
 
-    // One grouped query for just this page's customer ids, not one query per row.
+    // One grouped query for just the fetched customer ids, not one query per row.
     let bookingStatsByCustomer = {};
     if (business?.vipEnabled && data && data.length > 0) {
       const customerIds = data.map((c) => c.id);
@@ -89,13 +108,20 @@ const getCustomers = async (req, res, next) => {
       bookingStatsByCustomer = buildBookingStatsByCustomer(bookingRows);
     }
 
-    const customers = (data || []).map((c) => withWindowExpiresAt({
+    let customers = (data || []).map((c) => withWindowExpiresAt({
       ...toCamelCase(c),
       isVip: computeIsVip(business, bookingStatsByCustomer[c.id] || { count: 0, spend: 0 }),
       broadcastEligible: isBroadcastEligible(c)
     }));
 
-    const pagination = getPagination(count, pageNum, limitNum);
+    let total = count || 0;
+    if (filterVip) {
+      customers = customers.filter((c) => c.isVip);
+      total = customers.length;
+      customers = customers.slice((pageNum - 1) * limitNum, pageNum * limitNum);
+    }
+
+    const pagination = getPagination(total, pageNum, limitNum);
     return successResponse(res, 200, { customers, pagination });
   } catch (error) {
     logger.error('Error in getCustomers:', error);

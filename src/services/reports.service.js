@@ -81,6 +81,47 @@ const getReportsSummary = async (businessId, period) => {
   };
 };
 
+const buildRevenueByCustomer = (bookingRows) => {
+  const revenue = {};
+  for (const row of bookingRows || []) {
+    revenue[row.customer_id] = (revenue[row.customer_id] || 0) + (Number(row.fare_amount) || 0);
+  }
+  return revenue;
+};
+
+/**
+ * For each distinct tag across this business's customers, sums fare_amount
+ * across that tag's customers' confirmed/completed bookings. A customer with
+ * multiple tags contributes its full revenue to each tag (not split). A
+ * customer with zero tags is excluded entirely.
+ */
+const getRevenueByTag = async (businessId) => {
+  const [customersRes, bookingsRes] = await Promise.all([
+    supabase.from('customers').select('id, tags').eq('business_id', businessId),
+    supabase.from('bookings').select('customer_id, fare_amount')
+      .eq('business_id', businessId).in('status', CONFIRMED_STATUSES)
+  ]);
+  if (customersRes.error) throw customersRes.error;
+  if (bookingsRes.error) throw bookingsRes.error;
+
+  const revenueByCustomer = buildRevenueByCustomer(bookingsRes.data);
+  const taggedCustomers = (customersRes.data || []).filter((c) => (c.tags || []).length > 0);
+
+  const statsByTag = {};
+  for (const customer of taggedCustomers) {
+    const revenue = revenueByCustomer[customer.id] || 0;
+    for (const tag of customer.tags) {
+      const stat = statsByTag[tag] || { tag, customerCount: 0, revenue: 0 };
+      stat.customerCount += 1;
+      stat.revenue += revenue;
+      statsByTag[tag] = stat;
+    }
+  }
+
+  return Object.values(statsByTag).sort((a, b) => b.revenue - a.revenue);
+};
+
 module.exports = {
-  getReportsSummary
+  getReportsSummary,
+  getRevenueByTag
 };

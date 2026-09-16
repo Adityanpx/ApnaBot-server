@@ -28,6 +28,26 @@ const getSummary = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/reports/revenue-by-tag
+ */
+const getRevenueByTag = async (req, res, next) => {
+  try {
+    const businessId = req.user.businessId;
+    if (!businessId) {
+      return errorResponse(res, 404, 'No business found');
+    }
+
+    const revenueByTag = await reportsService.getRevenueByTag(businessId);
+
+    return successResponse(res, 200, revenueByTag);
+  } catch (error) {
+    logger.error('Error in getRevenueByTag:', error);
+    next(error);
+  }
+};
+
 module.exports = {
-  getSummary
+  getSummary,
+  getRevenueByTag
 };
