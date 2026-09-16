@@ -14,6 +14,7 @@ const { toCamelCase } = require('../utils/caseConvert');
 const { applyMessageTemplate, applyMessageTemplateWithFooter } = require('../utils/messageTemplating');
 const { LANGUAGE_CATALOG, isValidLanguageCode } = require('../utils/languageCatalog');
 const { getLocalizedText } = require('../utils/localization');
+const { getSystemMessage } = require('../utils/systemMessages');
 const { isIndefinitePause } = require('../utils/botPause');
 const logger = require('../utils/logger');
 
@@ -1084,7 +1085,7 @@ const receiveWebhook = async (req, res) => {
             stack: finalizeError.stack
           });
 
-          const fallbackText = 'Sorry, something went wrong confirming your booking — our team will reach out to you shortly.';
+          const fallbackText = getSystemMessage('bookingConfirmFailedFallback', customer.preferredLanguage);
           await sendFallbackTextMessage(
             { tenant, customer, customerNumber, triggeredRuleId: activeSession.ruleId },
             fallbackText
@@ -1510,7 +1511,7 @@ const receiveWebhook = async (req, res) => {
 
               await sendFallbackTextMessage(
                 { tenant, customer, customerNumber, triggeredRuleId: matchedNode.id },
-                'Sorry, something went wrong confirming your booking — our team will reach out to you shortly.'
+                getSystemMessage('bookingConfirmFailedFallback', customer.preferredLanguage)
               );
 
               return; // Do not run rule matching
@@ -1570,14 +1571,14 @@ const receiveWebhook = async (req, res) => {
 
           await sendFallbackTextMessage(
             { tenant, customer, customerNumber, triggeredRuleId: matchedNode.id },
-            'Sorry, something went wrong confirming your booking — our team will reach out to you shortly.'
+            getSystemMessage('bookingConfirmFailedFallback', customer.preferredLanguage)
           );
 
           return; // Do not run rule matching
         }
 
       } else if (matchedNode.replyKind === 'payment_trigger') {
-        replyText = applyMessageTemplateWithFooter(matchedNode.label, tenant, customer) || 'Please complete your payment.';
+        replyText = applyMessageTemplateWithFooter(matchedNode.label, tenant, customer) || getSystemMessage('paymentTriggerDefault', customer.preferredLanguage);
 
       } else if (matchedNode.replyKind === 'web_form_trigger') {
         // Alternative to a Meta WhatsApp Flow: send a link to a plain
@@ -1603,11 +1604,11 @@ const receiveWebhook = async (req, res) => {
 
           const formLink = `${config.FRONTEND_URL}/book/${formToken.token}`;
           replyText = applyMessageTemplateWithFooter(
-            'Tap below to fill in your request. This link expires in 30 minutes.',
+            getSystemMessage('webFormPrompt', customer.preferredLanguage),
             tenant,
             customer
           );
-          ctaButton = { buttonText: 'Fill booking form', url: formLink };
+          ctaButton = { buttonText: getSystemMessage('webFormButtonText', customer.preferredLanguage), url: formLink };
         } catch (webFormError) {
           logger.error('web_form_trigger: error generating booking form link', {
             businessId: tenant.businessId,
@@ -1619,7 +1620,7 @@ const receiveWebhook = async (req, res) => {
 
           await sendFallbackTextMessage(
             { tenant, customer, customerNumber, triggeredRuleId: matchedNode.id },
-            'Sorry, something went wrong generating your booking link — our team will reach out to you shortly.'
+            getSystemMessage('webFormLinkFailedFallback', customer.preferredLanguage)
           );
 
           return; // Do not run rule matching
@@ -1641,7 +1642,7 @@ const receiveWebhook = async (req, res) => {
         }
       }
 
-      replyText = smartReply || applyMessageTemplate(tenant.fallbackReply, tenant, customer) || 'Thank you for your message. We will get back to you soon.';
+      replyText = smartReply || applyMessageTemplate(tenant.fallbackReply, tenant, customer) || getSystemMessage('genericFallbackReply', customer.preferredLanguage);
 
       // Attach the business's greeting/menu buttons (if one is configured)
       // so the customer has a tappable way forward instead of a dead-end
@@ -1753,7 +1754,7 @@ const receiveWebhook = async (req, res) => {
           phoneNumberId: tenant.phoneNumberId,
           encryptedAccessToken: tenant.accessToken,
           to: customerNumber,
-          message: 'Sorry, our location is not set up yet.',
+          message: getSystemMessage('locationNotConfigured', customer.preferredLanguage),
           type: 'text',
           messageId: outboundMsg.id
         });

@@ -24,6 +24,7 @@ const businessService = require('../services/business.service');
 const { GREETING_KEYWORDS } = require('./webhook.controller');
 const { applyMessageTemplate, applyMessageTemplateWithFooter } = require('../utils/messageTemplating');
 const { getLocalizedText } = require('../utils/localization');
+const { getSystemMessage } = require('../utils/systemMessages');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
@@ -214,7 +215,7 @@ const handleNoActiveSession = async (business, messageText, buttonReplyId) => {
     }
 
     if (matchedNode.replyKind === 'payment_trigger') {
-      const replyText = applyMessageTemplateWithFooter(matchedNode.label, business, null) || 'Please complete your payment.';
+      const replyText = applyMessageTemplateWithFooter(matchedNode.label, business, null) || getSystemMessage('paymentTriggerDefault', null);
       return { replyText, buttons: [], listOptions: [], session: null };
     }
   }
@@ -234,7 +235,7 @@ const handleNoActiveSession = async (business, messageText, buttonReplyId) => {
     }
   }
 
-  const replyText = smartReply || applyMessageTemplate(business.fallbackReply, business, null) || 'Thank you for your message. We will get back to you soon.';
+  const replyText = smartReply || applyMessageTemplate(business.fallbackReply, business, null) || getSystemMessage('genericFallbackReply', null);
 
   // Borrow the greeting/menu reply node's buttons (if configured) so the
   // fallback isn't a dead end - same probe the real no-match branch uses.

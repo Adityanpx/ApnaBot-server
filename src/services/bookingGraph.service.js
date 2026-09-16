@@ -58,6 +58,7 @@
 const supabase = require('../config/supabase');
 const { toCamelCase } = require('../utils/caseConvert');
 const { getLocalizedText } = require('../utils/localization');
+const { getSystemMessage } = require('../utils/systemMessages');
 const logger = require('../utils/logger');
 const businessService = require('./business.service');
 const bookingService = require('./booking.service');
@@ -323,7 +324,7 @@ const rebuildOrFallback = async (businessId, nodes, currentNode, session, served
   const fresh = await computeLiveOptionsForNode(businessId, currentNode, session);
   if (fresh.length > 0) {
     session.currentNodeComputedOptions = fresh;
-    return { session, result: 'Sorry, that vehicle is no longer available for this route. Here are the current options:' };
+    return { session, result: getSystemMessage('vehicleNoLongerAvailable', languageCode) };
   }
   return fallbackToStaticSibling(nodes, currentNode.fieldKey, session, servedCities, languageCode);
 };
