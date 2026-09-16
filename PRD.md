@@ -1,37 +1,63 @@
 # ApnaBot-server — Project State
 
 Multi-tenant WhatsApp chatbot backend for Indian SMBs (travels/cab,
-software/IT services verticals so far). Node/Express + Supabase (Postgres)
-+ Upstash Redis + BullMQ. Owner: Suresh Gavali (Averix Solutions Pvt Ltd).
+software/IT, tax consulting, medical, e-seva/internet-cafe, and
+multi-brand verticals so far). Node/Express + Supabase (Postgres) +
+Upstash Redis + BullMQ. Owner: Suresh Gavali (Averix Solutions Pvt Ltd —
+the owner's own company; **not** a business tenant on the platform, see
+below).
 
-**No production customers yet.** SG Travels (business_id
-`a94aec66-23fb-43e1-afcc-f4e8d518134b`, `business_category='travels'`,
-confirmed live 2026-09-07) and Averix Solutions (business_id
-`27ae8c81-efb4-4947-b617-c5f461da32b2`, `business_category='travels'`,
-confirmed live 2026-09-07) are both TEST accounts under the owner's
-control — freely resettable, no real customer data to protect.
+**No production customers yet.** All 5 businesses currently in the live
+`businesses` table are test/demo accounts under the owner's control —
+freely resettable, no real customer data to protect. Confirmed directly
+against the live database on 2026-09-16 (not carried over from prior doc
+revisions or scripts):
 
-**Both ids above have changed at least once since this doc last recorded
-them** — verify against the live `businesses` row (by name, not by a
-cached id from this doc or an older script) before trusting an id
-anywhere in this repo for these two test businesses.
-`verifyBookingGraph.js` no longer bakes in a default business id at all
-(as of its 2026-09-07 generic rewrite, see below) — it requires an
-explicit `--business=<id>`/`BUSINESS_ID` every run, specifically so this
-kind of drift can't happen to it again. Prior known ids, now stale/nonexistent:
-SG Travels `b92113c1-8692-46d5-b377-998c6541486f` (per the 2026-08-29
-wipe/recreate note this doc previously carried); Averix
-`014a3f2a-6a32-4c44-82df-ec6a298a2caa` (set 2026-09-02, since replaced)
-and, before that, `6e918384-2a7e-4342-8ab4-2b9cecbe791d`
-(`business_category='software_it'`, deleted 2026-09-02 when Averix was
-recreated under `business_category='travels'` to serve as a second QA
-test business for the canvas/booking-flow test plan). Because of this
-churn, `business_category` can no longer be assumed unique per category —
-code that looks up "the" business for a category (e.g. the old
-`verifyBookingGraph.js` lookup) needs an explicit, freshly-verified
-business id instead; see that script's header for the fix. This
-whole paragraph goes away once ad traffic starts and these stop being
-disposable test accounts; update this section when it does.
+| Name | business_id | business_category | booking_engine | created_at |
+|---|---|---|---|---|
+| Internet Cafe Katta | `8791f4b4-817a-4487-a7e7-4f29d0cb6425` | `maha_eseva_kendra` | `graph` | 2026-09-04 |
+| Tax Consultant Services | `a5e9768c-422f-4c9f-85d3-34d18fe26ccb` | `tax_consultant` | `graph` | 2026-09-05 |
+| SG Travels | `a94aec66-23fb-43e1-afcc-f4e8d518134b` | `travels` | `graph` | 2026-09-07 |
+| CareWell Clinic | `142d1add-73d3-48bb-b2e8-65070169f063` | `medical` | `graph` | 2026-09-12 |
+| Multi-Brand Router | `c3ef8588-6195-4075-9413-e5350b462d0b` | `multi_brand` | `graph` | 2026-09-15 |
+
+**Averix Solutions no longer exists as a business row at all** — it was
+previously documented here (as of the 2026-09-02 rewrite) under
+business_id `27ae8c81-efb4-4947-b617-c5f461da32b2`,
+`business_category='travels'`. That id returns zero rows as of
+2026-09-16. It's unclear from this pass alone when/why it was deleted
+(no admin-delete script or session-log entry for it was found this
+session) — flagged to the user rather than guessed at. Do not use
+"Averix" as a stand-in test business name in scripts or docs going
+forward; use one of the 5 real businesses above.
+
+**`business_category` is not unique per business** (see Multi-Brand
+Router, and the historical Averix churn below) — code that looks up "the"
+business for a category needs an explicit, freshly-verified business id,
+never a category-based `.maybeSingle()` lookup.
+`verifyBookingGraph.js` reflects this (as of its 2026-09-07 generic
+rewrite): it requires an explicit `--business=<id>`/`BUSINESS_ID` every
+run rather than baking in a default.
+
+Historical id churn (all superseded by the table above — kept only so
+old commit messages/scripts referencing these ids aren't mistaken for
+current): SG Travels was previously `b92113c1-8692-46d5-b377-998c6541486f`
+(2026-08-29 wipe/recreate) then `a94aec66-...` (current, since
+2026-09-07). Averix, before it was deleted outright, passed through
+`014a3f2a-6a32-4c44-82df-ec6a298a2caa` (set 2026-09-02) and, before that,
+`6e918384-2a7e-4342-8ab4-2b9cecbe791d` (`business_category='software_it'`,
+deleted 2026-09-02 when Averix was recreated under
+`business_category='travels'`).
+
+**This section has gone stale multiple times across past sessions**
+(ids drift as test businesses get reset/rebuilt, and Averix's deletion
+sat undocumented here for at least one full session cycle before being
+caught). Treat every id/name/category value in this section as
+needing a fresh `businesses` table check before you rely on it for
+anything beyond casual reference — do not assume this file is
+definitionally current just because it was rewritten recently. This
+whole section goes away once ad traffic starts and these stop being
+disposable test accounts; update it when that happens.
 
 ## Current architecture — ONE booking engine
 
@@ -93,7 +119,10 @@ cutover and the menu picker had always resolved empty in practice.
   every visited node's `label_translations` values are non-empty where
   configured (or N/A if none are configured, not a false pass). Confirmed
   passing cleanly against SG Travels, Averix Solution, and Internet Cafe
-  Katta by id, with zero script edits between runs. The Local Rental
+  Katta by id, with zero script edits between runs (Averix Solution no
+  longer exists as of 2026-09-16 — see the business table at the top of
+  this doc; this line is a historical record of that 2026-09-07 run, not
+  a claim it's still a live business). The Local Rental
   no-packages detour still isn't exercised — no business currently has a
   live path into it (see "Known gaps" below); this is a live-data gap, not
   a script limitation, since the walker would exercise it automatically if
@@ -108,7 +137,22 @@ cutover and the menu picker had always resolved empty in practice.
   live in the database as of 2026-09-02: SG Travels' `booking_trigger`
   reply node's outgoing edge targets `tripType` (unconditional), not
   `pickupLocation` — every booking now actually asks trip type instead of
-  silently defaulting to One Way.
+  silently defaulting to One Way. **Stale as of 2026-09-16:** SG Travels'
+  entry reply node is no longer `booking_trigger` at all — it's now
+  `reply_kind='web_form_trigger'` (confirmed live against `flow_nodes`).
+  `booking_trigger` and `web_form_trigger` currently coexist as two
+  different entry mechanisms across businesses on this platform (e.g.
+  Internet Cafe Katta and Tax Consultant Services still use
+  `booking_trigger`; Multi-Brand Router has both node types present).
+  `web_form_trigger` sends the customer a tokenized link to a public,
+  unauthenticated booking form (`src/controllers/publicServiceForm.controller.js`,
+  `booking_form_tokens` table) instead of continuing the conversation
+  in-chat — **this mechanism is not documented anywhere else in this
+  file.** Not investigated or written up further this pass since it's
+  outside this correction's scope (business inventory + this specific
+  stale claim); flagged to the user as a real documentation gap, not
+  silently left implied to be covered by the graph-engine description
+  above.
 
 ### CRUD for the graph engine — full node + edge CRUD, mounted at `/api/flow-graph`
 `src/middleware/flowGraph.middleware.js` (`requireGraphEngine`),
