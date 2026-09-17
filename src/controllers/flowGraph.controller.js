@@ -314,7 +314,7 @@ const createReplyNode = async (req, res, next) => {
 const updateReplyNode = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, hindiAliases, label, labelTranslations, formFields, force } = req.body || {};
+    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, hindiAliases, label, labelTranslations, buttonText, buttonTextTranslations, formFields, force } = req.body || {};
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
@@ -339,6 +339,10 @@ const updateReplyNode = async (req, res, next) => {
     const labelTranslationsError = validateTranslationsMap(labelTranslations, 'labelTranslations');
     if (labelTranslationsError) {
       return errorResponse(res, 400, labelTranslationsError);
+    }
+    const buttonTextTranslationsError = validateTranslationsMap(buttonTextTranslations, 'buttonTextTranslations');
+    if (buttonTextTranslationsError) {
+      return errorResponse(res, 400, buttonTextTranslationsError);
     }
     if (formFields !== undefined) {
       const formFieldsError = validateFlowFields(formFields);
@@ -406,6 +410,8 @@ const updateReplyNode = async (req, res, next) => {
     if (imageUrl !== undefined) updateData.image_url = imageUrl || null;
     if (labelTranslations !== undefined) updateData.label_translations = labelTranslations || null;
     if (label !== undefined) updateData.label = label;
+    if (buttonTextTranslations !== undefined) updateData.button_text_translations = buttonTextTranslations || null;
+    if (buttonText !== undefined) updateData.button_text = buttonText;
     if (formFields !== undefined) updateData.form_fields = formFields;
     if (hindiAliases !== undefined) {
       updateData.hindi_aliases = hindiAliases.map(a => a.trim()).filter(Boolean);

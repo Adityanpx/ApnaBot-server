@@ -1603,12 +1603,17 @@ const receiveWebhook = async (req, res) => {
           if (formTokenError) throw formTokenError;
 
           const formLink = `${config.FRONTEND_URL}/book/${formToken.token}`;
-          replyText = applyMessageTemplateWithFooter(
-            getSystemMessage('webFormPrompt', customer.preferredLanguage),
-            tenant,
-            customer
-          );
-          ctaButton = { buttonText: getSystemMessage('webFormButtonText', customer.preferredLanguage), url: formLink };
+          // Prefer the node's own label/buttonText (set via updateReplyNode) so
+          // this is authorable per-node like every other reply-kind's copy;
+          // fall back to the systemMessages.js catalog entry for nodes created
+          // before button_text/button_text_translations existed on flow_nodes.
+          const localizedWebFormPrompt = getLocalizedText(matchedNode, 'label', customer.preferredLanguage)
+            || getSystemMessage('webFormPrompt', customer.preferredLanguage);
+          const localizedWebFormButtonText = getLocalizedText(matchedNode, 'buttonText', customer.preferredLanguage)
+            || getSystemMessage('webFormButtonText', customer.preferredLanguage);
+
+          replyText = applyMessageTemplateWithFooter(localizedWebFormPrompt, tenant, customer);
+          ctaButton = { buttonText: localizedWebFormButtonText, url: formLink };
         } catch (webFormError) {
           logger.error('web_form_trigger: error generating booking form link', {
             businessId: tenant.businessId,
