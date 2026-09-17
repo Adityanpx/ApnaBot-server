@@ -18,7 +18,10 @@ const businessFieldMap = {
   requireAdvancePayment: 'require_advance_payment', advancePaymentType: 'advance_payment_type',
   advancePaymentValue: 'advance_payment_value',
   businessHours: 'business_hours', footerMessage: 'footer_message',
-  businessLatitude: 'business_latitude', businessLongitude: 'business_longitude'
+  businessLatitude: 'business_latitude', businessLongitude: 'business_longitude',
+  stopMessage: 'stop_message', stopMessageTranslations: 'stop_message_translations',
+  startMessage: 'start_message', startMessageTranslations: 'start_message_translations',
+  cancelMessage: 'cancel_message', cancelMessageTranslations: 'cancel_message_translations'
 };
 
 /**

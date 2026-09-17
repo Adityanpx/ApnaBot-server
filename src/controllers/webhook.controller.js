@@ -724,7 +724,18 @@ const receiveWebhook = async (req, res) => {
       }
       customer.botPausedUntil = newBotPausedUntil;
 
-      const stopText = "You won't receive messages for 24 hours. Reply START anytime to resume sooner.";
+      // The pause write above is the actual opt-out and must never depend on
+      // this fetch succeeding — a businessDoc fetch failure here falls back
+      // to the hardcoded English default below, it never suppresses the
+      // confirmation message itself (STOP is compliance-sensitive).
+      let stopBusinessDoc = null;
+      try {
+        stopBusinessDoc = await businessService.getBusinessById(tenant.businessId);
+      } catch (fetchError) {
+        logger.error('Error fetching business for STOP-keyword reply text, falling back to default:', fetchError);
+      }
+      const stopText = getLocalizedText(stopBusinessDoc, 'stopMessage', customer.preferredLanguage) ||
+        "You won't receive messages for 24 hours. Reply START anytime to resume sooner.";
       const stopMsg = await saveMessage({
         business_id: tenant.businessId,
         customer_id: customer.id,
@@ -773,7 +784,17 @@ const receiveWebhook = async (req, res) => {
       }
       customer.botPausedUntil = null;
 
-      const startText = "You're all set — messages have resumed.";
+      // Same fetch-failure resilience as the STOP branch above — the pause
+      // clear already happened, a fetch failure here only affects which text
+      // is used, never whether a confirmation is sent.
+      let startBusinessDoc = null;
+      try {
+        startBusinessDoc = await businessService.getBusinessById(tenant.businessId);
+      } catch (fetchError) {
+        logger.error('Error fetching business for START-keyword reply text, falling back to default:', fetchError);
+      }
+      const startText = getLocalizedText(startBusinessDoc, 'startMessage', customer.preferredLanguage) ||
+        "You're all set — messages have resumed.";
       const startMsg = await saveMessage({
         business_id: tenant.businessId,
         customer_id: customer.id,
@@ -969,8 +990,17 @@ const receiveWebhook = async (req, res) => {
       if (ESCAPE_KEYWORDS.has(normalizedEscapeText)) {
         await bookingService.deleteBookingSession(tenant.businessId, customerNumber);
 
-        // Cancellation confirmation message
-        const cancelText = "Booking cancelled. Type 'hi' to see what I can help with.";
+        // Session deletion above is the actual cancel; same fetch-failure
+        // resilience as the STOP/START branches — a fetch failure only
+        // affects which text is used, never whether a confirmation is sent.
+        let cancelBusinessDoc = null;
+        try {
+          cancelBusinessDoc = await businessService.getBusinessById(tenant.businessId);
+        } catch (fetchError) {
+          logger.error('Error fetching business for cancel/exit/menu keyword reply text, falling back to default:', fetchError);
+        }
+        const cancelText = getLocalizedText(cancelBusinessDoc, 'cancelMessage', customer.preferredLanguage) ||
+          "Booking cancelled. Type 'hi' to see what I can help with.";
         const cancelMsg = await saveMessage({
           business_id: tenant.businessId,
           customer_id: customer.id,
