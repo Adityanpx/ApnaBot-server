@@ -225,13 +225,15 @@ const getReplyNodes = async (req, res, next) => {
  * creation into this call the way createRule bundled buttons/listOptions
  * would make node edits and edge edits inseparable; add buttons/list rows
  * afterward via the edges endpoint instead. Body: { keyword, matchType,
- * replyKind, contentType, label, labelTranslations, imageUrl, hindiAliases }.
+ * replyKind, contentType, label, labelTranslations, imageUrl, hindiAliases,
+ * buttonText, buttonTextTranslations }.
  */
 const createReplyNode = async (req, res, next) => {
   try {
     const {
       keyword, matchType = 'contains', replyKind = 'text', contentType = 'text',
-      imageUrl = null, hindiAliases = [], labelTranslations = null
+      imageUrl = null, hindiAliases = [], labelTranslations = null,
+      buttonText = null, buttonTextTranslations = null
     } = req.body;
     let { label } = req.body;
     const businessId = req.user.businessId;
@@ -254,6 +256,10 @@ const createReplyNode = async (req, res, next) => {
     const labelTranslationsError = validateTranslationsMap(labelTranslations, 'labelTranslations');
     if (labelTranslationsError) {
       return errorResponse(res, 400, labelTranslationsError);
+    }
+    const buttonTextTranslationsError = validateTranslationsMap(buttonTextTranslations, 'buttonTextTranslations');
+    if (buttonTextTranslationsError) {
+      return errorResponse(res, 400, buttonTextTranslationsError);
     }
 
     // No buttons/listOptions in this call (see doc comment above), so the
@@ -291,6 +297,8 @@ const createReplyNode = async (req, res, next) => {
       content_type: contentType,
       label,
       label_translations: labelTranslations || null,
+      button_text: buttonText,
+      button_text_translations: buttonTextTranslations || null,
       image_url: imageUrl || null,
       is_active: true,
       trigger_count: 0
