@@ -29,16 +29,19 @@ const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
 /**
- * Render a booking-graph field (buttons/list/vehicle_carousel) into this
- * endpoint's {buttons, listOptions} shape. Mirrors the id scheme
- * sendFieldPrompt/whatsapp.service.js build for real WhatsApp sends
- * ("{node_id}:{index}", "{node_id}:other" for the carousel escape hatch) so
- * a tapped option round-trips correctly through this same endpoint's Step-12
- * tap-resolution on the next turn — this endpoint never sends anything to
- * WhatsApp, so there's no reason to fragment a carousel into N separate
- * messages the way the real send does; it's flattened into one listOptions
- * array instead (a deliberate, flagged deviation from "identical to a real
- * WhatsApp bubble" for this one field type).
+ * Render a booking-graph field (buttons/list/vehicle_carousel/
+ * location_request) into this endpoint's {buttons, listOptions} shape.
+ * Mirrors the id scheme sendFieldPrompt/whatsapp.service.js build for real
+ * WhatsApp sends ("{node_id}:{index}", "{node_id}:other" for the carousel
+ * escape hatch) so a tapped option round-trips correctly through this same
+ * endpoint's Step-12 tap-resolution on the next turn — this endpoint never
+ * sends anything to WhatsApp, so there's no reason to fragment a carousel
+ * into N separate messages the way the real send does; it's flattened into
+ * one listOptions array instead (a deliberate, flagged deviation from
+ * "identical to a real WhatsApp bubble" for this one field type).
+ * location_request is a second, different deviation: its listOptions entry
+ * is informational only (nextKeyword: null), since there's no native picker
+ * to simulate and no options-backed id to tap through — see below.
  */
 const buildFieldOptions = (field) => {
   if (!field) return { buttons: [], listOptions: [] };
@@ -61,6 +64,20 @@ const buildFieldOptions = (field) => {
       description: null
     });
     return { buttons: [], listOptions };
+  }
+
+  if (field.fieldType === 'location_request') {
+    // Real WhatsApp renders this as a native "Send location" button
+    // (whatsapp.service.js#sendLocationRequest) — unsimulable in a browser
+    // preview, and there's nothing structural to tap through anyway (the
+    // real answer comes from the customer's location picker or typed text,
+    // not an options-backed id). nextKeyword: null marks this entry as
+    // informational only, distinct from every other listOptions/buttons
+    // entry in this file, which always carries a real "{node_id}:{index}"
+    // id a tap can resolve. A preview user can still type a reply in the
+    // text box to exercise the manual-fallback path bookingGraph.service.js
+    // handles inline for this field type.
+    return { buttons: [], listOptions: [{ nextKeyword: null, label: '📍 Send location button', description: 'Customer can also type an address instead' }] };
   }
 
   if (field.fieldType === 'buttons' || field.fieldType === 'list') {

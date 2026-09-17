@@ -417,6 +417,16 @@ const buildBookingSummaryBody = (collected, orderedFields, localRentalUnconfigur
         return null;
       }
       const label = f.summaryLabel || f.label.replace('?', '');
+      // A 'location_request' field's collected value is a structured
+      // {latitude, longitude, address} object (see bookingGraph.service.js's
+      // advanceGraphSession), not a string, unless the customer used the
+      // manual-text fallback instead of sharing their location — string
+      // concatenation below would otherwise silently print "[object Object]".
+      if (typeof value === 'object') {
+        const displayValue = value.address ||
+          `https://maps.google.com/?q=${value.latitude},${value.longitude}`;
+        return label + ': *' + displayValue + '*';
+      }
       return label + ': *' + value + '*';
     })
     .filter(line => line !== null)

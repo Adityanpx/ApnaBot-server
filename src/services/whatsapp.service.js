@@ -108,6 +108,44 @@ const sendLocationMessage = async (phoneNumberId, encryptedAccessToken, to, lati
 };
 
 /**
+ * Send a WhatsApp location_request_message — an interactive prompt with a
+ * native "Send location" button (a question node with contentType
+ * 'location_request'). Distinct from sendLocationMessage above: this asks
+ * the CUSTOMER to share their coordinates, rather than sending the
+ * business's own. The customer isn't gated to only tapping the button —
+ * they can still reply with plain text instead, which webhook.controller.js
+ * handles as a manual-fallback answer.
+ * @param {string} phoneNumberId - The WhatsApp phone number ID
+ * @param {string} encryptedAccessToken - Encrypted Meta access token
+ * @param {string} to - Recipient phone number
+ * @param {string} bodyText - Question text shown above the "Send location" button
+ * @returns {Promise<Object>}
+ */
+const sendLocationRequest = async (phoneNumberId, encryptedAccessToken, to, bodyText) => {
+  try {
+    const accessToken = decrypt(encryptedAccessToken);
+    const response = await axios.post(
+      `${META_API_BASE}/${phoneNumberId}/messages`,
+      {
+        messaging_product: 'whatsapp',
+        to,
+        type: 'interactive',
+        interactive: {
+          type: 'location_request_message',
+          body: { text: (bodyText || '').slice(0, 4096) },
+          action: { name: 'send_location' }
+        }
+      },
+      { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
+    );
+    return response.data;
+  } catch (error) {
+    logger.error('Error sending location request message:', { phoneNumberId, to, error: error.response?.data || error.message });
+    throw error;
+  }
+};
+
+/**
  * Send an interactive reply-buttons message (optional image header + body + up to 3 buttons).
  * Each button's id is its nextKeyword (chatbot.service.js's getOutgoingEdges
  * sets this to the edge's own id), which the webhook resolves back to
@@ -369,6 +407,7 @@ module.exports = {
   sendTextMessage,
   sendImageMessage,
   sendLocationMessage,
+  sendLocationRequest,
   sendInteractiveButtons,
   sendListMessage,
   sendRuleListMessage,

@@ -541,7 +541,11 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
   }
 
   const fieldType = effectiveFieldType(currentNode);
-  const trimmedReply = (reply || '').trim();
+  // reply is a plain string for every fieldType except 'location_request',
+  // where the caller (webhook.controller.js) may instead pass the raw
+  // {latitude, longitude, address} object Meta's payload carries — guard
+  // against calling .trim() on that object.
+  const trimmedReply = typeof reply === 'string' ? reply.trim() : '';
 
   if (fieldType === 'vehicle_carousel') {
     const options = session.currentNodeComputedOptions || [];
@@ -674,6 +678,26 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
       // this shape change deploys won't have displayOverrides yet.
       session.displayOverrides = session.displayOverrides || {};
       session.displayOverrides.travelDate = bookingService.resolveTravelDateOption(resolvedOption.value);
+    }
+  } else if (fieldType === 'location_request') {
+    // Unlike buttons/list, this field never structurally blocks free text —
+    // Meta's location_request_message is an offer (a "Send location" button
+    // alongside the prompt), not a gate, so the customer can just type an
+    // address instead of tapping it. No OTHER_SENTINELS-style sibling node
+    // needed: both answer shapes are handled inline, right here.
+    if (reply && typeof reply === 'object') {
+      session.collected[currentNode.fieldKey] = {
+        latitude: reply.latitude,
+        longitude: reply.longitude,
+        address: reply.address || reply.name || null
+      };
+    } else if (trimmedReply !== '') {
+      // Manual fallback — customer typed an address instead of sharing location.
+      session.collected[currentNode.fieldKey] = trimmedReply;
+    } else if (currentNode.required === true) {
+      return { session, result: getLocalizedText(currentNode, 'label', languageCode) };
+    } else {
+      session.collected[currentNode.fieldKey] = null;
     }
   } else {
     if (currentNode.required === true && trimmedReply === '') {

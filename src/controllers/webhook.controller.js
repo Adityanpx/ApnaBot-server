@@ -372,6 +372,12 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
       outboundJobData.interactiveList = labels;
       outboundJobData.listButtonLabel = 'Choose';
     }
+  } else if (field.fieldType === 'location_request') {
+    // Native "Send location" prompt (whatsapp.worker.js#locationRequest) —
+    // the customer can still reply with plain text instead of tapping it
+    // (handled as a manual-fallback answer in bookingGraph.service.js), so
+    // no options/step bookkeeping is needed here the way buttons/list need.
+    outboundJobData.locationRequest = true;
   }
   await addToWhatsappQueue(outboundJobData);
 
@@ -625,6 +631,11 @@ const receiveWebhook = async (req, res) => {
     // A tapped list-message row arrives as type 'interactive' too, with its
     // id in list_reply instead of button_reply (see sendListMessage).
     const listReplyId = message.interactive?.list_reply?.id || null;
+    // A shared-location message ({latitude, longitude, name?, address?} per
+    // Meta's payload) — only meaningful mid-booking against a
+    // 'location_request' field, checked once the active session is known
+    // (Step 12 below); letting it past Step 11 doesn't mean it's accepted.
+    const messageLocation = messageType === 'location' ? message.location : null;
     let messageText = message.text?.body || buttonReplyId || listReplyId || '';
     const phoneNumberId = value.metadata.phone_number_id;
     // Meta includes the sender's current WhatsApp display name alongside each
@@ -961,8 +972,14 @@ const receiveWebhook = async (req, res) => {
     }
 
     // Step 11 - Skip non-text messages, EXCEPT interactive button taps (which
-    // carry a keyword in button_reply.id and must chain to the next rule).
-    if (messageType !== 'text' && !buttonReplyId && !listReplyId) {
+    // carry a keyword in button_reply.id and must chain to the next rule)
+    // and a shared location, which is only ever useful mid-booking against a
+    // 'location_request' field — letting it through here just defers that
+    // decision to Step 12 (below), which is the earliest point the active
+    // session's current field is known; it does NOT mean every location
+    // message is accepted (see the no-active-session guard right after
+    // activeSession is loaded).
+    if (messageType !== 'text' && !buttonReplyId && !listReplyId && !messageLocation) {
       logger.info('Non-text message received, skipping chatbot');
       return;
     }
@@ -977,6 +994,18 @@ const receiveWebhook = async (req, res) => {
     // down (Step 12.6-adjacent). This matters now that "language" (above) can
     // fire mid-booking, leaving activeSession untouched on purpose.
     const isLanguagePickerTap = !!(buttonReplyId && buttonReplyId.startsWith('lang_'));
+
+    // A shared location with no eligible active session to consume it (none
+    // at all, or a stale one about to be treated as a language-picker tap) —
+    // this is the other half of Step 11's deferred skip: fall through to the
+    // same "skip chatbot" behavior a non-text message would have gotten
+    // there, rather than letting an empty-text location message reach
+    // greeting/rule matching below.
+    if (messageLocation && (!activeSession || isLanguagePickerTap)) {
+      logger.info('Location message received with no active booking session, skipping chatbot');
+      return;
+    }
+
     if (activeSession && !isLanguagePickerTap) {
       logger.info(`Active booking session for ${customerNumber}`);
 
@@ -1051,7 +1080,18 @@ const receiveWebhook = async (req, res) => {
       // loadGraph+business round trip on every free-text answer.
       let resolvedReply = messageText;
       const replyId = listReplyId !== null ? listReplyId : buttonReplyId;
-      if (replyId !== null) {
+      if (messageLocation) {
+        // A shared location only ever answers a 'location_request' field —
+        // if the session has moved on (or never had one), this is the
+        // active-session counterpart of the guard above: don't half-handle
+        // it by falling through to advanceGraphSession with the wrong field.
+        const currentField = await bookingGraphService.getCurrentNodeField(tenant.businessId, activeSession, customer.preferredLanguage);
+        if (!currentField || currentField.fieldType !== 'location_request') {
+          logger.info(`Location message from ${customerNumber} doesn't match the current booking field, skipping chatbot`);
+          return; // Do not advance the session or run rule matching
+        }
+        resolvedReply = messageLocation;
+      } else if (replyId !== null) {
         const currentField = await bookingGraphService.getCurrentNodeField(tenant.businessId, activeSession, customer.preferredLanguage);
 
         if (currentField &&

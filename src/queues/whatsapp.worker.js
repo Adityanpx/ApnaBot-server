@@ -25,7 +25,7 @@ const worker = new Worker('whatsapp-outbound', async (job) => {
   const { businessId, phoneNumberId, encryptedAccessToken, to, message, messageId,
           type = 'text', imageUrl = null, buttons = [], listOptions = [],
           interactiveButtons = null, interactiveList = null, listButtonLabel = 'Choose',
-          step = null, location = null, ctaButton = null } = job.data;
+          step = null, location = null, locationRequest = false, ctaButton = null } = job.data;
 
   try {
     if (location) {
@@ -33,6 +33,11 @@ const worker = new Worker('whatsapp-outbound', async (job) => {
       // location-content-type branches). Distinct payload shape, so checked
       // before the message/imageUrl-based dispatch below.
       await whatsappService.sendLocationMessage(phoneNumberId, encryptedAccessToken, to, location.latitude, location.longitude, location.name, location.address);
+    } else if (locationRequest) {
+      // Asking the CUSTOMER to share their own location (a 'location_request'
+      // booking field, see sendFieldPrompt in webhook.controller.js) — the
+      // opposite direction of `location` above, distinct payload shape.
+      await whatsappService.sendLocationRequest(phoneNumberId, encryptedAccessToken, to, message);
     } else if (ctaButton) {
       // web_form_trigger's booking-link send (see webhook.controller.js) —
       // a single button that opens ctaButton.url directly, instead of a
