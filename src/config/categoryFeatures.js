@@ -35,7 +35,8 @@ const CATEGORY_DEFAULT_FEATURES = {
   travels: ['fleet', 'distanceFares', 'driverDA'],
   software_it: [],
   maha_eseva_kendra: [],
-  tax_consultant: []
+  tax_consultant: [],
+  hotel: []
 };
 
 /**

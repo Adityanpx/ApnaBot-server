@@ -186,6 +186,26 @@ const validateTranslationsMap = (translations, fieldLabel, maxLen) => {
 };
 
 /**
+ * Per-node location-override validation for reply nodes (contentType=
+ * 'location'). latitude/longitude are otherwise unconstrained at the DB
+ * layer (plain numeric columns, no CHECK) — range-checked here because a
+ * bad value here sends a customer a wrong map pin in production, unlike
+ * e.g. `order`/`displayOrder` elsewhere in this file where a bad number is
+ * just cosmetic.
+ */
+const validateLatLng = (latitude, longitude) => {
+  if (latitude !== null && latitude !== undefined) {
+    if (typeof latitude !== 'number') return 'latitude must be a number';
+    if (latitude < -90 || latitude > 90) return 'latitude must be between -90 and 90';
+  }
+  if (longitude !== null && longitude !== undefined) {
+    if (typeof longitude !== 'number') return 'longitude must be a number';
+    if (longitude < -180 || longitude > 180) return 'longitude must be between -180 and 180';
+  }
+  return null;
+};
+
+/**
  * GET /api/flow-graph/reply-nodes
  * List all reply-type flow_nodes for the business (paginated).
  */
@@ -226,20 +246,26 @@ const getReplyNodes = async (req, res, next) => {
  * would make node edits and edge edits inseparable; add buttons/list rows
  * afterward via the edges endpoint instead. Body: { keyword, matchType,
  * replyKind, contentType, label, labelTranslations, imageUrl, hindiAliases,
- * buttonText, buttonTextTranslations }.
+ * buttonText, buttonTextTranslations, latitude, longitude, locationName,
+ * address (latter four only meaningful when contentType='location') }.
  */
 const createReplyNode = async (req, res, next) => {
   try {
     const {
       keyword, matchType = 'contains', replyKind = 'text', contentType = 'text',
       imageUrl = null, hindiAliases = [], labelTranslations = null,
-      buttonText = null, buttonTextTranslations = null
+      buttonText = null, buttonTextTranslations = null,
+      latitude = null, longitude = null, locationName = null, address = null
     } = req.body;
     let { label } = req.body;
     const businessId = req.user.businessId;
 
     if (!keyword) {
       return errorResponse(res, 400, 'Keyword is required');
+    }
+    const latLngError = validateLatLng(latitude, longitude);
+    if (latLngError) {
+      return errorResponse(res, 400, latLngError);
     }
     if (!VALID_MATCH_TYPES.includes(matchType)) {
       return errorResponse(res, 400, `matchType must be one of: ${VALID_MATCH_TYPES.join(', ')}`);
@@ -300,6 +326,10 @@ const createReplyNode = async (req, res, next) => {
       button_text: buttonText,
       button_text_translations: buttonTextTranslations || null,
       image_url: imageUrl || null,
+      latitude,
+      longitude,
+      location_name: locationName || null,
+      address: address || null,
       is_active: true,
       trigger_count: 0
     }).select().single();
@@ -322,7 +352,7 @@ const createReplyNode = async (req, res, next) => {
 const updateReplyNode = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, hindiAliases, label, labelTranslations, buttonText, buttonTextTranslations, formFields, force } = req.body || {};
+    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, hindiAliases, label, labelTranslations, buttonText, buttonTextTranslations, formFields, latitude, longitude, locationName, address, force } = req.body || {};
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
@@ -340,6 +370,10 @@ const updateReplyNode = async (req, res, next) => {
     }
     if (contentType !== undefined && !VALID_CONTENT_TYPES.includes(contentType)) {
       return errorResponse(res, 400, `contentType must be one of: ${VALID_CONTENT_TYPES.join(', ')}`);
+    }
+    const latLngError = validateLatLng(latitude, longitude);
+    if (latLngError) {
+      return errorResponse(res, 400, latLngError);
     }
     if (hindiAliases !== undefined && !Array.isArray(hindiAliases)) {
       return errorResponse(res, 400, 'hindiAliases must be an array of strings.');
@@ -421,6 +455,10 @@ const updateReplyNode = async (req, res, next) => {
     if (buttonTextTranslations !== undefined) updateData.button_text_translations = buttonTextTranslations || null;
     if (buttonText !== undefined) updateData.button_text = buttonText;
     if (formFields !== undefined) updateData.form_fields = formFields;
+    if (latitude !== undefined) updateData.latitude = latitude;
+    if (longitude !== undefined) updateData.longitude = longitude;
+    if (locationName !== undefined) updateData.location_name = locationName || null;
+    if (address !== undefined) updateData.address = address || null;
     if (hindiAliases !== undefined) {
       updateData.hindi_aliases = hindiAliases.map(a => a.trim()).filter(Boolean);
     }

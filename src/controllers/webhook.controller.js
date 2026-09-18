@@ -1802,25 +1802,47 @@ const receiveWebhook = async (req, res) => {
     }
 
     if (matchedNode?.contentType === 'location') {
-      // Reply node sends the business's own saved coordinates as a map pin
-      // instead of authored text (matchedNode.label is '' for this
-      // contentType -- see flowGraph.controller.js's createReplyNode/
+      // Reply node sends either its own per-node override coordinates (for a
+      // multi-property business where different reply nodes point at
+      // different physical locations) or the business's saved coordinates,
+      // as a map pin instead of authored text (matchedNode.label is '' for
+      // this contentType -- see flowGraph.controller.js's createReplyNode/
       // saveFullGraph carve-out). outboundMsg was already saved above with
       // replyText ('' here), so reuse its id rather than saving a second row.
-      const locationBusiness = await businessService.getBusinessById(tenant.businessId);
-      if (locationBusiness?.businessLatitude != null && locationBusiness?.businessLongitude != null) {
+      const hasNodeLat = matchedNode.latitude != null;
+      const hasNodeLng = matchedNode.longitude != null;
+      if (hasNodeLat !== hasNodeLng) {
+        logger.warn(`Reply node ${matchedNode.id} (business ${tenant.businessId}) has only one of latitude/longitude set -- treating as not configured and falling back to business-level location.`);
+      }
+
+      let resolvedLocation = null;
+      if (hasNodeLat && hasNodeLng) {
+        resolvedLocation = {
+          latitude: matchedNode.latitude,
+          longitude: matchedNode.longitude,
+          name: matchedNode.locationName || undefined,
+          address: matchedNode.address || undefined
+        };
+      } else {
+        const locationBusiness = await businessService.getBusinessById(tenant.businessId);
+        if (locationBusiness?.businessLatitude != null && locationBusiness?.businessLongitude != null) {
+          resolvedLocation = {
+            latitude: locationBusiness.businessLatitude,
+            longitude: locationBusiness.businessLongitude,
+            name: locationBusiness.displayName || locationBusiness.name,
+            address: locationBusiness.address || undefined
+          };
+        }
+      }
+
+      if (resolvedLocation) {
         await addToWhatsappQueue({
           businessId: tenant.businessId,
           phoneNumberId: tenant.phoneNumberId,
           encryptedAccessToken: tenant.accessToken,
           to: customerNumber,
           messageId: outboundMsg.id,
-          location: {
-            latitude: locationBusiness.businessLatitude,
-            longitude: locationBusiness.businessLongitude,
-            name: locationBusiness.displayName || locationBusiness.name,
-            address: locationBusiness.address || undefined
-          }
+          location: resolvedLocation
         });
       } else {
         logger.warn(`Business ${tenant.businessId} matched a location-type reply node but has no businessLatitude/businessLongitude configured; sending fallback text instead.`);
