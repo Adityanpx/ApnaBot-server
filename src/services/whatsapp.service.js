@@ -222,9 +222,6 @@ const sendListMessage = async (phoneNumberId, encryptedAccessToken, to, bodyText
         ]
       }
     };
-    if (imageUrl) {
-      interactive.header = { type: 'image', image: { link: imageUrl } };
-    }
     const response = await axios.post(
       `${META_API_BASE}/${phoneNumberId}/messages`,
       { messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'interactive', interactive },
@@ -269,9 +266,6 @@ const sendRuleListMessage = async (phoneNumberId, encryptedAccessToken, to, body
         ]
       }
     };
-    if (imageUrl) {
-      interactive.header = { type: 'image', image: { link: imageUrl } };
-    }
     const response = await axios.post(
       `${META_API_BASE}/${phoneNumberId}/messages`,
       { messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'interactive', interactive },
