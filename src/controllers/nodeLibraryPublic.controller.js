@@ -2,18 +2,10 @@ const crypto = require('crypto');
 const supabase = require('../config/supabase');
 const { invalidateRulesCache } = require('../services/chatbot.service');
 const { writeBusinessGraphRows } = require('../services/flowSnapshot.service');
+const businessCategoryService = require('../services/businessCategory.service');
 const { successResponse, errorResponse } = require('../utils/response');
 const { toCamelCase } = require('../utils/caseConvert');
 const logger = require('../utils/logger');
-
-// Same 20-value list as businesses_business_category_check
-// (20260828090000_add_software_it_business_category.sql) - the frontend
-// passes the calling business's own business_category value as ?category=.
-const VALID_CATEGORIES = [
-  'tailor', 'salon', 'garage', 'cab', 'coaching', 'gym', 'medical', 'general',
-  'photographer', 'caterer', 'tutor', 'jeweller', 'boutique', 'grocery', 'bakery',
-  'electronics_repair', 'real_estate', 'driving_school', 'travels', 'software_it'
-];
 
 /**
  * GET /api/flow-graph/library?category=<businessCategory>
@@ -27,8 +19,8 @@ const getLibraryForCategory = async (req, res, next) => {
   try {
     const { category } = req.query;
 
-    if (!category || !VALID_CATEGORIES.includes(category)) {
-      return errorResponse(res, 400, `category must be one of: ${VALID_CATEGORIES.join(', ')}`);
+    if (!category || !(await businessCategoryService.isKnownCategory(category))) {
+      return errorResponse(res, 400, `Invalid category: ${category}`);
     }
 
     const { data, error } = await supabase

@@ -1,17 +1,8 @@
 const supabase = require('../config/supabase');
+const businessCategoryService = require('../services/businessCategory.service');
 const { successResponse, errorResponse } = require('../utils/response');
 const { toCamelCase } = require('../utils/caseConvert');
 const logger = require('../utils/logger');
-
-// Same 20-value list as businesses_business_category_check
-// (20260828090000_add_software_it_business_category.sql), mirrored in this
-// migration's node_library_entries_category_check constraint — same
-// literal-list pattern categoryTemplate.controller.js already uses.
-const VALID_CATEGORIES = [
-  'tailor', 'salon', 'garage', 'cab', 'coaching', 'gym', 'medical', 'general',
-  'photographer', 'caterer', 'tutor', 'jeweller', 'boutique', 'grocery', 'bakery',
-  'electronics_repair', 'real_estate', 'driving_school', 'travels', 'software_it'
-];
 
 const LIBRARY_NODE_TYPES = ['reply', 'question'];
 
@@ -82,8 +73,8 @@ const addNodeToLibrary = async (req, res, next) => {
     if (!sourceNodeId || typeof sourceNodeId !== 'string') {
       return errorResponse(res, 400, 'sourceNodeId is required');
     }
-    if (!category || !VALID_CATEGORIES.includes(category)) {
-      return errorResponse(res, 400, `category must be one of: ${VALID_CATEGORIES.join(', ')}`);
+    if (!category || !(await businessCategoryService.isKnownCategory(category))) {
+      return errorResponse(res, 400, `Invalid category: ${category}`);
     }
 
     const { data: sourceNode, error: nodeErr } = await supabase
@@ -137,8 +128,8 @@ const listLibraryEntries = async (req, res, next) => {
 
     let query = supabase.from('node_library_entries').select('*');
     if (category !== undefined) {
-      if (!VALID_CATEGORIES.includes(category)) {
-        return errorResponse(res, 400, `category must be one of: ${VALID_CATEGORIES.join(', ')}`);
+      if (!(await businessCategoryService.isKnownCategory(category))) {
+        return errorResponse(res, 400, `Invalid category: ${category}`);
       }
       query = query.eq('category', category);
     }
