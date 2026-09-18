@@ -45,7 +45,7 @@ const worker = new Worker('whatsapp-outbound', async (job) => {
       await whatsappService.sendCtaUrlButton(phoneNumberId, encryptedAccessToken, to, message, ctaButton.buttonText, ctaButton.url);
     } else if (Array.isArray(interactiveList) && interactiveList.length > 0) {
       // Booking-field choice question rendered as a tappable list (Part C/D/E).
-      await whatsappService.sendListMessage(phoneNumberId, encryptedAccessToken, to, message, listButtonLabel, interactiveList, step);
+      await whatsappService.sendListMessage(phoneNumberId, encryptedAccessToken, to, message, listButtonLabel, interactiveList, step, imageUrl);
     } else if (Array.isArray(interactiveButtons) && interactiveButtons.length > 0) {
       // Booking-field choice question rendered as reply buttons. Each id is
       // "{step}:{index}" (not just the index) so a stale tap from an earlier
@@ -57,7 +57,7 @@ const worker = new Worker('whatsapp-outbound', async (job) => {
     } else if (Array.isArray(buttons) && buttons.length > 0) {
       await whatsappService.sendInteractiveButtons(phoneNumberId, encryptedAccessToken, to, message, buttons, imageUrl);
     } else if (Array.isArray(listOptions) && listOptions.length > 0) {
-      await whatsappService.sendRuleListMessage(phoneNumberId, encryptedAccessToken, to, message, 'Choose', listOptions);
+      await whatsappService.sendRuleListMessage(phoneNumberId, encryptedAccessToken, to, message, 'Choose', listOptions, imageUrl);
     } else if (imageUrl) {
       await whatsappService.sendImageMessage(phoneNumberId, encryptedAccessToken, to, imageUrl, message);
     } else {

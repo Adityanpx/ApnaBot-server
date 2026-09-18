@@ -201,9 +201,10 @@ const sendInteractiveButtons = async (phoneNumberId, encryptedAccessToken, to, b
  * @param {string} buttonLabel - Text on the list-opening button
  * @param {Array<string>} options - Option labels, one per row
  * @param {number} step - The booking session step these options belong to
+ * @param {string} [imageUrl] - Optional header image URL
  * @returns {Promise<Object>}
  */
-const sendListMessage = async (phoneNumberId, encryptedAccessToken, to, bodyText, buttonLabel, options, step) => {
+const sendListMessage = async (phoneNumberId, encryptedAccessToken, to, bodyText, buttonLabel, options, step, imageUrl) => {
   try {
     const accessToken = decrypt(encryptedAccessToken);
     const interactive = {
@@ -221,6 +222,9 @@ const sendListMessage = async (phoneNumberId, encryptedAccessToken, to, bodyText
         ]
       }
     };
+    if (imageUrl) {
+      interactive.header = { type: 'image', image: { link: imageUrl } };
+    }
     const response = await axios.post(
       `${META_API_BASE}/${phoneNumberId}/messages`,
       { messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'interactive', interactive },
@@ -243,9 +247,10 @@ const sendListMessage = async (phoneNumberId, encryptedAccessToken, to, bodyText
  * @param {string} bodyText - Message body text
  * @param {string} buttonLabel - Text on the list-opening button
  * @param {Array<{label: string, description?: string, nextKeyword: string}>} options - Rule list options
+ * @param {string} [imageUrl] - Optional header image URL
  * @returns {Promise<Object>}
  */
-const sendRuleListMessage = async (phoneNumberId, encryptedAccessToken, to, bodyText, buttonLabel, options) => {
+const sendRuleListMessage = async (phoneNumberId, encryptedAccessToken, to, bodyText, buttonLabel, options, imageUrl) => {
   try {
     const accessToken = decrypt(encryptedAccessToken);
     const interactive = {
@@ -264,6 +269,9 @@ const sendRuleListMessage = async (phoneNumberId, encryptedAccessToken, to, body
         ]
       }
     };
+    if (imageUrl) {
+      interactive.header = { type: 'image', image: { link: imageUrl } };
+    }
     const response = await axios.post(
       `${META_API_BASE}/${phoneNumberId}/messages`,
       { messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'interactive', interactive },
