@@ -369,7 +369,7 @@ const placeDetails = async (req, res, next) => {
  * same distance-fare logic the graph/WhatsApp engine uses — instead of
  * hand-rolling fare math a second time, so Round Trip's day-based distance
  * estimate, driver DA, and real per_km_rate values all come from one place.
- * That function requires business.enableDistanceFares to be turned on; if
+ * That function requires business.travelSettings.enableDistanceFares to be turned on; if
  * it isn't, this now returns an empty vehicleQuotes list rather than the
  * unconditional per_km_rate quote this endpoint used to give.
  */

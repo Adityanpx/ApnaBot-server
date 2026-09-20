@@ -74,8 +74,13 @@ const getBusiness = async (req, res, next) => {
       return errorResponse(res, 404, 'Business not found');
     }
 
-    // Remove accessToken from response (never expose it)
-    const businessData = { ...business, _id: business.id };
+    // Remove accessToken from response (never expose it). travelSettings
+    // fields are also flattened onto the top level for backward
+    // compatibility with existing frontend reads (enableDistanceFares etc.
+    // used to be plain businesses columns before business_travel_settings,
+    // migration 20260921130000) — travelSettings itself stays too, for
+    // callers that prefer the nested shape.
+    const businessData = { ...businessService.flattenTravelSettings(business), _id: business.id };
     delete businessData.accessToken;
 
     const { remaining, resetAt } = bookingService.getPreviewCreditsStatus(business);
@@ -162,8 +167,10 @@ const createBusiness = async (req, res, next) => {
     // Save refresh token to Redis
     await saveTokenToRedis(req.user.userId, refreshToken);
 
-    // Remove accessToken from business data
-    const businessData = { ...business, _id: business.id };
+    // Remove accessToken from business data (see getBusiness's comment on
+    // flattenTravelSettings for why travelSettings fields are also flattened
+    // onto the top level here)
+    const businessData = { ...businessService.flattenTravelSettings(business), _id: business.id };
     delete businessData.accessToken;
 
     return successResponse(res, 201, {
@@ -271,8 +278,9 @@ const updateBusiness = async (req, res, next) => {
       }
     }
 
-    // Remove accessToken from response
-    const businessData = { ...business, _id: business.id };
+    // Remove accessToken from response (see getBusiness's comment on
+    // flattenTravelSettings)
+    const businessData = { ...businessService.flattenTravelSettings(business), _id: business.id };
     delete businessData.accessToken;
 
     return successResponse(res, 200, businessData);
@@ -567,8 +575,9 @@ const connectWhatsapp = async (req, res, next) => {
     await subscriptionService.invalidateSubscriptionCache(req.user.businessId.toString());
     await tenantService.invalidateTenantCache(phoneNumberId);
 
-    // Remove accessToken from response
-    const businessData = { ...business, _id: business.id };
+    // Remove accessToken from response (see getBusiness's comment on
+    // flattenTravelSettings)
+    const businessData = { ...businessService.flattenTravelSettings(business), _id: business.id };
     delete businessData.accessToken;
 
     logger.info('connectWhatsapp: connection saved, returning success', {

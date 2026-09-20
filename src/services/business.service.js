@@ -2,18 +2,16 @@ const supabase = require('../config/supabase');
 const { generateWebhookToken } = require('../utils/crypto');
 const { encrypt } = require('../utils/crypto');
 const { toCamelCase } = require('../utils/caseConvert');
-const { computeFeatureFlags } = require('../config/categoryFeatures');
+const { computeFeatureFlags, isTravelFeaturedCategory } = require('../config/categoryFeatures');
 const logger = require('../utils/logger');
 
 const businessFieldMap = {
   name: 'name', displayName: 'display_name', address: 'address', city: 'city',
   profileImage: 'profile_image', upiId: 'upi_id', fallbackReply: 'fallback_reply',
   welcomeMessage: 'welcome_message',
-  enableDistanceFares: 'enable_distance_fares', enableSmartFallback: 'enable_smart_fallback',
-  enableFleet: 'enable_fleet',
+  enableSmartFallback: 'enable_smart_fallback',
   vipEnabled: 'vip_enabled', vipCriteria: 'vip_criteria', vipThreshold: 'vip_threshold',
-  roundTripPerDayKm: 'round_trip_per_day_km', roundTripDriverDaEnabled: 'round_trip_driver_da_enabled',
-  roundTripDriverDaAmount: 'round_trip_driver_da_amount', disabledBookingFields: 'disabled_booking_fields',
+  disabledBookingFields: 'disabled_booking_fields',
   enabledLanguages: 'enabled_languages', welcomeMessageTranslations: 'welcome_message_translations',
   requireAdvancePayment: 'require_advance_payment', advancePaymentType: 'advance_payment_type',
   advancePaymentValue: 'advance_payment_value',
@@ -22,6 +20,59 @@ const businessFieldMap = {
   stopMessage: 'stop_message', stopMessageTranslations: 'stop_message_translations',
   startMessage: 'start_message', startMessageTranslations: 'start_message_translations',
   cancelMessage: 'cancel_message', cancelMessageTranslations: 'cancel_message_translations'
+};
+
+// Moved out of `businesses` into business_travel_settings (migration
+// 20260921130000) — travel/cab-only fare config, kept as its own field map
+// since it now targets a different table from updateBusiness's single call.
+const travelSettingsFieldMap = {
+  enableDistanceFares: 'enable_distance_fares', enableFleet: 'enable_fleet',
+  roundTripPerDayKm: 'round_trip_per_day_km',
+  roundTripDriverDaEnabled: 'round_trip_driver_da_enabled',
+  roundTripDriverDaAmount: 'round_trip_driver_da_amount'
+};
+
+/**
+ * Flattens a business object's `.travelSettings` fields (enableDistanceFares
+ * etc.) back onto its top level, for API responses that used to return these
+ * as plain businesses columns before the business_travel_settings split
+ * (migration 20260921130000) — keeps GET/PUT /api/business backward
+ * compatible with existing frontend reads. Deliberately picks only the
+ * known field names (not a blind spread) so business_travel_settings' own
+ * businessId/updatedAt don't leak onto/overwrite the business object's own.
+ * @param {Object|null} business - camelCase business object, as returned by attachTravelSettings
+ * @returns {Object|null} a NEW object; does not mutate the input
+ */
+const flattenTravelSettings = (business) => {
+  if (!business) return business;
+  const flattened = { ...business };
+  if (business.travelSettings) {
+    for (const field of Object.keys(travelSettingsFieldMap)) {
+      flattened[field] = business.travelSettings[field];
+    }
+  }
+  return flattened;
+};
+
+/**
+ * Attaches `.travelSettings` (camelCase business_travel_settings row) to a
+ * camelCase business object. Every business has a business_travel_settings
+ * row (backfilled for all businesses at migration time, inserted for every
+ * new business at signup — see createBusiness), but this only queries it
+ * when the business's category is travel-featured, so a plain business fetch
+ * doesn't pay for an unconditional join it'll never use.
+ * @param {Object|null} business - camelCase business object (mutated in place)
+ * @returns {Promise<Object|null>}
+ */
+const attachTravelSettings = async (business) => {
+  if (!business || !isTravelFeaturedCategory(business.businessCategory, business.subCategories)) {
+    return business;
+  }
+  const { data, error } = await supabase
+    .from('business_travel_settings').select('*').eq('business_id', business.id).maybeSingle();
+  if (error) throw error;
+  business.travelSettings = data ? toCamelCase(data) : null;
+  return business;
 };
 
 /**
@@ -35,7 +86,7 @@ const getBusinessByOwnerId = async (ownerUserId) => {
     const { data, error } = await supabase
       .from('businesses').select('*').eq('owner_user_id', ownerUserId).maybeSingle();
     if (error) throw error;
-    return toCamelCase(data);
+    return attachTravelSettings(toCamelCase(data));
   } catch (error) {
     logger.error('Error in getBusinessByOwnerId:', error);
     throw error;
@@ -52,7 +103,7 @@ const getBusinessById = async (businessId) => {
     const { data, error } = await supabase
       .from('businesses').select('*').eq('id', businessId).maybeSingle();
     if (error) throw error;
-    return toCamelCase(data);
+    return attachTravelSettings(toCamelCase(data));
   } catch (error) {
     logger.error('Error in getBusinessById:', error);
     throw error;
@@ -69,7 +120,7 @@ const getBusinessByPhoneNumberId = async (phoneNumberId) => {
     const { data, error } = await supabase
       .from('businesses').select('*').eq('phone_number_id', phoneNumberId).maybeSingle();
     if (error) throw error;
-    return toCamelCase(data);
+    return attachTravelSettings(toCamelCase(data));
   } catch (error) {
     logger.error('Error in getBusinessByPhoneNumberId:', error);
     throw error;
@@ -99,8 +150,7 @@ const createBusiness = async (ownerUserId, data) => {
       webhook_verify_token: webhookVerifyToken,
       is_active: true,
       is_whatsapp_connected: false,
-      booking_engine: 'graph',
-      ...computeFeatureFlags({ businessCategory, subCategories })
+      booking_engine: 'graph'
     }).select().single();
     if (error) throw error;
 
@@ -108,6 +158,18 @@ const createBusiness = async (ownerUserId, data) => {
     const { error: userErr } = await supabase
       .from('users').update({ business_id: business.id }).eq('id', ownerUserId);
     if (userErr) throw userErr;
+
+    // Every business gets a business_travel_settings row at signup (mirrors
+    // the unconditional backfill in migration 20260921130000) — computed
+    // defaults are all-false for non-travel-featured categories, same as the
+    // old inline columns were before this split. Only actually read back
+    // (attachTravelSettings) for travel-featured categories.
+    const { data: travelSettings, error: travelSettingsErr } = await supabase
+      .from('business_travel_settings').insert({
+        business_id: business.id,
+        ...computeFeatureFlags({ businessCategory, subCategories })
+      }).select().single();
+    if (travelSettingsErr) throw travelSettingsErr;
 
     // Deliberately NOT auto-seeding from a category template anymore. Every
     // new business starts with a literal empty graph — no flow_nodes/
@@ -117,7 +179,11 @@ const createBusiness = async (ownerUserId, data) => {
     // #importCategoryTemplate) — never something applied silently at
     // signup. See business.service.js history for the prior auto-seed
     // behavior this replaces.
-    return toCamelCase(business);
+    const camelBusiness = toCamelCase(business);
+    if (isTravelFeaturedCategory(businessCategory, subCategories)) {
+      camelBusiness.travelSettings = toCamelCase(travelSettings);
+    }
+    return camelBusiness;
   } catch (error) {
     logger.error('Error in createBusiness:', error);
     throw error;
@@ -139,11 +205,36 @@ const updateBusiness = async (businessId, data) => {
       }
     }
 
-    const { data: business, error } = await supabase
-      .from('businesses').update(updateData).eq('id', businessId).select().single();
-    if (error) throw error;
+    const travelSettingsUpdateData = {};
+    for (const [field, column] of Object.entries(travelSettingsFieldMap)) {
+      if (data[field] !== undefined) {
+        travelSettingsUpdateData[column] = data[field];
+      }
+    }
 
-    return toCamelCase(business);
+    // A request touching only travel-settings fields (e.g. just
+    // enableDistanceFares) would otherwise call .update({}) on businesses —
+    // skip that call entirely and fetch the current row instead.
+    let business;
+    if (Object.keys(updateData).length > 0) {
+      const { data: updated, error } = await supabase
+        .from('businesses').update(updateData).eq('id', businessId).select().single();
+      if (error) throw error;
+      business = updated;
+    } else {
+      const { data: existing, error } = await supabase
+        .from('businesses').select('*').eq('id', businessId).single();
+      if (error) throw error;
+      business = existing;
+    }
+
+    if (Object.keys(travelSettingsUpdateData).length > 0) {
+      const { error: travelSettingsErr } = await supabase
+        .from('business_travel_settings').update(travelSettingsUpdateData).eq('business_id', businessId);
+      if (travelSettingsErr) throw travelSettingsErr;
+    }
+
+    return attachTravelSettings(toCamelCase(business));
   } catch (error) {
     logger.error('Error in updateBusiness:', error);
     throw error;
@@ -158,7 +249,7 @@ const updateBusiness = async (businessId, data) => {
 const getServedCities = async (businessId) => {
   try {
     const { data, error } = await supabase
-      .from('businesses').select('served_cities').eq('id', businessId).maybeSingle();
+      .from('business_travel_settings').select('served_cities').eq('business_id', businessId).maybeSingle();
     if (error) throw error;
     return data ? (data.served_cities || []) : null;
   } catch (error) {
@@ -176,7 +267,7 @@ const getServedCities = async (businessId) => {
 const updateServedCities = async (businessId, cities) => {
   try {
     const { data, error } = await supabase
-      .from('businesses').update({ served_cities: cities }).eq('id', businessId).select('served_cities').single();
+      .from('business_travel_settings').update({ served_cities: cities }).eq('business_id', businessId).select('served_cities').single();
     if (error) throw error;
     return data ? (data.served_cities || []) : null;
   } catch (error) {
@@ -281,7 +372,7 @@ const connectWhatsapp = async (businessId, data) => {
       .from('businesses').update(updateData).eq('id', businessId).select().single();
     if (error) throw error;
 
-    return toCamelCase(business);
+    return attachTravelSettings(toCamelCase(business));
   } catch (error) {
     logger.error('Error in connectWhatsapp:', error);
     throw error;
@@ -376,6 +467,7 @@ module.exports = {
   getBusinessByPhoneNumberId,
   createBusiness,
   updateBusiness,
+  flattenTravelSettings,
   getServedCities,
   updateServedCities,
   getFlowFields,

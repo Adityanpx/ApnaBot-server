@@ -450,7 +450,7 @@ const startGraphSession = async (businessId, replyNodeId, languageCode) => {
     displayOverrides: {}
   };
 
-  return { session, result: nodeToFieldLocalized(entryNode, business.servedCities || [], null, languageCode) };
+  return { session, result: nodeToFieldLocalized(entryNode, business.travelSettings?.servedCities || [], null, languageCode) };
 };
 
 /**
@@ -502,7 +502,7 @@ const startGraphSessionAtNode = async (businessId, entryNodeId, ruleId, language
     displayOverrides: {}
   };
 
-  return { session, field: nodeToFieldLocalized(entryNode, business.servedCities || [], null, languageCode) };
+  return { session, field: nodeToFieldLocalized(entryNode, business.travelSettings?.servedCities || [], null, languageCode) };
 };
 
 /**
@@ -518,7 +518,7 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
   const { nodes, edges } = await loadGraph(businessId);
   const business = await businessService.getBusinessById(businessId);
   if (!business) throw new Error('Business not found');
-  const servedCities = business.servedCities || [];
+  const servedCities = business.travelSettings?.servedCities || [];
   const disabledFieldKeys = business.disabledBookingFields || [];
 
   const nodeById = new Map(nodes.map(n => [n.id, n]));
@@ -797,7 +797,7 @@ const getCurrentNodeField = async (businessId, session, languageCode) => {
     return null;
   }
 
-  return nodeToFieldLocalized(currentNode, business.servedCities || [], session.currentNodeComputedOptions, languageCode);
+  return nodeToFieldLocalized(currentNode, business.travelSettings?.servedCities || [], session.currentNodeComputedOptions, languageCode);
 };
 
 module.exports = {

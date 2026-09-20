@@ -126,21 +126,23 @@ const buildVehicleCarouselOptions = (routeFares) => routeFares.map((rf, idx) => 
 
 /**
  * Find distance-estimated vehicle options for a pickup/drop pair, for businesses
- * that have opted in via Business.enableDistanceFares. Falls back to [] on any
+ * that have opted in via business.travelSettings.enableDistanceFares (see
+ * business_travel_settings, migration 20260921130000). Falls back to [] on any
  * "can't compute" condition (opt-out, no Google result, no priced vehicles)
  * so the caller can fall through to the next tier without special-casing.
  *
  * For round trips where numberOfDays is known, distance is estimated as
- * numberOfDays * business.roundTripPerDayKm instead of doubling the one-way
- * distance, and the Google/cache one-way lookup is skipped entirely since
- * it isn't needed for that calculation.
+ * numberOfDays * travelSettings.roundTripPerDayKm instead of doubling the
+ * one-way distance, and the Google/cache one-way lookup is skipped entirely
+ * since it isn't needed for that calculation.
  * @param {string|number} [numberOfDays] - customer-provided day count for round trips
  * @returns {Promise<Array>} Carousel-shaped options with source: 'distance_estimate', or []
  */
 const findDistanceBasedVehicleOptions = async (businessId, pickupLocation, dropLocation, tripType, numberOfDays) => {
   const business = await businessService.getBusinessById(businessId);
-  if (!business || business.enableDistanceFares !== true) {
-    logger.warn('Distance fares lookup skipped: not enabled or business not found', { businessId, enableDistanceFares: business?.enableDistanceFares });
+  const travelSettings = business?.travelSettings;
+  if (!business || travelSettings?.enableDistanceFares !== true) {
+    logger.warn('Distance fares lookup skipped: not enabled or business not found', { businessId, enableDistanceFares: travelSettings?.enableDistanceFares });
     return [];
   }
 
@@ -150,7 +152,7 @@ const findDistanceBasedVehicleOptions = async (businessId, pickupLocation, dropL
 
   let distanceKm;
   if (useDayBasedEstimate) {
-    const perDayKm = business.roundTripPerDayKm || 250;
+    const perDayKm = travelSettings.roundTripPerDayKm || 250;
     distanceKm = days * perDayKm;
   } else {
     const fromCity = (pickupLocation || '').toLowerCase().trim();
@@ -205,8 +207,8 @@ const findDistanceBasedVehicleOptions = async (businessId, pickupLocation, dropL
     return [];
   }
 
-  const driverDaTotal = (useDayBasedEstimate && business.roundTripDriverDaEnabled)
-    ? business.roundTripDriverDaAmount * days
+  const driverDaTotal = (useDayBasedEstimate && travelSettings.roundTripDriverDaEnabled)
+    ? travelSettings.roundTripDriverDaAmount * days
     : 0;
 
   const options = vehicles.map((vehicle, idx) => {
@@ -225,7 +227,7 @@ const findDistanceBasedVehicleOptions = async (businessId, pickupLocation, dropL
     if (driverDaTotal > 0) {
       option.driverDaIncluded = true;
       option.driverDaTotal = driverDaTotal;
-      option.driverDaPerDay = business.roundTripDriverDaAmount;
+      option.driverDaPerDay = travelSettings.roundTripDriverDaAmount;
       option.driverDaDays = days;
     }
     return option;
