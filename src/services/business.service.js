@@ -467,6 +467,7 @@ module.exports = {
   getBusinessByPhoneNumberId,
   createBusiness,
   updateBusiness,
+  attachTravelSettings,
   flattenTravelSettings,
   getServedCities,
   updateServedCities,

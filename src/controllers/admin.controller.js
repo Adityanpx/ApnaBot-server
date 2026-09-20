@@ -4,6 +4,8 @@ const bookingService = require('../services/booking.service');
 const subscriptionService = require('../services/subscription.service');
 const tenantService = require('../services/tenant.service');
 const adminService = require('../services/admin.service');
+const businessService = require('../services/business.service');
+const { isTravelFeaturedCategory } = require('../config/categoryFeatures');
 const { invalidateRulesCache } = require('../services/chatbot.service');
 const { successResponse, errorResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
@@ -61,10 +63,32 @@ const getBusinesses = async (req, res, next) => {
       ownersById = Object.fromEntries((owners || []).map((o) => [o.id, o]));
     }
 
+    // Batched (not per-row) attachTravelSettings equivalent — see
+    // business.service.js's attachTravelSettings/flattenTravelSettings for
+    // the single-business version this mirrors.
+    const travelFeaturedIds = rows
+      .filter((b) => isTravelFeaturedCategory(b.business_category, b.sub_categories))
+      .map((b) => b.id);
+    let travelSettingsByBusinessId = {};
+    if (travelFeaturedIds.length > 0) {
+      const { data: travelSettingsRows, error: travelErr } = await supabase
+        .from('business_travel_settings').select('*').in('business_id', travelFeaturedIds);
+      if (travelErr) throw travelErr;
+      travelSettingsByBusinessId = Object.fromEntries(
+        (travelSettingsRows || []).map((t) => [t.business_id, t])
+      );
+    }
+
     const businesses = rows.map((b) => {
       const { access_token, ...safeRow } = b; // never expose encrypted token
       const owner = ownersById[b.owner_user_id];
-      return { ...toCamelCase(safeRow), ownerUserId: owner ? toCamelCase(owner) : b.owner_user_id };
+      let camelBusiness = { ...toCamelCase(safeRow), ownerUserId: owner ? toCamelCase(owner) : b.owner_user_id };
+      if (isTravelFeaturedCategory(b.business_category, b.sub_categories)) {
+        const travelSettingsRow = travelSettingsByBusinessId[b.id];
+        camelBusiness.travelSettings = travelSettingsRow ? toCamelCase(travelSettingsRow) : null;
+        camelBusiness = businessService.flattenTravelSettings(camelBusiness);
+      }
+      return camelBusiness;
     });
 
     const pagination = getPagination(count || 0, pageNum, limitNum);
@@ -87,7 +111,10 @@ const getBusinessById = async (req, res, next) => {
       .from('businesses').select('*').eq('id', id).maybeSingle();
     if (bizErr) throw bizErr;
     if (!businessRow) return errorResponse(res, 404, 'Business not found');
-    const { access_token, ...safeBusinessRow } = businessRow;
+
+    const businessWithTravelSettings = await businessService.attachTravelSettings(toCamelCase(businessRow));
+    const flattenedBusiness = businessService.flattenTravelSettings(businessWithTravelSettings);
+    const { accessToken, ...safeBusinessRow } = flattenedBusiness;
 
     const [ownerRes, staffRes, subRes, customerCountRes, bookingCountRes] = await Promise.all([
       supabase.from('users').select('id, name, email, role, last_login_at, is_active')
@@ -114,7 +141,7 @@ const getBusinessById = async (req, res, next) => {
     const subscription = subscriptionRow ? toCamelCaseDeep(subscriptionRow, ['plan']) : null;
 
     return successResponse(res, 200, {
-      business: { ...toCamelCase(safeBusinessRow), ownerUserId: owner || safeBusinessRow.owner_user_id },
+      business: { ...safeBusinessRow, ownerUserId: owner || safeBusinessRow.ownerUserId },
       subscription,
       plan: subscription?.plan || null,
       users,
