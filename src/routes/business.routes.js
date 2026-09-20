@@ -1,9 +1,10 @@
 const express = require('express');
 const router = express.Router();
 const businessController = require('../controllers/business.controller');
+const businessMediaController = require('../controllers/businessMedia.controller');
 const { protect, requireBusiness } = require('../middleware/auth.middleware');
 const { requireRole } = require('../middleware/role.middleware');
-const { uploadSingle } = require('../middleware/upload.middleware');
+const { uploadSingle, uploadMediaSingle } = require('../middleware/upload.middleware');
 
 // GET    /                   → protect, requireBusiness, business.controller.getBusiness
 // POST   /                   → protect, business.controller.createBusiness
@@ -19,6 +20,10 @@ const { uploadSingle } = require('../middleware/upload.middleware');
 // POST   /flow-fields/load-starter-template → protect, requireBusiness, requireRole('owner'), business.controller.loadFlowFieldsStarterTemplate
 // GET    /vehicle-options     → protect, requireBusiness, requireRole('owner'), business.controller.getVehicleOptions
 // POST   /upload-image        → protect, requireBusiness, requireRole('owner'), upload, business.controller.uploadProfileImage
+// POST   /media               → protect, requireBusiness, requireRole('owner'), businessMedia.controller.uploadMedia
+// GET    /media                → protect, requireBusiness, businessMedia.controller.listMedia
+// DELETE /media/:id            → protect, requireBusiness, requireRole('owner'), businessMedia.controller.deleteMedia
+// GET    /storage-status       → protect, requireBusiness, businessMedia.controller.getStorageStatus
 
 // GET / - Get business profile
 router.get('/', protect, requireBusiness, businessController.getBusiness);
@@ -96,5 +101,32 @@ router.post(
   uploadSingle,
   businessController.uploadProfileImage
 );
+
+// POST /media - Upload a file (image/video/pdf) to this business's media
+// library. multipart/form-data, field name 'file'.
+router.post(
+  '/media',
+  protect,
+  requireBusiness,
+  requireRole('owner'),
+  uploadMediaSingle,
+  businessMediaController.uploadMedia
+);
+
+// GET /media - List this business's media library. Query: ?type=image|video|document
+router.get('/media', protect, requireBusiness, businessMediaController.listMedia);
+
+// DELETE /media/:id - Delete a media library asset (rejected if a live
+// flow_nodes row still references it)
+router.delete(
+  '/media/:id',
+  protect,
+  requireBusiness,
+  requireRole('owner'),
+  businessMediaController.deleteMedia
+);
+
+// GET /storage-status - { usedBytes, limitBytes, usedMb, limitMb }
+router.get('/storage-status', protect, requireBusiness, businessMediaController.getStorageStatus);
 
 module.exports = router;

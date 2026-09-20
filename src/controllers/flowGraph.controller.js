@@ -92,6 +92,33 @@ const assertGraphStillValid = async (businessId, transformFn, { force = false } 
 };
 
 /**
+ * Resolves a business_media library asset id to its current R2 url, for the
+ * reply/question-node image field. Only 'image' media is valid here — the
+ * library also holds video/document assets for other uses, but
+ * flow_nodes.image_url only ever feeds WhatsApp's image message/header
+ * (whatsapp.service.js's sendImageMessage / interactive.header.image), never
+ * video or document. Returns null url/error tuple semantics: throws a
+ * {statusCode, message} shaped error on any problem so callers can just
+ * try/catch it the same way they already handle thrown Supabase errors.
+ */
+const resolveMediaIdToUrl = async (businessId, mediaId) => {
+  const { data: media, error } = await supabase
+    .from('business_media').select('url, media_type').eq('id', mediaId).eq('business_id', businessId).maybeSingle();
+  if (error) throw error;
+  if (!media) {
+    const err = new Error('mediaId does not reference a media library asset belonging to this business.');
+    err.statusCode = 400;
+    throw err;
+  }
+  if (media.media_type !== 'image') {
+    const err = new Error(`mediaId references a ${media.media_type} asset — only image assets can be used here.`);
+    err.statusCode = 400;
+    throw err;
+  }
+  return media.url;
+};
+
+/**
  * Audit trail for a force-overridden reachability check — a deliberate
  * destructive action (stranding a previously-reachable booking question),
  * unlike a normal edit, so it gets logged rather than passing silently.
@@ -245,15 +272,17 @@ const getReplyNodes = async (req, res, next) => {
  * creation into this call the way createRule bundled buttons/listOptions
  * would make node edits and edge edits inseparable; add buttons/list rows
  * afterward via the edges endpoint instead. Body: { keyword, matchType,
- * replyKind, contentType, label, labelTranslations, imageUrl, hindiAliases,
- * buttonText, buttonTextTranslations, latitude, longitude, locationName,
- * address (latter four only meaningful when contentType='location') }.
+ * replyKind, contentType, label, labelTranslations, imageUrl, mediaId,
+ * hindiAliases, buttonText, buttonTextTranslations, latitude, longitude,
+ * locationName, address (latter four only meaningful when contentType=
+ * 'location') }. mediaId (a business_media row id) takes precedence over a
+ * raw imageUrl when both are present — see resolveMediaIdToUrl.
  */
 const createReplyNode = async (req, res, next) => {
   try {
     const {
       keyword, matchType = 'contains', replyKind = 'text', contentType = 'text',
-      imageUrl = null, hindiAliases = [], labelTranslations = null,
+      imageUrl = null, mediaId = null, hindiAliases = [], labelTranslations = null,
       buttonText = null, buttonTextTranslations = null,
       latitude = null, longitude = null, locationName = null, address = null
     } = req.body;
@@ -262,6 +291,10 @@ const createReplyNode = async (req, res, next) => {
 
     if (!keyword) {
       return errorResponse(res, 400, 'Keyword is required');
+    }
+    let resolvedImageUrl = imageUrl;
+    if (mediaId) {
+      resolvedImageUrl = await resolveMediaIdToUrl(businessId, mediaId);
     }
     const latLngError = validateLatLng(latitude, longitude);
     if (latLngError) {
@@ -298,8 +331,8 @@ const createReplyNode = async (req, res, next) => {
     if (replyKind === 'booking_trigger' && !label) {
       label = 'Great! Let me collect your details.';
     }
-    if (!label && !imageUrl && contentType !== 'location') {
-      return errorResponse(res, 400, 'label is required (unless imageUrl is provided, or contentType is "location")');
+    if (!label && !resolvedImageUrl && contentType !== 'location') {
+      return errorResponse(res, 400, 'label is required (unless imageUrl/mediaId is provided, or contentType is "location")');
     }
     if (!label) label = '';
 
@@ -325,7 +358,8 @@ const createReplyNode = async (req, res, next) => {
       label_translations: labelTranslations || null,
       button_text: buttonText,
       button_text_translations: buttonTextTranslations || null,
-      image_url: imageUrl || null,
+      image_url: resolvedImageUrl || null,
+      media_id: mediaId || null,
       latitude,
       longitude,
       location_name: locationName || null,
@@ -352,7 +386,7 @@ const createReplyNode = async (req, res, next) => {
 const updateReplyNode = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, hindiAliases, label, labelTranslations, buttonText, buttonTextTranslations, formFields, latitude, longitude, locationName, address, force } = req.body || {};
+    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, mediaId, hindiAliases, label, labelTranslations, buttonText, buttonTextTranslations, formFields, latitude, longitude, locationName, address, force } = req.body || {};
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
@@ -449,7 +483,24 @@ const updateReplyNode = async (req, res, next) => {
     if (replyKind !== undefined) updateData.reply_kind = replyKind;
     if (contentType !== undefined) updateData.content_type = contentType;
     if (isActive !== undefined) updateData.is_active = isActive;
-    if (imageUrl !== undefined) updateData.image_url = imageUrl || null;
+    // mediaId takes precedence over a raw imageUrl in the same request.
+    // Picking a library asset (mediaId truthy) sets both columns; clearing
+    // it (mediaId: null) clears both. A raw imageUrl with no mediaId field
+    // in the request (the legacy path, unchanged) sets image_url only and
+    // clears media_id, since the node's image is no longer backed by a
+    // library asset once overwritten this way.
+    if (mediaId !== undefined) {
+      if (mediaId) {
+        updateData.image_url = await resolveMediaIdToUrl(businessId, mediaId);
+        updateData.media_id = mediaId;
+      } else {
+        updateData.image_url = null;
+        updateData.media_id = null;
+      }
+    } else if (imageUrl !== undefined) {
+      updateData.image_url = imageUrl || null;
+      updateData.media_id = null;
+    }
     if (labelTranslations !== undefined) updateData.label_translations = labelTranslations || null;
     if (label !== undefined) updateData.label = label;
     if (buttonTextTranslations !== undefined) updateData.button_text_translations = buttonTextTranslations || null;
@@ -654,9 +705,10 @@ const createQuestionNode = async (req, res, next) => {
   try {
     const {
       fieldKey, nodeType = 'question', contentType = 'text', summaryLabel = null, required = false,
-      order = null, options = [], labelTranslations = null, imageUrl = null, label
+      order = null, options = [], labelTranslations = null, imageUrl = null, mediaId = null, label
     } = req.body;
     const businessId = req.user.businessId;
+    const resolvedImageUrl = mediaId ? await resolveMediaIdToUrl(businessId, mediaId) : imageUrl;
 
     if (!fieldKey || typeof fieldKey !== 'string') {
       return errorResponse(res, 400, 'fieldKey is required');
@@ -713,7 +765,8 @@ const createQuestionNode = async (req, res, next) => {
       content_type: isComputed ? 'list' : contentType,
       label,
       label_translations: labelTranslations || null,
-      image_url: imageUrl || null,
+      image_url: resolvedImageUrl || null,
+      media_id: mediaId || null,
       summary_label: summaryLabel,
       required,
       order,
@@ -744,7 +797,7 @@ const createQuestionNode = async (req, res, next) => {
 const updateQuestionNode = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { fieldKey, contentType, label, labelTranslations, summaryLabel, required, order, options, imageUrl, force } = req.body || {};
+    const { fieldKey, contentType, label, labelTranslations, summaryLabel, required, order, options, imageUrl, mediaId, force } = req.body || {};
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
@@ -833,7 +886,18 @@ const updateQuestionNode = async (req, res, next) => {
     if (contentType !== undefined) updateData.content_type = contentType;
     if (label !== undefined) updateData.label = label;
     if (labelTranslations !== undefined) updateData.label_translations = labelTranslations || null;
-    if (imageUrl !== undefined) updateData.image_url = imageUrl || null;
+    if (mediaId !== undefined) {
+      if (mediaId) {
+        updateData.image_url = await resolveMediaIdToUrl(businessId, mediaId);
+        updateData.media_id = mediaId;
+      } else {
+        updateData.image_url = null;
+        updateData.media_id = null;
+      }
+    } else if (imageUrl !== undefined) {
+      updateData.image_url = imageUrl || null;
+      updateData.media_id = null;
+    }
     if (summaryLabel !== undefined) updateData.summary_label = summaryLabel;
     if (required !== undefined) updateData.required = required;
     if (order !== undefined) updateData.order = order;
@@ -1072,6 +1136,27 @@ const saveFullGraph = async (req, res, next) => {
     const currentNodeById = new Map((currentNodesRes.data || []).map(n => [n.id, n]));
     const currentEdgeById = new Map((currentEdgesRes.data || []).map(e => [e.id, e]));
 
+    // Batch-resolve every mediaId referenced across replyNodes/questionNodes
+    // in one query, rather than one query per item inside the loops below —
+    // this endpoint already does its current-state reads this way.
+    const referencedMediaIds = [...new Set(
+      [...replyNodes, ...questionNodes].map(item => item && item.mediaId).filter(Boolean)
+    )];
+    const mediaUrlById = new Map();
+    if (referencedMediaIds.length > 0) {
+      const { data: mediaRows, error: mediaErr } = await supabase
+        .from('business_media').select('id, url, media_type').eq('business_id', businessId).in('id', referencedMediaIds);
+      if (mediaErr) throw mediaErr;
+      for (const m of mediaRows || []) {
+        if (m.media_type === 'image') mediaUrlById.set(m.id, m.url);
+      }
+      const missing = referencedMediaIds.filter(id => !mediaUrlById.has(id));
+      if (missing.length > 0) {
+        return errorResponse(res, 400,
+          `mediaId(s) not found, not belonging to this business, or not an image asset: ${missing.join(', ')}`);
+      }
+    }
+
     const idMap = new Map();        // client-supplied temp id -> minted real id (new nodes only)
     const keepNodeIds = new Set();  // final surviving node ids (matched-existing or newly minted)
     const nodeUpserts = [];         // snake_case rows for the RPC
@@ -1088,10 +1173,11 @@ const saveFullGraph = async (req, res, next) => {
 
       const {
         keyword, matchType = 'contains', replyKind = 'text', contentType = 'text',
-        imageUrl = null, hindiAliases = [], labelTranslations = null, isActive = true,
+        imageUrl = null, mediaId = null, hindiAliases = [], labelTranslations = null, isActive = true,
         positionX = null, positionY = null
       } = item;
       let { label } = item;
+      const resolvedImageUrl = mediaId ? mediaUrlById.get(mediaId) : imageUrl;
 
       if (!keyword || typeof keyword !== 'string') {
         return errorResponse(res, 400, `replyNodes[${i}]: keyword is required`);
@@ -1113,8 +1199,8 @@ const saveFullGraph = async (req, res, next) => {
 
       if (replyKind === 'payment_trigger' && !label) label = 'Please complete your payment.';
       if (replyKind === 'booking_trigger' && !label) label = 'Great! Let me collect your details.';
-      if (!label && !imageUrl && contentType !== 'location') {
-        return errorResponse(res, 400, `replyNodes[${i}]: label is required (unless imageUrl is provided, or contentType is "location")`);
+      if (!label && !resolvedImageUrl && contentType !== 'location') {
+        return errorResponse(res, 400, `replyNodes[${i}]: label is required (unless imageUrl/mediaId is provided, or contentType is "location")`);
       }
       if (!label) label = '';
 
@@ -1133,7 +1219,7 @@ const saveFullGraph = async (req, res, next) => {
         hindi_aliases: (hindiAliases || []).map(a => a.trim()).filter(Boolean),
         reply_kind: replyKind, trigger_count: existing ? existing.trigger_count : 0,
         content_type: contentType, label, label_translations: labelTranslations || null,
-        image_url: imageUrl || null, field_key: null, summary_label: null, required: false,
+        image_url: resolvedImageUrl || null, media_id: mediaId || null, field_key: null, summary_label: null, required: false,
         order: null, options: [], is_computed: false, is_active: isActive,
         position_x: positionX, position_y: positionY
       });
@@ -1171,9 +1257,10 @@ const saveFullGraph = async (req, res, next) => {
 
       const {
         fieldKey, contentType = 'text', summaryLabel = null, required = false, order = null,
-        options = [], labelTranslations = null, imageUrl = null, label,
+        options = [], labelTranslations = null, imageUrl = null, mediaId = null, label,
         positionX = null, positionY = null
       } = item;
+      const resolvedImageUrl = mediaId ? mediaUrlById.get(mediaId) : imageUrl;
 
       if (!fieldKey || typeof fieldKey !== 'string') {
         return errorResponse(res, 400, `questionNodes[${i}]: fieldKey is required`);
@@ -1218,7 +1305,8 @@ const saveFullGraph = async (req, res, next) => {
         id, node_type: nodeType, keyword: null, match_type: null, hindi_aliases: [],
         reply_kind: null, trigger_count: existing ? existing.trigger_count : 0,
         content_type: isComputed ? 'list' : contentType,
-        label, label_translations: labelTranslations || null, image_url: imageUrl || null,
+        label, label_translations: labelTranslations || null, image_url: resolvedImageUrl || null,
+        media_id: mediaId || null,
         field_key: fieldKey, summary_label: summaryLabel, required, order,
         options: isComputed ? [] : (options || []), is_computed: isComputed,
         is_active: existing ? existing.is_active : true,

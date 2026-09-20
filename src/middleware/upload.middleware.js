@@ -40,8 +40,41 @@ const handleUploadError = (err, req, res, next) => {
   next();
 };
 
+// Business media library (image/video/PDF) — a separate multer instance
+// from `upload` above since the accepted mimetypes and size ceiling differ
+// (that one is image-only, 5MB flat). This filter only rejects unsupported
+// mimetypes; the real per-type caps (2MB image / 16MB video / 10MB document)
+// are enforced in businessMedia.service.js BEFORE the R2 upload, since
+// multer's own limits.fileSize is a single flat number and can't express
+// "cap differs by mimetype". The 16MB ceiling here is just a backstop so an
+// oversized upload never has to fully buffer into memory before rejection.
+const mediaFileFilter = (req, file, cb) => {
+  const allowedTypes = [
+    'image/jpeg', 'image/png', 'image/webp',
+    'video/mp4', 'video/quicktime', 'video/webm',
+    'application/pdf'
+  ];
+
+  if (allowedTypes.includes(file.mimetype)) {
+    cb(null, true);
+  } else {
+    cb(new Error('Unsupported file type. Allowed: JPEG/PNG/WebP images, MP4/MOV/WebM video, or PDF.'), false);
+  }
+};
+
+const mediaUpload = multer({
+  storage,
+  fileFilter: mediaFileFilter,
+  limits: {
+    fileSize: 16 * 1024 * 1024 // 16MB backstop — see comment above
+  }
+});
+
+const uploadMediaSingle = mediaUpload.single('file');
+
 module.exports = {
   uploadSingle,
+  uploadMediaSingle,
   handleUploadError,
   upload
 };
