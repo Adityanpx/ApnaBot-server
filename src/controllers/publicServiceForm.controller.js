@@ -125,7 +125,7 @@ const submitServiceForm = async (req, res, next) => {
       !field.visibleWhen || values[field.visibleWhen.field] === field.visibleWhen.equals;
 
     const missingLabels = flowFields
-      .filter(field => isFieldApplicable(field, values) && field.required &&
+      .filter(field => field.type !== 'display_text' && isFieldApplicable(field, values) && field.required &&
         (values[field.name] === undefined || values[field.name] === null || String(values[field.name]).trim() === ''))
       .map(field => field.label);
     if (missingLabels.length > 0) {
@@ -134,6 +134,7 @@ const submitServiceForm = async (req, res, next) => {
 
     const collected = {};
     for (const field of flowFields) {
+      if (field.type === 'display_text') continue;
       if (values[field.name] === undefined) continue;
 
       if (field.type === 'address_autocomplete') {
@@ -158,11 +159,13 @@ const submitServiceForm = async (req, res, next) => {
         collected[field.name] = values[field.name];
       }
     }
-    const orderedFields = flowFields.map(field => ({
-      fieldKey: field.name,
-      label: field.label,
-      summaryLabel: field.label
-    }));
+    const orderedFields = flowFields
+      .filter(field => field.type !== 'display_text')
+      .map(field => ({
+        fieldKey: field.name,
+        label: field.label,
+        summaryLabel: field.label
+      }));
 
     // If this business has a distance-fare Vehicle Picker (icon_select +
     // pickup/drop address fields), re-derive the fare server-side from the

@@ -8,7 +8,8 @@
  * copy instead of forking the rules.
  */
 
-const VALID_FLOW_FIELD_TYPES = ['dropdown', 'radio', 'date', 'text', 'textarea', 'toggle', 'icon_select', 'address_autocomplete'];
+const VALID_FLOW_FIELD_TYPES = ['dropdown', 'radio', 'date', 'display_text', 'text', 'textarea', 'toggle', 'icon_select', 'address_autocomplete'];
+const DISPLAY_TEXT_FONT_SIZES = ['sm', 'md', 'lg', 'xl'];
 
 // Which field types each vehicle-quote role may be attached to — see
 // validateFlowFields' doc comment. Keyed by role value.
@@ -26,6 +27,8 @@ const ROLE_ALLOWED_TYPES = {
  * - Every field needs a non-empty name and label.
  * - type must be one of VALID_FLOW_FIELD_TYPES.
  * - dropdown/radio need at least 2 options.
+ * - display_text is read-only copy rendered in the form, never a customer
+ *   answer. It may carry displayTextStyle: { color, fontSize, bold }.
  * - icon_select needs source: 'vehicle_catalog' (its real options are this
  *   business's live Vehicle Catalog rows, looked up at render/submit time,
  *   never hand-typed into the stored field definition).
@@ -90,6 +93,24 @@ const validateFlowFields = (fields) => {
 
     if (type === 'icon_select' && field.source !== 'vehicle_catalog') {
       return `fields[${i}] ("${name}") is icon_select and needs source: 'vehicle_catalog'`;
+    }
+
+    if (type === 'display_text') {
+      if (field.displayTextStyle !== undefined && field.displayTextStyle !== null) {
+        const style = field.displayTextStyle;
+        if (typeof style !== 'object' || Array.isArray(style)) {
+          return `fields[${i}] ("${name}") displayTextStyle must be an object`;
+        }
+        if (style.color !== undefined && (typeof style.color !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(style.color))) {
+          return `fields[${i}] ("${name}") displayTextStyle.color must be a hex color`;
+        }
+        if (style.fontSize !== undefined && !DISPLAY_TEXT_FONT_SIZES.includes(style.fontSize)) {
+          return `fields[${i}] ("${name}") displayTextStyle.fontSize must be one of: ${DISPLAY_TEXT_FONT_SIZES.join(', ')}`;
+        }
+        if (style.bold !== undefined && typeof style.bold !== 'boolean') {
+          return `fields[${i}] ("${name}") displayTextStyle.bold must be a boolean`;
+        }
+      }
     }
 
     if (field.role !== undefined && field.role !== null) {
