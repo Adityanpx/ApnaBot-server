@@ -102,8 +102,15 @@ const createBusiness = async (req, res, next) => {
   try {
     const { name, businessCategory, subCategories, displayName, address, city } = req.body;
 
-    // Check if user already has a business
+    // Check if user already has a business. users.business_id alone isn't
+    // enough — also check ownership directly, so a user whose
+    // users.business_id is null but who already owns a businesses row
+    // can't create a second one and repoint users.business_id.
     if (req.user.businessId) {
+      return errorResponse(res, 409, 'You already have a business. Use PUT /api/business to update it.');
+    }
+    const ownedBusiness = await businessService.getBusinessByOwnerId(req.user.userId);
+    if (ownedBusiness) {
       return errorResponse(res, 409, 'You already have a business. Use PUT /api/business to update it.');
     }
 
@@ -144,15 +151,25 @@ const createBusiness = async (req, res, next) => {
       }
     }
 
-    // Create business
-    const business = await businessService.createBusiness(req.user.userId, {
-      name,
-      businessCategory,
-      subCategories,
-      displayName,
-      address,
-      city
-    });
+    // Create business. Two concurrent requests can both pass the ownership
+    // check above; the loser hits businesses_owner_user_id_key (migration
+    // 20260926120000) and gets the same 409 instead of a 500.
+    let business;
+    try {
+      business = await businessService.createBusiness(req.user.userId, {
+        name,
+        businessCategory,
+        subCategories,
+        displayName,
+        address,
+        city
+      });
+    } catch (createErr) {
+      if (createErr.code === '23505' && (createErr.message || '').includes('businesses_owner_user_id_key')) {
+        return errorResponse(res, 409, 'You already have a business. Use PUT /api/business to update it.');
+      }
+      throw createErr;
+    }
 
     // Generate new tokens with businessId
     const userPayload = {

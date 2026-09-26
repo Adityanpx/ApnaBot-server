@@ -2,8 +2,13 @@
 // keyed by the same category strings businesses.business_category (and
 // multi_brand's sub_categories) allow. Each entry maps to a boolean column
 // on business_travel_settings (migration 20260921130000) that already
-// exists and is actually read elsewhere (enable_fleet, enable_distance_fares,
-// round_trip_driver_da_enabled) — deliberately not including flags like
+// exists (enable_fleet, enable_distance_fares, round_trip_driver_da_enabled).
+// enable_distance_fares and round_trip_driver_da_enabled are read by
+// booking.service.js's fare estimate; enable_fleet is stored UI state only —
+// nothing server-side (vehicle routes, booking engine, webhook) reads it, and
+// it's only returned by the API for travel-featured categories (see
+// isTravelFeaturedCategory / business.service.js#attachTravelSettings), so
+// the web toggle is travel-only too. Deliberately not including flags like
 // "service areas" or "round trip" since there's no column or read-site for
 // those today (served_cities is a city list, not a toggle; round trip is
 // just a tripType option the owner configures in their own flow graph). Add

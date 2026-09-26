@@ -273,9 +273,10 @@ const getReplyNodes = async (req, res, next) => {
  * would make node edits and edge edits inseparable; add buttons/list rows
  * afterward via the edges endpoint instead. Body: { keyword, matchType,
  * replyKind, contentType, label, labelTranslations, imageUrl, mediaId,
- * hindiAliases, buttonText, buttonTextTranslations, latitude, longitude,
- * locationName, address (latter four only meaningful when contentType=
- * 'location') }. mediaId (a business_media row id) takes precedence over a
+ * hindiAliases, buttonText, buttonTextTranslations, formFields, latitude,
+ * longitude, locationName, address (latter four only meaningful when
+ * contentType='location') }. formFields is validated and stored exactly as
+ * updateReplyNode does (validateFlowFields, any replyKind). mediaId (a business_media row id) takes precedence over a
  * raw imageUrl when both are present — see resolveMediaIdToUrl.
  */
 const createReplyNode = async (req, res, next) => {
@@ -283,7 +284,7 @@ const createReplyNode = async (req, res, next) => {
     const {
       keyword, matchType = 'contains', replyKind = 'text', contentType = 'text',
       imageUrl = null, mediaId = null, hindiAliases = [], labelTranslations = null,
-      buttonText = null, buttonTextTranslations = null,
+      buttonText = null, buttonTextTranslations = null, formFields,
       latitude = null, longitude = null, locationName = null, address = null
     } = req.body;
     let { label } = req.body;
@@ -319,6 +320,12 @@ const createReplyNode = async (req, res, next) => {
     const buttonTextTranslationsError = validateTranslationsMap(buttonTextTranslations, 'buttonTextTranslations');
     if (buttonTextTranslationsError) {
       return errorResponse(res, 400, buttonTextTranslationsError);
+    }
+    if (formFields !== undefined) {
+      const formFieldsError = validateFlowFields(formFields);
+      if (formFieldsError) {
+        return errorResponse(res, 400, formFieldsError);
+      }
     }
 
     // No buttons/listOptions in this call (see doc comment above), so the
@@ -358,6 +365,7 @@ const createReplyNode = async (req, res, next) => {
       label_translations: labelTranslations || null,
       button_text: buttonText,
       button_text_translations: buttonTextTranslations || null,
+      form_fields: formFields !== undefined ? formFields : null,
       image_url: resolvedImageUrl || null,
       media_id: mediaId || null,
       latitude,
@@ -1197,6 +1205,35 @@ const saveFullGraph = async (req, res, next) => {
       const replyLabelTranslationsError = validateTranslationsMap(labelTranslations, `replyNodes[${i}].labelTranslations`);
       if (replyLabelTranslationsError) return errorResponse(res, 400, replyLabelTranslationsError);
 
+      // buttonText/buttonTextTranslations/formFields/latitude/longitude/
+      // locationName/address: preserve-on-omit for EXISTING nodes — a key
+      // absent from the item keeps the current row's value, so a canvas
+      // client that doesn't send these can't null them out (the RPC sets
+      // every column unconditionally). New nodes: omitted → null. A key
+      // present with null still clears it, same as the single-node PUT.
+      const pickReplyField = (key, column) => (
+        Object.prototype.hasOwnProperty.call(item, key) ? item[key] : (existing ? existing[column] : null)
+      );
+      const buttonText = pickReplyField('buttonText', 'button_text');
+      const buttonTextTranslations = pickReplyField('buttonTextTranslations', 'button_text_translations');
+      const formFields = pickReplyField('formFields', 'form_fields');
+      const latitude = pickReplyField('latitude', 'latitude');
+      const longitude = pickReplyField('longitude', 'longitude');
+      const locationName = pickReplyField('locationName', 'location_name');
+      const address = pickReplyField('address', 'address');
+
+      const replyButtonTextTranslationsError = validateTranslationsMap(buttonTextTranslations, `replyNodes[${i}].buttonTextTranslations`);
+      if (replyButtonTextTranslationsError) return errorResponse(res, 400, replyButtonTextTranslationsError);
+      // null is accepted here (unlike PUT, which rejects formFields: null) —
+      // GET /full returns formFields: null for every node without fields, and
+      // the canvas echoes that back on every save.
+      if (formFields !== null && formFields !== undefined) {
+        const formFieldsError = validateFlowFields(formFields);
+        if (formFieldsError) return errorResponse(res, 400, `replyNodes[${i}]: ${formFieldsError}`);
+      }
+      const replyLatLngError = validateLatLng(latitude, longitude);
+      if (replyLatLngError) return errorResponse(res, 400, `replyNodes[${i}]: ${replyLatLngError}`);
+
       if (replyKind === 'payment_trigger' && !label) label = 'Please complete your payment.';
       if (replyKind === 'booking_trigger' && !label) label = 'Great! Let me collect your details.';
       if (!label && !resolvedImageUrl && contentType !== 'location') {
@@ -1221,7 +1258,10 @@ const saveFullGraph = async (req, res, next) => {
         content_type: contentType, label, label_translations: labelTranslations || null,
         image_url: resolvedImageUrl || null, media_id: mediaId || null, field_key: null, summary_label: null, required: false,
         order: null, options: [], is_computed: false, is_active: isActive,
-        position_x: positionX, position_y: positionY
+        position_x: positionX, position_y: positionY,
+        button_text: buttonText ?? null, button_text_translations: buttonTextTranslations || null,
+        form_fields: formFields ?? null, latitude: latitude ?? null, longitude: longitude ?? null,
+        location_name: locationName || null, address: address || null
       });
       proposedNodes.push({ id, nodeType: 'reply', replyKind, fieldKey: null });
     }
@@ -1310,7 +1350,16 @@ const saveFullGraph = async (req, res, next) => {
         field_key: fieldKey, summary_label: summaryLabel, required, order,
         options: isComputed ? [] : (options || []), is_computed: isComputed,
         is_active: existing ? existing.is_active : true,
-        position_x: positionX, position_y: positionY
+        position_x: positionX, position_y: positionY,
+        // Reply-node-only columns — not accepted for question nodes; carried
+        // over unchanged so the RPC's unconditional UPDATE SET can't null them.
+        button_text: existing ? existing.button_text : null,
+        button_text_translations: existing ? existing.button_text_translations : null,
+        form_fields: existing ? existing.form_fields : null,
+        latitude: existing ? existing.latitude : null,
+        longitude: existing ? existing.longitude : null,
+        location_name: existing ? existing.location_name : null,
+        address: existing ? existing.address : null
       });
       proposedNodes.push({ id, nodeType, replyKind: null, fieldKey });
     }
