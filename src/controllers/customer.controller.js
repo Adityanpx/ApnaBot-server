@@ -42,6 +42,15 @@ const buildBookingStatsByCustomer = (bookingRows) => {
   return stats;
 };
 
+// One grouped query for just the given customer ids, not one query per row.
+const fetchBookingStatsByCustomer = async (businessId, customerIds) => {
+  const { data: bookingRows, error } = await supabase
+    .from('bookings').select('customer_id, fare_amount')
+    .eq('business_id', businessId).in('customer_id', customerIds).in('status', BOOKING_STATUSES_FOR_VIP);
+  if (error) throw error;
+  return buildBookingStatsByCustomer(bookingRows);
+};
+
 // isVip is never stored — always computed live against the business's
 // current vip_enabled/vip_criteria/vip_threshold. Uses fare_amount (the
 // booking's actual value) for 'spend', not payment_amount (which is only the
@@ -110,15 +119,9 @@ const getCustomers = async (req, res, next) => {
 
     const business = await businessService.getBusinessById(businessId);
 
-    // One grouped query for just the fetched customer ids, not one query per row.
     let bookingStatsByCustomer = {};
     if (business?.vipEnabled && data && data.length > 0) {
-      const customerIds = data.map((c) => c.id);
-      const { data: bookingRows, error: bookingErr } = await supabase
-        .from('bookings').select('customer_id, fare_amount')
-        .eq('business_id', businessId).in('customer_id', customerIds).in('status', BOOKING_STATUSES_FOR_VIP);
-      if (bookingErr) throw bookingErr;
-      bookingStatsByCustomer = buildBookingStatsByCustomer(bookingRows);
+      bookingStatsByCustomer = await fetchBookingStatsByCustomer(businessId, data.map((c) => c.id));
     }
 
     let customers = (data || []).map((c) => withWindowExpiresAt({
@@ -205,8 +208,17 @@ const getCustomerById = async (req, res, next) => {
       .order('created_at', { ascending: false }).limit(50);
     if (msgErr) throw msgErr;
 
+    const business = await businessService.getBusinessById(businessId);
+    const bookingStatsByCustomer = business?.vipEnabled
+      ? await fetchBookingStatsByCustomer(businessId, [customer.id])
+      : {};
+
     return successResponse(res, 200, {
-      customer: withWindowExpiresAt(toCamelCase(customer)),
+      customer: withWindowExpiresAt({
+        ...toCamelCase(customer),
+        isVip: computeIsVip(business, bookingStatsByCustomer[customer.id] || { count: 0, spend: 0 }),
+        broadcastEligible: isBroadcastEligible(customer)
+      }),
       messages: (messages || []).map(toCamelCase).reverse()
     });
   } catch (error) {
