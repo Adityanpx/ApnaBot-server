@@ -10,7 +10,7 @@ const PIPELINE_STAGES = ['new', 'contacted', 'converted', 'lost'];
 // Mon morning is ~60h) without pairing an inbound message with an unrelated
 // staff message sent to the same customer days/weeks later for a different
 // reason. Only affects whether a resolved wait is counted in the average —
-// see computeResponseTimeSamples.
+// see the pairing rules above getResponseTimeStats.
 const RESPONSE_TIME_MAX_WAIT_MS = 3 * 24 * 60 * 60 * 1000;
 
 /**
@@ -49,14 +49,17 @@ const countInRange = async (table, businessId, start, end, statusIn) => {
   return count || 0;
 };
 
+// Summed in Postgres (report_sum_fare) rather than fetching fare rows — an
+// un-ranged select silently caps at PostgREST's 1000-row max_rows.
 const sumFareInRange = async (businessId, start, end) => {
-  const { data, error } = await supabase.from('bookings').select('fare_amount')
-    .eq('business_id', businessId)
-    .in('status', CONFIRMED_STATUSES)
-    .gte('created_at', start.toISOString())
-    .lt('created_at', end.toISOString());
+  const { data, error } = await supabase.rpc('report_sum_fare', {
+    p_business_id: businessId,
+    p_start: start.toISOString(),
+    p_end: end.toISOString(),
+    p_statuses: CONFIRMED_STATUSES
+  });
   if (error) throw error;
-  return (data || []).reduce((sum, row) => sum + (Number(row.fare_amount) || 0), 0);
+  return Number(data) || 0;
 };
 
 const computeRangeStats = async (businessId, start, end) => {
@@ -92,44 +95,25 @@ const getReportsSummary = async (businessId, period) => {
   };
 };
 
-const buildRevenueByCustomer = (bookingRows) => {
-  const revenue = {};
-  for (const row of bookingRows || []) {
-    revenue[row.customer_id] = (revenue[row.customer_id] || 0) + (Number(row.fare_amount) || 0);
-  }
-  return revenue;
-};
-
 /**
  * For each distinct tag across this business's customers, sums fare_amount
  * across that tag's customers' confirmed/completed bookings. A customer with
  * multiple tags contributes its full revenue to each tag (not split). A
- * customer with zero tags is excluded entirely.
+ * customer with zero tags is excluded entirely. Aggregated in Postgres
+ * (report_revenue_by_tag), sorted by revenue desc then tag.
  */
 const getRevenueByTag = async (businessId) => {
-  const [customersRes, bookingsRes] = await Promise.all([
-    supabase.from('customers').select('id, tags').eq('business_id', businessId),
-    supabase.from('bookings').select('customer_id, fare_amount')
-      .eq('business_id', businessId).in('status', CONFIRMED_STATUSES)
-  ]);
-  if (customersRes.error) throw customersRes.error;
-  if (bookingsRes.error) throw bookingsRes.error;
+  const { data, error } = await supabase.rpc('report_revenue_by_tag', {
+    p_business_id: businessId,
+    p_statuses: CONFIRMED_STATUSES
+  });
+  if (error) throw error;
 
-  const revenueByCustomer = buildRevenueByCustomer(bookingsRes.data);
-  const taggedCustomers = (customersRes.data || []).filter((c) => (c.tags || []).length > 0);
-
-  const statsByTag = {};
-  for (const customer of taggedCustomers) {
-    const revenue = revenueByCustomer[customer.id] || 0;
-    for (const tag of customer.tags) {
-      const stat = statsByTag[tag] || { tag, customerCount: 0, revenue: 0 };
-      stat.customerCount += 1;
-      stat.revenue += revenue;
-      statsByTag[tag] = stat;
-    }
-  }
-
-  return Object.values(statsByTag).sort((a, b) => b.revenue - a.revenue);
+  return (data || []).map((row) => ({
+    tag: row.tag,
+    customerCount: Number(row.customer_count),
+    revenue: Number(row.revenue)
+  }));
 };
 
 /**
@@ -142,34 +126,22 @@ const getRevenueByTag = async (businessId) => {
  * can draw a complete funnel without special-casing missing entries.
  */
 const getPipelineFunnel = async (businessId) => {
-  const { data, error } = await supabase
-    .from('customers').select('pipeline_stage').eq('business_id', businessId);
-  if (error) throw error;
+  const results = await Promise.all(PIPELINE_STAGES.map((stage) =>
+    supabase.from('customers').select('*', { count: 'exact', head: true })
+      .eq('business_id', businessId).eq('pipeline_stage', stage)
+  ));
 
-  const counts = Object.fromEntries(PIPELINE_STAGES.map((stage) => [stage, 0]));
-  for (const row of data || []) {
-    if (counts[row.pipeline_stage] !== undefined) counts[row.pipeline_stage] += 1;
-  }
-
-  return PIPELINE_STAGES.map((stage) => ({ stage, count: counts[stage] }));
+  return PIPELINE_STAGES.map((stage, i) => {
+    const { count, error } = results[i];
+    if (error) throw error;
+    return { stage, count: count || 0 };
+  });
 };
 
-/**
- * Groups messages by customer_id, preserving input order within each group.
- * Rows must already be sorted by created_at ascending within each customer
- * (the caller's query does this via .order('customer_id').order('created_at')).
- */
-const groupMessagesByCustomer = (rows) => {
-  const byCustomer = new Map();
-  for (const row of rows) {
-    if (!byCustomer.has(row.customer_id)) byCustomer.set(row.customer_id, []);
-    byCustomer.get(row.customer_id).push(row);
-  }
-  return byCustomer;
-};
-
-/**
- * Pairing algorithm (see PR discussion for full reasoning): walk each
+/*
+ * Response-time pairing rules (see PR discussion for full reasoning),
+ * implemented in SQL by report_response_time_stats (migration
+ * 20260927120000_report_aggregate_rpcs.sql): walk each
  * customer's messages chronologically tracking `pendingSince`, the created_at
  * of the oldest currently-unanswered inbound message.
  * - inbound: only sets pendingSince if it's currently null — a burst of
@@ -199,54 +171,13 @@ const groupMessagesByCustomer = (rows) => {
  *   range simply never resolves pendingSince, so it never emits a sample —
  *   excluded from the average entirely, not counted as 0.
  *
- * @param {Array<{customer_id: string, direction: string, sender_type: string, created_at: string}>} rows
- * @param {Date} windowStart
- * @param {Date} windowEnd
- * @returns {number[]} wait durations in minutes
+ * The original JS implementation of these rules is kept as the reference in
+ * src/scripts/verifyReportAggregates.js.
  */
-const computeResponseTimeSamples = (rows, windowStart, windowEnd) => {
-  const byCustomer = groupMessagesByCustomer(rows);
-  const samples = [];
-
-  for (const messages of byCustomer.values()) {
-    let pendingSince = null;
-
-    for (const msg of messages) {
-      const createdAt = new Date(msg.created_at);
-
-      if (msg.direction === 'inbound') {
-        if (pendingSince === null) pendingSince = createdAt;
-        continue;
-      }
-
-      // outbound
-      if (msg.sender_type === 'bot') continue; // bot reply — doesn't resolve the wait
-      if (pendingSince === null) continue; // human reply with nothing pending
-
-      const waitMs = createdAt.getTime() - pendingSince.getTime();
-      const startedInWindow = pendingSince >= windowStart && pendingSince < windowEnd;
-      if (startedInWindow && waitMs <= RESPONSE_TIME_MAX_WAIT_MS) {
-        samples.push(waitMs / 60000);
-      }
-      pendingSince = null;
-    }
-  }
-
-  return samples;
-};
-
-const average = (values) => (values.length === 0 ? null : values.reduce((a, b) => a + b, 0) / values.length);
-
-const median = (values) => {
-  if (values.length === 0) return null;
-  const sorted = [...values].sort((a, b) => a - b);
-  const mid = Math.floor(sorted.length / 2);
-  return sorted.length % 2 === 0 ? (sorted[mid - 1] + sorted[mid]) / 2 : sorted[mid];
-};
 
 /**
  * How long customers typically wait for a genuine human reply (as opposed to
- * the bot's near-instant auto-replies — see computeResponseTimeSamples) after
+ * the bot's near-instant auto-replies — see the pairing rules above) after
  * messaging in, for a given reports period.
  *
  * Fetches messages padded by RESPONSE_TIME_MAX_WAIT_MS on both sides of the
@@ -266,21 +197,23 @@ const getResponseTimeStats = async (businessId, period) => {
   const fetchStart = new Date(currentStart.getTime() - RESPONSE_TIME_MAX_WAIT_MS);
   const fetchEnd = new Date(currentEnd.getTime() + RESPONSE_TIME_MAX_WAIT_MS);
 
-  const { data, error } = await supabase.from('messages')
-    .select('customer_id, direction, sender_type, created_at')
-    .eq('business_id', businessId)
-    .gte('created_at', fetchStart.toISOString())
-    .lt('created_at', fetchEnd.toISOString())
-    .order('customer_id', { ascending: true })
-    .order('created_at', { ascending: true });
+  const { data, error } = await supabase.rpc('report_response_time_stats', {
+    p_business_id: businessId,
+    p_fetch_start: fetchStart.toISOString(),
+    p_fetch_end: fetchEnd.toISOString(),
+    p_window_start: currentStart.toISOString(),
+    p_window_end: currentEnd.toISOString(),
+    p_max_wait_ms: RESPONSE_TIME_MAX_WAIT_MS
+  });
   if (error) throw error;
 
-  const waitMinutes = computeResponseTimeSamples(data || [], currentStart, currentEnd);
+  const stats = (data || [])[0] || {};
+  const sampleSize = Number(stats.sample_size) || 0;
 
   return {
-    averageMinutes: average(waitMinutes),
-    medianMinutes: median(waitMinutes),
-    sampleSize: waitMinutes.length,
+    averageMinutes: sampleSize === 0 ? null : Number(stats.average_minutes),
+    medianMinutes: sampleSize === 0 ? null : Number(stats.median_minutes),
+    sampleSize,
     note: 'Measures wall-clock time to a human reply; does not account for business hours, so overnight/weekend waits will show as large numbers.'
   };
 };

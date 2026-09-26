@@ -43,12 +43,21 @@ const buildBookingStatsByCustomer = (bookingRows) => {
 };
 
 // One grouped query for just the given customer ids, not one query per row.
+// Counted/summed in Postgres (customer_booking_stats) rather than fetching
+// booking rows — an un-ranged select silently caps at PostgREST's 1000-row
+// max_rows, and heavy repeat customers are exactly the VIP case.
 const fetchBookingStatsByCustomer = async (businessId, customerIds) => {
-  const { data: bookingRows, error } = await supabase
-    .from('bookings').select('customer_id, fare_amount')
-    .eq('business_id', businessId).in('customer_id', customerIds).in('status', BOOKING_STATUSES_FOR_VIP);
+  const { data, error } = await supabase.rpc('customer_booking_stats', {
+    p_business_id: businessId,
+    p_customer_ids: customerIds,
+    p_statuses: BOOKING_STATUSES_FOR_VIP
+  });
   if (error) throw error;
-  return buildBookingStatsByCustomer(bookingRows);
+  const stats = {};
+  for (const row of data || []) {
+    stats[row.customer_id] = { count: Number(row.booking_count), spend: Number(row.spend) };
+  }
+  return stats;
 };
 
 // isVip is never stored — always computed live against the business's
