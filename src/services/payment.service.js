@@ -33,16 +33,17 @@ const createRazorpayPaymentLink = async (bookingId, amount, customerName, custom
       amount: Math.round(amount), // Amount in paise
       currency: 'INR',
       description: description || 'Payment for booking',
-      customer: {
-        name: customerName,
-        contact: customerPhone
-      },
+      // Razorpay rejects an empty contact — walk-in links (no booking) have none.
+      customer: customerPhone
+        ? { name: customerName, contact: `+${String(customerPhone).replace(/^\+/, '')}` }
+        : { name: customerName },
       notify: {
         sms: true,
         email: true
-      },
-      callback_url: `${config.FRONTEND_URL}/payment/callback?bookingId=${bookingId}`,
-      callback_method: 'get'
+      }
+      // No callback_url: the web app has no /payment/callback page, so the
+      // customer landed on a 404 after paying. Razorpay's own success page is
+      // shown instead; booking status is updated by the payment_link.paid webhook.
     });
 
     if (bookingId) {
@@ -77,8 +78,10 @@ const generateUPILink = async (bookingId, amount, vpa, payeeName) => {
     const upiParams = new URLSearchParams({
       pa: vpa,
       pn: payeeName,
-      am: amount.toString(),
-      tn: bookingId ? `Payment for booking ${bookingId}` : 'Payment'
+      am: Number(amount).toFixed(2),
+      cu: 'INR',
+      // Kept short — UPI apps truncate or reject long notes (was the full UUID).
+      tn: bookingId ? 'Booking payment' : 'Payment'
     });
 
     // Generate UPI payment link

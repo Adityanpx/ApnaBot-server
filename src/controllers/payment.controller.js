@@ -151,7 +151,13 @@ const sendToCustomer = async (req, res, next) => {
 
     const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
 
-    const message = `Your payment link: ${paymentLink}\n\nPlease complete your payment to confirm your booking.`;
+    // WhatsApp doesn't make upi:// tappable — send the https landing page
+    // (public.routes.js /upi-pay) carrying the same params instead.
+    const sendLink = paymentLink.startsWith('upi://pay?')
+      ? `${req.protocol}://${req.get('host')}/api/public/upi-pay?${paymentLink.slice('upi://pay?'.length)}`
+      : paymentLink;
+
+    const message = `Your payment link: ${sendLink}\n\nPlease complete your payment to confirm your booking.`;
 
     // Queue with all required fields including business WhatsApp credentials
     await addToWhatsappQueue({
