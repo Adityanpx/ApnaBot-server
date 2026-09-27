@@ -405,8 +405,35 @@ const markMessageAsRead = async (phoneNumberId, encryptedAccessToken, metaMessag
   }
 };
 
+/**
+ * Download an inbound media file (image/document/...) by its Meta media id.
+ * Two calls: GET /{media-id} returns a short-lived URL, which itself needs
+ * the same bearer token to fetch.
+ * @param {string} mediaId - message.image.id etc. from the webhook payload
+ * @param {string} encryptedAccessToken - Encrypted Meta access token
+ * @param {number} [maxBytes=10MB] - refuse larger files (checked before download)
+ * @returns {Promise<{buffer: Buffer, mimeType: string}>}
+ */
+const downloadMedia = async (mediaId, encryptedAccessToken, maxBytes = 10 * 1024 * 1024) => {
+  const accessToken = decrypt(encryptedAccessToken);
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  const { data: meta } = await axios.get(`${META_API_BASE}/${mediaId}`, { headers });
+  if (!meta?.url) throw new Error(`No download URL for media ${mediaId}`);
+  if (meta.file_size && meta.file_size > maxBytes) {
+    throw new Error(`Media ${mediaId} is ${meta.file_size} bytes, over the ${maxBytes} limit`);
+  }
+
+  const response = await axios.get(meta.url, { headers, responseType: 'arraybuffer', maxContentLength: maxBytes });
+  return {
+    buffer: Buffer.from(response.data),
+    mimeType: (meta.mime_type || response.headers['content-type'] || '').split(';')[0].trim()
+  };
+};
+
 module.exports = {
   sendTextMessage,
+  downloadMedia,
   sendImageMessage,
   sendLocationMessage,
   sendLocationRequest,

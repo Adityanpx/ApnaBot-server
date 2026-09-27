@@ -16,6 +16,8 @@ const { LANGUAGE_CATALOG, isValidLanguageCode } = require('../utils/languageCata
 const { getLocalizedText } = require('../utils/localization');
 const { getSystemMessage } = require('../utils/systemMessages');
 const { isIndefinitePause } = require('../utils/botPause');
+const whatsappService = require('../services/whatsapp.service');
+const r2 = require('../services/r2.service');
 const logger = require('../utils/logger');
 
 // Exact-match greeting keywords that trigger the welcome message / menu.
@@ -63,6 +65,85 @@ const saveMessage = async (fields) => {
   const { data, error } = await supabase.from('messages').insert(fields).select().single();
   if (error) throw error;
   return toCamelCase(data);
+};
+
+// Mirrors messages_type_check (migration 20260928120000). Anything Meta adds
+// later is stored as 'unsupported' rather than failing the insert — which
+// used to drop the whole inbound message (e.g. a shared location).
+const INBOUND_MESSAGE_TYPES = new Set([
+  'text', 'image', 'document', 'audio', 'interactive', 'video', 'sticker',
+  'location', 'contacts', 'button', 'reaction', 'order', 'system', 'unsupported'
+]);
+
+// Types the inbox can display from R2 — WhatsApp photos arrive as JPEG/PNG
+// (WebP is stickers, not stored).
+const STORABLE_IMAGE_TYPES = ['image/jpeg', 'image/png'];
+
+/**
+ * Copies an inbound customer photo (e.g. a payment screenshot) from Meta to
+ * R2 and sets the message's media_url, so the owner can see it in the inbox.
+ * Fire-and-forget after the message is saved — never delays or blocks the
+ * bot's reply; failures are only logged (the message keeps its
+ * "📷 Photo" placeholder). Not counted against the business's media-library
+ * storage (storage_used_bytes) — that quota is for the owner's own uploads.
+ * @param {Object} tenant - resolved tenant (businessId, accessToken)
+ * @param {Object} inboundMsg - the saved camelCase message row
+ * @param {string} mediaId - message.image.id from the webhook payload
+ */
+const storeInboundImage = async (tenant, inboundMsg, mediaId) => {
+  try {
+    const { buffer, mimeType } = await whatsappService.downloadMedia(mediaId, tenant.accessToken);
+    if (!STORABLE_IMAGE_TYPES.includes(mimeType)) {
+      logger.info(`Inbound image ${inboundMsg.id} has type ${mimeType} — not stored`);
+      return;
+    }
+    const { url } = await r2.uploadImage(buffer, `inbound-media/${tenant.businessId}`, inboundMsg.id, mimeType);
+    const { error } = await supabase.from('messages').update({ media_url: url }).eq('id', inboundMsg.id);
+    if (error) throw error;
+    try {
+      socketService.emitToBusiness(tenant.businessId.toString(), 'message_media', {
+        messageId: inboundMsg.id,
+        customerId: inboundMsg.customerId,
+        mediaUrl: url
+      });
+    } catch (socketError) {
+      logger.error('Error emitting message_media socket event:', socketError);
+    }
+  } catch (error) {
+    logger.error('Error storing inbound image', {
+      businessId: tenant.businessId,
+      messageId: inboundMsg.id,
+      message: error.response?.data || error.message
+    });
+  }
+};
+
+/**
+ * Inbox text for an inbound message that has no text body — without it,
+ * photos (e.g. a customer's payment screenshot), documents and voice notes
+ * were stored with empty content and showed as blank bubbles. Photos are
+ * additionally copied to R2 (storeInboundImage); other media isn't stored.
+ * @param {Object} message - Meta webhook message object
+ * @returns {string|null}
+ */
+const inboundMediaLabel = (message) => {
+  const withCaption = (label, caption) => (caption ? `${label}: ${caption}` : label);
+  switch (message.type) {
+    case 'image': return withCaption('📷 Photo', message.image?.caption);
+    case 'video': return withCaption('🎥 Video', message.video?.caption);
+    case 'document': return withCaption(`📄 ${message.document?.filename || 'Document'}`, message.document?.caption);
+    case 'audio': return message.audio?.voice ? '🎤 Voice message' : '🎵 Audio';
+    case 'sticker': return 'Sticker';
+    case 'location': {
+      const loc = message.location || {};
+      return ['📍 Location', loc.name, loc.address].filter(Boolean).join(' · ');
+    }
+    case 'contacts': return '👤 Contact card';
+    case 'interactive':
+      // WhatsApp Flow form submission (nfm_reply) — no title to show.
+      return message.interactive?.nfm_reply ? '📝 Form submitted' : null;
+    default: return null;
+  }
 };
 
 /**
@@ -637,6 +718,15 @@ const receiveWebhook = async (req, res) => {
     // (Step 12 below); letting it past Step 11 doesn't mean it's accepted.
     const messageLocation = messageType === 'location' ? message.location : null;
     let messageText = message.text?.body || buttonReplyId || listReplyId || '';
+    // What the owner sees in chat. messageText above stays the button/list
+    // id, since that's what the rule/booking matchers key on — but the id
+    // (e.g. 'lang_mr', a node uuid) is meaningless in the inbox, so store the
+    // label the customer actually tapped, or a placeholder for media.
+    const displayContent = message.text?.body
+      || message.interactive?.button_reply?.title
+      || message.interactive?.list_reply?.title
+      || inboundMediaLabel(message)
+      || messageText;
     const phoneNumberId = value.metadata.phone_number_id;
     // Meta includes the sender's current WhatsApp display name alongside each
     // inbound message via the contacts array — capture it for first contact.
@@ -690,12 +780,17 @@ const receiveWebhook = async (req, res) => {
       customer_id: customer.id,
       customer_number: customerNumber,
       direction: 'inbound',
-      type: messageType,
-      content: messageText,
+      type: INBOUND_MESSAGE_TYPES.has(messageType) ? messageType : 'unsupported',
+      content: displayContent,
       meta_message_id: metaMessageId,
       status: 'delivered',
       is_read: false
     });
+
+    // Customer photos (payment screenshots etc.) → R2, in the background.
+    if (messageType === 'image' && message.image?.id) {
+      storeInboundImage(tenant, inboundMsg, message.image.id);
+    }
 
     // Step 9.5 - Enforce usage limit (message is already saved above — only
     // the reply, and the now-meaningless usage increment below, are blocked)

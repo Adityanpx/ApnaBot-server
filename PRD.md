@@ -305,6 +305,17 @@ tracked as a deferred "future initiative" — it's built and live.
    model reference above; not investigated this pass.
 
 ## Session log (append here as major milestones land)
+- 2026-09-28: Inbound message storage fixes (webhook.controller.js).
+  `messages.content` now holds the tapped button/list TITLE (matching still
+  uses the id) or a media placeholder ("📷 Photo: caption", "📄 file.pdf",
+  "🎤 Voice message", "📍 Location"). Migration
+  `20260928120000_messages_type_all_whatsapp_types` widens
+  `messages_type_check` — `location`/`sticker`/`video`/`contacts`/`reaction`
+  inbound messages previously failed the insert (23514) and were dropped
+  entirely, so a `location_request` booking field could never be answered;
+  unknown future types are saved as `unsupported`. Customer photos are
+  copied Meta → R2 (`inbound-media/<businessId>/<messageId>`) in the
+  background and set `media_url` (not counted against storage_used_bytes).
 - 2026-09-28: Customer payments switched from Razorpay/UPI payment links
   to the business's own QR image + owner-recorded payment (see Data model
   reference). Migration `20260927130000_businesses_payment_qr_url`. Payment
