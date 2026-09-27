@@ -208,6 +208,30 @@ const resolveBookingTriggerEntryNodeIds = (nodes, edges) => {
 };
 
 /**
+ * Whether a customer can enter the chat booking question subgraph at all:
+ * either (a) any booking_trigger reply node exists
+ * (bookingGraph.service.js#startGraphSession), or (b) any edge runs from a
+ * reply node (any replyKind) straight into a question-subgraph node — a
+ * button/list tap on it starts the graph at that node via
+ * webhook.controller.js's directBookingEntry / startGraphSessionAtNode,
+ * no booking_trigger involved. Deliberately broader than
+ * resolveBookingTriggerEntryNodeIds (which only covers (a)). Used to scope
+ * the reserved travel field-key guard: a business that books only through
+ * web_form_trigger never runs these nodes, so they're safe to delete/rename.
+ * @param {Array} nodes
+ * @param {Array} edges
+ * @returns {boolean}
+ */
+const canEnterBookingQuestions = (nodes, edges) => {
+  if (nodes.some(n => n.nodeType === 'reply' && n.replyKind === 'booking_trigger')) {
+    return true;
+  }
+  const replyNodeIds = new Set(nodes.filter(n => n.nodeType === 'reply').map(n => n.id));
+  const questionNodeIds = new Set(nodes.filter(n => QUESTION_SUBGRAPH_TYPES.includes(n.nodeType)).map(n => n.id));
+  return edges.some(e => replyNodeIds.has(e.fromNodeId) && questionNodeIds.has(e.toNodeId));
+};
+
+/**
  * Existence-only check: condition.field must name a real field_key among
  * this business's question-subgraph nodes. Does NOT verify the field is
  * collected earlier than this edge on every path (see file header).
@@ -229,5 +253,6 @@ module.exports = {
   findUnreachableNodes,
   findFallbackSiblingNodeIds,
   resolveBookingTriggerEntryNodeIds,
+  canEnterBookingQuestions,
   validateConditionField
 };

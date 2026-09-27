@@ -7,6 +7,7 @@ const {
   findUnreachableNodes,
   findFallbackSiblingNodeIds,
   resolveBookingTriggerEntryNodeIds,
+  canEnterBookingQuestions,
   validateConditionField
 } = require('../utils/flowGraphValidation');
 const { validateLabelTranslations } = require('../utils/bookingFieldValidation');
@@ -30,6 +31,11 @@ const VALID_QUESTION_NODE_TYPES = ['question', 'vehicle_carousel'];
 // so the same guard reasoning applies to the graph engine, not just the old one.
 const TRAVEL_CATEGORIES_WITH_RESERVED_FIELDS = ['cab', 'travels'];
 const RESERVED_TRAVEL_FIELD_KEYS = ['tripType', 'pickupLocation', 'dropLocation', 'travelDate', 'pickupTime'];
+
+// Shared by deleteQuestionNode and the canvas batch save's delete path.
+const reservedFieldDeleteError = (fieldKey) =>
+  `Cannot delete: fieldKey "${fieldKey}" has special booking-flow behavior, and this business can ` +
+  'still start the chat booking questions (a "Start a booking" reply, or a reply button that leads into them). Remove that first.';
 
 /**
  * Loads the business's real graph, applies a hypothetical edit via
@@ -864,13 +870,20 @@ const updateQuestionNode = async (req, res, next) => {
     // updateBookingFields): conservative/unconditional — blocks renaming
     // AWAY from a reserved key even if another node still holds it, rather
     // than determining whether this is "the last" node with that key.
+    // Only applies while the chat booking questions can still be entered
+    // (see flowGraphValidation.js#canEnterBookingQuestions) — a web-form-
+    // only business never runs these nodes.
     if (fieldKey !== undefined && fieldKey !== node.field_key &&
         TRAVEL_CATEGORIES_WITH_RESERVED_FIELDS.includes(req.graphBusiness.businessCategory) &&
         RESERVED_TRAVEL_FIELD_KEYS.includes(node.field_key)) {
-      return errorResponse(res, 400,
-        `Cannot rename fieldKey away from "${node.field_key}" — special booking-flow behavior depends on this exact key. ` +
-        'Label, options, order, required, and translations can still be changed freely.'
-      );
+      const { nodes: graphNodes, edges: graphEdges } = await bookingGraphService.loadGraph(businessId);
+      if (canEnterBookingQuestions(graphNodes, graphEdges)) {
+        return errorResponse(res, 400,
+          `Cannot rename fieldKey away from "${node.field_key}" — this key has special booking-flow behavior, and this business can ` +
+          'still start the chat booking questions (a "Start a booking" reply, or a reply button that leads into them). Remove that first. ' +
+          'Label, options, order, required, and translations can still be changed freely.'
+        );
+      }
     }
 
     // Reachability re-validation only matters when fieldKey changes — it's
@@ -985,11 +998,15 @@ const deleteQuestionNode = async (req, res, next) => {
       return errorResponse(res, 404, 'Question node not found');
     }
 
+    const { nodes, edges } = await bookingGraphService.loadGraph(businessId);
+
+    // Reserved-field-key guard — only while the chat booking questions can
+    // still be entered (see flowGraphValidation.js#canEnterBookingQuestions);
+    // a web-form-only business never runs these nodes.
     if (TRAVEL_CATEGORIES_WITH_RESERVED_FIELDS.includes(req.graphBusiness.businessCategory) &&
-        RESERVED_TRAVEL_FIELD_KEYS.includes(node.field_key)) {
-      return errorResponse(res, 400,
-        `Cannot delete: fieldKey "${node.field_key}" has special booking-flow behavior hardcoded in bookingGraph.service.js.`
-      );
+        RESERVED_TRAVEL_FIELD_KEYS.includes(node.field_key) &&
+        canEnterBookingQuestions(nodes, edges)) {
+      return errorResponse(res, 400, reservedFieldDeleteError(node.field_key));
     }
 
     // A node with zero incoming edges is either the true graph entry
@@ -998,7 +1015,6 @@ const deleteQuestionNode = async (req, res, next) => {
     // removing one of those either (it's already unreachable by definition).
     // See findFallbackSiblingNodeIds's doc comment: this is a live,
     // crashable gap if left unguarded, not theoretical.
-    const { nodes, edges } = await bookingGraphService.loadGraph(businessId);
     const entryNodeIds = resolveBookingTriggerEntryNodeIds(nodes, edges);
     const fallbackSiblingIds = findFallbackSiblingNodeIds(nodes, edges, entryNodeIds);
     if (fallbackSiblingIds.includes(id)) {
@@ -1113,7 +1129,9 @@ const getFullGraph = async (req, res, next) => {
  *     from it. This mirrors exactly what deleteQuestionNode already does
  *     (compute fallback-sibling status from the graph as it stands right
  *     before the delete).
- *   - The reserved-field-key guard is re-checked for deletes only, per spec.
+ *   - The reserved-field-key guard is re-checked for deletes only, per spec,
+ *     and only while the pre-save graph can still enter the chat booking
+ *     questions (flowGraphValidation.js#canEnterBookingQuestions).
  *     updateQuestionNode's rename-away-from-reserved-key guard is NOT ported
  *     to batch save — a batch save could still rename tripType/pickupLocation
  *     /etc. away from their reserved key without being blocked here. Flagging
@@ -1456,21 +1474,23 @@ const saveFullGraph = async (req, res, next) => {
       );
     }
 
+    const currentNodesCamel = (currentNodesRes.data || []).map(toCamelCase);
+    const currentEdgesCamel = (currentEdgesRes.data || []).map(toCamelCase);
+
     // Reserved-field-key guard, deletes only (see doc comment above).
-    if (TRAVEL_CATEGORIES_WITH_RESERVED_FIELDS.includes(req.graphBusiness.businessCategory)) {
+    // Evaluated against the PRE-save graph (conservative): removing the last
+    // chat booking entry and deleting reserved nodes takes two saves.
+    if (TRAVEL_CATEGORIES_WITH_RESERVED_FIELDS.includes(req.graphBusiness.businessCategory) &&
+        canEnterBookingQuestions(currentNodesCamel, currentEdgesCamel)) {
       const reservedDelete = nodeDeletes.find(n => n.field_key && RESERVED_TRAVEL_FIELD_KEYS.includes(n.field_key));
       if (reservedDelete) {
-        return errorResponse(res, 400,
-          `Cannot delete: fieldKey "${reservedDelete.field_key}" has special booking-flow behavior hardcoded in bookingGraph.service.js.`
-        );
+        return errorResponse(res, 400, reservedFieldDeleteError(reservedDelete.field_key));
       }
     }
 
     // Fallback-sibling guard, computed against the CURRENT graph (see doc
     // comment above for why proposed-state is the wrong graph to check this
     // against), cross-referenced against this diff's node deletes.
-    const currentNodesCamel = (currentNodesRes.data || []).map(toCamelCase);
-    const currentEdgesCamel = (currentEdgesRes.data || []).map(toCamelCase);
     const currentEntryNodeIds = resolveBookingTriggerEntryNodeIds(currentNodesCamel, currentEdgesCamel);
     const fallbackSiblingIds = new Set(findFallbackSiblingNodeIds(currentNodesCamel, currentEdgesCamel, currentEntryNodeIds));
     const fallbackSiblingDelete = nodeDeletes.find(n => fallbackSiblingIds.has(n.id));
