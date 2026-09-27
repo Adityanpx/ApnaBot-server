@@ -212,7 +212,7 @@ const submitServiceForm = async (req, res, next) => {
       collected[vehicleField.name] = `${matchedOption.name} (₹${matchedOption.perKmRate}/km)`;
     }
 
-    const confirmationText = await bookingService.createBookingAndConfirmation(
+    const confirmation = await bookingService.createBookingAndConfirmation(
       formToken.businessId,
       formToken.customerNumber,
       collected,
@@ -229,12 +229,23 @@ const submitServiceForm = async (req, res, next) => {
         .from('booking_form_tokens').update({ used_at: new Date().toISOString() }).eq('id', formToken.id);
       if (usedError) throw usedError;
 
-      await whatsappService.sendTextMessage(
-        business.phoneNumberId,
-        business.accessToken,
-        formToken.customerNumber,
-        confirmationText
-      );
+      // imageUrl = payment QR when an advance is requested (text is its caption)
+      if (confirmation.imageUrl) {
+        await whatsappService.sendImageMessage(
+          business.phoneNumberId,
+          business.accessToken,
+          formToken.customerNumber,
+          confirmation.imageUrl,
+          confirmation.text
+        );
+      } else {
+        await whatsappService.sendTextMessage(
+          business.phoneNumberId,
+          business.accessToken,
+          formToken.customerNumber,
+          confirmation.text
+        );
+      }
     } catch (postBookingError) {
       logger.error('Error marking booking form token used / sending WhatsApp confirmation:', {
         businessId: formToken.businessId,

@@ -214,6 +214,9 @@ const updateBusiness = async (req, res, next) => {
       return errorResponse(res, 404, 'No business found');
     }
 
+    // Set only via POST/DELETE /payment-qr (uploaded to R2), never a raw URL.
+    delete req.body.paymentQrUrl;
+
     if (req.body.disabledBookingFields !== undefined) {
       // Validate against this business's own flow_nodes, not the shared
       // business_type_templates row — a business's flow can diverge from its
@@ -269,10 +272,13 @@ const updateBusiness = async (req, res, next) => {
       // business from a prior save (toggling on again after toggling off) —
       // only fetch the existing row if this request doesn't supply both.
       let { advancePaymentType, advancePaymentValue } = req.body;
-      if (advancePaymentType === undefined || advancePaymentValue === undefined) {
-        const existing = await businessService.getBusinessById(businessId);
-        if (advancePaymentType === undefined) advancePaymentType = existing?.advancePaymentType;
-        if (advancePaymentValue === undefined) advancePaymentValue = existing?.advancePaymentValue;
+      const existing = await businessService.getBusinessById(businessId);
+      if (advancePaymentType === undefined) advancePaymentType = existing?.advancePaymentType;
+      if (advancePaymentValue === undefined) advancePaymentValue = existing?.advancePaymentValue;
+      // The advance is requested by sending the payment QR (booking.service.js
+      // createBookingAndConfirmation) — without one there's nothing to send.
+      if (!existing?.paymentQrUrl) {
+        return errorResponse(res, 400, 'Upload your payment QR code before turning on advance payment.');
       }
       if (!['fixed', 'percentage'].includes(advancePaymentType)) {
         return errorResponse(res, 400, "advancePaymentType must be 'fixed' or 'percentage' when requireAdvancePayment is enabled.");
@@ -700,6 +706,84 @@ const uploadProfileImage = async (req, res, next) => {
   }
 };
 
+// R2 key of a URL uploadImage returned, for deleting the previous object.
+const r2KeyFromUrl = (url) =>
+  url && url.startsWith(`${config.R2_PUBLIC_URL}/`) ? url.slice(config.R2_PUBLIC_URL.length + 1) : null;
+
+/**
+ * POST /api/business/payment-qr
+ * Upload/replace the owner's UPI payment QR image (multipart, field 'image').
+ * Sent to customers as a WhatsApp image — see message.controller.js
+ * sendPaymentQr and booking.service.js createBookingAndConfirmation.
+ */
+const uploadPaymentQr = async (req, res, next) => {
+  try {
+    if (!req.file) {
+      return errorResponse(res, 400, 'No image provided');
+    }
+    // WhatsApp image messages accept only JPEG/PNG (uploadSingle also allows WebP).
+    if (!['image/jpeg', 'image/png'].includes(req.file.mimetype)) {
+      return errorResponse(res, 400, 'QR image must be a JPEG or PNG.');
+    }
+
+    const businessId = req.user.businessId;
+    const existing = await businessService.getBusinessById(businessId);
+    if (!existing) {
+      return errorResponse(res, 404, 'No business found');
+    }
+
+    // Timestamped key: a replaced QR must not be served from a CDN/WhatsApp
+    // cache under the old URL.
+    const result = await r2.uploadImage(
+      req.file.buffer,
+      'payment-qr',
+      `business-${businessId}-${Date.now()}`,
+      req.file.mimetype
+    );
+    await businessService.updateBusiness(businessId, { paymentQrUrl: result.url });
+
+    const oldKey = r2KeyFromUrl(existing.paymentQrUrl);
+    if (oldKey) {
+      r2.deleteImage(oldKey).catch(err => logger.error('Error deleting old payment QR from R2:', err));
+    }
+
+    return successResponse(res, 200, { paymentQrUrl: result.url });
+  } catch (error) {
+    logger.error('Error in uploadPaymentQr:', error);
+    next(error);
+  }
+};
+
+/**
+ * DELETE /api/business/payment-qr
+ * Remove the payment QR. Refused while advance payment is on, since the
+ * booking flow sends this QR to request the advance.
+ */
+const deletePaymentQr = async (req, res, next) => {
+  try {
+    const businessId = req.user.businessId;
+    const existing = await businessService.getBusinessById(businessId);
+    if (!existing) {
+      return errorResponse(res, 404, 'No business found');
+    }
+    if (existing.requireAdvancePayment) {
+      return errorResponse(res, 400, 'Turn off advance payment before removing your payment QR code.');
+    }
+
+    await businessService.updateBusiness(businessId, { paymentQrUrl: null });
+
+    const oldKey = r2KeyFromUrl(existing.paymentQrUrl);
+    if (oldKey) {
+      r2.deleteImage(oldKey).catch(err => logger.error('Error deleting payment QR from R2:', err));
+    }
+
+    return successResponse(res, 200, { paymentQrUrl: null });
+  } catch (error) {
+    logger.error('Error in deletePaymentQr:', error);
+    next(error);
+  }
+};
+
 /**
  * GET /api/business/flow-fields
  * Get the logged-in business's flow_fields (web-form booking link config)
@@ -896,6 +980,8 @@ module.exports = {
   disconnectWhatsapp,
   getDashboardStats,
   uploadProfileImage,
+  uploadPaymentQr,
+  deletePaymentQr,
   getFlowFields,
   updateFlowFields,
   loadFlowFieldsStarterTemplate,

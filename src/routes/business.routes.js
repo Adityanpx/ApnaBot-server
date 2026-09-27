@@ -102,6 +102,24 @@ router.post(
   businessController.uploadProfileImage
 );
 
+// POST /payment-qr - Upload/replace the UPI payment QR image (multipart,
+// field name 'image', JPEG/PNG). DELETE removes it.
+router.post(
+  '/payment-qr',
+  protect,
+  requireBusiness,
+  requireRole('owner'),
+  uploadSingle,
+  businessController.uploadPaymentQr
+);
+router.delete(
+  '/payment-qr',
+  protect,
+  requireBusiness,
+  requireRole('owner'),
+  businessController.deletePaymentQr
+);
+
 // POST /media - Upload a file (image/video/pdf) to this business's media
 // library. multipart/form-data, field name 'file'.
 router.post(

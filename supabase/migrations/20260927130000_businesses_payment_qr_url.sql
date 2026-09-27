@@ -1,0 +1,12 @@
+-- Payment by QR image replaces Razorpay/UPI payment links for a business's
+-- own customers. The owner uploads their UPI QR (POST /api/business/payment-qr,
+-- stored in R2); it's sent as a WhatsApp image from chat
+-- (POST /api/messages/send-payment-qr) and by the advance-payment booking flow
+-- (booking.service.js createBookingAndConfirmation). Payment is recorded by
+-- the owner (PUT /api/bookings/:id/payment) — a personal-UPI QR payment
+-- can't be detected automatically.
+--
+-- bookings.payment_link / upi_link / payment_id / razorpay_order_id are left
+-- in place (unused from here on) rather than dropped, so existing rows keep
+-- their history.
+alter table businesses add column payment_qr_url text;

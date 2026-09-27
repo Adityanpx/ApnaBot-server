@@ -15,9 +15,9 @@ const STAGE_RANK = { new: 0, contacted: 1, converted: 2 };
  * bot-driven booking with no staff reply in between is still forward
  * progress from 'new', just skipping a stage it never passed through.
  *
- * Call sites: message.controller.js#sendMessage ('contacted', on a human
- * staff reply), booking.controller.js#updateBookingStatus and
- * payment.service.js#handlePaymentLinkPaid ('converted', on a booking
+ * Call sites: message.controller.js#afterManualSend ('contacted', on a human
+ * staff reply or payment-QR send), booking.controller.js#updateBookingStatus and
+ * payment.service.js#setBookingPaymentStatus ('converted', on a booking
  * reaching confirmed/completed) — the two places a booking can reach that
  * status.
  *

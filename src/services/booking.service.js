@@ -480,7 +480,9 @@ const buildBookingSummaryBody = (collected, orderedFields, localRentalUnconfigur
  * @param {Array<{fieldKey: string, label: string, summaryLabel: string}>} orderedFields -
  *   the fields actually answered, in answer order, for the fieldLines summary
  * @param {boolean} localRentalUnconfigured
- * @returns {Promise<string>} the confirmation text
+ * @returns {Promise<{text: string, imageUrl: (string|null)}>} the confirmation
+ *   message; imageUrl is the business's payment QR when an advance is
+ *   requested (send as an image with `text` as its caption), else null
  */
 const createBookingAndConfirmation = async (businessId, customerNumber, collected, orderedFields, localRentalUnconfigured) => {
   const { data: customer, error: custErr } = await supabase
@@ -529,6 +531,10 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
   };
   if (advanceAmount !== null) {
     bookingInsert.payment_amount = advanceAmount;
+    // Lets payment.service.js setBookingPaymentStatus tell an advance
+    // booking (confirmed on payment) from one the owner requested payment
+    // for from chat.
+    bookingInsert.payment_details = { requestedVia: 'advance' };
   }
 
   const { data: bookingRow, error: bookingErr } = await supabase.from('bookings').insert(bookingInsert).select().single();
@@ -545,17 +551,24 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
 
   if (advanceAmount !== null) {
     // Booking isn't confirmed yet — skip the normal fieldLines/fare summary
-    // entirely and send a payment-link message instead. createRazorpayPaymentLink
-    // itself writes payment_link/payment_id back onto this booking row.
-    const paymentLink = await paymentService.createRazorpayPaymentLink(
-      booking.id,
-      Math.round(advanceAmount * 100),
-      customer.name || 'Customer',
-      customerNumber,
-      `Advance payment for booking ${bookingCode}`
-    );
-
-    const advanceConfirmationText = `Almost done! To confirm your booking, please pay the advance of ₹${advanceAmount} here: ${paymentLink.short_url}\n\nBooking ID: *${bookingCode}*`;
+    // entirely and request the advance with the business's payment QR
+    // instead. The owner marks it paid (PUT /api/bookings/:id/payment), which
+    // confirms the booking. business.controller.js refuses to enable advance
+    // payment without a QR, but a business that enabled it before QR payments
+    // existed can still have none — fall back to a text-only request then.
+    const amountText = `₹${Number(advanceAmount).toLocaleString('en-IN')}`;
+    const advanceConfirmation = business.paymentQrUrl
+      ? {
+        text: paymentService.buildPaymentQrCaption({
+          upiId: business.upiId,
+          intro: `Almost done! To confirm your booking *${bookingCode}*, please pay the advance of *${amountText}* by scanning this QR code.`
+        }),
+        imageUrl: business.paymentQrUrl
+      }
+      : {
+        text: `Almost done! To confirm your booking, an advance of *${amountText}* is required. Our team will share the payment details with you shortly.\n\nBooking ID: *${bookingCode}*`,
+        imageUrl: null
+      };
 
     try {
       socketService.emitToBusiness(businessId.toString(), 'new_booking', {
@@ -566,7 +579,7 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
       logger.error('Error emitting socket event:', socketError);
     }
 
-    return advanceConfirmationText;
+    return advanceConfirmation;
   }
 
   // Build confirmation message (WhatsApp bold = *value*)
@@ -585,7 +598,7 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
     logger.error('Error emitting socket event:', socketError);
   }
 
-  return confirmationText;
+  return { text: confirmationText, imageUrl: null };
 };
 
 /**
@@ -599,7 +612,7 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
  * @param {string} customerNumber
  * @param {Object} session - the graph session at completion (collected,
  *   answeredFields, localRentalUnconfigured, displayOverrides)
- * @returns {Promise<string>} the confirmation text
+ * @returns {Promise<{text: string, imageUrl: (string|null)}>} see createBookingAndConfirmation
  */
 const finalizeGraphBooking = async (businessId, customerNumber, session) => {
   try {

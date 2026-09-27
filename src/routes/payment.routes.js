@@ -11,14 +11,9 @@ router.post('/webhook', paymentController.razorpayWebhook);
 // ─── PROTECTED ROUTES — require auth + business ──────────────────────────────────
 router.use(protect, requireBusiness);
 
-// Create Razorpay payment link for a booking
-router.post('/create-razorpay-link', paymentController.createRazorpayLink);
-
-// Create UPI payment link
-router.post('/create-upi-link', paymentController.createUPILink);
-
-// Send payment link to customer via WhatsApp
-router.post('/send-to-customer', paymentController.sendToCustomer);
+// Businesses' customers pay by QR image now (POST /api/messages/send-payment-qr,
+// PUT /api/bookings/:id/payment) — the Razorpay/UPI payment-link endpoints
+// were removed.
 
 // Get payment history — FIX: was pointing to getPaymentStatus before
 router.get('/history', paymentController.getPaymentHistory);

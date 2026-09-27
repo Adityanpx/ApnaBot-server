@@ -1144,9 +1144,9 @@ const receiveWebhook = async (req, res) => {
         // cutover. Either way, fall through to rule matching below.
         logger.info(`Booking session expired for ${customerNumber}`);
       } else if (result.done) {
-        let confirmationText;
+        let confirmation;
         try {
-          confirmationText = await bookingService.finalizeGraphBooking(tenant.businessId, customerNumber, updatedSession);
+          confirmation = await bookingService.finalizeGraphBooking(tenant.businessId, customerNumber, updatedSession);
         } catch (finalizeError) {
           logger.error('Error finalizing graph booking', {
             businessId: tenant.businessId,
@@ -1164,13 +1164,15 @@ const receiveWebhook = async (req, res) => {
           return; // Do not run rule matching
         }
 
+        // imageUrl = payment QR when an advance is requested (text is its caption)
         const outboundMsg = await saveMessage({
           business_id: tenant.businessId,
           customer_id: customer.id,
           customer_number: customerNumber,
           direction: 'outbound',
-          type: 'text',
-          content: confirmationText,
+          type: confirmation.imageUrl ? 'image' : 'text',
+          content: confirmation.text,
+          media_url: confirmation.imageUrl,
           status: 'sent',
           triggered_rule_id: activeSession.ruleId,
           sender_type: 'bot',
@@ -1181,8 +1183,9 @@ const receiveWebhook = async (req, res) => {
           phoneNumberId: tenant.phoneNumberId,
           encryptedAccessToken: tenant.accessToken,
           to: customerNumber,
-          message: confirmationText,
-          type: 'text',
+          message: confirmation.text,
+          type: confirmation.imageUrl ? 'image' : 'text',
+          imageUrl: confirmation.imageUrl,
           messageId: outboundMsg.id
         });
         usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
@@ -1567,9 +1570,9 @@ const receiveWebhook = async (req, res) => {
               logger.error('Error recording booking lead:', err)
             );
 
-            let confirmationText;
+            let confirmation;
             try {
-              confirmationText = await bookingService.finalizeGraphBooking(tenant.businessId, customerNumber, newBookingSession);
+              confirmation = await bookingService.finalizeGraphBooking(tenant.businessId, customerNumber, newBookingSession);
             } catch (finalizeError) {
               logger.error('bookingGraph: error finalizing immediate-confirm booking', {
                 businessId: tenant.businessId,
@@ -1587,13 +1590,15 @@ const receiveWebhook = async (req, res) => {
               return; // Do not run rule matching
             }
 
+            // imageUrl = payment QR when an advance is requested (text is its caption)
             const outboundMsg = await saveMessage({
               business_id: tenant.businessId,
               customer_id: customer.id,
               customer_number: customerNumber,
               direction: 'outbound',
-              type: 'text',
-              content: confirmationText,
+              type: confirmation.imageUrl ? 'image' : 'text',
+              content: confirmation.text,
+              media_url: confirmation.imageUrl,
               status: 'sent',
               triggered_rule_id: matchedNode.id,
               sender_type: 'bot',
@@ -1604,8 +1609,9 @@ const receiveWebhook = async (req, res) => {
               phoneNumberId: tenant.phoneNumberId,
               encryptedAccessToken: tenant.accessToken,
               to: customerNumber,
-              message: confirmationText,
-              type: 'text',
+              message: confirmation.text,
+              type: confirmation.imageUrl ? 'image' : 'text',
+              imageUrl: confirmation.imageUrl,
               messageId: outboundMsg.id
             });
             usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>

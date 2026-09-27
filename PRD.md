@@ -256,6 +256,22 @@ tracked as a deferred "future initiative" — it's built and live.
   `flow_snapshots` category templates cover that role — worth confirming
   with the user whether this table is still the source SuperAdmin edits
   for anything live, or itself dead weight now.
+- **Customer payments = the business's own QR image, recorded by hand.**
+  `businesses.payment_qr_url` (R2, uploaded via `POST/DELETE
+  /api/business/payment-qr`, JPEG/PNG only — WhatsApp image messages
+  reject WebP). Sent as a WhatsApp image + caption from chat (`POST
+  /api/messages/send-payment-qr`) and by the advance-payment booking flow
+  (`booking.service.js` `createBookingAndConfirmation`, which now returns
+  `{text, imageUrl}`; tags the booking `payment_details.requestedVia =
+  'advance'`). The owner records payment via `PUT /api/bookings/:id/payment`
+  (`payment.service.js` `setBookingPaymentStatus`) — marking an advance
+  booking paid also confirms it and WhatsApps the customer. No automatic
+  detection: payments go straight to the owner's personal UPI, by design
+  (no gateway for ApnaBot to support). Razorpay remains ONLY for
+  ApnaBot's own subscriptions/wallet; the Razorpay/UPI payment-link
+  endpoints and `payment_link.*` webhook handlers were removed.
+  `bookings.payment_link`/`upi_link`/`payment_id`/`razorpay_order_id` are
+  left in place, unused.
 
 ## WhatsApp/Meta specifics
 - Tech Provider status (not Solution Partner) — each client business adds
@@ -289,6 +305,12 @@ tracked as a deferred "future initiative" — it's built and live.
    model reference above; not investigated this pass.
 
 ## Session log (append here as major milestones land)
+- 2026-09-28: Customer payments switched from Razorpay/UPI payment links
+  to the business's own QR image + owner-recorded payment (see Data model
+  reference). Migration `20260927130000_businesses_payment_qr_url`. Payment
+  links collected into ApnaBot's own Razorpay account (not the
+  business's), and UPI intent links to personal VPAs are declined by
+  PhonePe/GPay — hence the switch.
 - 2026-09-02: Averix Solutions deleted and recreated as a second QA test
   business, `business_category='travels'` (business_id
   `014a3f2a-6a32-4c44-82df-ec6a298a2caa`, replacing the old

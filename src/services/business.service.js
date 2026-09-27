@@ -7,7 +7,8 @@ const logger = require('../utils/logger');
 
 const businessFieldMap = {
   name: 'name', displayName: 'display_name', address: 'address', city: 'city',
-  profileImage: 'profile_image', upiId: 'upi_id', fallbackReply: 'fallback_reply',
+  profileImage: 'profile_image', upiId: 'upi_id', paymentQrUrl: 'payment_qr_url',
+  fallbackReply: 'fallback_reply',
   welcomeMessage: 'welcome_message',
   enableSmartFallback: 'enable_smart_fallback',
   vipEnabled: 'vip_enabled', vipCriteria: 'vip_criteria', vipThreshold: 'vip_threshold',

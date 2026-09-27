@@ -6,6 +6,7 @@ const logger = require('../utils/logger');
 const socketService = require('../services/socket.service');
 const bookingService = require('../services/booking.service');
 const customerPipelineService = require('../services/customerPipeline.service');
+const paymentService = require('../services/payment.service');
 
 // Statuses that count as the Contacted->Converted trigger (see
 // customerPipeline.service.js) — mirrors reports.service.js's
@@ -136,6 +137,34 @@ const updateBookingStatus = async (req, res, next) => {
 };
 
 /**
+ * PUT /api/bookings/:id/payment
+ * Body: { status: 'paid' | 'pending' }
+ * Owner records a QR payment by hand — see payment.service.js
+ * setBookingPaymentStatus (also confirms an advance-payment booking).
+ */
+const updateBookingPayment = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+    const businessId = req.user.businessId;
+
+    if (!['paid', 'pending'].includes(status)) {
+      return errorResponse(res, 400, "Invalid payment status. Must be 'paid' or 'pending'");
+    }
+
+    const booking = await paymentService.setBookingPaymentStatus(businessId, id, status);
+    if (!booking) {
+      return errorResponse(res, 404, 'Booking not found');
+    }
+
+    return successResponse(res, 200, booking, 'Booking payment updated');
+  } catch (error) {
+    logger.error('Error updating booking payment:', error);
+    next(error);
+  }
+};
+
+/**
  * PUT /api/bookings/:id/notes
  * Add or update internal notes on booking
  */
@@ -232,6 +261,7 @@ module.exports = {
   getBookings,
   getBookingById,
   updateBookingStatus,
+  updateBookingPayment,
   addBookingNotes,
   deleteBooking,
   getVehicleCarouselPreview

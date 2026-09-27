@@ -18,6 +18,9 @@ router.get('/preview-vehicle-options', protect, requireBusiness, bookingControll
 // PUT /:id/status - Update booking status (must be before /:id)
 router.put('/:id/status', protect, requireBusiness, bookingController.updateBookingStatus);
 
+// PUT /:id/payment - Record QR payment: { status: 'paid' | 'pending' } (must be before /:id)
+router.put('/:id/payment', protect, requireBusiness, bookingController.updateBookingPayment);
+
 // PUT /:id/notes - Add or update internal notes (must be before /:id)
 router.put('/:id/notes', protect, requireBusiness, bookingController.addBookingNotes);
 
