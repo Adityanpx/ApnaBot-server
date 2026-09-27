@@ -49,6 +49,7 @@ const createRazorpayPaymentLink = async (bookingId, amount, customerName, custom
       const { error } = await supabase.from('bookings').update({
         payment_link: paymentLink.short_url,
         payment_id: paymentLink.id,
+        payment_amount: Math.round(amount) / 100, // paise → rupees
         payment_status: 'pending'
       }).eq('id', bookingId);
       if (error) throw error;
@@ -86,6 +87,7 @@ const generateUPILink = async (bookingId, amount, vpa, payeeName) => {
     if (bookingId) {
       const { error } = await supabase.from('bookings').update({
         upi_link: upiLink,
+        payment_amount: Number(amount),
         payment_status: 'pending'
       }).eq('id', bookingId);
       if (error) throw error;
