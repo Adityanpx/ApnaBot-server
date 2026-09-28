@@ -93,7 +93,9 @@
       return;
     }
 
-    if (data.event === 'FINISH') {
+    // Coexistence onboarding (featureType whatsapp_business_app_onboarding)
+    // reports FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING instead of FINISH.
+    if (data.event === 'FINISH' || data.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING') {
       signupSessionData = {
         wabaId: data.data && data.data.waba_id,
         phoneNumberId: data.data && data.data.phone_number_id
