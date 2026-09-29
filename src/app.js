@@ -131,6 +131,11 @@ if (config.ENABLE_AI_FLOW_GEN) {
   app.use('/api/flow-graph/ai', require('./routes/aiFlow.routes'));
 }
 app.use('/api/flow-graph', flowGraphRoutes);
+// Settings-driven bot builder — mounted only when ENABLE_BOT_SETTINGS=true;
+// required inside the branch so the module isn't loaded when off.
+if (config.ENABLE_BOT_SETTINGS) {
+  app.use('/api/bot-settings', require('./routes/botSettings.routes'));
+}
 app.use('/api/reports', reportsRoutes);
 
 // Error handler middleware

@@ -486,6 +486,9 @@ const assertBookingOnlyViaTrigger = (replyNodes, questionNodes, edges) => {
 module.exports = {
   validateFlowSpec,
   compileFlowSpec,
+  // Shared with flowSpecV2.js (additive exports only).
+  normalizeText,
+  ID_PATTERN,
   GREETING_WORDS,
   RESERVED_TRAVEL_FIELD_KEYS,
   RESERVED_FIELD_KEYS,

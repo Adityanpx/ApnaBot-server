@@ -179,7 +179,9 @@ const enforceSnapshotCapReporting = async (businessId) => {
  *      and reported as warnings — the apply itself already succeeded.
  * @returns {{ status, error } | { snapshot, warnings }}
  */
-const executeApply = async ({ businessId, graphBusiness, prepared }) => {
+// snapshotLabel: prefix of the pre-apply snapshot's name — botSettings.service.js
+// publishes through this same function with its own label.
+const executeApply = async ({ businessId, graphBusiness, prepared, snapshotLabel = 'Before AI flow' }) => {
   const warnings = [...prepared.warnings];
   let snapshot = null;
 
@@ -187,7 +189,7 @@ const executeApply = async ({ businessId, graphBusiness, prepared }) => {
     const formattedDate = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     const { data, error } = await supabase.from('flow_snapshots').insert({
       business_id: businessId,
-      name: `Before AI flow — ${formattedDate}`,
+      name: `${snapshotLabel} — ${formattedDate}`,
       nodes: prepared.currentRows.nodes,
       edges: prepared.currentRows.edges,
       is_category_template: false,
@@ -236,6 +238,9 @@ const executeApply = async ({ businessId, graphBusiness, prepared }) => {
 };
 
 module.exports = {
+  // Shared with botSettings.service.js (additive exports only).
+  countBookingSessions,
+  hasWelcomeMessage,
   compile,
   prepareApply,
   executeApply
