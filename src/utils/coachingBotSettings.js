@@ -9,7 +9,8 @@
 // Settings shape (v1):
 //   {
 //     version: 1,
-//     intro?: string,                                    // <= 300
+//     welcomeMessage?: string,                           // <= 1024; the whole "hi" menu message, used as written
+//     intro?: string,                                    // <= 300; only used when welcomeMessage is empty (older settings)
 //     sections: {
 //       fees|timings|results|material|contact: { enabled, text },
 //       location: { enabled }                            // uses the shop location in Settings
@@ -103,6 +104,10 @@ const validateCoachingSettings = (settings, { forPublish = false } = {}) => {
   if (settings.version !== 1) return 'settings.version must be 1';
   if (!isOptionalString(settings.intro)) return 'Intro must be text';
   if (isNonEmptyString(settings.intro) && len(settings.intro) > MAX_INTRO) return `Intro must be ${MAX_INTRO} characters or less`;
+  if (!isOptionalString(settings.welcomeMessage)) return 'Welcome message must be text';
+  if (isNonEmptyString(settings.welcomeMessage) && len(settings.welcomeMessage) > LIMITS.INTERACTIVE_BODY) {
+    return `Welcome message must be ${LIMITS.INTERACTIVE_BODY} characters or less`;
+  }
 
   if (settings.courses !== undefined) return 'Courses are managed in "My courses", not in bot settings';
 
@@ -151,6 +156,22 @@ const validateCoachingSettings = (settings, { forPublish = false } = {}) => {
   }
 
   return null;
+};
+
+/**
+ * The "hi" menu message. The owner's welcomeMessage is used exactly as
+ * written; otherwise the default below (older settings only had an intro).
+ * {{customerName}} / {{businessName}} are NOT filled in here — they're
+ * placeholders the send path substitutes per message
+ * (utils/messageTemplating.js: parent's WhatsApp name or "there"; the
+ * business's display name, else its name). *text* is WhatsApp bold.
+ * The Bot Builder page pre-fills its Welcome message box with this same
+ * default, so keep the two in sync.
+ */
+const welcomeMessageFor = (settings) => {
+  if (isNonEmptyString(settings.welcomeMessage)) return settings.welcomeMessage.trim();
+  const intro = isNonEmptyString(settings.intro) ? ` ${settings.intro.trim()}` : '';
+  return `Hello *{{customerName}}*, welcome to *{{businessName}}*!${intro}\n\nPlease choose an option:`;
 };
 
 /**
@@ -270,10 +291,9 @@ const mapCoachingSettingsToSpec = (settings, { businessName, courses } = {}) => 
   }
   sectionMenu('contact');
 
-  const intro = isNonEmptyString(settings.intro) ? ` ${settings.intro.trim()}` : '';
   const spec = {
     version: 2,
-    greeting: { text: `Hello {{customerName}}, welcome to ${businessName.trim()}!${intro}\n\nPlease choose an option:` },
+    greeting: { text: welcomeMessageFor(settings) },
     menu,
     pages,
     forms,

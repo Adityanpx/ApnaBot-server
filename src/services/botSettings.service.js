@@ -151,7 +151,12 @@ const compile = async ({ businessId, graphBusiness, preset, settings }) => {
   }
   const built = await buildFromSettings({ businessId, graphBusiness, presetName, settings: source });
   if (built.error) return built;
-  return { spec: built.spec, graph: built.graph, warnings: built.warnings };
+  // businessName: what {{businessName}} becomes when sent (messageTemplating.js
+  // — display name, else name), so the dashboard preview can show it.
+  return {
+    spec: built.spec, graph: built.graph, warnings: built.warnings,
+    businessName: built.business.display_name || built.business.name
+  };
 };
 
 /**

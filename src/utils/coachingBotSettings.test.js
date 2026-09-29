@@ -40,7 +40,7 @@ const formById = (spec, id) => spec.forms.find(f => f.id === id);
 test('happy path: menu order, course list, course pages, forms', () => {
   const { spec, error } = map(settings());
   assert.equal(error, null);
-  assert.equal(spec.greeting.text, 'Hello {{customerName}}, welcome to Daring Bee! Abacus & Vedic Maths classes.\n\nPlease choose an option:');
+  assert.equal(spec.greeting.text, 'Hello *{{customerName}}*, welcome to *{{businessName}}*! Abacus & Vedic Maths classes.\n\nPlease choose an option:');
   assert.deepEqual(menuTitles(spec), ['📚 Courses', '💰 Fees', '🕘 Batches & timings', '🎓 Free demo', '📝 Admission', '📞 Contact us']);
 
   const courses = pageById(spec, 'courses');
@@ -57,6 +57,24 @@ test('happy path: menu order, course list, course pages, forms', () => {
   const out = compileFlowSpecV2(spec);
   assert.equal(out.questionNodes.length, 0);
   assert.equal(out.replyNodes.filter(n => n.replyKind === 'web_form_trigger').length, 2);
+});
+
+test('welcome message: used exactly as written (placeholders kept for the send path)', () => {
+  const text = 'Hello *{{customerName}}*, welcome to *{{businessName}}* Abacus & Vedic Maths classes in Hadapsar, Pune.\n\nPlease choose an option:';
+  const { spec, error } = map(mutate(s => { s.welcomeMessage = `  ${text}  `; }));
+  assert.equal(error, null);
+  assert.equal(spec.greeting.text, text);
+});
+
+test('welcome message: empty falls back to the default (intro appended)', () => {
+  const { spec } = map(mutate(s => { s.welcomeMessage = '   '; s.intro = ''; }));
+  assert.equal(spec.greeting.text, 'Hello *{{customerName}}*, welcome to *{{businessName}}*!\n\nPlease choose an option:');
+});
+
+test('welcome message: over 1024 characters or not text is rejected', () => {
+  assert.match(map(mutate(s => { s.welcomeMessage = 'x'.repeat(1025); })).error, /Welcome message must be 1024/);
+  assert.match(map(mutate(s => { s.welcomeMessage = 5; })).error, /Welcome message must be text/);
+  assert.equal(validateCoachingSettings(mutate(s => { s.welcomeMessage = 'x'.repeat(1025); })), 'Welcome message must be 1024 characters or less');
 });
 
 test('Course field is a course-list dropdown (options filled when the form opens)', () => {
