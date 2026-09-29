@@ -117,6 +117,10 @@ const buildReplyNodeOptions = (node, edges) => {
   return { buttons, listOptions };
 };
 
+// Preview-only interaction id for a web_form_trigger reply's "open form"
+// button (see handleNoActiveSession). Never a real WhatsApp id.
+const PREVIEW_WEB_FORM_PREFIX = 'preview_webform:';
+
 const isDistanceEstimateCarousel = (field) =>
   !!field && field.fieldType === 'vehicle_carousel' &&
   (field.options || []).some(opt => opt.source === 'distance_estimate');
@@ -165,6 +169,16 @@ const handleNoActiveSession = async (business, messageText, buttonReplyId) => {
     }
     // No welcomeMessage configured - fall through to rule matching below,
     // same as the real webhook.
+  }
+
+  // Tap on the preview-only "open form" entry built by the web_form_trigger
+  // branch below — there is no real form link to open in a preview.
+  if (buttonReplyId && buttonReplyId.startsWith(PREVIEW_WEB_FORM_PREFIX)) {
+    return {
+      replyText: '📝 On WhatsApp, this button opens the form in the customer\'s browser (a one-time link, valid for 30 minutes). ' +
+        'Form links are not created in this preview — send the keyword from a real WhatsApp number to try the form itself.',
+      buttons: [], listOptions: [], session: null
+    };
   }
 
   // Step 13 - resolve a tapped reply-node button/list row structurally
@@ -234,6 +248,24 @@ const handleNoActiveSession = async (business, messageText, buttonReplyId) => {
     if (matchedNode.replyKind === 'payment_trigger') {
       const replyText = applyMessageTemplateWithFooter(matchedNode.label, business, null) || getSystemMessage('paymentTriggerDefault', null);
       return { replyText, buttons: [], listOptions: [], session: null };
+    }
+
+    if (matchedNode.replyKind === 'web_form_trigger') {
+      // Mirrors webhook.controller.js's web_form_trigger branch (same
+      // label/buttonText fallbacks) WITHOUT minting a booking_form_tokens
+      // row — a preview has no real customer to issue a link to. The real
+      // CTA-URL button is rendered as one tappable preview entry instead
+      // (existing {buttons, listOptions} shape, so no preview UI change);
+      // tapping it is answered by the PREVIEW_WEB_FORM_PREFIX check above.
+      const localizedPrompt = getLocalizedText(matchedNode, 'label', null) || getSystemMessage('webFormPrompt', null);
+      const buttonText = getLocalizedText(matchedNode, 'buttonText', null) || getSystemMessage('webFormButtonText', null);
+      const replyText = applyMessageTemplateWithFooter(localizedPrompt, business, null);
+      return {
+        replyText,
+        buttons: [{ nextKeyword: `${PREVIEW_WEB_FORM_PREFIX}${matchedNode.id}`, title: `🔗 ${buttonText}` }],
+        listOptions: [],
+        session: null
+      };
     }
   }
 
