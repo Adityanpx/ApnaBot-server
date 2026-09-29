@@ -11,6 +11,7 @@ const whatsappService = require('../services/whatsapp.service');
 const placesService = require('../services/places.service');
 const { toCamelCase } = require('../utils/caseConvert');
 const { BUSINESS_COURSES_SOURCE } = require('../utils/flowFieldsValidation');
+const { isTravelFeaturedCategory } = require('../config/categoryFeatures');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
@@ -99,6 +100,10 @@ const getServiceForm = async (req, res, next) => {
 
     return successResponse(res, 200, {
       businessName: business.name,
+      // Lets the public form page keep its travel wording ("Book your ride",
+      // "Confirm Booking", 24/7 Support) only for travel/cab businesses and
+      // use neutral wording for every other category. Additive field.
+      isTravelBusiness: isTravelFeaturedCategory(business.businessCategory, business.subCategories),
       flowFields: await resolveDynamicOptions(formToken.businessId, await resolveFlowFields(formToken, business))
     });
   } catch (error) {
