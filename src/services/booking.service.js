@@ -11,6 +11,7 @@ const usageService = require('./usage.service');
 const socketService = require('./socket.service');
 const distanceMatrixService = require('./distanceMatrix.service');
 const logger = require('../utils/logger');
+const { isTravelFeaturedCategory } = require('../config/categoryFeatures');
 
 const tripTypeMap = { 'One Way': 'oneway', 'Round Trip': 'round_trip', 'Local Rental': 'local' };
 
@@ -494,8 +495,6 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
     throw new Error(`Cannot create booking: no customer record found for ${customerNumber} on business ${businessId}`);
   }
 
-  const bookingCode = 'CAB' + Math.floor(1000 + Math.random() * 9000);
-
   // Advance-payment collection: compute this BEFORE inserting the booking
   // row, since it changes what payment_status/payment_amount get written.
   // advanceAmount stays null (== no advance required) unless the business
@@ -504,6 +503,17 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
   // compute a sane amount, so that case falls back to normal (no-advance)
   // behavior rather than inventing a number.
   const business = await businessService.getBusinessById(businessId);
+
+  // Booking code = the first two English letters of the name customers see
+  // (displayName, else name), uppercased, + 4 random digits — "search cab" ->
+  // SE4821. Fewer than two letters (e.g. a Devanagari-only name) or no
+  // business -> "BK". The 🚕 sign-off stays only for travel/cab businesses
+  // (isTravelFeaturedCategory: travels, cab, or a multi_brand business with
+  // one of those as a sub-category); a business that can't be loaded keeps it.
+  const isTravelBusiness = !business || isTravelFeaturedCategory(business.businessCategory, business.subCategories);
+  const nameLetters = ((business?.displayName || business?.name || '').toUpperCase().match(/[A-Z]/g) || []);
+  const codePrefix = nameLetters.length >= 2 ? nameLetters.slice(0, 2).join('') : 'BK';
+  const bookingCode = codePrefix + Math.floor(1000 + Math.random() * 9000);
   let advanceAmount = null;
   if (business?.requireAdvancePayment) {
     if (business.advancePaymentType === 'percentage') {
@@ -586,7 +596,7 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
   const confirmationText = '✅ *Booking request received!*\n' +
     'Booking ID: *' + bookingCode + '*\n\n' +
     buildBookingSummaryBody(collected, orderedFields, localRentalUnconfigured) +
-    '\n\nOur team will contact you shortly to confirm. 🚕';
+    '\n\nOur team will contact you shortly to confirm.' + (isTravelBusiness ? ' 🚕' : '');
 
   // Emit Socket.io event (wrap in try/catch)
   try {
