@@ -20,6 +20,9 @@ const adminRoutes = require('./routes/admin.routes');
 const publicRoutes = require('./routes/public.routes');
 const vehicleCatalogRoutes = require('./routes/vehicleCatalog.routes');
 const courseCatalogRoutes = require('./routes/courseCatalog.routes');
+const categoryFeatureRoutes = require('./routes/categoryFeature.routes');
+const botSettingsRoutes = require('./routes/botSettings.routes');
+const courseRoutes = require('./routes/course.routes');
 const vehicleRoutes = require('./routes/vehicle.routes');
 const routeFareRoutes = require('./routes/routeFare.routes');
 const rentalPackageRoutes = require('./routes/rentalPackage.routes');
@@ -110,6 +113,8 @@ app.use('/api/admin/vehicle-catalog', vehicleCatalogRoutes);
 // Super Admin course catalog (coaching) — always mounted (superadmin only),
 // like vehicle-catalog above; must stay above the /api/admin catch-all.
 app.use('/api/admin/course-catalog', courseCatalogRoutes);
+// Super Admin feature switches per category (e.g. coaching → bot_builder).
+app.use('/api/admin/category-features', categoryFeatureRoutes);
 app.use('/api/admin/rate-cards', rateCardRoutes);
 app.use('/api/admin/category-templates', categoryTemplateRoutes);
 app.use('/api/admin/whatsapp-flows', whatsappFlowRoutes);
@@ -135,13 +140,12 @@ if (config.ENABLE_AI_FLOW_GEN) {
   app.use('/api/flow-graph/ai', require('./routes/aiFlow.routes'));
 }
 app.use('/api/flow-graph', flowGraphRoutes);
-// Settings-driven bot builder — mounted only when ENABLE_BOT_SETTINGS=true;
-// required inside the branch so the module isn't loaded when off.
-if (config.ENABLE_BOT_SETTINGS) {
-  app.use('/api/bot-settings', require('./routes/botSettings.routes'));
-  // A business's own courses — part of the same coaching Bot Builder feature.
-  app.use('/api/courses', require('./routes/course.routes'));
-}
+// Settings-driven bot builder + a business's own courses. Always mounted;
+// each request is gated by the business category's 'bot_builder' switch
+// (Super Admin → Business Settings → <category> → Features — see
+// middleware/categoryFeature.middleware.js), 404 while it's off.
+app.use('/api/bot-settings', botSettingsRoutes);
+app.use('/api/courses', courseRoutes);
 app.use('/api/reports', reportsRoutes);
 
 // Error handler middleware

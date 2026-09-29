@@ -5,8 +5,8 @@ const { protect } = require('../middleware/auth.middleware');
 const { requireRole } = require('../middleware/role.middleware');
 
 // Super Admin course catalog (coaching). Same auth as vehicleCatalog.routes.js:
-// superadmin only. Not behind ENABLE_BOT_SETTINGS — Super Admin can curate
-// the catalog before the owner-facing feature is switched on.
+// superadmin only. Not behind the bot_builder category switch — Super Admin
+// can curate the catalog before the owner-facing feature is switched on.
 router.use(protect, requireRole('superadmin'));
 
 // GET /?category=coaching - all entries (active + inactive)

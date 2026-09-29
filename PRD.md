@@ -292,6 +292,48 @@ loaded otherwise) — one switch turns the whole feature off.
   (instead of replace), travel categories, a real human-handoff reply kind
   ("contact" is text-only).
 
+### Bot Builder + Courses (coaching) — built, switched per category from Super Admin
+
+Owners of a **coaching** business describe their institute in settings and
+Publish; the server generates a reply-only, tappable WhatsApp flow (no
+question nodes) plus web-form links for Free demo / Admission.
+
+- **Feature switch:** `category_features` table (category, feature,
+  is_enabled; no row = off). The `bot_builder` switch for `coaching` is
+  toggled in **Super Admin → Business Settings → Coaching → Features** and
+  applies immediately, no redeploy. `/api/bot-settings` and `/api/courses`
+  are always mounted but gated per request by
+  `middleware/categoryFeature.middleware.js#requireCategoryFeature` (404 while
+  off). Switches are defined in `services/categoryFeature.service.js`
+  (FEATURES — must match the table's check constraint). Admin API:
+  `GET /api/admin/category-features/:category`,
+  `PUT /api/admin/category-features/:category/:feature { isEnabled }`.
+  (Replaced the former `ENABLE_BOT_SETTINGS` environment variable.)
+- **Courses:** `course_catalog` (Super Admin suggestions per category,
+  `/api/admin/course-catalog`, always mounted, seeded with 12 coaching
+  courses via `scripts/seedCourseCatalog.js`) → `business_courses` (each
+  business's own list, `/api/courses`). A picked course is a **copy**, not
+  a link; owners can also add their own. `____` in a course marks a blank
+  the owner must fill before publishing.
+- **Settings + publish:** `business_bot_settings` (draft `settings`,
+  `published_settings` = `{ settings, courses }` at the last publish,
+  `published_snapshot_id`). `GET/PUT /api/bot-settings`,
+  `POST /api/bot-settings/compile` (no writes), `POST /api/bot-settings/publish`
+  (snapshot "Before bot settings publish — <date>" first, then the shared
+  `flowGraph.service.js#saveFullGraph` path). Code:
+  `utils/coachingBotSettings.js` (settings + courses → FlowSpec v2),
+  `utils/flowSpecV2.js` (pages, buttons/lists, form links → graph),
+  `services/botSettings.service.js`. **Every publish is a live cutover** for
+  that business.
+- **Service-form "Course list":** a dropdown field with
+  `source: 'business_courses'` lists the business's active courses when the
+  form opens (`publicServiceForm.controller.js#resolveDynamicOptions`);
+  forms without it are unchanged.
+- **Booking codes** are the first two letters of the business's display
+  name + 4 digits (e.g. `DA1234`, `SE1234` for Search cab AI), `BK` if the
+  name has fewer than two English letters; the 🚕 sign-off stays only for
+  travel/cab businesses.
+
 ### Visual flow canvas (frontend — `apnabot-web`, not this repo)
 
 `FlowGraphCanvas.tsx` is a fully editable node/edge canvas — node creation,
@@ -361,8 +403,26 @@ tracked as a deferred "future initiative" — it's built and live.
    engine.
 3. **`business_type_templates`'s current role is unclear** — see Data
    model reference above; not investigated this pass.
+4. **Per-business feature switches (decided 2026-09-29: later).** Today a
+   `category_features` switch (e.g. `bot_builder`) turns a feature on for
+   *every* business in the category at once. Planned next step: a
+   per-business override, set from the business's detail page in Super
+   Admin, so a feature can be piloted with chosen businesses before the
+   whole category. Not built yet — add it once there are several real
+   coaching businesses.
+5. **Bot Builder v1 limits:** at most 10 courses shown (no course groups
+   yet), no brochure button, no preview chat for an unpublished draft,
+   English-only generated text.
 
 ## Session log (append here as major milestones land)
+- 2026-09-29: Coaching Bot Builder + Courses — settings-driven bot
+  (`business_bot_settings`, FlowSpec v2), Super Admin course catalog
+  (`course_catalog`, 12 seeded) → per-business `business_courses`,
+  service-form "Course list" dropdown source, booking-code prefix from the
+  business name (🚕 only for travel), web-form replies shown in the flow
+  preview chat, and a per-category Super Admin feature switch
+  (`category_features`, replacing `ENABLE_BOT_SETTINGS`). Per-business
+  switches deferred (Known gaps #4).
 - 2026-09-29: AI flow generation Phase 1 (no LLM), behind
   `ENABLE_AI_FLOW_GEN` (default off) — see its section above. The core of
   `saveFullGraph` plus the shared validators/`assertGraphStillValid` moved

@@ -94,10 +94,8 @@ module.exports = {
   // (see app.js), so the whole feature switches off in one place without
   // touching any existing route.
   ENABLE_AI_FLOW_GEN: process.env.ENABLE_AI_FLOW_GEN === 'true',
-  // Settings-driven bot builder (business_bot_settings; first preset:
-  // coaching). Off by default: /api/bot-settings is only mounted when this is
-  // 'true' (see app.js). Independent of ENABLE_AI_FLOW_GEN.
-  ENABLE_BOT_SETTINGS: process.env.ENABLE_BOT_SETTINGS === 'true',
+  // (Bot Builder + Courses are switched per category from Super Admin —
+  // category_features — not by an environment variable.)
   // Optional: configurable ceiling on recipients per broadcast send. See the
   // comment above MAX_BROADCAST_RECIPIENTS' usage in broadcast.controller.js
   // for why this isn't tied to any real Meta/infra limit.
