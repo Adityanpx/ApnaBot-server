@@ -34,6 +34,31 @@ const loadBusiness = async (businessId) => {
   return data;
 };
 
+/**
+ * The business's ACTIVE courses (business_courses) in display order, in the
+ * shape coachingBotSettings.js#mapCoachingSettingsToSpec expects. Also what
+ * a publish records (published_settings.courses) to detect later edits.
+ */
+const loadActiveCourses = async (businessId) => {
+  const { data, error } = await supabase
+    .from('business_courses')
+    .select('name, description, details, show_demo_button, show_admission_button')
+    .eq('business_id', businessId).eq('is_active', true)
+    .order('order', { ascending: true }).order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data || []).map(toCamelCase);
+};
+
+// Key-order-independent JSON for comparing what was published (read back
+// from jsonb, which reorders object keys) with the current settings+courses.
+const stableStringify = (value) => {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value && typeof value === 'object') {
+    return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${stableStringify(value[k])}`).join(',')}}`;
+  }
+  return JSON.stringify(value === undefined ? null : value);
+};
+
 const loadRow = async (businessId) => {
   const { data, error } = await supabase
     .from('business_bot_settings').select('*').eq('business_id', businessId).maybeSingle();
@@ -64,7 +89,11 @@ const getSettings = async ({ businessId }) => {
       settings: out.settings,
       publishedAt: out.publishedAt,
       publishedSnapshotId: out.publishedSnapshotId,
-      hasUnpublishedChanges: JSON.stringify(row.settings) !== JSON.stringify(row.published_settings)
+      // What's live = published_settings ({ settings, courses } at the last
+      // publish); editing either the bot settings or My courses since then
+      // counts as unpublished changes.
+      hasUnpublishedChanges: stableStringify(row.published_settings) !==
+        stableStringify({ settings: row.settings, courses: await loadActiveCourses(businessId) })
     } : null,
     presets: Object.fromEntries(Object.entries(PRESETS).map(([name, p]) => [name, { category: p.category, fieldLibrary: p.fieldLibrary }]))
   };
@@ -98,7 +127,8 @@ const buildFromSettings = async ({ businessId, graphBusiness, presetName, settin
   const business = await loadBusiness(businessId);
   if (!business) return { status: 404, error: 'Business not found' };
 
-  const { spec, error } = resolved.preset.mapToSpec(settings, { businessName: business.display_name || business.name });
+  const courses = await loadActiveCourses(businessId);
+  const { spec, error } = resolved.preset.mapToSpec(settings, { businessName: business.display_name || business.name, courses });
   if (error) return { status: 400, error };
 
   if (spec.location && (business.business_latitude == null || business.business_longitude == null)) {
@@ -106,7 +136,7 @@ const buildFromSettings = async ({ businessId, graphBusiness, presetName, settin
   }
 
   const { warnings, ...graph } = compileFlowSpecV2(spec);
-  return { business, spec, graph, warnings };
+  return { business, spec, graph, warnings, courses };
 };
 
 /** POST /compile: what Publish would produce. No writes. */
@@ -159,7 +189,7 @@ const preparePublish = async ({ businessId, graphBusiness }) => {
     warnings.push('Publishing replaces the current flow (including any changes made in the canvas editor). The current flow is saved first and can be restored from Versions.');
   }
 
-  return { row, spec: built.spec, compiled: built.graph, currentRows, warnings };
+  return { row, courses: built.courses, spec: built.spec, compiled: built.graph, currentRows, warnings };
 };
 
 /**
@@ -181,7 +211,7 @@ const executePublish = async ({ businessId, graphBusiness, prepared }) => {
   const { error: recordErr } = await supabase
     .from('business_bot_settings')
     .update({
-      published_settings: prepared.row.settings,
+      published_settings: { settings: prepared.row.settings, courses: prepared.courses },
       published_at: new Date().toISOString(),
       published_snapshot_id: result.snapshot ? result.snapshot.id : null
     })

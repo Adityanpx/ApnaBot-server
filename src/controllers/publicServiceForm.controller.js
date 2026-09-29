@@ -10,6 +10,7 @@ const bookingService = require('../services/booking.service');
 const whatsappService = require('../services/whatsapp.service');
 const placesService = require('../services/places.service');
 const { toCamelCase } = require('../utils/caseConvert');
+const { BUSINESS_COURSES_SOURCE } = require('../utils/flowFieldsValidation');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
@@ -53,6 +54,24 @@ const resolveFlowFields = async (formToken, business) => {
 };
 
 /**
+ * Fills in options for dropdowns whose list comes from live data rather than
+ * the stored field — today only source 'business_courses' (the business's
+ * active courses, in display order; see coaching/course.controller.js). A
+ * form with no such field is returned unchanged without any DB call, so
+ * every existing form behaves exactly as before.
+ */
+const resolveDynamicOptions = async (businessId, fields) => {
+  const isCourseList = (f) => f.type === 'dropdown' && f.source === BUSINESS_COURSES_SOURCE;
+  if (!fields.some(isCourseList)) return fields;
+  const { data, error } = await supabase
+    .from('business_courses').select('name').eq('business_id', businessId).eq('is_active', true)
+    .order('order', { ascending: true }).order('created_at', { ascending: true });
+  if (error) throw error;
+  const names = (data || []).map(c => c.name);
+  return fields.map(f => (isCourseList(f) ? { ...f, options: names } : f));
+};
+
+/**
  * GET /api/public/service-form/:token
  * Returns just enough to render the form: the business's name and its
  * configured fields (node-scoped form_fields when the token's flow node has
@@ -80,7 +99,7 @@ const getServiceForm = async (req, res, next) => {
 
     return successResponse(res, 200, {
       businessName: business.name,
-      flowFields: await resolveFlowFields(formToken, business)
+      flowFields: await resolveDynamicOptions(formToken.businessId, await resolveFlowFields(formToken, business))
     });
   } catch (error) {
     logger.error('Error in getServiceForm:', error);
@@ -116,7 +135,16 @@ const submitServiceForm = async (req, res, next) => {
     if (!business) {
       return errorResponse(res, 404, 'This booking link is invalid.');
     }
-    const flowFields = await resolveFlowFields(formToken, business);
+    const flowFields = await resolveDynamicOptions(formToken.businessId, await resolveFlowFields(formToken, business));
+
+    // A course-list dropdown must hold one of the business's current courses
+    // (the list can change between opening the form and submitting it).
+    const staleCourse = flowFields.find(f => f.source === BUSINESS_COURSES_SOURCE && f.type === 'dropdown' &&
+      values[f.name] !== undefined && values[f.name] !== null && String(values[f.name]).trim() !== '' &&
+      !f.options.includes(values[f.name]));
+    if (staleCourse) {
+      return errorResponse(res, 400, `${staleCourse.label}: please choose one of the listed options`);
+    }
 
     // A required field hidden by an unmet visibleWhen condition (e.g.
     // "Number of days" when Trip Type isn't "Round Trip") must not block

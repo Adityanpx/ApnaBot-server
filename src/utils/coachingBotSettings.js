@@ -1,14 +1,15 @@
 // Coaching/classes preset for the settings-driven bot builder
-// (business_bot_settings.preset = 'coaching'). The owner describes courses,
-// menu sections and two forms in Settings; this maps those settings to a
-// FlowSpec v2 (flowSpecV2.js), which compiles to a reply-only, tappable
-// WhatsApp flow. Pure — no Supabase/Redis.
+// (business_bot_settings.preset = 'coaching'). The owner describes menu
+// sections and two forms in Bot Builder settings; the COURSES come from the
+// business's own course list (business_courses, managed in "My courses",
+// copied from the Super Admin course_catalog or added by the owner). This
+// maps settings + courses to a FlowSpec v2 (flowSpecV2.js), which compiles to
+// a reply-only, tappable WhatsApp flow. Pure — the caller loads the courses.
 //
 // Settings shape (v1):
 //   {
 //     version: 1,
 //     intro?: string,                                    // <= 300
-//     courses: [ { id, name, description?, details, buttons: { demo, admission } } ],  // 0..10 draft, 1..10 publish
 //     sections: {
 //       fees|timings|results|material|contact: { enabled, text },
 //       location: { enabled }                            // uses the shop location in Settings
@@ -17,17 +18,20 @@
 //     admissionForm: { enabled, fields: [libraryKey], customFields: [...], note?, targetExamOptions? }
 //   }
 //
-// Reviewed decisions (v1): no course groups (max 10 courses), no brochure
-// button, no draft preview chat (compile shows structure only), Student
-// name + Course always in both forms; with a single course the Course
-// dropdown is replaced by an information line naming the course (a
-// dropdown needs >= 2 options, see flowFieldsValidation.js).
+// Courses passed to mapCoachingSettingsToSpec: the business's ACTIVE
+// business_courses rows in display order, camelCased —
+//   [ { name, description?, details, showDemoButton, showAdmissionButton } ]
+//
+// Reviewed decisions (v1): no course groups (max 10 active courses), no
+// brochure button, no draft preview chat (compile shows structure only),
+// Student name + Course always in both forms. The Course field is a dropdown
+// with source 'business_courses' (flowFieldsValidation.js): its options are
+// filled from the live course list when the form opens, so adding, renaming
+// or hiding a course updates the forms without a re-publish.
 const { validateFlowSpecV2 } = require('./flowSpecV2');
 const { LIMITS } = require('./flowSpec');
-
-// Course page ids are `course_<id>`; flowSpecV2 page ids are capped at 40
-// characters, so course ids are capped at 30.
-const COURSE_ID_PATTERN = /^[a-z0-9_]{1,30}$/;
+const { BUSINESS_COURSES_SOURCE } = require('./flowFieldsValidation');
+const { hasPlaceholder } = require('./courseValidation');
 
 const MAX_COURSES = LIMITS.MAX_LIST_ROWS;
 const MAX_INTRO = 300;
@@ -87,7 +91,7 @@ const len = (v) => v.trim().length;
 
 /**
  * Validates coaching settings. forPublish=false (saving a draft) allows an
- * incomplete setup — no courses yet, enabled sections without text — so an
+ * incomplete setup — enabled sections without text — so an
  * owner can save as they go; forPublish=true requires everything a working
  * bot needs. Returns the first problem as a message, or null.
  * @param {Object} settings
@@ -100,38 +104,7 @@ const validateCoachingSettings = (settings, { forPublish = false } = {}) => {
   if (!isOptionalString(settings.intro)) return 'Intro must be text';
   if (isNonEmptyString(settings.intro) && len(settings.intro) > MAX_INTRO) return `Intro must be ${MAX_INTRO} characters or less`;
 
-  const courses = settings.courses === undefined ? [] : settings.courses;
-  if (!Array.isArray(courses)) return 'courses must be a list';
-  if (courses.length > MAX_COURSES) return `You can add at most ${MAX_COURSES} courses`;
-  if (forPublish && courses.length === 0) return 'Add at least one course before publishing';
-  const ids = new Set();
-  const names = new Set();
-  for (let i = 0; i < courses.length; i++) {
-    const c = courses[i];
-    const at = `Course ${i + 1}`;
-    if (!c || typeof c !== 'object') return `${at} is invalid`;
-    if (typeof c.id !== 'string' || !COURSE_ID_PATTERN.test(c.id)) return `${at}: id must match ${COURSE_ID_PATTERN}`;
-    if (ids.has(c.id)) return `${at}: id "${c.id}" is used twice`;
-    ids.add(c.id);
-    if (!isNonEmptyString(c.name)) return `${at}: name is required`;
-    if (len(c.name) > LIMITS.LIST_ROW_TITLE) return `${at}: name must be ${LIMITS.LIST_ROW_TITLE} characters or less`;
-    const n = c.name.trim().toLowerCase();
-    if (names.has(n)) return `${at}: another course already has the name "${c.name.trim()}"`;
-    names.add(n);
-    if (!isOptionalString(c.description)) return `${at}: short description must be text`;
-    if (isNonEmptyString(c.description) && len(c.description) > LIMITS.LIST_ROW_DESCRIPTION) {
-      return `${at}: short description must be ${LIMITS.LIST_ROW_DESCRIPTION} characters or less`;
-    }
-    if (!isOptionalString(c.details)) return `${at}: details must be text`;
-    if (forPublish && !isNonEmptyString(c.details)) return `${at}: details page is required`;
-    if (isNonEmptyString(c.details) && len(c.details) > LIMITS.INTERACTIVE_BODY) {
-      return `${at}: details must be ${LIMITS.INTERACTIVE_BODY} characters or less`;
-    }
-    const b = c.buttons;
-    if (!b || typeof b !== 'object' || typeof b.demo !== 'boolean' || typeof b.admission !== 'boolean') {
-      return `${at}: buttons.demo and buttons.admission must be true or false`;
-    }
-  }
+  if (settings.courses !== undefined) return 'Courses are managed in "My courses", not in bot settings';
 
   const sections = settings.sections;
   if (!sections || typeof sections !== 'object' || Array.isArray(sections)) return 'sections must be an object';
@@ -181,19 +154,33 @@ const validateCoachingSettings = (settings, { forPublish = false } = {}) => {
 };
 
 /**
+ * Publish-time checks on the business's active courses (from My courses).
+ * Returns the first problem as a message, or null.
+ */
+const validateCoursesForPublish = (courses) => {
+  if (!Array.isArray(courses) || courses.length === 0) return 'Add at least one course in "My courses" before publishing';
+  if (courses.length > MAX_COURSES) {
+    return `WhatsApp can show at most ${MAX_COURSES} courses — hide or delete some in "My courses" (you have ${courses.length} shown)`;
+  }
+  for (const c of courses) {
+    const at = `Course "${c.name}"`;
+    if (!isNonEmptyString(c.details)) return `${at}: add the details page text in "My courses"`;
+    if (len(c.details) > LIMITS.INTERACTIVE_BODY) return `${at}: details must be ${LIMITS.INTERACTIVE_BODY} characters or less`;
+    if (hasPlaceholder(c.details) || hasPlaceholder(c.description)) return `${at}: fill in the blanks (____) before publishing`;
+  }
+  return null;
+};
+
+/**
  * The form's field list, in flowFieldsValidation.js shape: optional note
  * first, then Student name, Course, ticked library fields (library order),
  * custom questions.
  */
-const buildFormFields = (form, courses) => {
+const buildFormFields = (form) => {
   const fields = [];
   if (isNonEmptyString(form.note)) fields.push({ name: 'note', label: form.note.trim(), type: 'display_text' });
   fields.push({ name: 'studentName', label: 'Student name', type: 'text', required: true });
-  if (courses.length >= 2) {
-    fields.push({ name: 'course', label: 'Course', type: 'dropdown', options: courses.map(c => c.name.trim()), required: true });
-  } else {
-    fields.push({ name: 'courseInfo', label: `Course: ${courses[0].name.trim()}`, type: 'display_text' });
-  }
+  fields.push({ name: 'course', label: 'Course', type: 'dropdown', source: BUSINESS_COURSES_SOURCE, required: true });
   for (const lib of FIELD_LIBRARY) {
     if (!form.fields.includes(lib.key)) continue;
     const options = lib.key === 'targetExam' ? form.targetExamOptions.map(o => o.trim()) : lib.options;
@@ -209,19 +196,21 @@ const buildFormFields = (form, courses) => {
 };
 
 /**
- * Maps publish-ready coaching settings to a FlowSpec v2. Returns
- * { spec, error } — error is a settings-level message, or (last resort) a
- * FlowSpec-level one; spec is null whenever error is set.
+ * Maps publish-ready coaching settings + the business's active courses to a
+ * FlowSpec v2. Returns { spec, error } — error is a settings/course-level
+ * message, or (last resort) a FlowSpec-level one; spec is null whenever
+ * error is set. Course pages get index-based ids (course_1..course_10) —
+ * they're rebuilt on every publish, so they needn't match course row ids.
  * @param {Object} settings
- * @param {{ businessName: string }} context
+ * @param {{ businessName: string, courses: Object[] }} context
  * @returns {{ spec: Object|null, error: string|null }}
  */
-const mapCoachingSettingsToSpec = (settings, { businessName } = {}) => {
+const mapCoachingSettingsToSpec = (settings, { businessName, courses } = {}) => {
   if (!isNonEmptyString(businessName)) return { spec: null, error: 'businessName is required' };
   const settingsError = validateCoachingSettings(settings, { forPublish: true });
   if (settingsError) return { spec: null, error: settingsError };
-
-  const courses = settings.courses;
+  const coursesError = validateCoursesForPublish(courses);
+  if (coursesError) return { spec: null, error: coursesError };
   const formEnabled = (key) => settings[FORMS[key].settingsKey].enabled;
   const formButton = (key) => ({ title: FORMS[key].buttonTitle, target: { type: 'form', id: key } });
 
@@ -230,25 +219,25 @@ const mapCoachingSettingsToSpec = (settings, { businessName } = {}) => {
   const menu = [];
 
   // Courses: a list page for 2+ courses, straight to the course page for 1.
-  for (const c of courses) {
+  courses.forEach((c, i) => {
     const buttons = [];
-    if (c.buttons.demo && formEnabled('demo')) buttons.push(formButton('demo'));
-    if (c.buttons.admission && formEnabled('admission')) buttons.push(formButton('admission'));
+    if (c.showDemoButton && formEnabled('demo')) buttons.push(formButton('demo'));
+    if (c.showAdmissionButton && formEnabled('admission')) buttons.push(formButton('admission'));
     buttons.push(MAIN_MENU);
-    pages.push({ id: `course_${c.id}`, text: c.details.trim(), buttons });
-  }
+    pages.push({ id: `course_${i + 1}`, text: c.details.trim(), buttons });
+  });
   if (courses.length >= 2) {
-    const list = courses.map(c => ({
+    const list = courses.map((c, i) => ({
       title: c.name.trim(),
       ...(isNonEmptyString(c.description) ? { description: c.description.trim() } : {}),
-      target: { type: 'page', id: `course_${c.id}` }
+      target: { type: 'page', id: `course_${i + 1}` }
     }));
     if (list.length < LIMITS.MAX_LIST_ROWS) list.push(MAIN_MENU);
     pages.push({ id: 'courses', text: 'Our courses — tap one to see the details:', keyword: 'course', list });
     menu.push({ title: '📚 Courses', target: { type: 'page', id: 'courses' } });
   } else {
     pages[0].keyword = 'course';
-    menu.push({ title: '📚 Courses', target: { type: 'page', id: `course_${courses[0].id}` } });
+    menu.push({ title: '📚 Courses', target: { type: 'page', id: 'course_1' } });
   }
 
   const sectionMenu = (key) => {
@@ -266,7 +255,7 @@ const mapCoachingSettingsToSpec = (settings, { businessName } = {}) => {
     const meta = FORMS[key];
     forms.push({
       id: key, text: meta.text, buttonText: FORM_BUTTON_TEXT, keyword: meta.keyword, aliases: meta.aliases,
-      fields: buildFormFields(settings[meta.settingsKey], courses)
+      fields: buildFormFields(settings[meta.settingsKey])
     });
     menu.push({ title: meta.menuTitle, target: { type: 'form', id: key } });
   };
@@ -297,6 +286,7 @@ const mapCoachingSettingsToSpec = (settings, { businessName } = {}) => {
 
 module.exports = {
   validateCoachingSettings,
+  validateCoursesForPublish,
   mapCoachingSettingsToSpec,
   FIELD_LIBRARY
 };

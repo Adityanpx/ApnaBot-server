@@ -11,6 +11,11 @@
 const VALID_FLOW_FIELD_TYPES = ['dropdown', 'radio', 'date', 'display_text', 'text', 'textarea', 'toggle', 'icon_select', 'address_autocomplete'];
 const DISPLAY_TEXT_FONT_SIZES = ['sm', 'md', 'lg', 'xl'];
 
+// A dropdown with this source lists the business's own active courses
+// (business_courses) instead of fixed options — see publicServiceForm
+// .controller.js#resolveDynamicOptions.
+const BUSINESS_COURSES_SOURCE = 'business_courses';
+
 // Which field types each vehicle-quote role may be attached to — see
 // validateFlowFields' doc comment. Keyed by role value.
 const ROLE_ALLOWED_TYPES = {
@@ -84,7 +89,13 @@ const validateFlowFields = (fields) => {
       return `fields[${i}] ("${name}") type must be one of: ${VALID_FLOW_FIELD_TYPES.join(', ')}`;
     }
 
-    if (type === 'dropdown' || type === 'radio') {
+    if (type === 'dropdown' && field.source === BUSINESS_COURSES_SOURCE) {
+      // Options come from the business's own courses at render time
+      // (publicServiceForm.controller.js), never from the stored field.
+      if (options !== undefined && options !== null && !(Array.isArray(options) && options.length === 0)) {
+        return `fields[${i}] ("${name}") takes its options from your course list, so it must not have its own options`;
+      }
+    } else if (type === 'dropdown' || type === 'radio') {
       if (!Array.isArray(options) || options.length < 2 ||
           options.some(opt => typeof opt !== 'string' || !opt.trim())) {
         return `fields[${i}] ("${name}") is ${type} and needs at least 2 non-empty options`;
@@ -135,7 +146,10 @@ const validateFlowFields = (fields) => {
       if (!earlierField) {
         return `fields[${i}] ("${name}") visibleWhen.field "${visibleWhen.field}" must reference an earlier field in the array, not itself or a later one`;
       }
+      // A course-list dropdown's options aren't known until render time, so
+      // visibleWhen.equals can't be checked against them here.
       if ((earlierField.type === 'dropdown' || earlierField.type === 'radio') &&
+          earlierField.source !== BUSINESS_COURSES_SOURCE &&
           !earlierField.options.includes(visibleWhen.equals)) {
         return `fields[${i}] ("${name}") visibleWhen.equals "${visibleWhen.equals}" must be one of "${visibleWhen.field}"'s options`;
       }
@@ -147,4 +161,4 @@ const validateFlowFields = (fields) => {
   return null;
 };
 
-module.exports = { validateFlowFields };
+module.exports = { validateFlowFields, BUSINESS_COURSES_SOURCE };

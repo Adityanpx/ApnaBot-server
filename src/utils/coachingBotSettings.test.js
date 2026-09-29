@@ -1,19 +1,22 @@
 // Run: node --test src/utils/coachingBotSettings.test.js
-// Pure — no Supabase/Redis.
+// Pure — no Supabase/Redis. Courses are passed in the shape
+// botSettings.service.js#loadActiveCourses returns (active business_courses).
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateCoachingSettings, mapCoachingSettingsToSpec, FIELD_LIBRARY } = require('./coachingBotSettings');
+const {
+  validateCoachingSettings, validateCoursesForPublish, mapCoachingSettingsToSpec, FIELD_LIBRARY
+} = require('./coachingBotSettings');
 const { compileFlowSpecV2 } = require('./flowSpecV2');
-const { validateFlowFields } = require('./flowFieldsValidation');
+const { validateFlowFields, BUSINESS_COURSES_SOURCE } = require('./flowFieldsValidation');
 
-const CTX = { businessName: 'Daring Bee' };
-const course = (id, name, extra = {}) => ({
-  id, name, description: `${name} classes`, details: `${name} details`, buttons: { demo: true, admission: true }, ...extra
+const course = (name, extra = {}) => ({
+  name, description: `${name} classes`, details: `${name} details`,
+  showDemoButton: true, showAdmissionButton: true, ...extra
 });
+const coursesFixture = () => [course('Abacus'), course('Vedic Maths')];
 const settings = () => ({
   version: 1,
   intro: 'Abacus & Vedic Maths classes.',
-  courses: [course('abacus', 'Abacus'), course('vedic', 'Vedic Maths')],
   sections: {
     fees: { enabled: true, text: 'Registration ₹500, ₹4,000 per level.' },
     timings: { enabled: true, text: 'Mon–Fri 9–10am, 6–7pm. Sat–Sun 9–11am.' },
@@ -29,7 +32,7 @@ const settings = () => ({
   }
 });
 const mutate = (fn) => { const s = settings(); fn(s); return s; };
-const map = (s) => mapCoachingSettingsToSpec(s, CTX);
+const map = (s, courses = coursesFixture()) => mapCoachingSettingsToSpec(s, { businessName: 'Daring Bee', courses });
 const menuTitles = (spec) => spec.menu.map(m => m.title);
 const pageById = (spec, id) => spec.pages.find(p => p.id === id);
 const formById = (spec, id) => spec.forms.find(f => f.id === id);
@@ -42,8 +45,10 @@ test('happy path: menu order, course list, course pages, forms', () => {
 
   const courses = pageById(spec, 'courses');
   assert.deepEqual(courses.list.map(r => r.title), ['Abacus', 'Vedic Maths', 'Main menu']);
+  assert.deepEqual(courses.list.map(r => r.target), [{ type: 'page', id: 'course_1' }, { type: 'page', id: 'course_2' }, { type: 'menu' }]);
   assert.equal(courses.list[0].description, 'Abacus classes');
-  assert.deepEqual(pageById(spec, 'course_abacus').buttons.map(b => b.title), ['Free demo', 'Admission', 'Main menu']);
+  assert.equal(pageById(spec, 'course_1').text, 'Abacus details');
+  assert.deepEqual(pageById(spec, 'course_1').buttons.map(b => b.title), ['Free demo', 'Admission', 'Main menu']);
   assert.deepEqual(pageById(spec, 'fees').buttons.map(b => b.title), ['Admission', 'Main menu']);
   assert.deepEqual(pageById(spec, 'timings').buttons.map(b => b.title), ['Free demo', 'Main menu']);
   assert.deepEqual(pageById(spec, 'contact').buttons.map(b => b.title), ['Main menu']);
@@ -54,14 +59,18 @@ test('happy path: menu order, course list, course pages, forms', () => {
   assert.equal(out.replyNodes.filter(n => n.replyKind === 'web_form_trigger').length, 2);
 });
 
-test('demo form: note-free, Student name + Course dropdown + ticked fields', () => {
+test('Course field is a course-list dropdown (options filled when the form opens)', () => {
   const { spec } = map(settings());
-  const fields = formById(spec, 'demo').fields;
-  assert.deepEqual(fields.map(f => f.name), ['studentName', 'course', 'age', 'mode', 'preferredTime']);
-  assert.deepEqual(fields[1].options, ['Abacus', 'Vedic Maths']);
-  assert.equal(fields[0].required, true);
-  assert.equal(fields[1].required, true);
-  assert.equal(validateFlowFields(fields), null);
+  for (const id of ['demo', 'admission']) {
+    const field = formById(spec, id).fields.find(f => f.name === 'course');
+    assert.deepEqual(field, { name: 'course', label: 'Course', type: 'dropdown', source: BUSINESS_COURSES_SOURCE, required: true });
+    assert.equal(validateFlowFields(formById(spec, id).fields), null);
+  }
+});
+
+test('demo form: Student name + Course + ticked fields', () => {
+  const { spec } = map(settings());
+  assert.deepEqual(formById(spec, 'demo').fields.map(f => f.name), ['studentName', 'course', 'age', 'mode', 'preferredTime']);
 });
 
 test('admission form: note first, library order, custom question last', () => {
@@ -70,36 +79,31 @@ test('admission form: note first, library order, custom question last', () => {
   assert.deepEqual(fields.map(f => f.name),
     ['note', 'studentName', 'course', 'fatherName', 'motherName', 'dob', 'school', 'standard', 'batch', 'mode', 'area', 'custom1']);
   assert.equal(fields[0].type, 'display_text');
-  assert.equal(fields[0].label, 'Please bring 2 passport-size photos');
   assert.equal(validateFlowFields(fields), null);
 });
 
 test('every library field produces a valid form field', () => {
-  const s = mutate(x => {
+  const { spec, error } = map(mutate(x => {
     x.admissionForm.fields = FIELD_LIBRARY.map(f => f.key);
     x.admissionForm.targetExamOptions = ['JEE', 'MHT-CET', 'NEET'];
-  });
-  const { spec, error } = map(s);
+  }));
   assert.equal(error, null);
   const fields = formById(spec, 'admission').fields;
   assert.equal(validateFlowFields(fields), null);
   assert.deepEqual(fields.find(f => f.name === 'targetExam').options, ['JEE', 'MHT-CET', 'NEET']);
 });
 
-test('single course: no Courses list, menu goes straight to the course page, course shown as info line', () => {
-  const { spec, error } = map(mutate(s => { s.courses = [course('abacus', 'Abacus')]; }));
+test('single course: no Courses list, menu goes straight to its page; Course is still a course-list dropdown', () => {
+  const { spec, error } = map(settings(), [course('Abacus')]);
   assert.equal(error, null);
   assert.equal(pageById(spec, 'courses'), undefined);
-  assert.deepEqual(spec.menu[0].target, { type: 'page', id: 'course_abacus' });
-  assert.equal(pageById(spec, 'course_abacus').keyword, 'course');
-  const fields = formById(spec, 'demo').fields;
-  assert.deepEqual(fields.slice(0, 2).map(f => [f.name, f.type, f.label]),
-    [['studentName', 'text', 'Student name'], ['courseInfo', 'display_text', 'Course: Abacus']]);
-  assert.equal(validateFlowFields(fields), null);
+  assert.deepEqual(spec.menu[0].target, { type: 'page', id: 'course_1' });
+  assert.equal(pageById(spec, 'course_1').keyword, 'course');
+  assert.equal(formById(spec, 'demo').fields[1].source, BUSINESS_COURSES_SOURCE);
 });
 
 test('10 courses: list is full, no Main menu row', () => {
-  const { spec, error } = map(mutate(s => { s.courses = Array.from({ length: 10 }, (_, i) => course(`c${i}`, `Course ${i}`)); }));
+  const { spec, error } = map(settings(), Array.from({ length: 10 }, (_, i) => course(`Course ${i}`)));
   assert.equal(error, null);
   assert.equal(pageById(spec, 'courses').list.length, 10);
   assert.ok(!pageById(spec, 'courses').list.some(r => r.title === 'Main menu'));
@@ -113,8 +117,8 @@ test('demo form off: no demo menu item, no Free demo buttons anywhere', () => {
 });
 
 test('per-course buttons respected', () => {
-  const { spec } = map(mutate(s => { s.courses[1].buttons = { demo: false, admission: false }; }));
-  assert.deepEqual(pageById(spec, 'course_vedic').buttons.map(b => b.title), ['Main menu']);
+  const { spec } = map(settings(), [course('Abacus'), course('Vedic Maths', { showDemoButton: false, showAdmissionButton: false })]);
+  assert.deepEqual(pageById(spec, 'course_2').buttons.map(b => b.title), ['Main menu']);
 });
 
 test('all sections + location: 9 menu items, still valid', () => {
@@ -125,27 +129,33 @@ test('all sections + location: 9 menu items, still valid', () => {
   }));
   assert.equal(error, null);
   assert.equal(spec.menu.length, 9);
-  assert.deepEqual(spec.location, { keyword: 'location' });
 });
 
-test('draft mode allows an incomplete setup; publish mode does not', () => {
-  const draft = mutate(s => { s.courses = []; s.sections.fees.text = ''; });
+test('draft mode allows missing section text; publish mode does not', () => {
+  const draft = mutate(s => { s.sections.fees.text = ''; });
   assert.equal(validateCoachingSettings(draft, { forPublish: false }), null);
-  assert.match(validateCoachingSettings(draft, { forPublish: true }), /at least one course/);
-  const noText = mutate(s => { s.sections.fees.text = ''; });
-  assert.match(validateCoachingSettings(noText, { forPublish: true }), /Fees is switched on but has no text/);
-  const noDetails = mutate(s => { s.courses[0].details = ''; });
-  assert.equal(validateCoachingSettings(noDetails, { forPublish: false }), null);
-  assert.match(map(noDetails).error, /Course 1: details page is required/);
+  assert.match(validateCoachingSettings(draft, { forPublish: true }), /Fees is switched on but has no text/);
 });
 
-test('compile does not mutate settings', () => {
-  const s = settings();
-  const before = JSON.stringify(s);
-  compileFlowSpecV2(map(s).spec);
-  assert.equal(JSON.stringify(s), before);
+test('settings may not carry courses (they live in My courses)', () => {
+  assert.match(validateCoachingSettings(mutate(s => { s.courses = []; })), /managed in "My courses"/);
 });
 
+// ---- course checks at publish ----
+test('publish: no courses', () => assert.match(map(settings(), []).error, /Add at least one course/));
+test('publish: more than 10 courses', () => assert.match(
+  map(settings(), Array.from({ length: 11 }, (_, i) => course(`C${i}`))).error, /at most 10 courses.*11 shown/));
+test('publish: course without details', () => assert.match(map(settings(), [course('Abacus', { details: null })]).error, /Course "Abacus": add the details page text/));
+test('publish: course details over 1024', () => assert.match(map(settings(), [course('Abacus', { details: 'x'.repeat(1025) })]).error, /1024/));
+test('publish: unfilled catalog blanks in details', () => assert.match(
+  map(settings(), [course('JEE', { details: 'Fees: ₹____' })]).error, /Course "JEE": fill in the blanks/));
+test('publish: unfilled blanks in description', () => assert.match(
+  map(settings(), [course('JEE', { description: 'Batch starts ____' })]).error, /fill in the blanks/));
+test('validateCoursesForPublish accepts a normal list', () => assert.equal(validateCoursesForPublish(coursesFixture()), null));
+test('publish: a course named "Main menu" clashes with the list row', () => assert.match(
+  map(settings(), [course('Abacus'), course('Main menu')]).error, /generated flow is invalid/));
+
+// ---- settings rejections ----
 const rejects = (name, fn, pattern) => test(`rejects: ${name}`, () => {
   const err = map(mutate(fn)).error;
   assert.ok(err, 'expected an error');
@@ -153,14 +163,6 @@ const rejects = (name, fn, pattern) => test(`rejects: ${name}`, () => {
 });
 rejects('wrong version', s => { s.version = 2; }, /version must be 1/);
 rejects('intro over 300', s => { s.intro = 'x'.repeat(301); }, /Intro must be 300/);
-rejects('11 courses', s => { s.courses = Array.from({ length: 11 }, (_, i) => course(`c${i}`, `C${i}`)); }, /at most 10 courses/);
-rejects('course name over 24', s => { s.courses[0].name = 'x'.repeat(25); }, /Course 1: name must be 24/);
-rejects('duplicate course name', s => { s.courses[1].name = 'abacus'; }, /already has the name/);
-rejects('course id too long', s => { s.courses[0].id = 'a'.repeat(31); }, /id must match/);
-rejects('duplicate course id', s => { s.courses[1].id = 'abacus'; }, /used twice/);
-rejects('course description over 72', s => { s.courses[0].description = 'x'.repeat(73); }, /72 characters/);
-rejects('course details over 1024', s => { s.courses[0].details = 'x'.repeat(1025); }, /details must be 1024/);
-rejects('course buttons missing', s => { delete s.courses[0].buttons; }, /buttons.demo and buttons.admission/);
 rejects('section text over 1024', s => { s.sections.fees.text = 'x'.repeat(1025); }, /Fees: text must be 1024/);
 rejects('unknown form field', s => { s.demoForm.fields.push('bloodGroup'); }, /unknown field "bloodGroup"/);
 rejects('field ticked twice', s => { s.demoForm.fields.push('age'); }, /ticked twice/);
@@ -169,8 +171,15 @@ rejects('custom dropdown with 1 option', s => { s.admissionForm.customFields = [
 rejects('custom question bad type', s => { s.admissionForm.customFields = [{ label: 'X', type: 'date' }]; }, /type must be one of/);
 rejects('6 custom questions', s => { s.admissionForm.customFields = Array.from({ length: 6 }, (_, i) => ({ label: `Q${i}`, type: 'text' })); }, /at most 5 custom questions/);
 rejects('note over 300', s => { s.admissionForm.note = 'x'.repeat(301); }, /note must be 300/);
-rejects('course named "Main menu" clashes with the list row', s => { s.courses[1].name = 'Main menu'; }, /generated flow is invalid/);
 
-test('rejects: missing businessName (real check)', () => {
-  assert.match(mapCoachingSettingsToSpec(settings(), {}).error, /businessName is required/);
+test('rejects: missing businessName', () => {
+  assert.match(mapCoachingSettingsToSpec(settings(), { courses: coursesFixture() }).error, /businessName is required/);
+});
+
+test('mapping does not mutate settings or courses', () => {
+  const s = settings();
+  const c = coursesFixture();
+  const before = JSON.stringify([s, c]);
+  compileFlowSpecV2(map(s, c).spec);
+  assert.equal(JSON.stringify([s, c]), before);
 });

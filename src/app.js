@@ -19,6 +19,7 @@ const staffRoutes = require('./routes/staff.routes');
 const adminRoutes = require('./routes/admin.routes');
 const publicRoutes = require('./routes/public.routes');
 const vehicleCatalogRoutes = require('./routes/vehicleCatalog.routes');
+const courseCatalogRoutes = require('./routes/courseCatalog.routes');
 const vehicleRoutes = require('./routes/vehicle.routes');
 const routeFareRoutes = require('./routes/routeFare.routes');
 const rentalPackageRoutes = require('./routes/rentalPackage.routes');
@@ -106,6 +107,9 @@ app.use('/api/payment', paymentRoutes);
 app.use('/api/subscription', subscriptionRoutes);
 app.use('/api/staff', staffRoutes);
 app.use('/api/admin/vehicle-catalog', vehicleCatalogRoutes);
+// Super Admin course catalog (coaching) — always mounted (superadmin only),
+// like vehicle-catalog above; must stay above the /api/admin catch-all.
+app.use('/api/admin/course-catalog', courseCatalogRoutes);
 app.use('/api/admin/rate-cards', rateCardRoutes);
 app.use('/api/admin/category-templates', categoryTemplateRoutes);
 app.use('/api/admin/whatsapp-flows', whatsappFlowRoutes);
@@ -135,6 +139,8 @@ app.use('/api/flow-graph', flowGraphRoutes);
 // required inside the branch so the module isn't loaded when off.
 if (config.ENABLE_BOT_SETTINGS) {
   app.use('/api/bot-settings', require('./routes/botSettings.routes'));
+  // A business's own courses — part of the same coaching Bot Builder feature.
+  app.use('/api/courses', require('./routes/course.routes'));
 }
 app.use('/api/reports', reportsRoutes);
 
