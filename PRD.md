@@ -154,12 +154,48 @@ cutover and the menu picker had always resolved empty in practice.
   `web_form_trigger` sends the customer a tokenized link to a public,
   unauthenticated booking form (`src/controllers/publicServiceForm.controller.js`,
   `booking_form_tokens` table) instead of continuing the conversation
-  in-chat — **this mechanism is not documented anywhere else in this
-  file.** Not investigated or written up further this pass since it's
-  outside this correction's scope (business inventory + this specific
-  stale claim); flagged to the user as a real documentation gap, not
-  silently left implied to be covered by the graph-engine description
-  above.
+  in-chat — see "Web-form booking links" below.
+
+### Web-form booking links (`web_form_trigger`) — live (Search cab AI, SG Travels, coaching forms)
+
+A reply node with `reply_kind='web_form_trigger'` answers with a WhatsApp
+CTA-URL button linking to a public web page (`apnabot-web`
+`/book/[token]`) where the customer fills in a form, instead of answering
+questions in chat.
+
+- **Minting (webhook.controller.js, web_form_trigger branch):** inserts a
+  `booking_form_tokens` row — `business_id`, `customer_id`,
+  `customer_number`, `flow_node_id` (the form node), `source_node_id` (the
+  node whose button/list row was tapped to get here; null when typed —
+  added 2026-09-29), `expires_at` = now + 30 min — and sends
+  `FRONTEND_URL/book/<token>` with the node's `label`/`button_text` (else
+  the `webFormPrompt`/`webFormButtonText` system messages). A failed insert
+  sends the `webFormLinkFailedFallback` message instead.
+- **Which fields:** the form node's own `flow_nodes.form_fields` when it has
+  any, else the business-wide `businesses.flow_fields` (Service Form page)
+  — `publicServiceForm.controller.js#resolveFlowFields`. Both validated by
+  `utils/flowFieldsValidation.js#validateFlowFields`.
+- **Public endpoints (`/api/public`, token = authorization, no login):**
+  `GET /service-form/:token` → `{ businessName, isTravelBusiness,
+  flowFields, prefill?, formTitle?, formSubtitle? }` (optional keys only
+  present when set; `formTitle` = a published Bot Builder form's page
+  header, "Book a free demo class" / "Admission form" —
+  `resolveFormTitle`); `POST /service-form/:token/submit { values }`;
+  travel helpers `GET .../vehicle-options`, `POST .../places-autocomplete`,
+  `POST .../place-details`, `POST .../vehicle-quote`. Expired → 410, used →
+  410, unknown → 404.
+- **Submit:** checks required fields and option values (a course-list
+  value must be a current course), creates the booking via
+  `bookingService.createBookingAndConfirmation`, marks the token used
+  (`used_at` — one link, one booking), and sends the WhatsApp
+  confirmation (image + caption when a payment QR is due).
+- **Dynamic options / prefill:** a dropdown with
+  `source: 'business_courses'` gets the business's active courses when the
+  form opens (`resolveDynamicOptions`). `prefill` (only present when
+  non-empty) pre-selects the course when the form was opened from a Bot
+  Builder course page (`source_node_id` keyword `page_course_N` → course N
+  of `business_bot_settings.published_settings.courses`,
+  `resolvePrefill`) — the customer can still change it.
 
 ### CRUD for the graph engine — full node + edge CRUD, mounted at `/api/flow-graph`
 `src/middleware/flowGraph.middleware.js` (`requireGraphEngine`),
@@ -328,7 +364,9 @@ question nodes) plus web-form links for Free demo / Admission.
 - **Service-form "Course list":** a dropdown field with
   `source: 'business_courses'` lists the business's active courses when the
   form opens (`publicServiceForm.controller.js#resolveDynamicOptions`);
-  forms without it are unchanged.
+  forms without it are unchanged. Tapping Free demo / Admission on a course
+  page opens the form with that course pre-selected (see "Web-form booking
+  links").
 - **Booking codes** are the first two letters of the business's display
   name + 4 digits (e.g. `DA1234`, `SE1234` for Search cab AI), `BK` if the
   name has fewer than two English letters; the 🚕 sign-off stays only for
@@ -415,6 +453,11 @@ tracked as a deferred "future initiative" — it's built and live.
    English-only generated text.
 
 ## Session log (append here as major milestones land)
+- 2026-09-29: Course pre-selected in coaching forms — new
+  `booking_form_tokens.source_node_id` (migration
+  `20260929150000_booking_form_tokens_source_node.sql`, **must be applied
+  before the server code that writes it is deployed**) + `prefill` in the
+  public form GET. Web-form booking links documented (new section above).
 - 2026-09-29: Coaching Bot Builder + Courses — settings-driven bot
   (`business_bot_settings`, FlowSpec v2), Super Admin course catalog
   (`course_catalog`, 12 seeded) → per-business `business_courses`,

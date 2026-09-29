@@ -75,12 +75,15 @@ const FORMS = {
   demo: {
     settingsKey: 'demoForm', menuTitle: '🎓 Free demo', buttonTitle: 'Free demo',
     keyword: 'demo', aliases: [],
-    text: 'Book a free demo class — tap the button below and fill a short form.'
+    text: 'Book a free demo class — tap the button below and fill a short form.',
+    // Header of the web form page (publicServiceForm.controller.js#resolveFormTitle)
+    formTitle: 'Book a free demo class', formSubtitle: 'Takes about a minute.'
   },
   admission: {
     settingsKey: 'admissionForm', menuTitle: '📝 Admission', buttonTitle: 'Admission',
     keyword: 'admission', aliases: ['register'],
-    text: 'Apply for admission — tap the button below and fill the form.'
+    text: 'Apply for admission — tap the button below and fill the form.',
+    formTitle: 'Admission form', formSubtitle: 'Takes about 2 minutes.'
   }
 };
 const FORM_BUTTON_TEXT = 'Fill form';
@@ -320,10 +323,24 @@ const courseIndexFromPageKeyword = (keyword) => {
   return /^[1-9]\d*$/.test(n) ? Number(n) - 1 : null;
 };
 
+/**
+ * Web form page header for a published Bot Builder form node, by its
+ * keyword (the form's own keyword — flowSpecV2 gives a form node its
+ * keyword, not form_<id>, when it has one). { title, subtitle } or null for
+ * any other keyword. The caller must also check the business actually
+ * published Bot Builder settings, so a hand-built 'demo' node elsewhere
+ * doesn't pick this up.
+ */
+const formTitleForKeyword = (keyword) => {
+  const meta = Object.values(FORMS).find(f => f.keyword === keyword);
+  return meta ? { title: meta.formTitle, subtitle: meta.formSubtitle } : null;
+};
+
 module.exports = {
   validateCoachingSettings,
   validateCoursesForPublish,
   mapCoachingSettingsToSpec,
   courseIndexFromPageKeyword,
+  formTitleForKeyword,
   FIELD_LIBRARY
 };

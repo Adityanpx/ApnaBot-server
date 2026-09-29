@@ -11,7 +11,7 @@ const whatsappService = require('../services/whatsapp.service');
 const placesService = require('../services/places.service');
 const { toCamelCase } = require('../utils/caseConvert');
 const { BUSINESS_COURSES_SOURCE } = require('../utils/flowFieldsValidation');
-const { courseIndexFromPageKeyword } = require('../utils/coachingBotSettings');
+const { courseIndexFromPageKeyword, formTitleForKeyword } = require('../utils/coachingBotSettings');
 const { isTravelFeaturedCategory } = require('../config/categoryFeatures');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
@@ -32,6 +32,18 @@ const loadToken = async (token) => {
 };
 
 /**
+ * The token's form node ({ form_fields, keyword }), or null when the token
+ * has no flow_node_id or the node no longer exists.
+ */
+const loadFormNode = async (formToken) => {
+  if (!formToken.flowNodeId) return null;
+  const { data: node, error } = await supabase
+    .from('flow_nodes').select('form_fields, keyword').eq('id', formToken.flowNodeId).maybeSingle();
+  if (error) throw error;
+  return node;
+};
+
+/**
  * Resolves which field list a token should render/submit against. A token
  * minted from a specific flow_node (flow_node_id set — see
  * webhook.controller.js's web_form_trigger branch) uses that node's own
@@ -41,12 +53,13 @@ const loadToken = async (token) => {
  * per-node fields existed. Kept as an explicit fallback chain rather than
  * silently collapsing "node with no fields configured" into "business-wide
  * default" without it being visible here.
+ *
+ * formNode: the token's flow node if the caller already loaded it
+ * (loadFormNode — GET also needs its keyword); omitted → loaded here.
  */
-const resolveFlowFields = async (formToken, business) => {
+const resolveFlowFields = async (formToken, business, formNode) => {
   if (formToken.flowNodeId) {
-    const { data: node, error } = await supabase
-      .from('flow_nodes').select('form_fields').eq('id', formToken.flowNodeId).maybeSingle();
-    if (error) throw error;
+    const node = formNode !== undefined ? formNode : await loadFormNode(formToken);
     if (node?.form_fields && node.form_fields.length > 0) {
       return node.form_fields;
     }
@@ -103,11 +116,29 @@ const resolvePrefill = async (formToken, fields) => {
 };
 
 /**
+ * Page header for the form: { title, subtitle } for a published Bot Builder
+ * form node (keyword demo/admission — coachingBotSettings.js
+ * #formTitleForKeyword — and the business has published Bot Builder
+ * settings), else null and the page keeps its generic header. Any other
+ * keyword returns null without a DB call.
+ */
+const resolveFormTitle = async (formToken, formNode) => {
+  const title = formTitleForKeyword(formNode?.keyword);
+  if (!title) return null;
+  const { data: botSettings, error } = await supabase
+    .from('business_bot_settings').select('published_at').eq('business_id', formToken.businessId)
+    .maybeSingle();
+  if (error) throw error;
+  return botSettings?.published_at ? title : null;
+};
+
+/**
  * GET /api/public/service-form/:token
  * Returns just enough to render the form: the business's name and its
  * configured fields (node-scoped form_fields when the token's flow node has
  * any configured, else the business's flow_fields — see resolveFlowFields),
- * plus prefill (starting values, see resolvePrefill) when there are any.
+ * plus prefill (starting values, see resolvePrefill) when there are any and
+ * formTitle/formSubtitle (see resolveFormTitle) when known.
  */
 const getServiceForm = async (req, res, next) => {
   try {
@@ -129,13 +160,21 @@ const getServiceForm = async (req, res, next) => {
       return errorResponse(res, 404, 'This booking link is invalid.');
     }
 
-    const flowFields = await resolveDynamicOptions(formToken.businessId, await resolveFlowFields(formToken, business));
-    // A prefill failure must not block the form — the parent just picks.
+    const formNode = await loadFormNode(formToken);
+    const flowFields = await resolveDynamicOptions(formToken.businessId, await resolveFlowFields(formToken, business, formNode));
+    // Prefill / title failures must not block the form — the page just uses
+    // no starting values / its generic header.
     let prefill = {};
     try {
       prefill = await resolvePrefill(formToken, flowFields);
     } catch (prefillError) {
       logger.error('Error resolving service form prefill:', prefillError);
+    }
+    let formTitle = null;
+    try {
+      formTitle = await resolveFormTitle(formToken, formNode);
+    } catch (titleError) {
+      logger.error('Error resolving service form title:', titleError);
     }
 
     return successResponse(res, 200, {
@@ -147,7 +186,9 @@ const getServiceForm = async (req, res, next) => {
       flowFields,
       // Additive, only when non-empty: starting values, e.g.
       // { course: 'Abacus' } — see resolvePrefill.
-      ...(Object.keys(prefill).length > 0 ? { prefill } : {})
+      ...(Object.keys(prefill).length > 0 ? { prefill } : {}),
+      // Additive, only when known: this form's own page header — see resolveFormTitle.
+      ...(formTitle ? { formTitle: formTitle.title, formSubtitle: formTitle.subtitle } : {})
     });
   } catch (error) {
     logger.error('Error in getServiceForm:', error);
