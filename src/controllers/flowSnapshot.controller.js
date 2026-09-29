@@ -336,6 +336,8 @@ const startBlankFlow = async (req, res, next) => {
 };
 
 module.exports = {
+  // Shared with aiFlow.service.js's pre-apply snapshot cap (additive export only).
+  MAX_SNAPSHOTS_PER_BUSINESS,
   createSnapshot,
   getSnapshots,
   restoreSnapshot,

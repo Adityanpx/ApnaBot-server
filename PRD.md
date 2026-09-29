@@ -160,8 +160,13 @@ cutover and the menu picker had always resolved empty in practice.
 Structural safety lives in `src/utils/flowGraphValidation.js` (`findCycles`,
 `findUnreachableNodes`, `findFallbackSiblingNodeIds`,
 `resolveBookingTriggerEntryNodeIds`) — pure functions over `{nodes, edges}`,
-called by every mutating handler via the controller's private
-`assertGraphStillValid` before it writes.
+called by every mutating handler via `assertGraphStillValid` before it
+writes. `assertGraphStillValid`, the shared validators/constants, and the
+core of the canvas batch save (`PUT /full`: diff → validate → one atomic
+`save_flow_graph_full` RPC → `invalidateRulesCache`) live in
+`src/services/flowGraph.service.js` (extracted 2026-09-29, behavior
+unchanged — see session log) so AI flow generation's `/apply` commits
+through the exact same path.
 
 Endpoints: full CRUD for `reply`-type nodes (`/reply-nodes`), `question`-type
 nodes (`/question-nodes`), and `flow_edges` (`/edges` — add/retarget/
@@ -219,21 +224,66 @@ set):
   replace of the live graph from the active category template, on demand —
   not just at signup). Owner-only writes, staff can list.
 - **Category starter templates** (`is_category_template=true`,
-  `business_id` null, `category` set) — SuperAdmin-owned, one per category
-  (not DB-enforced), managed at `/api/admin/category-templates`
+  `business_id` null, `category` set) — SuperAdmin-owned, **multiple per
+  category** (an owner picks one from `GET /api/flow-graph/snapshots/
+  category-templates?category=X`), managed at `/api/admin/category-templates`
   (`GET` list, `POST /clone-from-business` to seed one from an existing
-  business's live graph, `DELETE /:id`).
-- `business.service.js#createBusiness` looks up the active template for the
-  new business's category and, if one exists, copies its nodes/edges into
-  the new business's `flow_nodes`/`flow_edges` via
-  `flowSnapshot.service.js#writeBusinessGraphRows` at signup. If none
-  exists, the business still starts with a literal empty graph, same as
-  before — the owner builds it from scratch via `/api/flow-graph`.
+  business's live graph or one of its snapshots, `GET /:id/export` /
+  `POST /import-json` for raw row JSON, `DELETE /:id`).
+- **Signup does NOT seed a template** (corrected 2026-09-29 — this file
+  previously said it did). `business.service.js#createBusiness` gives every
+  new business a literal empty graph; importing a category template is an
+  explicit owner action from the Versions tab (`import-category-template`).
+- `POST /api/flow-graph/snapshots/start-blank` wipes the live graph to empty
+  (owner action, unsets every snapshot's `is_active`).
 
-As of 2026-09-02 the live `flow_snapshots` table is empty (0 rows) — the
-feature is fully built and wired in, just not yet exercised: no business
-has taken a personal snapshot yet and no category template has been cloned
-yet.
+Row counts are not tracked here (the old "table is empty as of
+2026-09-02" note was stale — e.g. CareWell Clinic has had a personal
+snapshot since 2026-09-29's AI-flow test). Query `flow_snapshots` directly.
+
+### AI flow generation, Phase 1 (`/api/flow-graph/ai`) — built, OFF by default
+
+Questionnaire answers or a FlowSpec → a complete reply/booking graph,
+**deterministic, no LLM yet**. Mounted only when `ENABLE_AI_FLOW_GEN=true`
+(`src/config/env.js`, checked in `app.js`; the route module isn't even
+loaded otherwise) — one switch turns the whole feature off.
+
+- `POST /compile` (any business member) — body is exactly one of
+  `{ spec }` / `{ answers }`; returns `{ spec, graph, warnings }`, temp ids,
+  no writes.
+- `POST /apply` (owner) — same body; the server re-maps answers (business
+  name read fresh) and recompiles, then: **409** for `cab`/`travels`
+  categories or any graph containing computed nodes; snapshots the current
+  graph first as "Before AI flow — <date>" (not marked active; aborts if
+  the snapshot fails); full-replaces the graph via
+  `flowGraph.service.js#saveFullGraph`; then unsets `is_active` on the
+  business's snapshots and enforces the 5-snapshot cap. A rejected save
+  removes its snapshot again. Warnings: welcome message set (greeting words
+  bypass the generated menu — `welcome_message` is never modified), N
+  in-progress booking sessions will end, optional questions switched off
+  via `disabled_booking_fields`, oldest snapshot evicted, menu rendered as
+  a list. **Every successful apply is a live cutover** for that business.
+- Code: `src/utils/flowSpec.js` (`validateFlowSpec`/`compileFlowSpec`,
+  FlowSpec v1, Meta limits enforced at compile time — nothing else in the
+  codebase checks them at save time), `src/utils/flowSpecQuestionnaire.js`
+  (answers → FlowSpec), `src/services/aiFlow.service.js`
+  (`compile`/`prepareApply` read-only, `executeApply` writes),
+  `src/controllers/aiFlow.controller.js`, `src/routes/aiFlow.routes.js`.
+  Tests: `src/utils/flowSpec*.test.js` (`npm test`).
+- Emits only: reply `text` (text/buttons/list/location), `booking_trigger`,
+  `payment_trigger`, `question` (text/buttons/list/location_request).
+  Never: `vehicle_carousel`/`rentalPackage`, `web_form_trigger`, edge
+  conditions/presets, images, translations. Menu = reply keyword `hi`
+  (exact) + the other greeting words as aliases; booking questions are only
+  reachable through the `booking_trigger` node (required by
+  `saveFullGraph`'s reachability check for new question nodes).
+- Script: `node src/scripts/applyAiFlow.js --business=<id>
+  --answers=<file>|--spec=<file> [--confirm]` — same code path as
+  `/apply`, dry run by default.
+- Deferred: the LLM step (Phase 2 — answers/free text → FlowSpec),
+  prefill of hours/address from the business row, translations, merge
+  (instead of replace), travel categories, a real human-handoff reply kind
+  ("contact" is text-only).
 
 ### Visual flow canvas (frontend — `apnabot-web`, not this repo)
 
@@ -246,8 +296,9 @@ tracked as a deferred "future initiative" — it's built and live.
 
 ## Data model reference
 
-- `businesses` — core tenant table. `business_category` gates category-
-  template selection at signup. `disabled_booking_fields`, `served_cities`
+- `businesses` — core tenant table. `business_category` filters which
+  category templates the Versions tab offers (no template is applied at
+  signup). `disabled_booking_fields`, `served_cities`
   are live per-business config, applied as an OVERLAY at read time by the
   graph engine (never baked into stored flow data).
 - `business_type_templates` — still exists; historically the category
@@ -305,6 +356,17 @@ tracked as a deferred "future initiative" — it's built and live.
    model reference above; not investigated this pass.
 
 ## Session log (append here as major milestones land)
+- 2026-09-29: AI flow generation Phase 1 (no LLM), behind
+  `ENABLE_AI_FLOW_GEN` (default off) — see its section above. The core of
+  `saveFullGraph` plus the shared validators/`assertGraphStillValid` moved
+  verbatim to `src/services/flowGraph.service.js`; the canvas `PUT /full`
+  handler is now a thin wrapper. Verified identical by an old-vs-new
+  harness (2,613 payloads over all live businesses' real graphs, same
+  status/body/RPC args/cache deletes). Applied to CareWell Clinic
+  (`medical`) end to end: its previous 12-node flow is saved as snapshot
+  "Before AI flow — Sep 29, 2026"; `verifyBookingGraph.js` now passes
+  against CareWell (it previously crashed — no `booking_trigger`).
+  CareWell has no `phone_number_id` yet, so it isn't reachable on WhatsApp.
 - 2026-09-28: Inbound message storage fixes (webhook.controller.js).
   `messages.content` now holds the tapped button/list TITLE (matching still
   uses the id) or a media placeholder ("📷 Photo: caption", "📄 file.pdf",

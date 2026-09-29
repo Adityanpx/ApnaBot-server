@@ -89,6 +89,11 @@ module.exports = {
   // WALLET_BILLING_ENABLED=true once we're a Solution Partner and start
   // invoicing clients directly.
   WALLET_BILLING_ENABLED: process.env.WALLET_BILLING_ENABLED === 'true',
+  // AI flow generation, Phase 1 (questionnaire/FlowSpec -> graph, no LLM).
+  // Off by default: /api/flow-graph/ai is only mounted when this is 'true'
+  // (see app.js), so the whole feature switches off in one place without
+  // touching any existing route.
+  ENABLE_AI_FLOW_GEN: process.env.ENABLE_AI_FLOW_GEN === 'true',
   // Optional: configurable ceiling on recipients per broadcast send. See the
   // comment above MAX_BROADCAST_RECIPIENTS' usage in broadcast.controller.js
   // for why this isn't tied to any real Meta/infra limit.

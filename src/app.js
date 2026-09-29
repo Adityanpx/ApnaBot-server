@@ -124,6 +124,12 @@ app.use('/api/wallet', walletRoutes);
 app.use('/api/flow-graph/snapshots', flowSnapshotRoutes);
 app.use('/api/flow-graph/library', nodeLibraryPublicRoutes);
 app.use('/api/flow-graph/preview', flowGraphPreviewRoutes);
+// AI flow generation (Phase 1) — mounted only when ENABLE_AI_FLOW_GEN=true;
+// required inside the branch so the module isn't even loaded when off.
+// Must stay above the /api/flow-graph catch-all, like the mounts above.
+if (config.ENABLE_AI_FLOW_GEN) {
+  app.use('/api/flow-graph/ai', require('./routes/aiFlow.routes'));
+}
 app.use('/api/flow-graph', flowGraphRoutes);
 app.use('/api/reports', reportsRoutes);
 
