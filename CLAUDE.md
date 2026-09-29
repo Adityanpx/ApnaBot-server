@@ -25,8 +25,11 @@ about HOW to work; PRD.md is about WHAT currently exists.
 4. **Verify against real data, not synthetic fixtures**, whenever a real
    business exists to test against (currently: SG Travels, category
    'travels', and Averix Solutions, category 'software_it' — see PRD.md
-   for IDs). Both are test accounts, freely resettable — no production
-   customers exist yet.
+   for IDs). Test accounts are freely resettable. **Exception: Search cab
+   AI (category 'travels') is a LIVE production business with real
+   WhatsApp customers** — never reset it or run a `--confirm` script /
+   AI-flow apply against it, and say explicitly whether any change to a
+   live-traffic path affects it. Look its id up fresh from `businesses`.
 
 5. **Dry-run before --confirm on any script that writes to the database.**
    Every migration/data script in this repo follows: default = print what

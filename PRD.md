@@ -7,11 +7,18 @@ Upstash Redis + BullMQ. Owner: Suresh Gavali (Averix Solutions Pvt Ltd —
 the owner's own company; **not** a business tenant on the platform, see
 below).
 
-**No production customers yet.** All 5 businesses currently in the live
-`businesses` table are test/demo accounts under the owner's control —
-freely resettable, no real customer data to protect. Confirmed directly
-against the live database on 2026-09-16 (not carried over from prior doc
-revisions or scripts):
+**One LIVE production business: Search cab AI** (`8440ac0a-1f9f-4a30-95e3-19ad2adbe6a2`,
+`business_category='travels'`, WhatsApp-connected, created 2026-09-21 —
+confirmed live against `businesses` on 2026-09-29). It has real customers:
+never reset it, never run a `--confirm` script or an AI-flow `/apply`
+against it, and state explicitly whether any change to a live-traffic path
+(webhook, booking engine, confirmation text, canvas save) affects it.
+
+Every other business is a test/demo account under the owner's control —
+freely resettable, no real customer data to protect. The table below lists
+the test accounts as confirmed against the live database on 2026-09-16; it
+is **known stale** (the live table had more businesses by 2026-09-29) —
+re-check `businesses` before relying on it:
 
 | Name | business_id | business_category | booking_engine | created_at |
 |---|---|---|---|---|
