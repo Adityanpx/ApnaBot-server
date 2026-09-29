@@ -1568,6 +1568,11 @@ const receiveWebhook = async (req, res) => {
     // reply-node convention) — handled in Step 14 below instead of via
     // matchedNode.replyKind.
     let directBookingEntry = null;
+    // The node whose button/list row was tapped to reach matchedNode (null
+    // when matched by typed text) — stored on a web_form_trigger's token as
+    // source_node_id so the form can pre-fill from it (e.g. the course of a
+    // Bot Builder course page, publicServiceForm.controller.js).
+    let tappedFromNodeId = null;
 
     const tappedEdgeId = (buttonReplyId && !buttonReplyId.startsWith('lang_')) ? buttonReplyId : listReplyId;
     if (tappedEdgeId) {
@@ -1576,6 +1581,7 @@ const receiveWebhook = async (req, res) => {
         directBookingEntry = { nodeId: resolvedTap.targetNode.id, ruleId: resolvedTap.edge.fromNodeId, edge: resolvedTap.edge };
       } else if (resolvedTap?.targetNode?.nodeType === 'reply') {
         matchedNode = resolvedTap.targetNode;
+        tappedFromNodeId = resolvedTap.edge?.fromNodeId || null;
         matchedEdges = matchedNode.contentType === 'text' ? [] : await chatbotService.getOutgoingEdges(matchedNode.id);
       } else if (resolvedTap) {
         logger.error(`Tapped flow_edges row ${tappedEdgeId} (business ${tenant.businessId}) targets node type '${resolvedTap.targetNode.nodeType}', which isn't a supported button/list target — falling back to keyword matching`);
@@ -1767,6 +1773,7 @@ const receiveWebhook = async (req, res) => {
               customer_id: customer.id,
               customer_number: customerNumber,
               flow_node_id: matchedNode.id,
+              source_node_id: tappedFromNodeId,
               expires_at: expiresAt
             })
             .select('token')

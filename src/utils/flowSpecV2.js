@@ -302,5 +302,6 @@ const compileFlowSpecV2 = (spec) => {
 
 module.exports = {
   validateFlowSpecV2,
-  compileFlowSpecV2
+  compileFlowSpecV2,
+  pageTapKeyword
 };

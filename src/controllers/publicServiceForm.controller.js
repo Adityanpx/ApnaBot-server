@@ -11,6 +11,7 @@ const whatsappService = require('../services/whatsapp.service');
 const placesService = require('../services/places.service');
 const { toCamelCase } = require('../utils/caseConvert');
 const { BUSINESS_COURSES_SOURCE } = require('../utils/flowFieldsValidation');
+const { courseIndexFromPageKeyword } = require('../utils/coachingBotSettings');
 const { isTravelFeaturedCategory } = require('../config/categoryFeatures');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
@@ -73,10 +74,40 @@ const resolveDynamicOptions = async (businessId, fields) => {
 };
 
 /**
+ * Starting values for the form, { [fieldName]: value }. Today only: a form
+ * opened by tapping Free demo / Admission on a Bot Builder course page
+ * (token.source_node_id — see webhook.controller.js — whose keyword is
+ * page_course_N) pre-selects course N of the published course list in the
+ * form's course-list dropdown, if that course is still one of its options.
+ * Anything else (typed keyword, menu tap, hand-built flow, course since
+ * hidden or renamed) → {} and the parent picks as before. Takes the
+ * already-resolved fields, so a form with no course list makes no DB call.
+ */
+const resolvePrefill = async (formToken, fields) => {
+  const courseField = fields.find(f => f.type === 'dropdown' && f.source === BUSINESS_COURSES_SOURCE);
+  if (!courseField || !formToken.sourceNodeId) return {};
+
+  const { data: sourceNode, error: nodeError } = await supabase
+    .from('flow_nodes').select('keyword').eq('id', formToken.sourceNodeId).eq('business_id', formToken.businessId)
+    .maybeSingle();
+  if (nodeError) throw nodeError;
+  const index = courseIndexFromPageKeyword(sourceNode?.keyword);
+  if (index === null) return {};
+
+  const { data: botSettings, error: settingsError } = await supabase
+    .from('business_bot_settings').select('published_settings').eq('business_id', formToken.businessId)
+    .maybeSingle();
+  if (settingsError) throw settingsError;
+  const name = botSettings?.published_settings?.courses?.[index]?.name;
+  return typeof name === 'string' && courseField.options.includes(name) ? { [courseField.name]: name } : {};
+};
+
+/**
  * GET /api/public/service-form/:token
  * Returns just enough to render the form: the business's name and its
  * configured fields (node-scoped form_fields when the token's flow node has
- * any configured, else the business's flow_fields — see resolveFlowFields).
+ * any configured, else the business's flow_fields — see resolveFlowFields),
+ * plus prefill (starting values, see resolvePrefill) when there are any.
  */
 const getServiceForm = async (req, res, next) => {
   try {
@@ -98,13 +129,25 @@ const getServiceForm = async (req, res, next) => {
       return errorResponse(res, 404, 'This booking link is invalid.');
     }
 
+    const flowFields = await resolveDynamicOptions(formToken.businessId, await resolveFlowFields(formToken, business));
+    // A prefill failure must not block the form — the parent just picks.
+    let prefill = {};
+    try {
+      prefill = await resolvePrefill(formToken, flowFields);
+    } catch (prefillError) {
+      logger.error('Error resolving service form prefill:', prefillError);
+    }
+
     return successResponse(res, 200, {
       businessName: business.name,
       // Lets the public form page keep its travel wording ("Book your ride",
       // "Confirm Booking", 24/7 Support) only for travel/cab businesses and
       // use neutral wording for every other category. Additive field.
       isTravelBusiness: isTravelFeaturedCategory(business.businessCategory, business.subCategories),
-      flowFields: await resolveDynamicOptions(formToken.businessId, await resolveFlowFields(formToken, business))
+      flowFields,
+      // Additive, only when non-empty: starting values, e.g.
+      // { course: 'Abacus' } — see resolvePrefill.
+      ...(Object.keys(prefill).length > 0 ? { prefill } : {})
     });
   } catch (error) {
     logger.error('Error in getServiceForm:', error);

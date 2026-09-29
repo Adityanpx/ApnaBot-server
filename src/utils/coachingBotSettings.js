@@ -29,7 +29,7 @@
 // with source 'business_courses' (flowFieldsValidation.js): its options are
 // filled from the live course list when the form opens, so adding, renaming
 // or hiding a course updates the forms without a re-publish.
-const { validateFlowSpecV2 } = require('./flowSpecV2');
+const { validateFlowSpecV2, pageTapKeyword } = require('./flowSpecV2');
 const { LIMITS } = require('./flowSpec');
 const { BUSINESS_COURSES_SOURCE } = require('./flowFieldsValidation');
 const { hasPlaceholder } = require('./courseValidation');
@@ -304,9 +304,26 @@ const mapCoachingSettingsToSpec = (settings, { businessName, courses } = {}) => 
   return { spec, error: null };
 };
 
+/**
+ * Reverse of the course page ids above: a published course page node's
+ * keyword (flowSpecV2 pageTapKeyword(`course_${i + 1}`)) → i, the course's
+ * index in the published course list (business_bot_settings
+ * .published_settings.courses). null for any other keyword — including a
+ * single-course business, whose only course page takes the 'course' keyword.
+ * Used to pre-select the course in a form opened from that page
+ * (publicServiceForm.controller.js).
+ */
+const courseIndexFromPageKeyword = (keyword) => {
+  const prefix = pageTapKeyword('course_');
+  if (typeof keyword !== 'string' || !keyword.startsWith(prefix)) return null;
+  const n = keyword.slice(prefix.length);
+  return /^[1-9]\d*$/.test(n) ? Number(n) - 1 : null;
+};
+
 module.exports = {
   validateCoachingSettings,
   validateCoursesForPublish,
   mapCoachingSettingsToSpec,
+  courseIndexFromPageKeyword,
   FIELD_LIBRARY
 };

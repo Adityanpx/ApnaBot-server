@@ -4,7 +4,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  validateCoachingSettings, validateCoursesForPublish, mapCoachingSettingsToSpec, FIELD_LIBRARY
+  validateCoachingSettings, validateCoursesForPublish, mapCoachingSettingsToSpec, courseIndexFromPageKeyword, FIELD_LIBRARY
 } = require('./coachingBotSettings');
 const { compileFlowSpecV2 } = require('./flowSpecV2');
 const { validateFlowFields, BUSINESS_COURSES_SOURCE } = require('./flowFieldsValidation');
@@ -200,4 +200,25 @@ test('mapping does not mutate settings or courses', () => {
   const before = JSON.stringify([s, c]);
   compileFlowSpecV2(map(s, c).spec);
   assert.equal(JSON.stringify([s, c]), before);
+});
+
+test('courseIndexFromPageKeyword: compiled course page keyword → that course', () => {
+  const courses = [course('Abacus', { details: 'Abacus page' }), course('Vedic Maths', { details: 'Vedic page' }), course('Chess', { details: 'Chess page' })];
+  const { replyNodes } = compileFlowSpecV2(map(settings(), courses).spec);
+  const found = replyNodes
+    .map(n => ({ n, i: courseIndexFromPageKeyword(n.keyword) }))
+    .filter(x => x.i !== null);
+  assert.equal(found.length, 3);
+  for (const { n, i } of found) assert.equal(n.label, courses[i].details);
+  // every other node (menu, course list, sections, forms) maps to nothing
+  assert.equal(replyNodes.length - found.length, replyNodes.filter(n => courseIndexFromPageKeyword(n.keyword) === null).length);
+});
+
+test('courseIndexFromPageKeyword: single course and junk keywords → null', () => {
+  const { replyNodes } = compileFlowSpecV2(map(settings(), [course('Abacus')]).spec);
+  assert.ok(replyNodes.every(n => courseIndexFromPageKeyword(n.keyword) === null));
+  for (const k of ['page_course_0', 'page_course_', 'page_course_1x', 'course_1', 'page_courses', null, undefined, 3]) {
+    assert.equal(courseIndexFromPageKeyword(k), null, String(k));
+  }
+  assert.equal(courseIndexFromPageKeyword('page_course_10'), 9);
 });
