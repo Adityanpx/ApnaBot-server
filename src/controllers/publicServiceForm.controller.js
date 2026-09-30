@@ -16,12 +16,18 @@ const { isTravelFeaturedCategory } = require('../config/categoryFeatures');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
+const TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Loads a booking_form_tokens row by its token column and classifies it.
  * @param {string} token
  * @returns {Promise<{ row: Object|null, status: 'ok'|'not_found'|'expired'|'used' }>}
  */
 const loadToken = async (token) => {
+  // booking_form_tokens.token is a uuid column: anything else (a mistyped
+  // or truncated link) would make Postgres throw "invalid input syntax for
+  // type uuid" → 500. It can't match a row, so it's simply not found.
+  if (typeof token !== 'string' || !TOKEN_PATTERN.test(token)) return { row: null, status: 'not_found' };
   const { data, error } = await supabase
     .from('booking_form_tokens').select('*').eq('token', token).maybeSingle();
   if (error) throw error;
