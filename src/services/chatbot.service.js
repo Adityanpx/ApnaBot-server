@@ -164,6 +164,93 @@ const resolveTappedEdge = async (businessId, edgeId) => {
 };
 
 /**
+ * The keyword matching itself, with no DB access or side effects: which of
+ * `nodes` (reply nodes, camelCase; inactive ones are skipped) a message
+ * triggers, or null. findMatchingRule runs it against the business's live
+ * nodes; the Bot Builder draft preview (botSettings.controller.js) runs it
+ * against an unpublished compiled graph, so both match identically.
+ * @param {Object[]} nodes
+ * @param {string} incomingText
+ * @returns {Object|null}
+ */
+const matchNodeInList = (nodes, incomingText) => {
+  // Normalize the incoming text
+  const normalizedText = normalizeText(incomingText);
+
+  if (!normalizedText) {
+    return null;
+  }
+
+  // Filter active nodes only
+  const activeNodes = nodes.filter(node => node.isActive);
+
+  // Pass 1 - Exact match
+  let matchedNode = activeNodes.find(node =>
+    node.matchType === 'exact' && normalizeText(node.keyword) === normalizedText
+  );
+
+  // Pass 2 - Starts with match
+  if (!matchedNode) {
+    matchedNode = activeNodes.find(node => {
+      const normalizedKeyword = normalizeText(node.keyword);
+      return node.matchType === 'startsWith' && normalizedKeyword && normalizedText.startsWith(normalizedKeyword);
+    });
+  }
+
+  // Pass 3 - Contains match
+  if (!matchedNode) {
+    matchedNode = activeNodes.find(node => {
+      const normalizedKeyword = normalizeText(node.keyword);
+      return node.matchType === 'contains' && normalizedKeyword && normalizedText.includes(normalizedKeyword);
+    });
+  }
+
+  // Pass 4 - Hindi/Hinglish alias match (last resort, after English matching fails)
+  // Exact alias match first (highest confidence)
+  if (!matchedNode) {
+    matchedNode = activeNodes.find(node =>
+      (node.hindiAliases || []).some(alias => normalizeText(alias) === normalizedText)
+    );
+  }
+
+  // Contains match - customer's message contains an alias phrase anywhere in it
+  if (!matchedNode) {
+    matchedNode = activeNodes.find(node =>
+      (node.hindiAliases || []).some(alias => {
+        const normalizedAlias = normalizeText(alias);
+        return normalizedAlias && normalizedText.includes(normalizedAlias);
+      })
+    );
+  }
+
+  // Pass 5 - Fuzzy match (last resort, free/local, no AI). Catches typos
+  // and near-misses of the full keyword (e.g. "pric" vs "price") for
+  // short customer messages — not substring fuzzy matching within longer
+  // sentences, which produces too many false positives.
+  if (!matchedNode) {
+    let closestFuzzyMatch = null;
+    let closestFuzzyDistance = Infinity;
+
+    for (const node of activeNodes) {
+      const normalizedKeyword = normalizeText(node.keyword);
+      if (!normalizedKeyword) continue;
+
+      const editDistance = distance(normalizedText, normalizedKeyword);
+      const threshold = fuzzyThresholdFor(normalizedKeyword.length);
+
+      if (editDistance <= threshold && editDistance < closestFuzzyDistance) {
+        closestFuzzyMatch = node;
+        closestFuzzyDistance = editDistance;
+      }
+    }
+
+    matchedNode = closestFuzzyMatch;
+  }
+
+  return matchedNode || null;
+};
+
+/**
  * Find matching reply-trigger flow node for incoming message
  * @param {string} businessId - The business ID
  * @param {string} incomingText - The incoming message text
@@ -187,71 +274,7 @@ const findMatchingRule = async (businessId, incomingText, { incrementCount = tru
     // Load reply nodes from cache
     const nodes = await getRulesFromCache(businessId);
 
-    // Filter active nodes only
-    const activeNodes = nodes.filter(node => node.isActive);
-
-    // Pass 1 - Exact match
-    let matchedNode = activeNodes.find(node =>
-      node.matchType === 'exact' && normalizeText(node.keyword) === normalizedText
-    );
-
-    // Pass 2 - Starts with match
-    if (!matchedNode) {
-      matchedNode = activeNodes.find(node => {
-        const normalizedKeyword = normalizeText(node.keyword);
-        return node.matchType === 'startsWith' && normalizedKeyword && normalizedText.startsWith(normalizedKeyword);
-      });
-    }
-
-    // Pass 3 - Contains match
-    if (!matchedNode) {
-      matchedNode = activeNodes.find(node => {
-        const normalizedKeyword = normalizeText(node.keyword);
-        return node.matchType === 'contains' && normalizedKeyword && normalizedText.includes(normalizedKeyword);
-      });
-    }
-
-    // Pass 4 - Hindi/Hinglish alias match (last resort, after English matching fails)
-    // Exact alias match first (highest confidence)
-    if (!matchedNode) {
-      matchedNode = activeNodes.find(node =>
-        (node.hindiAliases || []).some(alias => normalizeText(alias) === normalizedText)
-      );
-    }
-
-    // Contains match - customer's message contains an alias phrase anywhere in it
-    if (!matchedNode) {
-      matchedNode = activeNodes.find(node =>
-        (node.hindiAliases || []).some(alias => {
-          const normalizedAlias = normalizeText(alias);
-          return normalizedAlias && normalizedText.includes(normalizedAlias);
-        })
-      );
-    }
-
-    // Pass 5 - Fuzzy match (last resort, free/local, no AI). Catches typos
-    // and near-misses of the full keyword (e.g. "pric" vs "price") for
-    // short customer messages — not substring fuzzy matching within longer
-    // sentences, which produces too many false positives.
-    if (!matchedNode) {
-      let closestFuzzyMatch = null;
-      let closestFuzzyDistance = Infinity;
-
-      for (const node of activeNodes) {
-        const normalizedKeyword = normalizeText(node.keyword);
-        if (!normalizedKeyword) continue;
-
-        const editDistance = distance(normalizedText, normalizedKeyword);
-        const threshold = fuzzyThresholdFor(normalizedKeyword.length);
-
-        if (editDistance <= threshold && editDistance < closestFuzzyDistance) {
-          closestFuzzyMatch = node;
-          closestFuzzyDistance = editDistance;
-        }
-      }
-
-      matchedNode = closestFuzzyMatch;
-    }
+    const matchedNode = matchNodeInList(nodes, incomingText);
 
     if (!matchedNode) {
       return null;
@@ -277,6 +300,7 @@ module.exports = {
   getRulesFromCache,
   invalidateRulesCache,
   normalizeText,
+  matchNodeInList,
   findMatchingRule,
   getOutgoingEdges,
   resolveTappedEdge

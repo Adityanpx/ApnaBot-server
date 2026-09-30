@@ -354,7 +354,12 @@ question nodes) plus web-form links for Free demo / Admission.
 - **Settings + publish:** `business_bot_settings` (draft `settings`,
   `published_settings` = `{ settings, courses }` at the last publish,
   `published_snapshot_id`). `GET/PUT /api/bot-settings`,
-  `POST /api/bot-settings/compile` (no writes), `POST /api/bot-settings/publish`
+  `POST /api/bot-settings/compile` (no writes),
+  `POST /api/bot-settings/preview-message` ("Try your bot" chat on UNSAVED
+  settings — compiles the draft and answers each message like the live bot
+  would, using the same keyword matcher `chatbot.service.js#matchNodeInList`
+  as live traffic; stateless, no writes, no form links, no AI fallback;
+  `services/botSettingsPreview.service.js`), `POST /api/bot-settings/publish`
   (snapshot "Before bot settings publish — <date>" first, then the shared
   `flowGraph.service.js#saveFullGraph` path). Code:
   `utils/coachingBotSettings.js` (settings + courses → FlowSpec v2),

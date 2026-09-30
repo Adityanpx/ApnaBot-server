@@ -1,4 +1,5 @@
 const botSettingsService = require('../services/botSettings.service');
+const botSettingsPreviewService = require('../services/botSettingsPreview.service');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
@@ -82,4 +83,33 @@ const publishBotSettings = async (req, res, next) => {
   }
 };
 
-module.exports = { getBotSettings, saveBotSettings, compileBotSettings, publishBotSettings };
+/**
+ * POST /api/bot-settings/preview-message
+ * Body: { preset, settings, message, buttonReplyId? }. "Try it" chat for
+ * UNSAVED settings: answers one message the way the live bot would once
+ * these settings are published. Stateless, no writes — see
+ * services/botSettingsPreview.service.js.
+ */
+const previewBotSettingsMessage = async (req, res, next) => {
+  try {
+    const { preset, settings, message, buttonReplyId } = req.body || {};
+    if (!settings || typeof settings !== 'object' || Array.isArray(settings)) {
+      return errorResponse(res, 400, 'settings must be an object');
+    }
+    if (typeof message !== 'string') return errorResponse(res, 400, 'message must be a string');
+    if (buttonReplyId !== undefined && buttonReplyId !== null && typeof buttonReplyId !== 'string') {
+      return errorResponse(res, 400, 'buttonReplyId must be a string');
+    }
+    const result = await botSettingsPreviewService.previewMessage({
+      businessId: req.user.businessId, graphBusiness: req.graphBusiness,
+      preset, settings, message, buttonReplyId: buttonReplyId || null
+    });
+    if (result.error) return errorResponse(res, result.status, result.error);
+    return successResponse(res, 200, result);
+  } catch (error) {
+    logger.error('Error in previewBotSettingsMessage:', error);
+    next(error);
+  }
+};
+
+module.exports = { getBotSettings, saveBotSettings, compileBotSettings, publishBotSettings, previewBotSettingsMessage };

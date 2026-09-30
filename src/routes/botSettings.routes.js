@@ -22,6 +22,9 @@ router.put('/', requireRole('owner'), botSettingsController.saveBotSettings);
 // POST /compile - what Publish would produce (saved draft or given settings), no writes
 router.post('/compile', botSettingsController.compileBotSettings);
 
+// POST /preview-message - "Try it" chat on unsaved settings, no writes
+router.post('/preview-message', botSettingsController.previewBotSettingsMessage);
+
 // POST /publish - snapshot current flow, then replace it with the saved settings' flow
 router.post('/publish', requireRole('owner'), botSettingsController.publishBotSettings);
 

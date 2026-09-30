@@ -232,6 +232,7 @@ module.exports = {
   PRESETS,
   getSettings,
   saveDraft,
+  buildFromSettings,
   compile,
   preparePublish,
   executePublish
