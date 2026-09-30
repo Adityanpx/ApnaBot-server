@@ -244,3 +244,59 @@ test('formRequestForKeyword: each compiled form node → its booking key + short
   ]);
   for (const k of ['book', 'form_demo', 'fees', null, undefined]) assert.equal(formRequestForKeyword(k), null, String(k));
 });
+
+// ---- FAQ ----
+const withFaq = (items, extra = {}) => mutate(s => { s.faq = { enabled: true, items, ...extra }; });
+const qa = (question, answer = `${question} answer`) => ({ question, answer });
+
+test('FAQ: menu item before Contact, question list + one answer page each', () => {
+  const { spec, error } = map(withFaq([qa('Online classes?', 'Yes, on Zoom.'), qa('Age limit?')]));
+  assert.equal(error, null);
+  const titles = menuTitles(spec);
+  assert.ok(titles.indexOf('❓ FAQ') !== -1 && titles.indexOf('❓ FAQ') === titles.indexOf('📞 Contact us') - 1);
+  const list = pageById(spec, 'faq');
+  assert.equal(list.keyword, 'faqs');
+  assert.deepEqual(list.aliases, ['doubt']);
+  assert.deepEqual(list.list.map(r => r.title), ['Online classes?', 'Age limit?', 'Main menu']);
+  const answer = pageById(spec, 'faq_1');
+  assert.equal(answer.text, '*Online classes?*\n\nYes, on Zoom.');
+  assert.deepEqual(answer.buttons.map(b => b.title), ['More questions', 'Free demo', 'Main menu']);
+  const { replyNodes } = compileFlowSpecV2(spec);
+  assert.ok(replyNodes.some(n => n.keyword === 'faqs' && n.contentType === 'list'));
+});
+
+test('FAQ: no Free demo button when the demo form is off', () => {
+  const s = withFaq([qa('Age limit?')]);
+  s.demoForm.enabled = false;
+  assert.deepEqual(pageById(map(s).spec, 'faq_1').buttons.map(b => b.title), ['More questions', 'Main menu']);
+});
+
+test('FAQ: everything on = 10 menu items, still valid', () => {
+  const s = withFaq([qa('Age limit?')]);
+  for (const k of ['fees', 'timings', 'results', 'material', 'contact']) { s.sections[k] = { enabled: true, text: `${k} text` }; }
+  s.sections.location.enabled = true;
+  const { spec, error } = map(s);
+  assert.equal(error, null);
+  assert.equal(spec.menu.length, 10);
+});
+
+test('FAQ: absent or switched off → exactly the flow without it', () => {
+  const without = JSON.stringify(map(settings()).spec);
+  assert.equal(JSON.stringify(map(withFaq([qa('Age limit?')], { enabled: false })).spec), without);
+  assert.equal(JSON.stringify(map(mutate(s => { s.faq = null; })).spec), without);
+});
+
+test('FAQ: a draft may be incomplete; publish may not', () => {
+  const incomplete = withFaq([{ question: 'Age limit?', answer: '' }]);
+  assert.equal(validateCoachingSettings(incomplete), null);
+  assert.match(map(incomplete).error, /needs both a question and an answer/);
+  assert.equal(validateCoachingSettings(withFaq([])), null);
+  assert.match(map(withFaq([])).error, /switched on but has no questions/);
+});
+
+rejects('FAQ question over 24 characters', s => { s.faq = { enabled: true, items: [qa('Do you have online classes?')] }; }, /24 characters or less/);
+rejects('FAQ answer too long', s => { s.faq = { enabled: true, items: [qa('Age limit?', 'x'.repeat(997))] }; }, /answer must be 996 characters/);
+rejects('FAQ question listed twice', s => { s.faq = { enabled: true, items: [qa('Age limit?'), qa('age limit?')] }; }, /listed twice/);
+rejects('FAQ question uses a reserved title', s => { s.faq = { enabled: true, items: [qa('Main menu')] }; }, /bot's own buttons/);
+rejects('FAQ over 9 questions', s => { s.faq = { enabled: true, items: Array.from({ length: 10 }, (_, i) => qa(`Question ${i}?`)) }; }, /at most 9 questions/);
+rejects('FAQ enabled not boolean', s => { s.faq = { enabled: 'yes', items: [] }; }, /FAQ: enabled must be true or false/);

@@ -40,6 +40,15 @@ const MAX_NOTE = 300;
 const MAX_CUSTOM_FIELDS = 5;
 const CUSTOM_FIELD_TYPES = ['text', 'textarea', 'dropdown'];
 
+// FAQ: a list of questions (list rows — so each question is at most a list
+// row title) leading to one answer page each. The list also carries a
+// "Main menu" row, hence one fewer than the WhatsApp list limit. The answer
+// page shows "*question*\n\nanswer", which must fit one interactive body.
+const MAX_FAQ_ITEMS = LIMITS.MAX_LIST_ROWS - 1;
+const FAQ_QUESTION_MAX = LIMITS.LIST_ROW_TITLE;
+const FAQ_ANSWER_MAX = LIMITS.INTERACTIVE_BODY - FAQ_QUESTION_MAX - 4;
+const FAQ_RESERVED_TITLES = ['main menu', 'more questions'];
+
 // Optional form fields an owner can tick, in the order they appear on the
 // form. Options are fixed except targetExam (owner-typed, see
 // targetExamOptions).
@@ -159,6 +168,36 @@ const validateCoachingSettings = (settings, { forPublish = false } = {}) => {
         return `${label}: custom question ${i + 1} is a dropdown and needs at least 2 options`;
       }
     }
+  }
+
+  // FAQ is optional: settings saved before it existed have no `faq` key (= off).
+  const faq = settings.faq;
+  if (faq !== undefined && faq !== null) {
+    if (typeof faq !== 'object' || Array.isArray(faq) || typeof faq.enabled !== 'boolean') return 'FAQ: enabled must be true or false';
+    const items = faq.items === undefined ? [] : faq.items;
+    if (!Array.isArray(items)) return 'FAQ: questions must be a list';
+    if (items.length > MAX_FAQ_ITEMS) return `FAQ: at most ${MAX_FAQ_ITEMS} questions`;
+    const seenQuestions = new Set();
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      const at = `FAQ question ${i + 1}`;
+      if (!item || typeof item !== 'object' || Array.isArray(item)) return `${at} is invalid`;
+      if (!isOptionalString(item.question) || !isOptionalString(item.answer)) return `${at}: question and answer must be text`;
+      if (isNonEmptyString(item.question) && len(item.question) > FAQ_QUESTION_MAX) {
+        return `${at} must be ${FAQ_QUESTION_MAX} characters or less (WhatsApp list limit) — keep it short, e.g. "Online classes?"`;
+      }
+      if (isNonEmptyString(item.answer) && len(item.answer) > FAQ_ANSWER_MAX) return `${at}: answer must be ${FAQ_ANSWER_MAX} characters or less`;
+      if (forPublish && faq.enabled && (!isNonEmptyString(item.question) || !isNonEmptyString(item.answer))) {
+        return `${at} needs both a question and an answer`;
+      }
+      if (isNonEmptyString(item.question)) {
+        const key = item.question.trim().toLowerCase();
+        if (FAQ_RESERVED_TITLES.includes(key)) return `${at}: "${item.question.trim()}" is used by the bot's own buttons — please reword it`;
+        if (seenQuestions.has(key)) return `FAQ: "${item.question.trim()}" is listed twice`;
+        seenQuestions.add(key);
+      }
+    }
+    if (forPublish && faq.enabled && items.length === 0) return 'FAQ is switched on but has no questions — add one, or switch it off';
   }
 
   return null;
@@ -294,6 +333,22 @@ const mapCoachingSettingsToSpec = (settings, { businessName, courses } = {}) => 
   if (settings.sections.location.enabled) {
     location = { keyword: 'location' };
     menu.push({ title: '📍 Location', target: { type: 'location' } });
+  }
+  // FAQ: a question list (typed "faqs"/"doubt"; "faq" reaches it by close
+  // spelling — typed keywords must be 4+ characters) → one answer page each.
+  if (settings.faq && settings.faq.enabled) {
+    const moreQuestions = { title: 'More questions', target: { type: 'page', id: 'faq' } };
+    settings.faq.items.forEach((item, i) => {
+      pages.push({
+        id: `faq_${i + 1}`,
+        text: `*${item.question.trim()}*\n\n${item.answer.trim()}`,
+        buttons: [moreQuestions, ...(formEnabled('demo') ? [formButton('demo')] : []), MAIN_MENU]
+      });
+    });
+    const list = settings.faq.items.map((item, i) => ({ title: item.question.trim(), target: { type: 'page', id: `faq_${i + 1}` } }));
+    list.push(MAIN_MENU);
+    pages.push({ id: 'faq', text: 'Common questions — tap one to see the answer:', keyword: 'faqs', aliases: ['doubt'], list });
+    menu.push({ title: '❓ FAQ', target: { type: 'page', id: 'faq' } });
   }
   sectionMenu('contact');
 

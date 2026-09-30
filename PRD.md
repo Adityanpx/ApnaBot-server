@@ -376,6 +376,11 @@ question nodes) plus web-form links for Free demo / Admission.
   forms without it are unchanged. Tapping Free demo / Admission on a course
   page opens the form with that course pre-selected (see "Web-form booking
   links").
+- **FAQ (optional `settings.faq`, added 2026-09-30):** up to 9 questions
+  (each ≤ 24 characters — a WhatsApp list row) with an answer page each
+  (`*question*\n\nanswer`, buttons More questions / Free demo / Main menu).
+  Menu item "❓ FAQ" sits before Contact; typed "faqs"/"doubt" (and "faq" by
+  close spelling) open it. Settings without a `faq` key are unchanged.
 - **Request tracking:** Free demo / Admission submissions are ordinary
   bookings tagged with `form_key`; `GET /api/bookings?form=demo|admission`
   filters them. The four booking statuses are unchanged on the server — web
