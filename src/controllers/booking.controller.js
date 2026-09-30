@@ -20,7 +20,7 @@ const CONVERTING_STATUSES = ['confirmed', 'completed'];
  */
 const getBookings = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, status, date, customerNumber, customerId } = req.query;
+    const { page = 1, limit = 20, status, date, customerNumber, customerId, form } = req.query;
     const businessId = req.user.businessId;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
@@ -48,6 +48,11 @@ const getBookings = async (req, res, next) => {
 
     if (customerId) {
       query = query.eq('customer_id', customerId);
+    }
+
+    // Bot Builder request type (bookings.form_key: demo/admission).
+    if (form) {
+      query = query.eq('form_key', form);
     }
 
     const { data, error, count } = await query

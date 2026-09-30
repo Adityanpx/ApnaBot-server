@@ -77,13 +77,16 @@ const FORMS = {
     keyword: 'demo', aliases: [],
     text: 'Book a free demo class — tap the button below and fill a short form.',
     // Header of the web form page (publicServiceForm.controller.js#resolveFormTitle)
-    formTitle: 'Book a free demo class', formSubtitle: 'Takes about a minute.'
+    formTitle: 'Book a free demo class', formSubtitle: 'Takes about a minute.',
+    // Booking list label (bookings.form_title — see formRequestForKeyword)
+    requestTitle: 'Free demo'
   },
   admission: {
     settingsKey: 'admissionForm', menuTitle: '📝 Admission', buttonTitle: 'Admission',
     keyword: 'admission', aliases: ['register'],
     text: 'Apply for admission — tap the button below and fill the form.',
-    formTitle: 'Admission form', formSubtitle: 'Takes about 2 minutes.'
+    formTitle: 'Admission form', formSubtitle: 'Takes about 2 minutes.',
+    requestTitle: 'Admission'
   }
 };
 const FORM_BUTTON_TEXT = 'Fill form';
@@ -336,11 +339,24 @@ const formTitleForKeyword = (keyword) => {
   return meta ? { title: meta.formTitle, subtitle: meta.formSubtitle } : null;
 };
 
+/**
+ * Which Bot Builder form a form node is, by its keyword: { key: 'demo' |
+ * 'admission', title: 'Free demo' | 'Admission' } or null. Saved on the
+ * booking at submit (bookings.form_key / form_title) so the owner can tell
+ * requests apart. Same caller caveat as formTitleForKeyword: check the
+ * business published Bot Builder settings.
+ */
+const formRequestForKeyword = (keyword) => {
+  const entry = Object.entries(FORMS).find(([, f]) => f.keyword === keyword);
+  return entry ? { key: entry[0], title: entry[1].requestTitle } : null;
+};
+
 module.exports = {
   validateCoachingSettings,
   validateCoursesForPublish,
   mapCoachingSettingsToSpec,
   courseIndexFromPageKeyword,
   formTitleForKeyword,
+  formRequestForKeyword,
   FIELD_LIBRARY
 };

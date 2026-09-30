@@ -481,11 +481,15 @@ const buildBookingSummaryBody = (collected, orderedFields, localRentalUnconfigur
  * @param {Array<{fieldKey: string, label: string, summaryLabel: string}>} orderedFields -
  *   the fields actually answered, in answer order, for the fieldLines summary
  * @param {boolean} localRentalUnconfigured
+ * @param {{formKey: (string|null), formTitle: (string|null), fieldLabels: Object}|null} [formMeta] -
+ *   web-form bookings only (publicServiceForm.controller.js): saved as
+ *   bookings.form_key / form_title / field_labels. Omitted (chat bookings)
+ *   → those columns are left out of the insert entirely.
  * @returns {Promise<{text: string, imageUrl: (string|null)}>} the confirmation
  *   message; imageUrl is the business's payment QR when an advance is
  *   requested (send as an image with `text` as its caption), else null
  */
-const createBookingAndConfirmation = async (businessId, customerNumber, collected, orderedFields, localRentalUnconfigured) => {
+const createBookingAndConfirmation = async (businessId, customerNumber, collected, orderedFields, localRentalUnconfigured, formMeta = null) => {
   const { data: customer, error: custErr } = await supabase
     .from('customers').select('id, name').eq('business_id', businessId).eq('whatsapp_number', customerNumber).maybeSingle();
   if (custErr || !customer) {
@@ -539,6 +543,11 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
     booking_code: bookingCode,
     fare_amount: collected.vehicleFare ?? null
   };
+  if (formMeta) {
+    bookingInsert.form_key = formMeta.formKey || null;
+    bookingInsert.form_title = formMeta.formTitle || null;
+    bookingInsert.field_labels = formMeta.fieldLabels || null;
+  }
   if (advanceAmount !== null) {
     bookingInsert.payment_amount = advanceAmount;
     // Lets payment.service.js setBookingPaymentStatus tell an advance

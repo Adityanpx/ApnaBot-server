@@ -4,7 +4,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  validateCoachingSettings, validateCoursesForPublish, mapCoachingSettingsToSpec, courseIndexFromPageKeyword, formTitleForKeyword, FIELD_LIBRARY
+  validateCoachingSettings, validateCoursesForPublish, mapCoachingSettingsToSpec, courseIndexFromPageKeyword, formTitleForKeyword, formRequestForKeyword, FIELD_LIBRARY
 } = require('./coachingBotSettings');
 const { compileFlowSpecV2 } = require('./flowSpecV2');
 const { validateFlowFields, BUSINESS_COURSES_SOURCE } = require('./flowFieldsValidation');
@@ -233,4 +233,14 @@ test('formTitleForKeyword: each compiled form node has its own page title', () =
   // other nodes and unknown keywords → no title
   assert.ok(replyNodes.filter(n => n.replyKind !== 'web_form_trigger').every(n => formTitleForKeyword(n.keyword) === null));
   for (const k of ['book', 'form_demo', 'Demo', null, undefined]) assert.equal(formTitleForKeyword(k), null, String(k));
+});
+
+test('formRequestForKeyword: each compiled form node → its booking key + short name', () => {
+  const { replyNodes } = compileFlowSpecV2(map(settings()).spec);
+  const requests = replyNodes.filter(n => n.replyKind === 'web_form_trigger').map(n => formRequestForKeyword(n.keyword));
+  assert.deepEqual(requests.sort((a, b) => a.key.localeCompare(b.key)), [
+    { key: 'admission', title: 'Admission' },
+    { key: 'demo', title: 'Free demo' }
+  ]);
+  for (const k of ['book', 'form_demo', 'fees', null, undefined]) assert.equal(formRequestForKeyword(k), null, String(k));
 });

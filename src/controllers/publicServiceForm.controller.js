@@ -11,7 +11,7 @@ const whatsappService = require('../services/whatsapp.service');
 const placesService = require('../services/places.service');
 const { toCamelCase } = require('../utils/caseConvert');
 const { BUSINESS_COURSES_SOURCE } = require('../utils/flowFieldsValidation');
-const { courseIndexFromPageKeyword, formTitleForKeyword } = require('../utils/coachingBotSettings');
+const { courseIndexFromPageKeyword, formTitleForKeyword, formRequestForKeyword } = require('../utils/coachingBotSettings');
 const { isTravelFeaturedCategory } = require('../config/categoryFeatures');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
@@ -131,11 +131,26 @@ const resolvePrefill = async (formToken, fields) => {
 const resolveFormTitle = async (formToken, formNode) => {
   const title = formTitleForKeyword(formNode?.keyword);
   if (!title) return null;
+  return (await hasPublishedBotSettings(formToken.businessId)) ? title : null;
+};
+
+/**
+ * Which Bot Builder form this is ({ key: 'demo'|'admission', title }), for
+ * saving on the booking — same keyword + published check as
+ * resolveFormTitle, else null. Any other keyword: null, no DB call.
+ */
+const resolveFormRequest = async (formToken, formNode) => {
+  const request = formRequestForKeyword(formNode?.keyword);
+  if (!request) return null;
+  return (await hasPublishedBotSettings(formToken.businessId)) ? request : null;
+};
+
+const hasPublishedBotSettings = async (businessId) => {
   const { data: botSettings, error } = await supabase
-    .from('business_bot_settings').select('published_at').eq('business_id', formToken.businessId)
+    .from('business_bot_settings').select('published_at').eq('business_id', businessId)
     .maybeSingle();
   if (error) throw error;
-  return botSettings?.published_at ? title : null;
+  return !!botSettings?.published_at;
 };
 
 /**
@@ -230,7 +245,8 @@ const submitServiceForm = async (req, res, next) => {
     if (!business) {
       return errorResponse(res, 404, 'This booking link is invalid.');
     }
-    const flowFields = await resolveDynamicOptions(formToken.businessId, await resolveFlowFields(formToken, business));
+    const formNode = await loadFormNode(formToken);
+    const flowFields = await resolveDynamicOptions(formToken.businessId, await resolveFlowFields(formToken, business, formNode));
 
     // A course-list dropdown must hold one of the business's current courses
     // (the list can change between opening the form and submitting it).
@@ -335,12 +351,28 @@ const submitServiceForm = async (req, res, next) => {
       collected[vehicleField.name] = `${matchedOption.name} (₹${matchedOption.perKmRate}/km)`;
     }
 
+    // Saved on the booking: which Bot Builder form this was (Free demo /
+    // Admission) and the question labels as the customer saw them. A lookup
+    // failure must not block the booking — it's saved without the form name.
+    let formRequest = null;
+    try {
+      formRequest = await resolveFormRequest(formToken, formNode);
+    } catch (formRequestError) {
+      logger.error('Error resolving service form request type:', formRequestError);
+    }
+    const formMeta = {
+      formKey: formRequest ? formRequest.key : null,
+      formTitle: formRequest ? formRequest.title : null,
+      fieldLabels: Object.fromEntries(orderedFields.map(f => [f.fieldKey, f.label]))
+    };
+
     const confirmation = await bookingService.createBookingAndConfirmation(
       formToken.businessId,
       formToken.customerNumber,
       collected,
       orderedFields,
-      false
+      false,
+      formMeta
     );
 
     // Booking is already created at this point — a failure marking the

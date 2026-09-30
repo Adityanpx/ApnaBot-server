@@ -186,7 +186,11 @@ questions in chat.
   410, unknown → 404.
 - **Submit:** checks required fields and option values (a course-list
   value must be a current course), creates the booking via
-  `bookingService.createBookingAndConfirmation`, marks the token used
+  `bookingService.createBookingAndConfirmation` (saving `bookings.form_key` /
+  `form_title` — "demo"/"Free demo", "admission"/"Admission" for a published
+  Bot Builder form, else null — and `field_labels` `{fieldName: label}`, all
+  snapshotted at submit since Bot Builder rebuilds its forms on publish),
+  marks the token used
   (`used_at` — one link, one booking), and sends the WhatsApp
   confirmation (image + caption when a payment QR is due).
 - **Dynamic options / prefill:** a dropdown with
@@ -372,6 +376,13 @@ question nodes) plus web-form links for Free demo / Admission.
   forms without it are unchanged. Tapping Free demo / Admission on a course
   page opens the form with that course pre-selected (see "Web-form booking
   links").
+- **Request tracking:** Free demo / Admission submissions are ordinary
+  bookings tagged with `form_key`; `GET /api/bookings?form=demo|admission`
+  filters them. The four booking statuses are unchanged on the server — web
+  and app only show coaching names for tagged bookings (demo: New / Demo
+  fixed / Demo done / Not interested; admission: New / Contacted / Admitted
+  / Not joining). "Demo fixed" (= confirmed) moves the customer's pipeline to
+  converted, like any confirmed booking — agreed 2026-09-30.
 - **Booking codes** are the first two letters of the business's display
   name + 4 digits (e.g. `DA1234`, `SE1234` for Search cab AI), `BK` if the
   name has fewer than two English letters; the 🚕 sign-off stays only for
@@ -458,6 +469,12 @@ tracked as a deferred "future initiative" — it's built and live.
    English-only generated text.
 
 ## Session log (append here as major milestones land)
+- 2026-09-30: Coaching request tracking — `bookings.form_key/form_title/
+  field_labels` (migration `20260930120000_bookings_form_meta.sql`, **must
+  be applied before the server code that writes it is deployed**), coaching
+  status names + request filter on web and app, answers shown with their
+  question labels. Also: "Try your bot" draft chat for Bot Builder
+  (`/api/bot-settings/preview-message`, shared `matchNodeInList`).
 - 2026-09-29: Course pre-selected in coaching forms — new
   `booking_form_tokens.source_node_id` (migration
   `20260929150000_booking_form_tokens_source_node.sql`, **must be applied
