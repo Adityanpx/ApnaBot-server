@@ -3,7 +3,7 @@
 // flowFieldsValidation.js for the service form's "Course list".
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { validateCourseFields, cleanText, hasPlaceholder } = require('./courseValidation');
+const { validateCourseFields, cleanText, hasPlaceholder, coursePageText, hasStructuredDetails, structuredColumns } = require('./courseValidation');
 const { validateFlowFields, BUSINESS_COURSES_SOURCE } = require('./flowFieldsValidation');
 
 test('valid course (full and partial)', () => {
@@ -63,4 +63,39 @@ test('course group name: optional, max 24, not a reserved bot row', () => {
   assert.match(validateCourseFields({ name: 'JEE', groupName: 'x'.repeat(25) }), /Group must be 24 characters or less/);
   assert.match(validateCourseFields({ name: 'JEE', groupName: 'All groups' }), /bot's own buttons/);
   assert.match(validateCourseFields({ name: 'JEE', groupName: 5 }), /Group must be text/);
+});
+
+test('structured details: fields validated (lines ≤100, mode enum, more details ≤800)', () => {
+  assert.equal(validateCourseFields({ name: 'Abacus', ageGroup: '6+', duration: '3 months', fees: '₹4,000', mode: 'both', moreDetails: 'Kit included' }), null);
+  assert.equal(validateCourseFields({ mode: '' }, { partial: true }), null);
+  assert.equal(validateCourseFields({ mode: null }, { partial: true }), null);
+  assert.match(validateCourseFields({ name: 'A', fees: 'x'.repeat(101) }), /Fees must be 100 characters or less/);
+  assert.match(validateCourseFields({ name: 'A', ageGroup: 7 }), /Age must be text/);
+  assert.match(validateCourseFields({ name: 'A', mode: 'hybrid' }), /Mode must be one of: online, offline, both/);
+  assert.match(validateCourseFields({ name: 'A', moreDetails: 'x'.repeat(801) }), /More details must be 800/);
+});
+
+test('coursePageText: built from the fields, in a fixed order', () => {
+  const page = coursePageText({
+    name: 'Abacus', description: 'Mental maths for kids', details: 'OLD TEXT (ignored)',
+    ageGroup: '6 years and above', duration: '3 months per level', fees: '₹4,000 per level', mode: 'both', moreDetails: 'Kit included.'
+  });
+  assert.equal(page, '*Abacus*\nMental maths for kids\n\n👦 Age: 6 years and above\n🕘 Duration: 3 months per level\n💰 Fees: ₹4,000 per level\n💻 Mode: Online and offline\n\nKit included.');
+  assert.equal(coursePageText({ name: 'Chess', fees: '₹2,000' }), '*Chess*\n\n💰 Fees: ₹2,000');
+  assert.equal(coursePageText({ name: 'Chess', mode: 'online' }), '*Chess*\n\n💻 Mode: Online');
+  assert.equal(coursePageText({ name: 'Chess', moreDetails: 'Weekend only.' }), '*Chess*\n\nWeekend only.');
+});
+
+test('coursePageText: no fields → the old free-text details, exactly as before', () => {
+  assert.equal(coursePageText({ name: 'Abacus', details: '  🧮 Abacus classes\nFees: ₹4,000  ' }), '🧮 Abacus classes\nFees: ₹4,000');
+  assert.equal(coursePageText({ name: 'Abacus', details: null }), null);
+  assert.equal(coursePageText({ name: 'Abacus', details: 'x', mode: 'nonsense', fees: '  ' }), 'x');
+  assert.equal(hasStructuredDetails({ name: 'A', details: 'x' }), false);
+  assert.equal(hasStructuredDetails({ name: 'A', mode: 'offline' }), true);
+});
+
+test('structuredColumns: only present keys, "" clears, mode cleaned', () => {
+  assert.deepEqual(structuredColumns({ fees: ' ₹500 ', mode: 'online' }), { fees: '₹500', mode: 'online' });
+  assert.deepEqual(structuredColumns({ duration: '', mode: '' }), { duration: null, mode: null });
+  assert.deepEqual(structuredColumns({ name: 'x' }), {});
 });

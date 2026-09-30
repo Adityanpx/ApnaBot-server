@@ -376,6 +376,15 @@ question nodes) plus web-form links for Free demo / Admission.
   forms without it are unchanged. Tapping Free demo / Admission on a course
   page opens the form with that course pre-selected (see "Web-form booking
   links").
+- **Structured course details (`age_group`, `duration`, `fees`, `mode`
+  online|offline|both, `more_details` on both course tables):** when any is
+  set, the course page is built from them (`*Name*`, description, 👦 Age /
+  🕘 Duration / 💰 Fees / 💻 Mode lines, more details —
+  `courseValidation.js#coursePageText`, mirrored in web/app/Super Admin
+  previews); otherwise the old free-text `details` is used unchanged. The 12
+  catalog entries are moved over by `scripts/convertCatalogToStructured.js`
+  (dry run / `--confirm`); business courses switch when the owner fills the
+  fields in.
 - **Course groups (`business_courses.group_name`, catalog suggests one):**
   with 2+ distinct groups among shown courses, WhatsApp shows Courses →
   groups ("N courses") → that group's courses (+ All groups / Main menu) →

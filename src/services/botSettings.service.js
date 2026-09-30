@@ -34,6 +34,8 @@ const loadBusiness = async (businessId) => {
   return data;
 };
 
+const OPTIONAL_COURSE_KEYS = ['groupName', 'ageGroup', 'duration', 'fees', 'mode', 'moreDetails'];
+
 /**
  * The business's ACTIVE courses (business_courses) in display order, in the
  * shape coachingBotSettings.js#mapCoachingSettingsToSpec expects. Also what
@@ -42,15 +44,17 @@ const loadBusiness = async (businessId) => {
 const loadActiveCourses = async (businessId) => {
   const { data, error } = await supabase
     .from('business_courses')
-    .select('name, description, details, show_demo_button, show_admission_button, group_name')
+    .select('name, description, details, show_demo_button, show_admission_button, group_name, age_group, duration, fees, mode, more_details')
     .eq('business_id', businessId).eq('is_active', true)
     .order('order', { ascending: true }).order('created_at', { ascending: true });
   if (error) throw error;
-  // groupName only when set: courses published before groups existed have
-  // no such key, so a null here would wrongly flag "unpublished changes".
+  // Keys added after the first publishes (group, structured details) only
+  // when set: courses published before they existed have no such keys, so a
+  // null here would wrongly flag "unpublished changes".
   return (data || []).map(row => {
-    const { groupName, ...course } = toCamelCase(row);
-    return groupName ? { ...course, groupName } : course;
+    const course = toCamelCase(row);
+    for (const key of OPTIONAL_COURSE_KEYS) if (course[key] === null || course[key] === undefined) delete course[key];
+    return course;
   });
 };
 

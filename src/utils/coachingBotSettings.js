@@ -32,7 +32,7 @@
 const { validateFlowSpecV2, pageTapKeyword } = require('./flowSpecV2');
 const { LIMITS } = require('./flowSpec');
 const { BUSINESS_COURSES_SOURCE } = require('./flowFieldsValidation');
-const { hasPlaceholder } = require('./courseValidation');
+const { hasPlaceholder, coursePageText } = require('./courseValidation');
 
 const MAX_COURSES = LIMITS.MAX_LIST_ROWS;
 const MAX_INTRO = 300;
@@ -272,9 +272,14 @@ const validateCoursesForPublish = (courses) => {
   }
   for (const c of courses) {
     const at = `Course "${c.name}"`;
-    if (!isNonEmptyString(c.details)) return `${at}: add the details page text in "My courses"`;
-    if (len(c.details) > LIMITS.INTERACTIVE_BODY) return `${at}: details must be ${LIMITS.INTERACTIVE_BODY} characters or less`;
-    if (hasPlaceholder(c.details) || hasPlaceholder(c.description)) return `${at}: fill in the blanks (____) before publishing`;
+    // The page is built from the structured fields when any is set, else the
+    // old free-text details (courseValidation.js#coursePageText).
+    const page = coursePageText(c);
+    if (!page) return `${at}: add the details page text in "My courses"`;
+    if (page.length > LIMITS.INTERACTIVE_BODY) {
+      return `${at}: the course page is ${page.length} characters — WhatsApp allows ${LIMITS.INTERACTIVE_BODY}. Shorten the details`;
+    }
+    if (hasPlaceholder(page) || hasPlaceholder(c.description)) return `${at}: fill in the blanks (____) before publishing`;
   }
   return null;
 };
@@ -334,7 +339,7 @@ const mapCoachingSettingsToSpec = (settings, { businessName, courses } = {}) => 
     if (c.showDemoButton && formEnabled('demo')) buttons.push(formButton('demo'));
     if (c.showAdmissionButton && formEnabled('admission')) buttons.push(formButton('admission'));
     buttons.push(MAIN_MENU);
-    pages.push({ id: `course_${i + 1}`, text: c.details.trim(), buttons });
+    pages.push({ id: `course_${i + 1}`, text: coursePageText(c), buttons });
   });
   const courseRow = (i) => ({
     title: courses[i].name.trim(),

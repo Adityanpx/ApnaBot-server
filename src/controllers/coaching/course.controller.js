@@ -1,7 +1,7 @@
 const supabase = require('../../config/supabase');
 const { successResponse, errorResponse } = require('../../utils/response');
 const { toCamelCase } = require('../../utils/caseConvert');
-const { validateCourseFields, cleanText } = require('../../utils/courseValidation');
+const { validateCourseFields, cleanText, structuredColumns } = require('../../utils/courseValidation');
 const logger = require('../../utils/logger');
 
 // A business's own courses (business_courses) — the coaching counterpart of
@@ -45,7 +45,8 @@ const getCourseCatalogForBusiness = async (req, res, next) => {
     if (!business) return errorResponse(res, 404, 'Business not found');
 
     const [{ data: catalog, error }, { data: mine, error: mineErr }] = await Promise.all([
-      supabase.from('course_catalog').select('id, name, description, details, group_name, order')
+      supabase.from('course_catalog')
+        .select('id, name, description, details, group_name, age_group, duration, fees, mode, more_details, order')
         .eq('category', business.business_category).eq('is_active', true)
         .order('order', { ascending: true }).order('name', { ascending: true }),
       supabase.from('business_courses').select('catalog_id').eq('business_id', businessId)
@@ -82,8 +83,9 @@ const getCourses = async (req, res, next) => {
 
 /**
  * POST /api/courses
- * Body: { catalogId } — copy a catalog entry's name/description/details/group, or
- * { name, description?, details?, groupName? } — a course of the owner's own. Either way
+ * Body: { catalogId } — copy a catalog entry's text, group and structured
+ * details, or { name, description?, details?, groupName?, ageGroup?,
+ * duration?, fees?, mode?, moreDetails? } — a course of the owner's own. Either way
  * the new course is appended at the end and shown (is_active true).
  */
 const createCourse = async (req, res, next) => {
@@ -104,13 +106,17 @@ const createCourse = async (req, res, next) => {
         .from('course_catalog').select('*').eq('id', body.catalogId).eq('is_active', true).maybeSingle();
       if (error) throw error;
       if (!entry) return errorResponse(res, 404, 'Catalog course not found');
-      row = { catalog_id: entry.id, name: entry.name, description: entry.description, details: entry.details, group_name: entry.group_name };
+      row = {
+        catalog_id: entry.id, name: entry.name, description: entry.description, details: entry.details, group_name: entry.group_name,
+        age_group: entry.age_group, duration: entry.duration, fees: entry.fees, mode: entry.mode, more_details: entry.more_details
+      };
     } else {
       const fieldError = validateCourseFields(body);
       if (fieldError) return errorResponse(res, 400, fieldError);
       row = {
         catalog_id: null, name: body.name.trim(), description: cleanText(body.description), details: cleanText(body.details),
-        group_name: cleanText(body.groupName)
+        group_name: cleanText(body.groupName),
+        ...structuredColumns(body)
       };
     }
 
@@ -133,8 +139,9 @@ const createCourse = async (req, res, next) => {
 
 /**
  * PUT /api/courses/:id
- * Body: any of { name, description, details, groupName, showDemoButton,
- * showAdmissionButton, isActive }. groupName '' / null = no group. Changes the business's own copy only —
+ * Body: any of { name, description, details, groupName, ageGroup, duration,
+ * fees, mode, moreDetails, showDemoButton, showAdmissionButton, isActive }.
+ * '' / null clears a text field (groupName: no group; mode: not shown). Changes the business's own copy only —
  * the WhatsApp bot shows them after the next Bot Builder Publish; the
  * service form's course dropdown shows them immediately.
  */
@@ -156,6 +163,7 @@ const updateCourse = async (req, res, next) => {
     if (body.description !== undefined) updates.description = cleanText(body.description);
     if (body.details !== undefined) updates.details = cleanText(body.details);
     if (body.groupName !== undefined) updates.group_name = cleanText(body.groupName);
+    Object.assign(updates, structuredColumns(body));
     if (body.showDemoButton !== undefined) updates.show_demo_button = body.showDemoButton;
     if (body.showAdmissionButton !== undefined) updates.show_admission_button = body.showAdmissionButton;
     if (body.isActive !== undefined) updates.is_active = body.isActive;

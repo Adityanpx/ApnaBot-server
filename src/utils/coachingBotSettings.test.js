@@ -349,3 +349,20 @@ test('groups: limits — 9 groups, 9 courses per group', () => {
   const crowded = [...Array.from({ length: 10 }, (_, i) => grouped(`A${i}`, 'Big')), grouped('B', 'Small')];
   assert.match(validateCoursesForPublish(crowded), /Group "Big" has 10 courses/);
 });
+
+// ---- Structured course details ----
+test('course page uses the structured fields when set, old details otherwise', () => {
+  const structured = course('Abacus', { details: 'OLD', ageGroup: '6+', fees: '₹4,000', mode: 'offline' });
+  const { spec, error } = map(settings(), [structured, course('Vedic Maths')]);
+  assert.equal(error, null);
+  assert.equal(pageById(spec, 'course_1').text, '*Abacus*\nAbacus classes\n\n👦 Age: 6+\n💰 Fees: ₹4,000\n💻 Mode: Offline');
+  assert.equal(pageById(spec, 'course_2').text, 'Vedic Maths details');
+});
+
+test('publish: blanks in a structured field, and an over-long built page, are caught', () => {
+  assert.match(map(settings(), [course('JEE', { details: null, fees: '₹____' })]).error, /Course "JEE": fill in the blanks/);
+  // every field at its own maximum still overflows one WhatsApp message
+  const full = { details: null, ageGroup: 'a'.repeat(100), duration: 'd'.repeat(100), fees: 'f'.repeat(100), mode: 'both', moreDetails: 'm'.repeat(800) };
+  assert.match(map(settings(), [course('JEE', full)]).error, /the course page is \d+ characters — WhatsApp allows 1024/);
+  assert.equal(map(settings(), [course('JEE', { details: null, duration: '2 years' })]).error, null);
+});
