@@ -42,11 +42,16 @@ const loadBusiness = async (businessId) => {
 const loadActiveCourses = async (businessId) => {
   const { data, error } = await supabase
     .from('business_courses')
-    .select('name, description, details, show_demo_button, show_admission_button')
+    .select('name, description, details, show_demo_button, show_admission_button, group_name')
     .eq('business_id', businessId).eq('is_active', true)
     .order('order', { ascending: true }).order('created_at', { ascending: true });
   if (error) throw error;
-  return (data || []).map(toCamelCase);
+  // groupName only when set: courses published before groups existed have
+  // no such key, so a null here would wrongly flag "unpublished changes".
+  return (data || []).map(row => {
+    const { groupName, ...course } = toCamelCase(row);
+    return groupName ? { ...course, groupName } : course;
+  });
 };
 
 // Key-order-independent JSON for comparing what was published (read back

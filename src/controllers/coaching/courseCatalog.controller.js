@@ -36,15 +36,15 @@ const getCourseCatalog = async (req, res, next) => {
 
 /**
  * POST /api/admin/course-catalog
- * Body: { category, name, description?, details?, order? }
+ * Body: { category, name, description?, details?, groupName?, order? }
  */
 const createCourseCatalogEntry = async (req, res, next) => {
   try {
-    const { category, name, description = null, details = null, order = 0 } = req.body || {};
+    const { category, name, description = null, details = null, groupName = null, order = 0 } = req.body || {};
     if (!category || !(await businessCategoryService.isKnownCategory(category))) {
       return errorResponse(res, 400, `Invalid category: ${category}`);
     }
-    const fieldError = validateCourseFields({ name, description, details });
+    const fieldError = validateCourseFields({ name, description, details, groupName });
     if (fieldError) return errorResponse(res, 400, fieldError);
     if (typeof order !== 'number') return errorResponse(res, 400, 'order must be a number');
 
@@ -53,6 +53,7 @@ const createCourseCatalogEntry = async (req, res, next) => {
       name: name.trim(),
       description: cleanText(description),
       details: cleanText(details),
+      group_name: cleanText(groupName),
       order,
       is_active: true
     }).select().single();
@@ -71,7 +72,7 @@ const createCourseCatalogEntry = async (req, res, next) => {
 
 /**
  * PUT /api/admin/course-catalog/:id
- * Body: any of { name, description, details, isActive, order }. category is
+ * Body: any of { name, description, details, groupName, isActive, order }. category is
  * fixed once created (delete + re-add to move an entry).
  */
 const updateCourseCatalogEntry = async (req, res, next) => {
@@ -93,6 +94,7 @@ const updateCourseCatalogEntry = async (req, res, next) => {
     if (body.name !== undefined) updates.name = body.name.trim();
     if (body.description !== undefined) updates.description = cleanText(body.description);
     if (body.details !== undefined) updates.details = cleanText(body.details);
+    if (body.groupName !== undefined) updates.group_name = cleanText(body.groupName);
     if (body.isActive !== undefined) updates.is_active = body.isActive;
     if (body.order !== undefined) updates.order = body.order;
     if (Object.keys(updates).length === 0) return errorResponse(res, 400, 'No recognized fields to update');

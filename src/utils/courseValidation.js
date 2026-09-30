@@ -4,20 +4,23 @@
 // description <= 72) plus the course page body limit the Bot Builder needs
 // (details <= 1024, a WhatsApp interactive message body). Pure.
 
-const COURSE_LIMITS = { NAME: 24, DESCRIPTION: 72, DETAILS: 1024 };
+const COURSE_LIMITS = { NAME: 24, DESCRIPTION: 72, DETAILS: 1024, GROUP_NAME: 24 };
+
+// Group names that would clash with the bot's own list rows.
+const RESERVED_GROUP_NAMES = ['main menu', 'all groups'];
 
 // Blanks left in catalog starting text for each institute to fill in.
 const PLACEHOLDER_PATTERN = /_{3,}/;
 
 /**
- * @param {Object} body - { name?, description?, details? }
+ * @param {Object} body - { name?, description?, details?, groupName? }
  * @param {{ partial?: boolean }} [opts] - partial=true (updates): only
  *   validate keys that are present; name may not be blanked either way.
  * @returns {string|null} error message or null
  */
 const validateCourseFields = (body, { partial = false } = {}) => {
   if (!body || typeof body !== 'object') return 'Request body must be an object';
-  const { name, description, details } = body;
+  const { name, description, details, groupName } = body;
 
   if (!partial || name !== undefined) {
     if (typeof name !== 'string' || !name.trim()) return 'Course name is required';
@@ -30,6 +33,11 @@ const validateCourseFields = (body, { partial = false } = {}) => {
   if (details !== undefined && details !== null) {
     if (typeof details !== 'string') return 'Details must be text';
     if (details.trim().length > COURSE_LIMITS.DETAILS) return `Details must be ${COURSE_LIMITS.DETAILS} characters or less`;
+  }
+  if (groupName !== undefined && groupName !== null) {
+    if (typeof groupName !== 'string') return 'Group must be text';
+    if (groupName.trim().length > COURSE_LIMITS.GROUP_NAME) return `Group must be ${COURSE_LIMITS.GROUP_NAME} characters or less`;
+    if (RESERVED_GROUP_NAMES.includes(groupName.trim().toLowerCase())) return `"${groupName.trim()}" is used by the bot's own buttons — please pick another group name`;
   }
   return null;
 };

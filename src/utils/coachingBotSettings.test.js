@@ -300,3 +300,52 @@ rejects('FAQ question listed twice', s => { s.faq = { enabled: true, items: [qa(
 rejects('FAQ question uses a reserved title', s => { s.faq = { enabled: true, items: [qa('Main menu')] }; }, /bot's own buttons/);
 rejects('FAQ over 9 questions', s => { s.faq = { enabled: true, items: Array.from({ length: 10 }, (_, i) => qa(`Question ${i}?`)) }; }, /at most 9 questions/);
 rejects('FAQ enabled not boolean', s => { s.faq = { enabled: 'yes', items: [] }; }, /FAQ: enabled must be true or false/);
+
+// ---- Course groups ----
+const grouped = (name, groupName) => course(name, { groupName });
+
+test('groups: Courses → groups (with counts) → group course list → course page', () => {
+  const courses = [grouped('JEE Main', 'JEE / NEET'), grouped('Abacus', 'Skill classes'), grouped('NEET', 'JEE / NEET'), course('Chess')];
+  const { spec, error } = map(settings(), courses);
+  assert.equal(error, null);
+  const top = pageById(spec, 'courses');
+  assert.equal(top.keyword, 'course');
+  assert.deepEqual(top.list.map(r => [r.title, r.description || null]), [
+    ['JEE / NEET', '2 courses'], ['Skill classes', '1 course'], ['Other courses', '1 course'], ['Main menu', null]
+  ]);
+  const jee = pageById(spec, 'group_1');
+  assert.deepEqual(jee.list.map(r => r.title), ['JEE Main', 'NEET', 'All groups', 'Main menu']);
+  // course pages keep their global index (form prefill relies on it)
+  assert.deepEqual(jee.list.slice(0, 2).map(r => r.target.id), ['course_1', 'course_3']);
+  assert.deepEqual(pageById(spec, 'group_3').list.map(r => r.target.id || r.target.type), ['course_4', 'courses', 'menu']);
+  const { replyNodes } = compileFlowSpecV2(spec);
+  const idx = replyNodes.map(n => courseIndexFromPageKeyword(n.keyword)).filter(i => i !== null).sort();
+  assert.deepEqual(idx, [0, 1, 2, 3]);
+});
+
+test('groups: one group only (or none) → the flat list, exactly as before', () => {
+  const flat = JSON.stringify(map(settings(), [course('Abacus'), course('Vedic Maths')]).spec);
+  const oneGroup = map(settings(), [grouped('Abacus', 'Skill'), grouped('Vedic Maths', 'Skill')]).spec;
+  assert.equal(pageById(oneGroup, 'courses').list.map(r => r.title).join('|'), 'Abacus|Vedic Maths|Main menu');
+  assert.equal(pageById(oneGroup, 'group_1'), undefined);
+  assert.equal(JSON.stringify(map(settings(), [course('Abacus'), course('Vedic Maths')]).spec), flat);
+});
+
+test('groups: a group named "Other courses" merges with ungrouped courses, listed last', () => {
+  const { spec } = map(settings(), [grouped('Chess', 'Other courses'), grouped('JEE', 'JEE'), course('Art')]);
+  assert.deepEqual(pageById(spec, 'courses').list.map(r => r.title), ['JEE', 'Other courses', 'Main menu']);
+  assert.deepEqual(pageById(spec, 'group_2').list.map(r => r.title), ['Chess', 'Art', 'All groups', 'Main menu']);
+});
+
+test('groups: more than 10 courses publish once grouped', () => {
+  const many = Array.from({ length: 18 }, (_, i) => grouped(`Course ${i + 1}`, i < 9 ? 'Group A' : 'Group B'));
+  assert.equal(map(settings(), many).error, null);
+  assert.match(map(settings(), many.map(c => course(c.name))).error, /at most 10 courses in one list/);
+});
+
+test('groups: limits — 9 groups, 9 courses per group', () => {
+  const tenGroups = Array.from({ length: 10 }, (_, i) => grouped(`Course ${i + 1}`, `Group ${i + 1}`));
+  assert.match(validateCoursesForPublish(tenGroups), /at most 9 course groups/);
+  const crowded = [...Array.from({ length: 10 }, (_, i) => grouped(`A${i}`, 'Big')), grouped('B', 'Small')];
+  assert.match(validateCoursesForPublish(crowded), /Group "Big" has 10 courses/);
+});

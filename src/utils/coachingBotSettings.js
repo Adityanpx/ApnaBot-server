@@ -219,14 +219,56 @@ const welcomeMessageFor = (settings) => {
   return `Hello *{{customerName}}*, welcome to *{{businessName}}*!${intro}\n\nPlease choose an option:`;
 };
 
+// Course groups: courses without a group appear under this name, last.
+const OTHER_COURSES_GROUP = 'Other courses';
+// A groups list and each group's course list keep a back row ("Main menu" /
+// "All groups"), so one fewer than the WhatsApp list limit.
+const MAX_COURSE_GROUPS = LIMITS.MAX_LIST_ROWS - 1;
+const MAX_COURSES_PER_GROUP = LIMITS.MAX_LIST_ROWS - 1;
+
+/**
+ * Courses grouped by their groupName for WhatsApp, or null when grouping
+ * doesn't apply (fewer than 2 distinct groups — one flat list, as before
+ * groups existed). Groups keep the order of their first course; ungrouped
+ * courses form "Other courses", always last. Each group holds the courses'
+ * indexes into `courses` (so course page ids stay course_1..course_N and
+ * form prefill — courseIndexFromPageKeyword — is unaffected).
+ * @returns {{ title: string, indexes: number[] }[]|null}
+ */
+const groupCourses = (courses) => {
+  const groups = new Map();
+  let other = null;
+  courses.forEach((c, i) => {
+    const title = isNonEmptyString(c.groupName) ? c.groupName.trim() : null;
+    const key = (title || OTHER_COURSES_GROUP).toLowerCase();
+    if (!title || key === OTHER_COURSES_GROUP.toLowerCase()) {
+      other = other || { title: OTHER_COURSES_GROUP, indexes: [] };
+      other.indexes.push(i);
+      return;
+    }
+    if (!groups.has(key)) groups.set(key, { title, indexes: [] });
+    groups.get(key).indexes.push(i);
+  });
+  const list = [...groups.values(), ...(other ? [other] : [])];
+  return list.length >= 2 ? list : null;
+};
+
 /**
  * Publish-time checks on the business's active courses (from My courses).
  * Returns the first problem as a message, or null.
  */
 const validateCoursesForPublish = (courses) => {
   if (!Array.isArray(courses) || courses.length === 0) return 'Add at least one course in "My courses" before publishing';
-  if (courses.length > MAX_COURSES) {
-    return `WhatsApp can show at most ${MAX_COURSES} courses — hide or delete some in "My courses" (you have ${courses.length} shown)`;
+  const groups = groupCourses(courses);
+  if (!groups && courses.length > MAX_COURSES) {
+    return `WhatsApp can show at most ${MAX_COURSES} courses in one list — put them in groups, or hide some, in "My courses" (you have ${courses.length} shown)`;
+  }
+  if (groups && groups.length > MAX_COURSE_GROUPS) {
+    return `WhatsApp can show at most ${MAX_COURSE_GROUPS} course groups — you have ${groups.length} (courses without a group count as "${OTHER_COURSES_GROUP}")`;
+  }
+  const crowded = groups && groups.find(g => g.indexes.length > MAX_COURSES_PER_GROUP);
+  if (crowded) {
+    return `Group "${crowded.title}" has ${crowded.indexes.length} courses — WhatsApp can show at most ${MAX_COURSES_PER_GROUP} in one group`;
   }
   for (const c of courses) {
     const at = `Course "${c.name}"`;
@@ -265,8 +307,10 @@ const buildFormFields = (form) => {
  * Maps publish-ready coaching settings + the business's active courses to a
  * FlowSpec v2. Returns { spec, error } — error is a settings/course-level
  * message, or (last resort) a FlowSpec-level one; spec is null whenever
- * error is set. Course pages get index-based ids (course_1..course_10) —
- * they're rebuilt on every publish, so they needn't match course row ids.
+ * error is set. Course pages get index-based ids (course_1..course_N, in
+ * course order, grouped or not) — they're rebuilt on every publish, so they
+ * needn't match course row ids. With 2+ course groups (groupCourses), the
+ * Courses page lists the groups and each group gets its own list page.
  * @param {Object} settings
  * @param {{ businessName: string, courses: Object[] }} context
  * @returns {{ spec: Object|null, error: string|null }}
@@ -292,12 +336,31 @@ const mapCoachingSettingsToSpec = (settings, { businessName, courses } = {}) => 
     buttons.push(MAIN_MENU);
     pages.push({ id: `course_${i + 1}`, text: c.details.trim(), buttons });
   });
-  if (courses.length >= 2) {
-    const list = courses.map((c, i) => ({
-      title: c.name.trim(),
-      ...(isNonEmptyString(c.description) ? { description: c.description.trim() } : {}),
-      target: { type: 'page', id: `course_${i + 1}` }
+  const courseRow = (i) => ({
+    title: courses[i].name.trim(),
+    ...(isNonEmptyString(courses[i].description) ? { description: courses[i].description.trim() } : {}),
+    target: { type: 'page', id: `course_${i + 1}` }
+  });
+  const groups = groupCourses(courses);
+  if (groups) {
+    // Courses → groups → that group's courses → course page.
+    const allGroups = { title: 'All groups', target: { type: 'page', id: 'courses' } };
+    groups.forEach((g, gi) => {
+      const list = g.indexes.map(courseRow);
+      list.push(allGroups);
+      if (list.length < LIMITS.MAX_LIST_ROWS) list.push(MAIN_MENU);
+      pages.push({ id: `group_${gi + 1}`, text: `${g.title} — tap a course to see the details:`, list });
+    });
+    const groupList = groups.map((g, gi) => ({
+      title: g.title,
+      description: `${g.indexes.length} course${g.indexes.length === 1 ? '' : 's'}`,
+      target: { type: 'page', id: `group_${gi + 1}` }
     }));
+    groupList.push(MAIN_MENU);
+    pages.push({ id: 'courses', text: 'Our courses — choose a group:', keyword: 'course', list: groupList });
+    menu.push({ title: '📚 Courses', target: { type: 'page', id: 'courses' } });
+  } else if (courses.length >= 2) {
+    const list = courses.map((_, i) => courseRow(i));
     if (list.length < LIMITS.MAX_LIST_ROWS) list.push(MAIN_MENU);
     pages.push({ id: 'courses', text: 'Our courses — tap one to see the details:', keyword: 'course', list });
     menu.push({ title: '📚 Courses', target: { type: 'page', id: 'courses' } });

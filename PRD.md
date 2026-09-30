@@ -376,6 +376,13 @@ question nodes) plus web-form links for Free demo / Admission.
   forms without it are unchanged. Tapping Free demo / Admission on a course
   page opens the form with that course pre-selected (see "Web-form booking
   links").
+- **Course groups (`business_courses.group_name`, catalog suggests one):**
+  with 2+ distinct groups among shown courses, WhatsApp shows Courses →
+  groups ("N courses") → that group's courses (+ All groups / Main menu) →
+  course page; ungrouped courses form "Other courses", always last. Limits:
+  9 groups × 9 courses. Fewer than 2 groups = the old flat list (max 10).
+  Course pages keep global ids course_1..N, so form prefill is unaffected
+  (`coachingBotSettings.js#groupCourses`).
 - **FAQ (optional `settings.faq`, added 2026-09-30):** up to 9 questions
   (each ≤ 24 characters — a WhatsApp list row) with an answer page each
   (`*question*\n\nanswer`, buttons More questions / Free demo / Main menu).

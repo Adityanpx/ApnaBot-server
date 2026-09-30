@@ -54,3 +54,13 @@ test('flow fields: visibleWhen on a plain dropdown still checks its options (unc
     { name: 'days', label: 'Days', type: 'text', visibleWhen: { field: 'trip', equals: 'Local' } }
   ]), /must be one of "trip"'s options/);
 });
+
+test('course group name: optional, max 24, not a reserved bot row', () => {
+  assert.equal(validateCourseFields({ name: 'JEE', groupName: 'JEE / NEET' }), null);
+  assert.equal(validateCourseFields({ name: 'JEE', groupName: null }), null);
+  assert.equal(validateCourseFields({ name: 'JEE', groupName: '' }), null);
+  assert.equal(validateCourseFields({ groupName: 'Skill classes' }, { partial: true }), null);
+  assert.match(validateCourseFields({ name: 'JEE', groupName: 'x'.repeat(25) }), /Group must be 24 characters or less/);
+  assert.match(validateCourseFields({ name: 'JEE', groupName: 'All groups' }), /bot's own buttons/);
+  assert.match(validateCourseFields({ name: 'JEE', groupName: 5 }), /Group must be text/);
+});
