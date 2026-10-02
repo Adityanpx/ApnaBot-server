@@ -404,6 +404,18 @@ question nodes) plus web-form links for Free demo / Admission.
   `services/broadcastAudience.service.js#resolveAudience` is used by the
   preview, the send and `POST /api/broadcasts/audience-count` (live count
   in the composer), so the count shown is who gets it.
+- **Demo time + reminders (`bookings.scheduled_for / reminder_status /
+  reminder_note`, `settings.demoForm.reminder` off|2h|evening):** on a Free
+  demo request the owner fixes the time (`PUT /api/bookings/:id/demo-time`)
+  → status `confirmed` ("Demo fixed"), the parent is told at once, and a
+  BullMQ delayed job (`demo-reminder` queue, one job per booking) reminds
+  them 2 hours before / 7 PM India time the evening before. Both messages go
+  as free text inside the parent's 24-hour window, else as the business's
+  `apnabot_demo_class` UTILITY template (wallet-charged like a broadcast),
+  else not at all (`reminder_note` says why). The template is created and
+  submitted to Meta on Publish when a reminder is on; Bot Builder shows its
+  approval. The worker re-checks the booking (time, status, reminder still
+  on) when it fires, so stale jobs do nothing. Times are India time.
 - **Course photos (`business_courses.image_media_id` → `business_media`):**
   an optional image, checked to be an image of the same business, sent
   above the WhatsApp course page (FlowSpec v2 page `mediaId` → node

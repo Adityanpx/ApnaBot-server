@@ -12,7 +12,8 @@ const { toCamelCase } = require('../utils/caseConvert');
 const { readBusinessGraphRows } = require('./flowSnapshot.service');
 const aiFlowService = require('./aiFlow.service');
 const { compileFlowSpecV2 } = require('../utils/flowSpecV2');
-const { validateCoachingSettings, mapCoachingSettingsToSpec, FIELD_LIBRARY } = require('../utils/coachingBotSettings');
+const { validateCoachingSettings, mapCoachingSettingsToSpec, demoReminderFor, FIELD_LIBRARY } = require('../utils/coachingBotSettings');
+const demoReminderTemplateService = require('./demoReminderTemplate.service');
 const { listInstitutePresets } = require('../utils/coachingInstitutePresets');
 const logger = require('../utils/logger');
 
@@ -110,10 +111,17 @@ const getSettings = async ({ businessId }) => {
       hasUnpublishedChanges: stableStringify(row.published_settings) !==
         stableStringify({ settings: row.settings, courses: await loadActiveCourses(businessId) })
     } : null,
+    // Free demo reminder message (created on Publish): { status, rejectionReason } or null.
+    demoReminderTemplate: await reminderTemplateStatus(businessId),
     presets: Object.fromEntries(Object.entries(PRESETS).map(([name, p]) => [name, {
       category: p.category, fieldLibrary: p.fieldLibrary, institutePresets: p.institutePresets
     }]))
   };
+};
+
+const reminderTemplateStatus = async (businessId) => {
+  const template = await demoReminderTemplateService.getReminderTemplate(businessId);
+  return template ? { status: template.status, rejectionReason: template.rejection_reason || null } : null;
 };
 
 /**
@@ -156,6 +164,14 @@ const buildFromSettings = async ({ businessId, graphBusiness, presetName, settin
   const fee = settings.admissionForm && settings.admissionForm.enabled && settings.admissionForm.fee;
   if (fee && fee.enabled && !business.payment_qr_url) {
     warnings.push('The Admission form asks for a fee, but no payment QR is uploaded in Settings — parents will be told your team will share the payment details.');
+  }
+  if (demoReminderFor(settings)) {
+    const template = await reminderTemplateStatus(businessId);
+    if (!template || template.status !== 'approved') {
+      warnings.push(template && template.status === 'rejected'
+        ? 'WhatsApp rejected the demo reminder message — reminders and demo-time messages reach only parents who messaged in the last 24 hours.'
+        : 'Until WhatsApp approves the demo reminder message (sent for approval on Publish, usually within a day), reminders reach only parents who messaged in the last 24 hours.');
+    }
   }
   return { business, spec, graph, warnings, courses };
 };
@@ -245,6 +261,18 @@ const executePublish = async ({ businessId, graphBusiness, prepared }) => {
   if (recordErr) {
     logger.error('botSettings: flow published but publish record not saved', { businessId, message: recordErr.message });
     warnings.push('The bot is live, but its "published" status could not be saved — the dashboard may still show unpublished changes.');
+  }
+  // Free demo reminder on: make sure its WhatsApp template exists and is
+  // sent for approval. The bot is already live — a failure is a warning.
+  if (demoReminderFor(prepared.row.settings)) {
+    try {
+      await demoReminderTemplateService.ensureReminderTemplate(businessId);
+    } catch (templateErr) {
+      logger.error('botSettings: demo reminder template not submitted', {
+        businessId, message: templateErr.response?.data?.error?.message || templateErr.message
+      });
+      warnings.push('The bot is live, but the demo reminder message could not be sent to WhatsApp for approval. Publish again to retry.');
+    }
   }
   return { snapshot: result.snapshot, warnings };
 };

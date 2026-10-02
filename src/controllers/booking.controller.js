@@ -7,6 +7,7 @@ const socketService = require('../services/socket.service');
 const bookingService = require('../services/booking.service');
 const customerPipelineService = require('../services/customerPipeline.service');
 const paymentService = require('../services/payment.service');
+const demoReminderService = require('../services/demoReminder.service');
 
 // Statuses that count as the Contacted->Converted trigger (see
 // customerPipeline.service.js) — mirrors reports.service.js's
@@ -170,6 +171,23 @@ const updateBookingPayment = async (req, res, next) => {
 };
 
 /**
+ * PUT /api/bookings/:id/demo-time
+ * Body: { scheduledFor: ISO date-time }
+ * Owner fixes a Free demo's time — see demoReminder.service.js#setDemoTime
+ * (also marks it "Demo fixed", tells the parent and plans the reminder).
+ */
+const setDemoTime = async (req, res, next) => {
+  try {
+    const result = await demoReminderService.setDemoTime(req.user.businessId, req.params.id, req.body && req.body.scheduledFor);
+    if (result.error) return errorResponse(res, result.status, result.error);
+    return successResponse(res, 200, result, 'Demo time saved');
+  } catch (error) {
+    logger.error('Error setting demo time:', error);
+    next(error);
+  }
+};
+
+/**
  * PUT /api/bookings/:id/notes
  * Add or update internal notes on booking
  */
@@ -267,6 +285,7 @@ module.exports = {
   getBookingById,
   updateBookingStatus,
   updateBookingPayment,
+  setDemoTime,
   addBookingNotes,
   deleteBooking,
   getVehicleCarouselPreview

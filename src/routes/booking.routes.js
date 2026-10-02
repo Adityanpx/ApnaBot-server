@@ -21,6 +21,9 @@ router.put('/:id/status', protect, requireBusiness, bookingController.updateBook
 // PUT /:id/payment - Record QR payment: { status: 'paid' | 'pending' } (must be before /:id)
 router.put('/:id/payment', protect, requireBusiness, bookingController.updateBookingPayment);
 
+// PUT /:id/demo-time - Free demo: fix the time { scheduledFor }, tell the parent, plan the reminder (must be before /:id)
+router.put('/:id/demo-time', protect, requireBusiness, bookingController.setDemoTime);
+
 // PUT /:id/notes - Add or update internal notes (must be before /:id)
 router.put('/:id/notes', protect, requireBusiness, bookingController.addBookingNotes);
 

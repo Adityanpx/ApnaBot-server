@@ -15,7 +15,7 @@
 //       fees|timings|results|material|contact: { enabled, text },
 //       location: { enabled }                            // uses the shop location in Settings
 //     },
-//     demoForm:      { enabled, fields: [libraryKey], customFields: [ { label, type, options? } ], note? },
+//     demoForm:      { enabled, fields: [libraryKey], customFields: [ { label, type, options? } ], note?, reminder?: 'off'|'2h'|'evening' },
 //     admissionForm: { enabled, fields: [libraryKey], customFields: [...], note?, targetExamOptions? }
 //   }
 //
@@ -34,6 +34,7 @@ const { LIMITS } = require('./flowSpec');
 const { BUSINESS_COURSES_SOURCE, COURSE_BATCHES_SOURCE } = require('./flowFieldsValidation');
 const { hasPlaceholder, coursePageText } = require('./courseValidation');
 const { INSTITUTE_TYPES } = require('./coachingInstitutePresets');
+const { REMINDER_CHOICES } = require('./demoReminder');
 
 const MAX_COURSES = LIMITS.MAX_LIST_ROWS;
 const MAX_INTRO = 300;
@@ -174,6 +175,12 @@ const validateCoachingSettings = (settings, { forPublish = false } = {}) => {
       if (forPublish && form.enabled && form.fee.enabled && !(Number.isInteger(amount) && amount >= 1)) {
         return `${label}: enter the admission fee amount, or switch the fee off`;
       }
+    }
+    // Demo reminder (optional): 'off' | '2h' | 'evening' — sent before the
+    // demo time the owner fixes (demoReminder.service.js).
+    if (form.reminder !== undefined && form.reminder !== null) {
+      if (formKey !== 'demo') return `${label}: a reminder can only be set on the Free demo form`;
+      if (!REMINDER_CHOICES.includes(form.reminder)) return `${label}: reminder must be one of: ${REMINDER_CHOICES.join(', ')}`;
     }
     if (form.fields.includes('targetExam')) {
       const opts = form.targetExamOptions;
@@ -528,6 +535,17 @@ const formPaymentFor = (publishedSettings, formKey) => {
   return { amount: fee.amount, purpose: 'admission' };
 };
 
+/**
+ * The Free demo reminder from the PUBLISHED settings: '2h' | 'evening', or
+ * null when off / the demo form is off / never published.
+ * @param {Object|null} publishedSettings - business_bot_settings.published_settings.settings
+ */
+const demoReminderFor = (publishedSettings) => {
+  const form = publishedSettings && publishedSettings.demoForm;
+  if (!form || !form.enabled || !form.reminder || form.reminder === 'off') return null;
+  return REMINDER_CHOICES.includes(form.reminder) ? form.reminder : null;
+};
+
 module.exports = {
   validateCoachingSettings,
   validateCoursesForPublish,
@@ -536,5 +554,6 @@ module.exports = {
   formTitleForKeyword,
   formRequestForKeyword,
   formPaymentFor,
+  demoReminderFor,
   FIELD_LIBRARY
 };

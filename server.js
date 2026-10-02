@@ -35,6 +35,13 @@ try {
   logger.warn('Session timeout BullMQ worker not started (Redis may not be available):', err.message);
 }
 
+try {
+  require('./src/queues/demoReminder.worker');
+  logger.info('Demo reminder BullMQ worker started');
+} catch (err) {
+  logger.warn('Demo reminder BullMQ worker not started (Redis may not be available):', err.message);
+}
+
 // ── Subscription Expiry Cron (every 24 hours) ──────────────────────────────
 const subscriptionService = require('./src/services/subscription.service');
 
