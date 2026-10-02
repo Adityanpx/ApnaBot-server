@@ -394,3 +394,25 @@ test('course photo: sent above the course page; not on the course list', () => {
   assert.equal(node.mediaId, photo);
   assert.equal(node.contentType, 'buttons');
 });
+
+// ---- Admission fee ----
+test('admission fee: optional { enabled, amount } on the Admission form only', () => {
+  assert.equal(validateCoachingSettings(mutate(s => { s.admissionForm.fee = { enabled: true, amount: 5000 }; })), null);
+  assert.equal(validateCoachingSettings(mutate(s => { s.admissionForm.fee = { enabled: false, amount: null }; })), null);
+  assert.equal(validateCoachingSettings(mutate(s => { s.admissionForm.fee = { enabled: true, amount: null }; })), null); // draft
+  assert.match(map(mutate(s => { s.admissionForm.fee = { enabled: true, amount: null }; })).error, /enter the admission fee amount/);
+  assert.match(validateCoachingSettings(mutate(s => { s.admissionForm.fee = { enabled: true, amount: 0 }; })), /whole amount from ₹1/);
+  assert.match(validateCoachingSettings(mutate(s => { s.admissionForm.fee = { enabled: true, amount: 99.5 }; })), /whole amount/);
+  assert.match(validateCoachingSettings(mutate(s => { s.demoForm.fee = { enabled: true, amount: 100 }; })), /only be set on the Admission form/);
+});
+
+test('formPaymentFor: the published Admission fee; nothing for the demo, a fee switched off, or the form off', () => {
+  const { formPaymentFor } = require('./coachingBotSettings');
+  const withFee = mutate(s => { s.admissionForm.fee = { enabled: true, amount: 5000 }; });
+  assert.deepEqual(formPaymentFor(withFee, 'admission'), { amount: 5000, purpose: 'admission' });
+  assert.equal(formPaymentFor(withFee, 'demo'), null);
+  assert.equal(formPaymentFor(mutate(s => { s.admissionForm.fee = { enabled: false, amount: 5000 }; }), 'admission'), null);
+  assert.equal(formPaymentFor(mutate(s => { s.admissionForm.enabled = false; s.admissionForm.fee = { enabled: true, amount: 5000 }; }), 'admission'), null);
+  assert.equal(formPaymentFor(settings(), 'admission'), null);
+  assert.equal(formPaymentFor(null, 'admission'), null);
+});

@@ -385,6 +385,15 @@ question nodes) plus web-form links for Free demo / Admission.
   catalog entries are moved over by `scripts/convertCatalogToStructured.js`
   (dry run / `--confirm`); business courses switch when the owner fills the
   fields in.
+- **Admission fee (`settings.admissionForm.fee { enabled, amount }`):** read
+  from the PUBLISHED settings at submit (`coachingBotSettings.js
+  #formPaymentFor` → `formMeta.advance`); the request is saved payment-
+  pending (`payment_details.purpose = 'admission'`) and the parent gets the
+  payment QR (text fallback without a QR). Marking it paid sets status
+  `completed` ("Admitted") and WhatsApps "Fees received! Admission … is
+  confirmed". **Bot Builder forms never use the business-wide advance
+  payment** (a free demo never asks for money); every other web form and
+  chat booking keeps it unchanged (no `formMeta.advance` key).
 - **Course photos (`business_courses.image_media_id` → `business_media`):**
   an optional image, checked to be an image of the same business, sent
   above the WhatsApp course page (FlowSpec v2 page `mediaId` → node

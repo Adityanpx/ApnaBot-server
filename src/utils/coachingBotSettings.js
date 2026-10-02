@@ -45,6 +45,7 @@ const CUSTOM_FIELD_TYPES = ['text', 'textarea', 'dropdown'];
 // row title) leading to one answer page each. The list also carries a
 // "Main menu" row, hence one fewer than the WhatsApp list limit. The answer
 // page shows "*question*\n\nanswer", which must fit one interactive body.
+const MAX_ADMISSION_FEE = 1000000;
 const MAX_FAQ_ITEMS = LIMITS.MAX_LIST_ROWS - 1;
 const FAQ_QUESTION_MAX = LIMITS.LIST_ROW_TITLE;
 const FAQ_ANSWER_MAX = LIMITS.INTERACTIVE_BODY - FAQ_QUESTION_MAX - 4;
@@ -161,6 +162,19 @@ const validateCoachingSettings = (settings, { forPublish = false } = {}) => {
     if (!isOptionalString(form.note)) return `${label}: note must be text`;
     if (isNonEmptyString(form.note) && len(form.note) > MAX_NOTE) return `${label}: note must be ${MAX_NOTE} characters or less`;
     if (forPublish && form.enabled && hasPlaceholder(form.note)) return `${label}: fill in the blanks (____) in the note before publishing`;
+    // Admission fee (optional): { enabled, amount } — asked for with the
+    // payment QR when a parent submits the Admission form.
+    if (form.fee !== undefined && form.fee !== null) {
+      if (formKey !== 'admission') return `${label}: a fee can only be set on the Admission form`;
+      if (typeof form.fee !== 'object' || Array.isArray(form.fee) || typeof form.fee.enabled !== 'boolean') return `${label}: fee.enabled must be true or false`;
+      const { amount } = form.fee;
+      if (amount !== undefined && amount !== null && (!Number.isInteger(amount) || amount < 1 || amount > MAX_ADMISSION_FEE)) {
+        return `${label}: the admission fee must be a whole amount from ₹1 to ₹${MAX_ADMISSION_FEE.toLocaleString('en-IN')}`;
+      }
+      if (forPublish && form.enabled && form.fee.enabled && !(Number.isInteger(amount) && amount >= 1)) {
+        return `${label}: enter the admission fee amount, or switch the fee off`;
+      }
+    }
     if (form.fields.includes('targetExam')) {
       const opts = form.targetExamOptions;
       if (!Array.isArray(opts) || opts.length < 2 || opts.some(o => !isNonEmptyString(o))) {
@@ -497,6 +511,23 @@ const formRequestForKeyword = (keyword) => {
   return entry ? { key: entry[0], title: entry[1].requestTitle } : null;
 };
 
+/**
+ * The payment a submitted Bot Builder form asks for, from the PUBLISHED
+ * settings (so a draft change waits for Publish): the Admission form's fee
+ * when switched on → { amount, purpose: 'admission' }; anything else → null
+ * (no payment — a Bot Builder form never uses the business-wide advance).
+ * Passed to booking.service.js#createBookingAndConfirmation as formMeta.advance.
+ * @param {Object|null} publishedSettings - business_bot_settings.published_settings.settings
+ * @param {'demo'|'admission'} formKey
+ */
+const formPaymentFor = (publishedSettings, formKey) => {
+  if (formKey !== 'admission') return null;
+  const form = publishedSettings && publishedSettings.admissionForm;
+  const fee = form && form.fee;
+  if (!form || !form.enabled || !fee || !fee.enabled || !Number.isInteger(fee.amount) || fee.amount < 1) return null;
+  return { amount: fee.amount, purpose: 'admission' };
+};
+
 module.exports = {
   validateCoachingSettings,
   validateCoursesForPublish,
@@ -504,5 +535,6 @@ module.exports = {
   courseIndexFromPageKeyword,
   formTitleForKeyword,
   formRequestForKeyword,
+  formPaymentFor,
   FIELD_LIBRARY
 };

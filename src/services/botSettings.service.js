@@ -30,7 +30,7 @@ const PRESETS = {
 const loadBusiness = async (businessId) => {
   const { data, error } = await supabase
     .from('businesses')
-    .select('id, name, display_name, business_category, welcome_message, welcome_message_translations, business_latitude, business_longitude')
+    .select('id, name, display_name, business_category, welcome_message, welcome_message_translations, business_latitude, business_longitude, payment_qr_url')
     .eq('id', businessId)
     .maybeSingle();
   if (error) throw error;
@@ -153,6 +153,10 @@ const buildFromSettings = async ({ businessId, graphBusiness, presetName, settin
   }
 
   const { warnings, ...graph } = compileFlowSpecV2(spec);
+  const fee = settings.admissionForm && settings.admissionForm.enabled && settings.admissionForm.fee;
+  if (fee && fee.enabled && !business.payment_qr_url) {
+    warnings.push('The Admission form asks for a fee, but no payment QR is uploaded in Settings — parents will be told your team will share the payment details.');
+  }
   return { business, spec, graph, warnings, courses };
 };
 

@@ -11,7 +11,7 @@ const whatsappService = require('../services/whatsapp.service');
 const placesService = require('../services/places.service');
 const { toCamelCase } = require('../utils/caseConvert');
 const { BUSINESS_COURSES_SOURCE, COURSE_BATCHES_SOURCE } = require('../utils/flowFieldsValidation');
-const { courseIndexFromPageKeyword, formTitleForKeyword, formRequestForKeyword } = require('../utils/coachingBotSettings');
+const { courseIndexFromPageKeyword, formTitleForKeyword, formRequestForKeyword, formPaymentFor } = require('../utils/coachingBotSettings');
 const { isTravelFeaturedCategory } = require('../config/categoryFeatures');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
@@ -166,16 +166,22 @@ const resolveFormTitle = async (formToken, formNode) => {
 const resolveFormRequest = async (formToken, formNode) => {
   const request = formRequestForKeyword(formNode?.keyword);
   if (!request) return null;
-  return (await hasPublishedBotSettings(formToken.businessId)) ? request : null;
+  const published = await loadPublishedBotSettings(formToken.businessId);
+  // payment: what this form asks for at submit (the Admission fee, from the
+  // PUBLISHED settings) — null = nothing, never the business-wide advance.
+  return published ? { ...request, payment: formPaymentFor(published.settings, request.key) } : null;
 };
 
-const hasPublishedBotSettings = async (businessId) => {
+/** The business's published Bot Builder settings ({ settings }), or null when never published. */
+const loadPublishedBotSettings = async (businessId) => {
   const { data: botSettings, error } = await supabase
-    .from('business_bot_settings').select('published_at').eq('business_id', businessId)
+    .from('business_bot_settings').select('published_at, published_settings').eq('business_id', businessId)
     .maybeSingle();
   if (error) throw error;
-  return !!botSettings?.published_at;
+  return botSettings?.published_at ? { settings: botSettings.published_settings?.settings || null } : null;
 };
+
+const hasPublishedBotSettings = async (businessId) => !!(await loadPublishedBotSettings(businessId));
 
 /**
  * GET /api/public/service-form/:token
@@ -394,7 +400,10 @@ const submitServiceForm = async (req, res, next) => {
     const formMeta = {
       formKey: formRequest ? formRequest.key : null,
       formTitle: formRequest ? formRequest.title : null,
-      fieldLabels: Object.fromEntries(orderedFields.map(f => [f.fieldKey, f.label]))
+      fieldLabels: Object.fromEntries(orderedFields.map(f => [f.fieldKey, f.label])),
+      // Bot Builder forms decide their own payment (Admission fee or none);
+      // every other form keeps the business-wide advance setting (no key).
+      ...(formRequest ? { advance: formRequest.payment } : {})
     };
 
     const confirmation = await bookingService.createBookingAndConfirmation(

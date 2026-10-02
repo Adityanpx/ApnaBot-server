@@ -373,6 +373,9 @@ const setBookingPaymentStatus = async (businessId, bookingId, status) => {
 
   const isAdvance = booking.payment_details?.requestedVia === 'advance';
   const confirmOnPaid = status === 'paid' && isAdvance && booking.status === 'pending';
+  // A paid admission fee (Bot Builder Admission form) admits the student:
+  // 'completed' = "Admitted" in the coaching request labels.
+  const isAdmissionFee = booking.payment_details?.purpose === 'admission';
 
   const update = {
     payment_status: status,
@@ -380,7 +383,7 @@ const setBookingPaymentStatus = async (businessId, bookingId, status) => {
       ? { ...(booking.payment_details || {}), method: 'qr', paidAt: new Date().toISOString() }
       : { ...(booking.payment_details || {}), paidAt: null }
   };
-  if (confirmOnPaid) update.status = 'confirmed';
+  if (confirmOnPaid) update.status = isAdmissionFee ? 'completed' : 'confirmed';
 
   const { data: updatedRow, error: updateErr } = await supabase
     .from('bookings').update(update).eq('id', booking.id).select().single();
@@ -414,7 +417,9 @@ const setBookingPaymentStatus = async (businessId, bookingId, status) => {
       .from('customers').select('*').eq('id', booking.customer_id).maybeSingle();
     if (customerErr) throw customerErr;
 
-    const confirmationText = `✅ Advance received! Your booking ${booking.booking_code} is confirmed. Our team will contact you shortly.`;
+    const confirmationText = isAdmissionFee
+      ? `✅ Fees received! Admission ${booking.booking_code} is confirmed. Welcome to ${business.displayName || business.name}!`
+      : `✅ Advance received! Your booking ${booking.booking_code} is confirmed. Our team will contact you shortly.`;
 
     const { data: messageRow, error: msgErr } = await supabase.from('messages').insert({
       business_id: businessId,

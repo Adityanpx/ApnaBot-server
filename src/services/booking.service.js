@@ -484,7 +484,9 @@ const buildBookingSummaryBody = (collected, orderedFields, localRentalUnconfigur
  * @param {{formKey: (string|null), formTitle: (string|null), fieldLabels: Object}|null} [formMeta] -
  *   web-form bookings only (publicServiceForm.controller.js): saved as
  *   bookings.form_key / form_title / field_labels. Omitted (chat bookings)
- *   → those columns are left out of the insert entirely.
+ *   → those columns are left out of the insert entirely. Optional
+ *   formMeta.advance overrides the business-wide advance payment: null =
+ *   no payment, { amount, purpose: 'admission' } = ask for that fee.
  * @returns {Promise<{text: string, imageUrl: (string|null)}>} the confirmation
  *   message; imageUrl is the business's payment QR when an advance is
  *   requested (send as an image with `text` as its caption), else null
@@ -519,7 +521,15 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
   const codePrefix = nameLetters.length >= 2 ? nameLetters.slice(0, 2).join('') : 'BK';
   const bookingCode = codePrefix + Math.floor(1000 + Math.random() * 9000);
   let advanceAmount = null;
-  if (business?.requireAdvancePayment) {
+  // A Bot Builder form decides its own payment (formMeta.advance): null = none
+  // (e.g. a free demo, even with the business-wide advance on), or
+  // { amount, purpose: 'admission' } = the admission fee. Every other booking
+  // (no formMeta.advance key) uses the business-wide advance setting as before.
+  const formAdvance = formMeta && Object.prototype.hasOwnProperty.call(formMeta, 'advance') ? formMeta.advance : undefined;
+  const isAdmissionFee = !!(formAdvance && formAdvance.purpose === 'admission');
+  if (formAdvance !== undefined) {
+    advanceAmount = formAdvance && Number(formAdvance.amount) > 0 ? Number(formAdvance.amount) : null;
+  } else if (business?.requireAdvancePayment) {
     if (business.advancePaymentType === 'percentage') {
       if (collected.vehicleFare === undefined || collected.vehicleFare === null) {
         logger.error('Cannot compute percentage advance payment: booking has no vehicleFare', {
@@ -553,7 +563,8 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
     // Lets payment.service.js setBookingPaymentStatus tell an advance
     // booking (confirmed on payment) from one the owner requested payment
     // for from chat.
-    bookingInsert.payment_details = { requestedVia: 'advance' };
+    // purpose 'admission': marking it paid admits the student (payment.service.js).
+    bookingInsert.payment_details = { requestedVia: 'advance', ...(isAdmissionFee ? { purpose: 'admission' } : {}) };
   }
 
   const { data: bookingRow, error: bookingErr } = await supabase.from('bookings').insert(bookingInsert).select().single();
@@ -580,12 +591,16 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
       ? {
         text: paymentService.buildPaymentQrCaption({
           upiId: business.upiId,
-          intro: `Almost done! To confirm your booking *${bookingCode}*, please pay the advance of *${amountText}* by scanning this QR code.`
+          intro: isAdmissionFee
+            ? `Almost done! To confirm admission *${bookingCode}*, please pay the admission fee of *${amountText}* by scanning this QR code.`
+            : `Almost done! To confirm your booking *${bookingCode}*, please pay the advance of *${amountText}* by scanning this QR code.`
         }),
         imageUrl: business.paymentQrUrl
       }
       : {
-        text: `Almost done! To confirm your booking, an advance of *${amountText}* is required. Our team will share the payment details with you shortly.\n\nBooking ID: *${bookingCode}*`,
+        text: isAdmissionFee
+          ? `Almost done! To confirm admission, the admission fee of *${amountText}* is required. Our team will share the payment details with you shortly.\n\nAdmission ID: *${bookingCode}*`
+          : `Almost done! To confirm your booking, an advance of *${amountText}* is required. Our team will share the payment details with you shortly.\n\nBooking ID: *${bookingCode}*`,
         imageUrl: null
       };
 
