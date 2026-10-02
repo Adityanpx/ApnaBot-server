@@ -823,8 +823,10 @@ const receiveWebhook = async (req, res) => {
     const normalizedStopStartText = isPlainTextStopStart ? (message.text?.body || '').trim().toLowerCase() : '';
     if (STOP_KEYWORDS.has(normalizedStopStartText)) {
       const newBotPausedUntil = new Date(Date.now() + CUSTOMER_STOP_PAUSE_DURATION_MS).toISOString();
+      // opted_out_at: the lasting part of STOP — broadcasts and follow-ups
+      // skip the customer until they send START, after the 24h bot pause ends.
       const { error: stopPauseErr } = await supabase
-        .from('customers').update({ bot_paused_until: newBotPausedUntil }).eq('id', customer.id);
+        .from('customers').update({ bot_paused_until: newBotPausedUntil, opted_out_at: new Date().toISOString() }).eq('id', customer.id);
       if (stopPauseErr) {
         logger.error('Error pausing bot via customer STOP keyword:', stopPauseErr);
       }
@@ -832,7 +834,8 @@ const receiveWebhook = async (req, res) => {
 
       // The pause write above is the actual opt-out and must never depend on
       // this fetch succeeding — a businessDoc fetch failure here falls back
-      // to the hardcoded English default below, it never suppresses the
+      // to the default text below (systemMessages.js stopOptOutDefault, in
+      // the customer's language), it never suppresses the
       // confirmation message itself (STOP is compliance-sensitive).
       let stopBusinessDoc = null;
       try {
@@ -841,7 +844,7 @@ const receiveWebhook = async (req, res) => {
         logger.error('Error fetching business for STOP-keyword reply text, falling back to default:', fetchError);
       }
       const stopText = getLocalizedText(stopBusinessDoc, 'stopMessage', customer.preferredLanguage) ||
-        "You won't receive messages for 24 hours. Reply START anytime to resume sooner.";
+        getSystemMessage('stopOptOutDefault', customer.preferredLanguage);
       const stopMsg = await saveMessage({
         business_id: tenant.businessId,
         customer_id: customer.id,
@@ -884,7 +887,7 @@ const receiveWebhook = async (req, res) => {
       // deliberately NOT clearable by the customer's own START — only a
       // timed pause (owner's 24h pause or a prior customer STOP) is.
       const { error: startPauseErr } = await supabase
-        .from('customers').update({ bot_paused_until: null }).eq('id', customer.id);
+        .from('customers').update({ bot_paused_until: null, opted_out_at: null }).eq('id', customer.id);
       if (startPauseErr) {
         logger.error('Error clearing bot pause via customer START keyword:', startPauseErr);
       }
@@ -936,6 +939,22 @@ const receiveWebhook = async (req, res) => {
 
       logger.info(`Customer ${customerNumber} resumed the bot via START keyword for business ${tenant.businessId}`);
       return; // Do not process booking session, greeting, or rule matching
+    }
+
+    // START with no timed pause left to clear (the 24h STOP pause has run
+    // out, or an owner pause / handoff is indefinite): still lift the lasting
+    // opt-out a STOP set, so broadcasts and follow-ups reach the customer
+    // again. No extra reply — 'start' carries on as a greeting below, and an
+    // owner's pause is left as it is (isBotPaused still returns).
+    if (START_KEYWORDS.has(normalizedStopStartText) && customer.optedOutAt) {
+      const { error: optInAgainErr } = await supabase
+        .from('customers').update({ opted_out_at: null }).eq('id', customer.id);
+      if (optInAgainErr) {
+        logger.error('Error clearing opt-out via customer START keyword:', optInAgainErr);
+      } else {
+        customer.optedOutAt = null;
+        logger.info(`Customer ${customerNumber} cleared their opt-out via START keyword for business ${tenant.businessId}`);
+      }
     }
 
     if (isBotPaused) {

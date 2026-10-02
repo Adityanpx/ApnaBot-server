@@ -4,12 +4,13 @@
 // outside the 24-hour window. Sending lives in demoReminder.service.js.
 //
 // Times are shown and "evening before" is computed in India time — the
-// product is India-only today (see broadcast.controller.js countryCode).
+// product is India-only today (see broadcast.controller.js countryCode;
+// IST helpers in utils/ist.js).
 
 const { getSystemMessage } = require('./systemMessages');
+const { IST_OFFSET_MS } = require('./ist');
 
 const REMINDER_CHOICES = ['off', '2h', 'evening'];
-const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
 const EVENING_HOUR_IST = 19;
 // A demo can be fixed up to this far ahead (also bounds the delayed job).
@@ -78,6 +79,7 @@ module.exports = {
   REMINDER_CHOICES,
   REMINDER_TEMPLATE,
   MAX_DAYS_AHEAD,
+  IST_OFFSET_MS, // re-exported from utils/ist.js
   formatDemoTime,
   reminderAt,
   demoDetails,

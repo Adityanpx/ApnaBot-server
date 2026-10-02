@@ -181,6 +181,15 @@ const SYSTEM_MESSAGES = {
     mr: "तुम्ही व्यस्त आहात असे दिसते — प्रतिसाद न मिळाल्यामुळे मी हे संभाषण बंद केले आहे. पुन्हा सुरू करण्यासाठी कधीही 'book' पाठवा."
   },
 
+  // ── Customer sent STOP / UNSUBSCRIBE (webhook.controller.js) ──
+  // Used only when the business has no stop message of its own. 'START' is
+  // the typed keyword, so it stays in English.
+  stopOptOutDefault: {
+    en: "Done — you won't receive offers or reminders from us. Reply START anytime to turn them back on.",
+    hi: 'ठीक है — अब आपको हमारी ओर से ऑफ़र या रिमाइंडर नहीं मिलेंगे। इन्हें फिर से चालू करने के लिए कभी भी START लिखकर भेजें।',
+    mr: 'ठीक आहे — आता तुम्हाला आमच्याकडून ऑफर्स किंवा रिमाइंडर्स मिळणार नाहीत. ते पुन्हा सुरू करण्यासाठी कधीही START पाठवा.'
+  },
+
   // ── Free demo time + reminder (demoReminder.service.js) ──
   demoFixed: {
     en: "✅ {{student}}'s free demo class for {{course}} is fixed for {{time}}. Reply here if you need to change it.",

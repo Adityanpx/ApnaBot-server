@@ -35,7 +35,7 @@ const setCategoryFeature = async (req, res, next) => {
     if (typeof isEnabled !== 'boolean') return errorResponse(res, 400, 'isEnabled must be true or false');
     const definition = categoryFeatureService.FEATURES[feature];
     if (!definition) return errorResponse(res, 404, `Unknown feature: ${feature}`);
-    if (!definition.categories.includes(category)) {
+    if (!categoryFeatureService.appliesTo(category, feature)) {
       return errorResponse(res, 400, `"${definition.label}" is not available for the ${category} category`);
     }
     await categoryFeatureService.setEnabled(category, feature, isEnabled);

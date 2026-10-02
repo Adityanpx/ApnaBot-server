@@ -6,18 +6,30 @@
 // category DEFAULT values for business_travel_settings columns.
 const supabase = require('../config/supabase');
 
-// Every switchable feature, with the categories it applies to. The DB check
-// constraints (category_features.feature, business_features.feature) must
-// list the same keys.
+// Every switchable feature, with the categories it applies to — a list, or
+// '*' for every category (including ones added later from Super Admin). The
+// DB check constraints (category_features.feature, business_features.feature)
+// must list the same keys.
+const ALL_CATEGORIES = '*';
 const FEATURES = {
   bot_builder: {
     label: 'Bot Builder & Courses',
     description: 'Lets these businesses manage their courses and build their WhatsApp bot from settings (Courses and Bot Builder pages).',
     categories: ['coaching']
+  },
+  followups: {
+    label: 'Follow-up automations',
+    description: 'Lets these businesses set up automatic follow-up messages to their customers (enquiry nudges, review requests, payment reminders, win-back).',
+    categories: ALL_CATEGORIES
   }
 };
 
-const appliesTo = (category, feature) => !!FEATURES[feature] && FEATURES[feature].categories.includes(category);
+/** Whether `feature` exists and applies to businesses in `category`. */
+const appliesTo = (category, feature) => {
+  const definition = FEATURES[feature];
+  if (!definition) return false;
+  return definition.categories === ALL_CATEGORIES || definition.categories.includes(category);
+};
 
 /** The category switch alone (no row = off). */
 const isCategoryEnabled = async (category, feature) => {
@@ -55,7 +67,7 @@ const isEnabled = async (category, feature, businessId = null) => {
 
 /** Every feature that applies to `category`, with its current state. */
 const listForCategory = async (category) => {
-  const applicable = Object.entries(FEATURES).filter(([, f]) => f.categories.includes(category));
+  const applicable = Object.entries(FEATURES).filter(([key]) => appliesTo(category, key));
   if (applicable.length === 0) return [];
   const { data, error } = await supabase
     .from('category_features').select('feature, is_enabled, updated_at').eq('category', category);

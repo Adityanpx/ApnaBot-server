@@ -7,18 +7,14 @@
 //
 // Messages go as plain text while the parent's 24-hour window is open (free),
 // else as the approved template (charged to the wallet like a broadcast),
-// else not at all — the booking's reminder_note says why.
+// else not at all — the booking's reminder_note says why
+// (windowAwareSend.service.js does the sending).
 const supabase = require('../config/supabase');
-const config = require('../config/env');
 const businessService = require('./business.service');
-const usageService = require('./usage.service');
 const socketService = require('./socket.service');
-const walletService = require('./wallet.service');
-const rateCardService = require('./rateCard.service');
 const customerPipelineService = require('./customerPipeline.service');
-const whatsappService = require('./whatsapp.service');
 const { getReminderTemplate } = require('./demoReminderTemplate.service');
-const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
+const { isConnected, sendWindowAwareMessage } = require('./windowAwareSend.service');
 const { scheduleDemoReminder, removeDemoReminder } = require('../queues/demoReminder.queue');
 const { demoReminderFor } = require('../utils/coachingBotSettings');
 const {
@@ -28,7 +24,6 @@ const {
 const { toCamelCase } = require('../utils/caseConvert');
 const logger = require('../utils/logger');
 
-const FREE_FORM_WINDOW_MS = 24 * 60 * 60 * 1000; // same as message.controller.js
 const MIN_REMINDER_LEAD_MS = 60 * 1000;
 const OPEN_STATUSES = ['pending', 'confirmed'];
 
@@ -40,29 +35,14 @@ const loadPublishedReminder = async (businessId) => {
   return data && data.published_at ? demoReminderFor(data.published_settings && data.published_settings.settings) : null;
 };
 
-/** Records a bot message in the chat and pushes it to the dashboard. */
-const recordOutbound = async (business, booking, customerRow, text, status) => {
-  const { data: messageRow, error } = await supabase.from('messages').insert({
-    business_id: business.id,
-    customer_id: booking.customer_id,
-    customer_number: booking.customer_number,
-    direction: 'outbound',
-    type: 'text',
-    content: text,
-    status,
-    sender_type: 'bot',
-    is_read: true
-  }).select().single();
-  if (error) throw error;
-  const message = toCamelCase(messageRow);
-  try {
-    socketService.emitToBusiness(business.id.toString(), 'new_message', {
-      customer: toCamelCase(customerRow), message, customerNumber: booking.customer_number
-    });
-  } catch (socketError) {
-    logger.error('Error emitting new_message socket event:', socketError);
-  }
-  return message;
+// What the parent is told when nothing was sent (bookings.reminder_note /
+// the setDemoTime response), per windowAwareSend.service.js code.
+const NOT_SENT_REASONS = {
+  not_connected: 'WhatsApp is not connected.',
+  blocked: 'This parent is blocked.',
+  no_template: "The parent hasn't messaged in the last 24 hours, and WhatsApp hasn't approved the reminder message yet.",
+  low_balance: 'Wallet balance is too low to send the reminder message.',
+  rejected: 'WhatsApp did not accept the message.'
 };
 
 /**
@@ -73,70 +53,27 @@ const recordOutbound = async (business, booking, customerRow, text, status) => {
  * @returns {Promise<{ sent: 'text'|'template' } | { sent: false, reason: string }>}
  */
 const sendToParent = async (business, booking, details, textFor) => {
-  if (!business.isWhatsappConnected || !business.phoneNumberId) return { sent: false, reason: 'WhatsApp is not connected.' };
+  if (!isConnected(business)) return { sent: false, reason: NOT_SENT_REASONS.not_connected };
 
   const { data: customerRow, error: customerErr } = await supabase
     .from('customers').select('*').eq('id', booking.customer_id).maybeSingle();
   if (customerErr) throw customerErr;
   if (!customerRow) return { sent: false, reason: 'Parent not found.' };
-  if (customerRow.is_blocked) return { sent: false, reason: 'This parent is blocked.' };
 
-  const windowOpen = customerRow.last_message_at &&
-    Date.now() < new Date(customerRow.last_message_at).getTime() + FREE_FORM_WINDOW_MS;
-
-  if (windowOpen) {
-    const text = textFor(customerRow.preferred_language || null);
-    const message = await recordOutbound(business, booking, customerRow, text, 'sent');
-    await addToWhatsappQueue({
-      businessId: business.id,
-      phoneNumberId: business.phoneNumberId,
-      encryptedAccessToken: business.accessToken,
-      to: booking.customer_number,
-      message: text,
-      type: 'text',
-      messageId: message.id
-    });
-    usageService.incrementUsage(business.id, 'outbound').catch(err => logger.error('Error incrementing outbound usage:', err));
-    return { sent: 'text' };
-  }
-
-  const template = await getReminderTemplate(business.id);
-  if (!template || template.status !== 'approved') {
-    return {
-      sent: false,
-      reason: "The parent hasn't messaged in the last 24 hours, and WhatsApp hasn't approved the reminder message yet."
-    };
-  }
-
-  const ratePaise = config.WALLET_BILLING_ENABLED
-    ? await rateCardService.getRateForMessage('IN', template.category.toLowerCase())
-    : 0;
-  if (ratePaise > 0) {
-    try {
-      await walletService.debitWallet(business.id, ratePaise, booking.id, `Demo message for booking ${booking.booking_code}`);
-    } catch (debitErr) {
-      if (debitErr.message && debitErr.message.includes('Insufficient wallet balance')) {
-        return { sent: false, reason: 'Wallet balance is too low to send the reminder message.' };
-      }
-      throw debitErr;
-    }
-  }
-
-  try {
-    await whatsappService.sendTemplateMessage(
-      business.phoneNumberId, business.accessToken, booking.customer_number, template.name, template.language,
-      [{ type: 'body', parameters: templateParams(details).map(t => ({ type: 'text', text: t })) }]
-    );
-  } catch (sendErr) {
-    if (ratePaise > 0) {
-      await walletService.refundToWallet(business.id, ratePaise, booking.id, `Refund: demo message for booking ${booking.booking_code} not sent`)
-        .catch(err => logger.error('Demo reminder: refund failed', err));
-    }
-    return { sent: false, reason: 'WhatsApp did not accept the message.' };
-  }
-  await recordOutbound(business, booking, customerRow, templateText(details), 'sent');
-  usageService.incrementUsage(business.id, 'outbound').catch(err => logger.error('Error incrementing outbound usage:', err));
-  return { sent: 'template' };
+  const result = await sendWindowAwareMessage(business, customerRow, {
+    textFor,
+    template: () => getReminderTemplate(business.id),
+    templateParams: templateParams(details),
+    templateText: templateText(details),
+    billing: {
+      referenceId: booking.id,
+      notes: `Demo message for booking ${booking.booking_code}`,
+      refundNotes: `Refund: demo message for booking ${booking.booking_code} not sent`
+    },
+    bookingId: booking.id
+  });
+  // Only { sent } — the setDemoTime response and reminder outcome stay as before.
+  return result.sent ? { sent: result.sent } : { sent: false, reason: NOT_SENT_REASONS[result.code] };
 };
 
 /**

@@ -94,6 +94,12 @@ module.exports = {
   // (see app.js), so the whole feature switches off in one place without
   // touching any existing route.
   ENABLE_AI_FLOW_GEN: process.env.ENABLE_AI_FLOW_GEN === 'true',
+  // Follow-up automations sweeper (sends due follow-ups). Off by default and
+  // must stay off everywhere except the one production server: unlike the
+  // BullMQ queues (kept apart by QUEUE_NAMESPACE), the sweeper reads the
+  // database directly, so a local run pointed at the production Supabase
+  // would message real customers. Not read anywhere yet.
+  ENABLE_FOLLOWUP_SWEEPER: process.env.ENABLE_FOLLOWUP_SWEEPER === 'true',
   // (Bot Builder + Courses are switched per category from Super Admin —
   // category_features — not by an environment variable.)
   // Optional: configurable ceiling on recipients per broadcast send. See the

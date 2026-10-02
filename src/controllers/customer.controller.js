@@ -26,10 +26,12 @@ const withWindowExpiresAt = (customer) => ({
     : null
 });
 
-// Mirrors broadcast.controller.js's exact send-audience filter
-// (opted_in=true AND is_blocked=false) — kept in one place so the two can't
-// drift apart. Takes a raw (snake_case) customer row.
-const isBroadcastEligible = (customer) => customer.opted_in === true && customer.is_blocked !== true;
+// Mirrors broadcastAudience.service.js#resolveAudience's exact send-audience
+// filter (opted_in=true AND is_blocked=false AND opted_out_at IS NULL) — kept
+// in one place so the two can't drift apart. Takes a raw (snake_case)
+// customer row.
+const isBroadcastEligible = (customer) =>
+  customer.opted_in === true && customer.is_blocked !== true && !customer.opted_out_at;
 
 const buildBookingStatsByCustomer = (bookingRows) => {
   const stats = {};
@@ -107,9 +109,10 @@ const getCustomers = async (req, res, next) => {
       query = query.eq('opted_in', optedIn === 'true');
     }
     if (broadcastEligible === 'true') {
-      // Mirrors isBroadcastEligible() below — opted_in && !is_blocked are
-      // both real columns, so this filters at the query level like isBlocked.
-      query = query.eq('opted_in', true).eq('is_blocked', false);
+      // Mirrors isBroadcastEligible() above — opted_in, is_blocked and
+      // opted_out_at are all real columns, so this filters at the query level
+      // like isBlocked.
+      query = query.eq('opted_in', true).eq('is_blocked', false).is('opted_out_at', null);
     }
     if (pipelineStage !== undefined) {
       if (!PIPELINE_STAGES.includes(pipelineStage)) {
@@ -167,7 +170,7 @@ const getCustomerSummary = async (req, res, next) => {
     const [totalRes, optedInRes, broadcastEligibleRes] = await Promise.all([
       supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId),
       supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).eq('opted_in', true),
-      supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).eq('opted_in', true).eq('is_blocked', false)
+      supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).eq('opted_in', true).eq('is_blocked', false).is('opted_out_at', null)
     ]);
     if (totalRes.error) throw totalRes.error;
     if (optedInRes.error) throw optedInRes.error;

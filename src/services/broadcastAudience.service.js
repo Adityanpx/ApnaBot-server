@@ -3,7 +3,8 @@
 // recipients preview and the send (broadcast.controller.js), so the count an
 // owner sees is exactly who gets the message.
 //
-//   all_customers      every opted-in, non-blocked customer (as before)
+//   all_customers      every opted-in, non-blocked customer who hasn't sent
+//                      STOP (customers.opted_out_at, cleared by START)
 //   coaching_requests  those of them with a matching Free demo / Admission
 //                      request (bookings.form_key), optionally for one
 //                      course (bookings.fields.course), optionally skipping
@@ -51,12 +52,13 @@ const requestCustomerIds = async (businessId, params) => {
 };
 
 /**
- * The opted-in, non-blocked customers a broadcast with this audience reaches.
+ * The opted-in, non-blocked, not-opted-out customers a broadcast with this
+ * audience reaches.
  * @returns {Promise<{ id, whatsapp_number, name }[]>}
  */
 const resolveAudience = async (businessId, filter, params) => {
   const base = () => supabase.from('customers').select('id, whatsapp_number, name')
-    .eq('business_id', businessId).eq('opted_in', true).eq('is_blocked', false);
+    .eq('business_id', businessId).eq('opted_in', true).eq('is_blocked', false).is('opted_out_at', null);
   if (filter !== 'coaching_requests') {
     const { data, error } = await base();
     if (error) throw error;
