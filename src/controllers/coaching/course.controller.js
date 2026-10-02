@@ -16,6 +16,26 @@ const MAX_COURSES_PER_BUSINESS = 50;
 
 const duplicateName = (name) => `You already have a course named "${name}".`;
 
+// Courses are returned with their photo's URL (business_media, via
+// image_media_id) for the dashboard previews.
+const COURSE_SELECT = '*, image:business_media(url)';
+const toCourse = ({ image, ...row }) => ({ ...toCamelCase(row), imageUrl: image?.url || null });
+
+const MEDIA_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Checks a course photo: null/'' clears it; otherwise it must be an image in
+ * this business's media library. Returns { mediaId } or { error }.
+ */
+const checkCourseImage = async (businessId, imageMediaId) => {
+  if (imageMediaId === null || imageMediaId === '') return { mediaId: null };
+  if (typeof imageMediaId !== 'string' || !MEDIA_ID_PATTERN.test(imageMediaId)) return { error: 'imageMediaId must be a media id' };
+  const { data, error } = await supabase
+    .from('business_media').select('id').eq('id', imageMediaId).eq('business_id', businessId).eq('media_type', 'image').maybeSingle();
+  if (error) throw error;
+  return data ? { mediaId: data.id } : { error: 'That photo was not found in your media library (it must be an image).' };
+};
+
 const loadCourse = async (businessId, id) => {
   const { data, error } = await supabase
     .from('business_courses').select('*').eq('id', id).eq('business_id', businessId).maybeSingle();
@@ -71,10 +91,10 @@ const getCourseCatalogForBusiness = async (req, res, next) => {
 const getCourses = async (req, res, next) => {
   try {
     const { data, error } = await supabase
-      .from('business_courses').select('*').eq('business_id', req.user.businessId)
+      .from('business_courses').select(COURSE_SELECT).eq('business_id', req.user.businessId)
       .order('order', { ascending: true }).order('created_at', { ascending: true });
     if (error) throw error;
-    return successResponse(res, 200, { courses: (data || []).map(toCamelCase) });
+    return successResponse(res, 200, { courses: (data || []).map(toCourse) });
   } catch (error) {
     logger.error('Error in getCourses:', error);
     next(error);
@@ -120,6 +140,11 @@ const createCourse = async (req, res, next) => {
         group_name: cleanText(body.groupName),
         ...structuredColumns(body)
       };
+      if (body.imageMediaId !== undefined) {
+        const image = await checkCourseImage(businessId, body.imageMediaId);
+        if (image.error) return errorResponse(res, 400, image.error);
+        row.image_media_id = image.mediaId;
+      }
     }
 
     const { data: course, error } = await supabase.from('business_courses').insert({
@@ -127,12 +152,12 @@ const createCourse = async (req, res, next) => {
       business_id: businessId,
       order: await nextOrder(businessId),
       is_active: true
-    }).select().single();
+    }).select(COURSE_SELECT).single();
     if (error) {
       if (error.code === UNIQUE_VIOLATION) return errorResponse(res, 409, duplicateName(row.name));
       throw error;
     }
-    return successResponse(res, 201, toCamelCase(course), 'Course added');
+    return successResponse(res, 201, toCourse(course), 'Course added');
   } catch (error) {
     logger.error('Error in createCourse:', error);
     next(error);
@@ -142,8 +167,9 @@ const createCourse = async (req, res, next) => {
 /**
  * PUT /api/courses/:id
  * Body: any of { name, description, details, groupName, ageGroup, duration,
- * fees, mode, moreDetails, batches, showDemoButton, showAdmissionButton,
- * isActive }. batches replaces the whole list.
+ * fees, mode, moreDetails, batches, imageMediaId, showDemoButton,
+ * showAdmissionButton, isActive }. batches replaces the whole list;
+ * imageMediaId: an image in this business's media library, or null (no photo).
  * '' / null clears a text field (groupName: no group; mode: not shown). Changes the business's own copy only —
  * the WhatsApp bot shows them after the next Bot Builder Publish; the
  * service form's course dropdown shows them immediately.
@@ -167,18 +193,23 @@ const updateCourse = async (req, res, next) => {
     if (body.details !== undefined) updates.details = cleanText(body.details);
     if (body.groupName !== undefined) updates.group_name = cleanText(body.groupName);
     Object.assign(updates, structuredColumns(body));
+    if (body.imageMediaId !== undefined) {
+      const image = await checkCourseImage(businessId, body.imageMediaId);
+      if (image.error) return errorResponse(res, 400, image.error);
+      updates.image_media_id = image.mediaId;
+    }
     if (body.showDemoButton !== undefined) updates.show_demo_button = body.showDemoButton;
     if (body.showAdmissionButton !== undefined) updates.show_admission_button = body.showAdmissionButton;
     if (body.isActive !== undefined) updates.is_active = body.isActive;
     if (Object.keys(updates).length === 0) return errorResponse(res, 400, 'No recognized fields to update');
 
     const { data: course, error } = await supabase
-      .from('business_courses').update(updates).eq('id', id).eq('business_id', businessId).select().single();
+      .from('business_courses').update(updates).eq('id', id).eq('business_id', businessId).select(COURSE_SELECT).single();
     if (error) {
       if (error.code === UNIQUE_VIOLATION) return errorResponse(res, 409, duplicateName(updates.name));
       throw error;
     }
-    return successResponse(res, 200, toCamelCase(course), 'Course updated');
+    return successResponse(res, 200, toCourse(course), 'Course updated');
   } catch (error) {
     logger.error('Error in updateCourse:', error);
     next(error);

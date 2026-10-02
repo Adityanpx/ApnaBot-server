@@ -154,3 +154,23 @@ rejects('keyword collides with tap-only keyword', s => { s.forms[0].keyword = 'p
 rejects('aliases without keyword', s => { s.pages[1].aliases = ['abacus']; }, /aliases need a keyword/);
 rejects('duplicate page id', s => { s.pages[2].id = 'c_abacus'; }, /duplicate/);
 rejects('duplicate choice titles', s => { s.pages[1].buttons[1].title = 'free demo'; }, /duplicates another choice/);
+
+test('page mediaId: a media id on a buttons/text page; never on a list page', () => {
+  const photo = '11111111-2222-4333-8444-555555555555';
+  const base = () => ({
+    version: 2, greeting: { text: 'Hi' },
+    menu: [{ title: 'A', target: { type: 'page', id: 'a' } }, { title: 'B', target: { type: 'page', id: 'b' } }],
+    pages: [
+      { id: 'a', text: 'Page A', buttons: [{ title: 'Main menu', target: { type: 'menu' } }] },
+      { id: 'b', text: 'Page B', list: [{ title: 'Main menu', target: { type: 'menu' } }] }
+    ],
+    forms: []
+  });
+  const ok = base(); ok.pages[0].mediaId = photo;
+  assert.equal(validateFlowSpecV2(ok), null);
+  assert.equal(compileFlowSpecV2(ok).replyNodes.find(n => n.label === 'Page A').mediaId, photo);
+  const onList = base(); onList.pages[1].mediaId = photo;
+  assert.match(validateFlowSpecV2(onList), /a list page can't have an image/);
+  const bad = base(); bad.pages[0].mediaId = 'not-an-id';
+  assert.match(validateFlowSpecV2(bad), /mediaId must be a media id/);
+});

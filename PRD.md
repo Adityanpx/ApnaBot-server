@@ -385,6 +385,12 @@ question nodes) plus web-form links for Free demo / Admission.
   catalog entries are moved over by `scripts/convertCatalogToStructured.js`
   (dry run / `--confirm`); business courses switch when the owner fills the
   fields in.
+- **Course photos (`business_courses.image_media_id` → `business_media`):**
+  an optional image, checked to be an image of the same business, sent
+  above the WhatsApp course page (FlowSpec v2 page `mediaId` → node
+  `mediaId`, resolved to `image_url` by `saveFullGraph`; button/text pages
+  only — WhatsApp lists can't carry an image). Courses API returns
+  `imageUrl` for previews; the draft chat returns `imageUrl` too.
 - **Institute presets ("What kind of institute are you?"):** Skill classes /
   Competitive exams / School tuition (`utils/coachingInstitutePresets.js`,
   returned in `GET /api/bot-settings` → `presets.coaching.institutePresets`).

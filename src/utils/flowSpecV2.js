@@ -15,7 +15,7 @@
 //     version: 2,
 //     greeting: { text },                                  // menu body
 //     menu: [ { title, description?, target } ],            // 1..10; <=3 -> buttons, 4..10 -> list
-//     pages: [ { id, text, keyword?, aliases?,
+//     pages: [ { id, text, keyword?, aliases?, mediaId?,      // mediaId: business_media image above the message (not on list pages)
 //                buttons?: [ { title, target } ],           // 1..3, OR
 //                list?: [ { title, description?, target } ] } ],  // 1..10
 //     forms: [ { id, text, buttonText, keyword?, aliases?, fields } ],  // fields: flowFieldsValidation.js shape
@@ -31,6 +31,8 @@ const TARGET_TYPES = ['page', 'form', 'menu', 'location'];
 const LOCATION_TAP_KEYWORD = 'menu_location';
 const MENU_ID = 'tmp:menu';
 const pageTapKeyword = (id) => `page_${id}`;
+// business_media.id — saveFullGraph re-checks it is an image of this business.
+const MEDIA_ID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const formTapKeyword = (id) => `form_${id}`;
 const nodeIdFor = (target) => {
   if (target.type === 'menu') return MENU_ID;
@@ -135,6 +137,11 @@ const validateFlowSpecV2 = (spec) => {
       const err = validateChoices(page.list, `${at}.list`, { asButtons: false, allowDescription: true, targetExists });
       if (err) return err;
     }
+    if (page.mediaId !== undefined && page.mediaId !== null) {
+      if (typeof page.mediaId !== 'string' || !MEDIA_ID_PATTERN.test(page.mediaId)) return `${at}.mediaId must be a media id`;
+      // WhatsApp list messages can't carry an image header.
+      if (hasList) return `${at}: a list page can't have an image`;
+    }
   }
 
   for (let i = 0; i < forms.length; i++) {
@@ -234,7 +241,9 @@ const compileFlowSpecV2 = (spec) => {
     nodes.set(`tmp:page:${page.id}`, {
       id: `tmp:page:${page.id}`, nodeType: 'reply',
       ...(typedFields(page) || { keyword: pageTapKeyword(page.id), matchType: 'exact', hindiAliases: [] }),
-      replyKind: 'text', contentType: hasButtons ? 'buttons' : hasList ? 'list' : 'text', label: page.text.trim()
+      replyKind: 'text', contentType: hasButtons ? 'buttons' : hasList ? 'list' : 'text', label: page.text.trim(),
+      // Optional image sent above the message (saveFullGraph resolves image_url)
+      ...(page.mediaId ? { mediaId: page.mediaId } : {})
     });
   }
   for (const form of forms) {

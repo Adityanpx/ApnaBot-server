@@ -13,6 +13,8 @@
 // UI renders both, plus two optional keys:
 //   form: the form as the parent will see it, when a form button is tapped
 //   note: a preview-only explanation (e.g. "on WhatsApp an AI reply may be sent")
+//   imageUrl: a course photo sent above the message on WhatsApp
+const supabase = require('../config/supabase');
 const botSettingsService = require('./botSettings.service');
 const businessService = require('./business.service');
 const { matchNodeInList } = require('./chatbot.service');
@@ -80,8 +82,19 @@ const renderNode = (draft, node, business) => {
   return {
     replyText: applyMessageTemplateWithFooter(getLocalizedText(node, 'label', null), business, null),
     ...renderOptions(draft, node),
+    // A course photo, sent above the message on WhatsApp.
+    ...(node.mediaId && draft.mediaUrls[node.mediaId] ? { imageUrl: draft.mediaUrls[node.mediaId] } : {}),
     session: null
   };
+};
+
+/** URLs of the draft's page images (business_media), one query; {} when none. */
+const loadMediaUrls = async (businessId, nodes) => {
+  const ids = [...new Set(nodes.map(n => n.mediaId).filter(Boolean))];
+  if (ids.length === 0) return {};
+  const { data, error } = await supabase.from('business_media').select('id, url').eq('business_id', businessId).in('id', ids);
+  if (error) throw error;
+  return Object.fromEntries((data || []).map(m => [m.id, m.url]));
 };
 
 /** The form a form node opens, as the parent sees it (course list filled in). */
@@ -113,6 +126,7 @@ const previewMessage = async ({ businessId, graphBusiness, preset, settings, mes
   const business = await businessService.getBusinessById(businessId);
   if (!business) return { status: 404, error: 'Business not found' };
   const draft = toDraftGraph(built.graph);
+  draft.mediaUrls = await loadMediaUrls(businessId, draft.nodes);
 
   // A tapped form button: show the form instead of creating a link.
   if (buttonReplyId && buttonReplyId.startsWith(DRAFT_FORM_PREFIX)) {

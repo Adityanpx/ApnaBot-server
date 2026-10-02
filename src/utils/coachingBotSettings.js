@@ -358,7 +358,11 @@ const mapCoachingSettingsToSpec = (settings, { businessName, courses } = {}) => 
     if (c.showDemoButton && formEnabled('demo')) buttons.push(formButton('demo'));
     if (c.showAdmissionButton && formEnabled('admission')) buttons.push(formButton('admission'));
     buttons.push(MAIN_MENU);
-    pages.push({ id: `course_${i + 1}`, text: coursePageText(c), buttons });
+    pages.push({
+      id: `course_${i + 1}`, text: coursePageText(c), buttons,
+      // Course photo, sent above the course page (business_courses.image_media_id)
+      ...(c.imageMediaId ? { mediaId: c.imageMediaId } : {})
+    });
   });
   const courseRow = (i) => ({
     title: courses[i].name.trim(),

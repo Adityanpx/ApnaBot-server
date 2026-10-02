@@ -381,3 +381,16 @@ test('course page shows its batches', () => {
   assert.equal(pageById(spec, 'course_1').text, 'Abacus details\n\n🗓 Batches:\n• Mon–Fri 5–6 pm');
   assert.equal(pageById(spec, 'course_2').text, 'Vedic Maths details');
 });
+
+// ---- Course photos ----
+test('course photo: sent above the course page; not on the course list', () => {
+  const photo = '11111111-2222-4333-8444-555555555555';
+  const { spec, error } = map(settings(), [course('Abacus', { imageMediaId: photo }), course('Vedic Maths')]);
+  assert.equal(error, null);
+  assert.equal(pageById(spec, 'course_1').mediaId, photo);
+  assert.equal(pageById(spec, 'course_2').mediaId, undefined);
+  assert.equal(pageById(spec, 'courses').mediaId, undefined);
+  const node = compileFlowSpecV2(spec).replyNodes.find(n => courseIndexFromPageKeyword(n.keyword) === 0);
+  assert.equal(node.mediaId, photo);
+  assert.equal(node.contentType, 'buttons');
+});

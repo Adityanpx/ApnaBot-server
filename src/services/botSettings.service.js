@@ -37,7 +37,7 @@ const loadBusiness = async (businessId) => {
   return data;
 };
 
-const OPTIONAL_COURSE_KEYS = ['groupName', 'ageGroup', 'duration', 'fees', 'mode', 'moreDetails', 'batches'];
+const OPTIONAL_COURSE_KEYS = ['groupName', 'ageGroup', 'duration', 'fees', 'mode', 'moreDetails', 'batches', 'imageMediaId'];
 
 /**
  * The business's ACTIVE courses (business_courses) in display order, in the
@@ -47,7 +47,7 @@ const OPTIONAL_COURSE_KEYS = ['groupName', 'ageGroup', 'duration', 'fees', 'mode
 const loadActiveCourses = async (businessId) => {
   const { data, error } = await supabase
     .from('business_courses')
-    .select('name, description, details, show_demo_button, show_admission_button, group_name, age_group, duration, fees, mode, more_details, batches')
+    .select('name, description, details, show_demo_button, show_admission_button, group_name, age_group, duration, fees, mode, more_details, batches, image_media_id')
     .eq('business_id', businessId).eq('is_active', true)
     .order('order', { ascending: true }).order('created_at', { ascending: true });
   if (error) throw error;
