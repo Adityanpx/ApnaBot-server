@@ -33,6 +33,7 @@ const { validateFlowSpecV2, pageTapKeyword } = require('./flowSpecV2');
 const { LIMITS } = require('./flowSpec');
 const { BUSINESS_COURSES_SOURCE, COURSE_BATCHES_SOURCE } = require('./flowFieldsValidation');
 const { hasPlaceholder, coursePageText } = require('./courseValidation');
+const { INSTITUTE_TYPES } = require('./coachingInstitutePresets');
 
 const MAX_COURSES = LIMITS.MAX_LIST_ROWS;
 const MAX_INTRO = 300;
@@ -127,6 +128,12 @@ const validateCoachingSettings = (settings, { forPublish = false } = {}) => {
   }
 
   if (settings.courses !== undefined) return 'Courses are managed in "My courses", not in bot settings';
+  // Which "kind of institute" preset the owner started from (optional).
+  if (settings.instituteType !== undefined && settings.instituteType !== null && !INSTITUTE_TYPES.includes(settings.instituteType)) {
+    return `instituteType must be one of: ${INSTITUTE_TYPES.join(', ')}`;
+  }
+  // Presets (and catalog text) mark what to fill in with "____" — never publish one.
+  if (forPublish && hasPlaceholder(settings.welcomeMessage)) return 'Welcome message: fill in the blanks (____) before publishing';
 
   const sections = settings.sections;
   if (!sections || typeof sections !== 'object' || Array.isArray(sections)) return 'sections must be an object';
@@ -136,6 +143,7 @@ const validateCoachingSettings = (settings, { forPublish = false } = {}) => {
     if (!sec || typeof sec !== 'object' || typeof sec.enabled !== 'boolean') return `${label}: enabled must be true or false`;
     if (!isOptionalString(sec.text)) return `${label}: text must be text`;
     if (forPublish && sec.enabled && !isNonEmptyString(sec.text)) return `${label} is switched on but has no text`;
+    if (forPublish && sec.enabled && hasPlaceholder(sec.text)) return `${label}: fill in the blanks (____) before publishing`;
     if (isNonEmptyString(sec.text) && len(sec.text) > LIMITS.INTERACTIVE_BODY) {
       return `${label}: text must be ${LIMITS.INTERACTIVE_BODY} characters or less`;
     }
@@ -152,6 +160,7 @@ const validateCoachingSettings = (settings, { forPublish = false } = {}) => {
     if (new Set(form.fields).size !== form.fields.length) return `${label}: a field is ticked twice`;
     if (!isOptionalString(form.note)) return `${label}: note must be text`;
     if (isNonEmptyString(form.note) && len(form.note) > MAX_NOTE) return `${label}: note must be ${MAX_NOTE} characters or less`;
+    if (forPublish && form.enabled && hasPlaceholder(form.note)) return `${label}: fill in the blanks (____) in the note before publishing`;
     if (form.fields.includes('targetExam')) {
       const opts = form.targetExamOptions;
       if (!Array.isArray(opts) || opts.length < 2 || opts.some(o => !isNonEmptyString(o))) {
@@ -191,6 +200,9 @@ const validateCoachingSettings = (settings, { forPublish = false } = {}) => {
       if (isNonEmptyString(item.answer) && len(item.answer) > FAQ_ANSWER_MAX) return `${at}: answer must be ${FAQ_ANSWER_MAX} characters or less`;
       if (forPublish && faq.enabled && (!isNonEmptyString(item.question) || !isNonEmptyString(item.answer))) {
         return `${at} needs both a question and an answer`;
+      }
+      if (forPublish && faq.enabled && (hasPlaceholder(item.question) || hasPlaceholder(item.answer))) {
+        return `${at}: fill in the blanks (____) before publishing`;
       }
       if (isNonEmptyString(item.question)) {
         const key = item.question.trim().toLowerCase();

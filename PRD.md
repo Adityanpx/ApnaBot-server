@@ -385,6 +385,15 @@ question nodes) plus web-form links for Free demo / Admission.
   catalog entries are moved over by `scripts/convertCatalogToStructured.js`
   (dry run / `--confirm`); business courses switch when the owner fills the
   fields in.
+- **Institute presets ("What kind of institute are you?"):** Skill classes /
+  Competitive exams / School tuition (`utils/coachingInstitutePresets.js`,
+  returned in `GET /api/bot-settings` → `presets.coaching.institutePresets`).
+  Applying one replaces sections, forms and FAQ (welcome message + courses
+  kept; asks first if anything exists) and records optional
+  `settings.instituteType`; the Courses catalog picker shows that preset's
+  `suggestedCourses` first. Preset text carries "____" blanks — publish now
+  refuses ____ in the welcome message, switched-on sections, enabled form
+  notes and FAQ (drafts may keep them).
 - **Course batches (`batches` jsonb list of labels, max 10 × 72 chars, on
   both course tables):** listed as a "🗓 Batches" section after the course
   page details. Bot Builder forms' "Batch" question is a dropdown with

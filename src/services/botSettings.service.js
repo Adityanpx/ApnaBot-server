@@ -13,6 +13,7 @@ const { readBusinessGraphRows } = require('./flowSnapshot.service');
 const aiFlowService = require('./aiFlow.service');
 const { compileFlowSpecV2 } = require('../utils/flowSpecV2');
 const { validateCoachingSettings, mapCoachingSettingsToSpec, FIELD_LIBRARY } = require('../utils/coachingBotSettings');
+const { listInstitutePresets } = require('../utils/coachingInstitutePresets');
 const logger = require('../utils/logger');
 
 const PRESETS = {
@@ -20,7 +21,9 @@ const PRESETS = {
     category: 'coaching',
     validate: validateCoachingSettings,
     mapToSpec: mapCoachingSettingsToSpec,
-    fieldLibrary: FIELD_LIBRARY
+    fieldLibrary: FIELD_LIBRARY,
+    // "What kind of institute are you?" starting points (coachingInstitutePresets.js)
+    institutePresets: listInstitutePresets()
   }
 };
 
@@ -107,7 +110,9 @@ const getSettings = async ({ businessId }) => {
       hasUnpublishedChanges: stableStringify(row.published_settings) !==
         stableStringify({ settings: row.settings, courses: await loadActiveCourses(businessId) })
     } : null,
-    presets: Object.fromEntries(Object.entries(PRESETS).map(([name, p]) => [name, { category: p.category, fieldLibrary: p.fieldLibrary }]))
+    presets: Object.fromEntries(Object.entries(PRESETS).map(([name, p]) => [name, {
+      category: p.category, fieldLibrary: p.fieldLibrary, institutePresets: p.institutePresets
+    }]))
   };
 };
 
