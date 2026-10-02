@@ -1,11 +1,14 @@
 // Super Admin on/off feature switches per business category
-// (category_features, 20260929140000_category_features.sql). No row = off.
+// (category_features, 20260929140000_category_features.sql; no row = off),
+// with optional per-business overrides (business_features,
+// 20261002120000_business_features.sql; no row = follow the category).
 // Not to be confused with config/categoryFeatures.js, which holds per-
 // category DEFAULT values for business_travel_settings columns.
 const supabase = require('../config/supabase');
 
 // Every switchable feature, with the categories it applies to. The DB check
-// constraint (category_features.feature) must list the same keys.
+// constraints (category_features.feature, business_features.feature) must
+// list the same keys.
 const FEATURES = {
   bot_builder: {
     label: 'Bot Builder & Courses',
@@ -14,18 +17,40 @@ const FEATURES = {
   }
 };
 
-/**
- * Whether `feature` is switched on for `category`. Read on every call (no
- * cache) so a Super Admin toggle applies immediately on every server
- * instance; callers are dashboard-frequency routes, not the webhook.
- */
-const isEnabled = async (category, feature) => {
-  if (!FEATURES[feature] || !FEATURES[feature].categories.includes(category)) return false;
+const appliesTo = (category, feature) => !!FEATURES[feature] && FEATURES[feature].categories.includes(category);
+
+/** The category switch alone (no row = off). */
+const isCategoryEnabled = async (category, feature) => {
   const { data, error } = await supabase
     .from('category_features').select('is_enabled')
     .eq('category', category).eq('feature', feature).maybeSingle();
   if (error) throw error;
   return !!data?.is_enabled;
+};
+
+/** The business's override: true / false, or null when it follows its category. */
+const getBusinessOverride = async (businessId, feature) => {
+  const { data, error } = await supabase
+    .from('business_features').select('is_enabled')
+    .eq('business_id', businessId).eq('feature', feature).maybeSingle();
+  if (error) throw error;
+  return data ? data.is_enabled : null;
+};
+
+/**
+ * Whether `feature` is on for a business in `category`: never for a category
+ * the feature doesn't apply to; otherwise the business's own override when it
+ * has one (businessId given), else the category switch. Read on every call (no
+ * cache) so a Super Admin toggle applies immediately on every server
+ * instance; callers are dashboard-frequency routes, not the webhook.
+ */
+const isEnabled = async (category, feature, businessId = null) => {
+  if (!appliesTo(category, feature)) return false;
+  if (businessId) {
+    const override = await getBusinessOverride(businessId, feature);
+    if (override !== null) return override;
+  }
+  return isCategoryEnabled(category, feature);
 };
 
 /** Every feature that applies to `category`, with its current state. */
@@ -53,4 +78,43 @@ const setEnabled = async (category, feature, isEnabledValue) => {
   if (error) throw error;
 };
 
-module.exports = { FEATURES, isEnabled, listForCategory, setEnabled };
+/**
+ * Every feature that applies to this business's category: the category
+ * switch, the business's override (true/false/null) and the result.
+ */
+const listForBusiness = async (businessId, category) => {
+  const categoryList = await listForCategory(category);
+  if (categoryList.length === 0) return [];
+  const { data, error } = await supabase
+    .from('business_features').select('feature, is_enabled, updated_at').eq('business_id', businessId);
+  if (error) throw error;
+  const overrides = new Map((data || []).map(r => [r.feature, r]));
+  return categoryList.map(f => {
+    const row = overrides.get(f.feature);
+    const override = row ? row.is_enabled : null;
+    return {
+      feature: f.feature,
+      label: f.label,
+      description: f.description,
+      categoryEnabled: f.isEnabled,
+      override,
+      isEnabled: override !== null ? override : f.isEnabled,
+      overrideUpdatedAt: row?.updated_at || null
+    };
+  });
+};
+
+/** Set (true/false) or remove (null) a business's override. */
+const setBusinessOverride = async (businessId, feature, override) => {
+  if (override === null) {
+    const { error } = await supabase.from('business_features').delete().eq('business_id', businessId).eq('feature', feature);
+    if (error) throw error;
+    return;
+  }
+  const { error } = await supabase
+    .from('business_features')
+    .upsert({ business_id: businessId, feature, is_enabled: override }, { onConflict: 'business_id,feature' });
+  if (error) throw error;
+};
+
+module.exports = { FEATURES, appliesTo, isEnabled, listForCategory, setEnabled, listForBusiness, setBusinessOverride };

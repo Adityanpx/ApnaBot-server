@@ -494,13 +494,14 @@ tracked as a deferred "future initiative" — it's built and live.
    engine.
 3. **`business_type_templates`'s current role is unclear** — see Data
    model reference above; not investigated this pass.
-4. **Per-business feature switches (decided 2026-09-29: later).** Today a
-   `category_features` switch (e.g. `bot_builder`) turns a feature on for
-   *every* business in the category at once. Planned next step: a
-   per-business override, set from the business's detail page in Super
-   Admin, so a feature can be piloted with chosen businesses before the
-   whole category. Not built yet — add it once there are several real
-   coaching businesses.
+4. ~~**Per-business feature switches**~~ — built 2026-10-02:
+   `business_features` (migration `20261002120000_business_features.sql`)
+   holds an optional per-business override that wins over the
+   `category_features` switch (no row = follow the category; only for
+   features that apply to the business's category). Set from Super Admin →
+   Businesses → <business> → Features (`GET/PUT
+   /api/admin/businesses/:id/features[/:feature] { override }`); checked by
+   `categoryFeature.middleware.js` via `categoryFeature.service.js#isEnabled`.
 5. **Bot Builder v1 limits:** at most 10 courses shown (no course groups
    yet), no brochure button, no preview chat for an unpublished draft,
    English-only generated text.

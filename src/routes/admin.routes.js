@@ -22,6 +22,7 @@ const {
   updatePlan,
   deletePlan
 } = require('../controllers/admin.controller');
+const categoryFeatureController = require('../controllers/categoryFeature.controller');
 
 // All admin routes — superadmin only
 router.use(protect, requireRole('superadmin'));
@@ -41,6 +42,11 @@ router.get('/businesses/:businessId/flow-snapshots',   getBusinessFlowSnapshots)
 
 // Manual preview-credit grants (additive - tops up previewCreditsPurchased)
 router.put('/businesses/:id/preview-credits',          grantPreviewCredits);
+
+// Per-business feature overrides (business_features) — win over the
+// category switch; { override: true | false | null }
+router.get('/businesses/:id/features',                 categoryFeatureController.getBusinessFeatures);
+router.put('/businesses/:id/features/:feature',        categoryFeatureController.setBusinessFeature);
 
 // Stats & Revenue
 router.get('/stats',                getPlatformStats);

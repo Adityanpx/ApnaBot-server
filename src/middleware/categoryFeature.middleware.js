@@ -14,7 +14,9 @@ const requireCategoryFeature = (feature) => async (req, res, next) => {
     const { data: business, error } = await supabase
       .from('businesses').select('business_category').eq('id', req.user.businessId).maybeSingle();
     if (error) throw error;
-    if (!business || !(await categoryFeatureService.isEnabled(business.business_category, feature))) {
+    // The business's own override (Super Admin → Businesses → Features) wins
+    // over its category's switch.
+    if (!business || !(await categoryFeatureService.isEnabled(business.business_category, feature, req.user.businessId))) {
       return errorResponse(res, 404, 'Not found');
     }
     next();
