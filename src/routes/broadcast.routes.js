@@ -11,6 +11,9 @@ router.get('/', protect, requireBusiness, broadcastController.getBroadcasts);
 // POST / - Create broadcast (draft)
 router.post('/', protect, requireBusiness, broadcastController.createBroadcast);
 
+// POST /audience-count - { audienceFilter?, audienceParams? } → { count }, before a draft exists
+router.post('/audience-count', protect, requireBusiness, broadcastController.getAudienceCount);
+
 // GET /:id/recipients-preview - Preview the opted-in audience before sending
 router.get('/:id/recipients-preview', protect, requireBusiness, broadcastController.getBroadcastRecipientsPreview);
 

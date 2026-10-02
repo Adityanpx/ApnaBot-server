@@ -5,6 +5,7 @@ const businessService = require('../services/business.service');
 const walletService = require('../services/wallet.service');
 const rateCardService = require('../services/rateCard.service');
 const { addToBroadcastQueue } = require('../queues/broadcast.queue');
+const { normalizeAudience, resolveAudience } = require('../services/broadcastAudience.service');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
@@ -53,11 +54,13 @@ const getBroadcasts = async (req, res, next) => {
 const createBroadcast = async (req, res, next) => {
   try {
     const businessId = req.user.businessId;
-    const { name, templateId, templateVariables, variableMapping } = req.body;
+    const { name, templateId, templateVariables, variableMapping, audienceFilter, audienceParams } = req.body;
 
     if (!name || !templateId) {
       return errorResponse(res, 400, 'name and templateId are required');
     }
+    const audience = normalizeAudience(audienceFilter, audienceParams);
+    if (audience.error) return errorResponse(res, 400, audience.error);
 
     const { data: templateRow, error: templateErr } = await supabase
       .from('message_templates').select('*').eq('id', templateId).eq('business_id', businessId).maybeSingle();
@@ -83,7 +86,9 @@ const createBroadcast = async (req, res, next) => {
       template_id: templateId,
       name,
       template_variables: templateVariables || [],
-      variable_mapping: variableMapping || null
+      variable_mapping: variableMapping || null,
+      // Only a non-default audience writes these (default = all opted-in customers).
+      ...(audience.filter !== 'all_customers' ? { audience_filter: audience.filter, audience_params: audience.params } : {})
     }).select().single();
     if (error) throw error;
 
@@ -136,13 +141,13 @@ const sendBroadcast = async (req, res, next) => {
       return errorResponse(res, 400, 'WhatsApp is not connected to this business');
     }
 
-    const { data: customers, error: customersErr } = await supabase
-      .from('customers').select('id, whatsapp_number, name')
-      .eq('business_id', businessId).eq('opted_in', true).eq('is_blocked', false);
-    if (customersErr) throw customersErr;
+    // Same audience the recipients preview showed (broadcastAudience.service.js).
+    const customers = await resolveAudience(businessId, broadcastRow.audience_filter, broadcastRow.audience_params);
 
     if (!customers || customers.length === 0) {
-      return errorResponse(res, 400, 'No opted-in customers to send this broadcast to');
+      return errorResponse(res, 400, broadcastRow.audience_filter === 'coaching_requests'
+        ? 'No opted-in parents match this audience'
+        : 'No opted-in customers to send this broadcast to');
     }
 
     const usesCustomerNameMapping = (broadcastRow.variable_mapping || []).some((entry) => entry.source === 'customer.name');
@@ -245,12 +250,7 @@ const getBroadcastRecipientsPreview = async (req, res, next) => {
       return errorResponse(res, 400, 'Only draft broadcasts can be previewed');
     }
 
-    const { data: customers, error: customersErr } = await supabase
-      .from('customers').select('id, whatsapp_number, name')
-      .eq('business_id', businessId).eq('opted_in', true).eq('is_blocked', false);
-    if (customersErr) throw customersErr;
-
-    const eligibleCustomers = customers || [];
+    const eligibleCustomers = await resolveAudience(businessId, broadcastRow.audience_filter, broadcastRow.audience_params);
 
     const result = {
       totalCount: eligibleCustomers.length,
@@ -296,10 +296,29 @@ const getBroadcast = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/broadcasts/audience-count
+ * Body: { audienceFilter?, audienceParams? } — how many opted-in customers an
+ * audience reaches, for the "New broadcast" form before a draft exists.
+ */
+const getAudienceCount = async (req, res, next) => {
+  try {
+    const { audienceFilter, audienceParams } = req.body || {};
+    const audience = normalizeAudience(audienceFilter, audienceParams);
+    if (audience.error) return errorResponse(res, 400, audience.error);
+    const customers = await resolveAudience(req.user.businessId, audience.filter, audience.params);
+    return successResponse(res, 200, { count: customers.length });
+  } catch (error) {
+    logger.error('Error in getAudienceCount:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getBroadcasts,
   createBroadcast,
   sendBroadcast,
   getBroadcastRecipientsPreview,
-  getBroadcast
+  getBroadcast,
+  getAudienceCount
 };

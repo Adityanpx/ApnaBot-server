@@ -394,6 +394,16 @@ question nodes) plus web-form links for Free demo / Admission.
   confirmed". **Bot Builder forms never use the business-wide advance
   payment** (a free demo never asks for money); every other web form and
   chat booking keeps it unchanged (no `formMeta.advance` key).
+- **Broadcasts to parents (`broadcasts.audience_filter = 'coaching_requests'`
+  + `audience_params { form: demo|admission|any, course, skipClosed }`):**
+  besides all opted-in customers, a coaching business (Courses switch on)
+  can broadcast to parents with a matching Free demo / Admission request
+  (`bookings.form_key`, optionally `fields.course`, by default skipping
+  cancelled = "Not interested" / "Not joining"). Still opted-in, non-blocked
+  customers only and still an approved template; one parent counts once.
+  `services/broadcastAudience.service.js#resolveAudience` is used by the
+  preview, the send and `POST /api/broadcasts/audience-count` (live count
+  in the composer), so the count shown is who gets it.
 - **Course photos (`business_courses.image_media_id` → `business_media`):**
   an optional image, checked to be an image of the same business, sent
   above the WhatsApp course page (FlowSpec v2 page `mediaId` → node
