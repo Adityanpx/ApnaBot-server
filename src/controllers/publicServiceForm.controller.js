@@ -15,6 +15,7 @@ const { courseIndexFromPageKeyword, formTitleForKeyword, formRequestForKeyword, 
 const { isTravelFeaturedCategory } = require('../config/categoryFeatures');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
+const { isValidLanguageCode } = require('../utils/languageCatalog');
 
 const TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -152,8 +153,8 @@ const resolvePrefill = async (formToken, fields) => {
  * settings), else null and the page keeps its generic header. Any other
  * keyword returns null without a DB call.
  */
-const resolveFormTitle = async (formToken, formNode) => {
-  const title = formTitleForKeyword(formNode?.keyword);
+const resolveFormTitle = async (formToken, formNode, languageCode = null) => {
+  const title = formTitleForKeyword(formNode?.keyword, languageCode);
   if (!title) return null;
   return (await hasPublishedBotSettings(formToken.businessId)) ? title : null;
 };
@@ -171,6 +172,43 @@ const resolveFormRequest = async (formToken, formNode) => {
   // PUBLISHED settings) — null = nothing, never the business-wide advance.
   return published ? { ...request, payment: formPaymentFor(published.settings, request.key) } : null;
 };
+
+/**
+ * The language the customer chose on WhatsApp (customers.preferred_language)
+ * when it's one the form can be shown in, else null (English). A lookup
+ * failure just means English — it must never block the form.
+ */
+const loadCustomerLanguage = async (formToken) => {
+  try {
+    const { data, error } = await supabase
+      .from('customers').select('preferred_language')
+      .eq('business_id', formToken.businessId).eq('whatsapp_number', formToken.customerNumber).maybeSingle();
+    if (error) throw error;
+    const code = data && data.preferred_language;
+    return code && code !== 'en' && isValidLanguageCode(code) ? code : null;
+  } catch (languageError) {
+    logger.error('Error loading service form customer language:', languageError);
+    return null;
+  }
+};
+
+/**
+ * Fields as the customer sees them: label in their language when the field
+ * has one (labelTranslations — Bot Builder forms), and optionLabels
+ * { option: shown } for choices; the option itself stays what's submitted.
+ * The stored translation maps are left out of the response.
+ */
+const localizeFields = (fields, languageCode) => fields.map((field) => {
+  const { labelTranslations, optionTranslations, ...rest } = field;
+  if (!languageCode) return rest;
+  const label = labelTranslations && labelTranslations[languageCode];
+  const optionLabels = optionTranslations && optionTranslations[languageCode];
+  return {
+    ...rest,
+    ...(label ? { label } : {}),
+    ...(optionLabels && Object.keys(optionLabels).length ? { optionLabels } : {})
+  };
+});
 
 /** The business's published Bot Builder settings ({ settings }), or null when never published. */
 const loadPublishedBotSettings = async (businessId) => {
@@ -199,11 +237,12 @@ const getServiceForm = async (req, res, next) => {
     if (status === 'not_found') {
       return errorResponse(res, 404, 'This booking link is invalid.');
     }
+    // errors.language: lets the page say "link not available" in the customer's language.
     if (status === 'expired') {
-      return errorResponse(res, 410, 'This booking link has expired.');
+      return errorResponse(res, 410, 'This booking link has expired.', { language: (await loadCustomerLanguage(formToken)) || 'en' });
     }
     if (status === 'used') {
-      return errorResponse(res, 410, 'This booking link has already been used.');
+      return errorResponse(res, 410, 'This booking link has already been used.', { language: (await loadCustomerLanguage(formToken)) || 'en' });
     }
 
     const business = await businessService.getBusinessById(formToken.businessId);
@@ -212,6 +251,7 @@ const getServiceForm = async (req, res, next) => {
     }
 
     const formNode = await loadFormNode(formToken);
+    const language = await loadCustomerLanguage(formToken);
     const flowFields = await resolveDynamicOptions(formToken.businessId, await resolveFlowFields(formToken, business, formNode));
     // Prefill / title failures must not block the form — the page just uses
     // no starting values / its generic header.
@@ -223,7 +263,7 @@ const getServiceForm = async (req, res, next) => {
     }
     let formTitle = null;
     try {
-      formTitle = await resolveFormTitle(formToken, formNode);
+      formTitle = await resolveFormTitle(formToken, formNode, language);
     } catch (titleError) {
       logger.error('Error resolving service form title:', titleError);
     }
@@ -234,7 +274,10 @@ const getServiceForm = async (req, res, next) => {
       // "Confirm Booking", 24/7 Support) only for travel/cab businesses and
       // use neutral wording for every other category. Additive field.
       isTravelBusiness: isTravelFeaturedCategory(business.businessCategory, business.subCategories),
-      flowFields,
+      // The customer's chosen language ('en' | 'hi' | 'mr') — the page's own
+      // wording follows it; fields come already in it where translated.
+      language: language || 'en',
+      flowFields: localizeFields(flowFields, language),
       // Additive, only when non-empty: starting values, e.g.
       // { course: 'Abacus' } — see resolvePrefill.
       ...(Object.keys(prefill).length > 0 ? { prefill } : {}),
@@ -335,12 +378,16 @@ const submitServiceForm = async (req, res, next) => {
         collected[field.name] = values[field.name];
       }
     }
+    // summaryLabel: the WhatsApp confirmation is in the customer's language
+    // where the question has a translation; label (saved on the booking for
+    // the owner) stays English.
+    const language = await loadCustomerLanguage(formToken);
     const orderedFields = flowFields
       .filter(field => field.type !== 'display_text')
       .map(field => ({
         fieldKey: field.name,
         label: field.label,
-        summaryLabel: field.label
+        summaryLabel: (language && field.labelTranslations && field.labelTranslations[language]) || field.label
       }));
 
     // If this business has a distance-fare Vehicle Picker (icon_select +
@@ -623,4 +670,7 @@ const getVehicleQuote = async (req, res, next) => {
   }
 };
 
-module.exports = { getServiceForm, submitServiceForm, getVehicleOptions, placesAutocomplete, placeDetails, getVehicleQuote };
+module.exports = {
+  getServiceForm, submitServiceForm, getVehicleOptions, placesAutocomplete, placeDetails, getVehicleQuote,
+  localizeFields // exported for tests / checks
+};

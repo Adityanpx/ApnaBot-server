@@ -8,7 +8,9 @@
  * copy instead of forking the rules.
  */
 
-const VALID_FLOW_FIELD_TYPES = ['dropdown', 'radio', 'date', 'display_text', 'text', 'textarea', 'toggle', 'icon_select', 'address_autocomplete'];
+const { isValidLanguageCode } = require('./languageCatalog');
+
+const VALID_FLOW_FIELD_TYPES =['dropdown', 'radio', 'date', 'display_text', 'text', 'textarea', 'toggle', 'icon_select', 'address_autocomplete'];
 const DISPLAY_TEXT_FONT_SIZES = ['sm', 'md', 'lg', 'xl'];
 
 // A dropdown with this source lists the business's own active courses
@@ -148,6 +150,24 @@ const validateFlowFields = (fields) => {
         return `fields[${i}] ("${name}") duplicates role '${field.role}', already used by "${seenRoles.get(field.role)}" — at most one field may have each role`;
       }
       seenRoles.set(field.role, name);
+    }
+
+    // Optional translations shown on the public form to a customer who chose
+    // that language: labelTranslations { hi: '...' } and optionTranslations
+    // { hi: { <option>: '<shown>' } } — the option itself is what's saved.
+    const isMap = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
+    if (field.labelTranslations !== undefined && field.labelTranslations !== null) {
+      if (!isMap(field.labelTranslations) || Object.entries(field.labelTranslations)
+        .some(([code, text]) => code === 'en' || !isValidLanguageCode(code) || typeof text !== 'string' || !text.trim())) {
+        return `fields[${i}] ("${name}") labelTranslations must be { languageCode: text }`;
+      }
+    }
+    if (field.optionTranslations !== undefined && field.optionTranslations !== null) {
+      if (!isMap(field.optionTranslations) || Object.entries(field.optionTranslations).some(([code, byOption]) =>
+        code === 'en' || !isValidLanguageCode(code) || !isMap(byOption) ||
+        Object.entries(byOption).some(([option, text]) => !(options || []).includes(option) || typeof text !== 'string' || !text.trim()))) {
+        return `fields[${i}] ("${name}") optionTranslations must be { languageCode: { option: text } } for its own options`;
+      }
     }
 
     if (visibleWhen !== undefined && visibleWhen !== null) {

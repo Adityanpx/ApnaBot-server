@@ -79,6 +79,58 @@ const BUILT_IN = {
   }
 };
 
+// Web form (C1b): built-in translations of the Bot Builder's own questions
+// (coachingBotSettings.js FIELD_LIBRARY + Student name / Course), their fixed
+// choices, and the form page titles. Choices are shown translated but the
+// English value is what's saved. Owner questions/notes are slots instead.
+const FIELD_LABELS = {
+  studentName: { hi: 'विद्यार्थी का नाम', mr: 'विद्यार्थ्याचे नाव' },
+  course: { hi: 'कोर्स', mr: 'कोर्स' },
+  parentName: { hi: 'माता/पिता का नाम', mr: 'पालकांचे नाव' },
+  fatherName: { hi: 'पिता का नाम', mr: 'वडिलांचे नाव' },
+  motherName: { hi: 'माता का नाम', mr: 'आईचे नाव' },
+  dob: { hi: 'जन्म तिथि', mr: 'जन्मतारीख' },
+  age: { hi: 'विद्यार्थी की उम्र', mr: 'विद्यार्थ्याचे वय' },
+  school: { hi: 'स्कूल / कॉलेज', mr: 'शाळा / कॉलेज' },
+  standard: { hi: 'कक्षा', mr: 'इयत्ता' },
+  board: { hi: 'बोर्ड', mr: 'बोर्ड' },
+  stream: { hi: 'स्ट्रीम', mr: 'शाखा' },
+  targetExam: { hi: 'लक्ष्य परीक्षा', mr: 'लक्ष्य परीक्षा' },
+  tenthPercent: { hi: '10वीं के अंक (%)', mr: '10वीचे गुण (%)' },
+  batch: { hi: 'बैच', mr: 'बॅच' },
+  mode: { hi: 'क्लास का प्रकार', mr: 'क्लासचा प्रकार' },
+  preferredTime: { hi: 'पसंदीदा समय', mr: 'सोयीची वेळ' },
+  area: { hi: 'इलाका / क्षेत्र', mr: 'परिसर / भाग' }
+};
+const OPTION_LABELS = {
+  standard: {
+    '1st': { hi: '1ली', mr: '1ली' }, '2nd': { hi: '2री', mr: '2री' }, '3rd': { hi: '3री', mr: '3री' },
+    '4th': { hi: '4थी', mr: '4थी' }, '5th': { hi: '5वीं', mr: '5वी' }, '6th': { hi: '6वीं', mr: '6वी' },
+    '7th': { hi: '7वीं', mr: '7वी' }, '8th': { hi: '8वीं', mr: '8वी' }, '9th': { hi: '9वीं', mr: '9वी' },
+    '10th': { hi: '10वीं', mr: '10वी' }, '11th': { hi: '11वीं', mr: '11वी' }, '12th': { hi: '12वीं', mr: '12वी' },
+    '12th passed': { hi: '12वीं पास', mr: '12वी उत्तीर्ण' }
+  },
+  board: { 'State board': { hi: 'स्टेट बोर्ड', mr: 'राज्य मंडळ' } },
+  stream: {
+    Science: { hi: 'साइंस', mr: 'विज्ञान' }, Commerce: { hi: 'कॉमर्स', mr: 'वाणिज्य' }, Arts: { hi: 'आर्ट्स', mr: 'कला' }
+  },
+  batch: { Weekday: { hi: 'वीकडे (सोम–शुक्र)', mr: 'आठवड्याचे दिवस (सोम–शुक्र)' }, Weekend: { hi: 'वीकेंड (शनि–रवि)', mr: 'शनिवार–रविवार' } },
+  mode: { Online: { hi: 'ऑनलाइन', mr: 'ऑनलाइन' }, Offline: { hi: 'ऑफलाइन', mr: 'ऑफलाइन' } },
+  preferredTime: {
+    Morning: { hi: 'सुबह', mr: 'सकाळ' }, Afternoon: { hi: 'दोपहर', mr: 'दुपार' }, Evening: { hi: 'शाम', mr: 'संध्याकाळ' }
+  }
+};
+const FORM_TITLES = {
+  demo: {
+    title: { hi: 'फ्री डेमो क्लास बुक करें', mr: 'मोफत डेमो क्लास बुक करा' },
+    subtitle: { hi: 'लगभग एक मिनट लगेगा।', mr: 'साधारण एक मिनिट लागेल.' }
+  },
+  admission: {
+    title: { hi: 'एडमिशन फॉर्म', mr: 'प्रवेश अर्ज' },
+    subtitle: { hi: 'लगभग 2 मिनट लगेंगे।', mr: 'साधारण 2 मिनिटे लागतील.' }
+  }
+};
+
 const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const placeholders = (text) => [...new Set(String(text || '').match(PLACEHOLDER_RE) || [])].sort().join('|');
 const fill = (text, vars) => (vars ? text.replace(/\{\{(\w+)\}\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k]) : m)) : text);
@@ -208,9 +260,20 @@ const translationWarnings = (report) => {
   return warnings;
 };
 
+/** { hi: ..., mr: ... } limited to `languages`, or undefined when none. */
+const pickLanguages = (map, languages) => {
+  const out = {};
+  for (const l of languages || []) if (map && map[l]) out[l] = map[l];
+  return Object.keys(out).length ? out : undefined;
+};
+
 module.exports = {
   TRANSLATION_LANGUAGES,
   BUILT_IN,
+  FIELD_LABELS,
+  OPTION_LABELS,
+  FORM_TITLES,
+  pickLanguages,
   validateTranslations,
   makeTranslator,
   translationWarnings

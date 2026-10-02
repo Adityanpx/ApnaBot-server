@@ -427,8 +427,19 @@ question nodes) plus web-form links for Free demo / Admission.
   whose `source` no longer matches the English, that is over the WhatsApp
   limit, or that changes `{{…}}` placeholders is skipped (English sent) and
   warned about. `POST /api/bot-settings/translation-slots` lists the slots
-  for the Translations card (web + app). The public web form page is still
-  English (next step).
+  for the Translations card (web + app).
+- **Web form page in the parent's language:** GET
+  `/api/public/service-form/:token` looks up the customer's
+  `preferred_language` and returns `language` plus fields already in it —
+  Bot Builder form fields carry `labelTranslations` / `optionTranslations`
+  (built-in for the library questions and their fixed choices, owner slots
+  for the note and custom questions); a choice is shown translated
+  (`optionLabels`) but its English value is what's submitted and saved.
+  Course names, batches and exam names stay as typed. The page's own wording
+  (`apnabot-web src/app/book/[token]/strings.ts`) follows `language` for
+  every business; 410 expired/used responses carry `errors.language`. The
+  WhatsApp confirmation uses the translated question labels; the booking's
+  `field_labels` stay English.
 - **Fixed system messages in hi/mr (all businesses):** booking-received
   confirmation + summary lines (fare/distance/DA/toll/rental notes),
   advance / admission-fee requests, QR caption, "advance/fees received",

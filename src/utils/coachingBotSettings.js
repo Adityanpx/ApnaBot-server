@@ -36,7 +36,9 @@ const { BUSINESS_COURSES_SOURCE, COURSE_BATCHES_SOURCE } = require('./flowFields
 const { hasPlaceholder, coursePageText } = require('./courseValidation');
 const { INSTITUTE_TYPES } = require('./coachingInstitutePresets');
 const { REMINDER_CHOICES } = require('./demoReminder');
-const { BUILT_IN, makeTranslator, validateTranslations } = require('./coachingTranslations');
+const {
+  BUILT_IN, FIELD_LABELS, OPTION_LABELS, FORM_TITLES, makeTranslator, validateTranslations, pickLanguages
+} = require('./coachingTranslations');
 
 const MAX_COURSES = LIMITS.MAX_LIST_ROWS;
 const MAX_INTRO = 300;
@@ -326,27 +328,78 @@ const validateCoursesForPublish = (courses) => {
  * The form's field list, in flowFieldsValidation.js shape: optional note
  * first, then Student name, Course, ticked library fields (library order),
  * custom questions.
+ *
+ * Translations (only when `t` is given and the business has languages):
+ * labelTranslations { hi, mr } and optionTranslations { hi: { English: shown } }
+ * — the web form shows them to a parent who chose that language; the English
+ * option is still what's saved. Built-in for the Bot Builder's own questions
+ * (coachingTranslations.js FIELD_LABELS / OPTION_LABELS); the note and custom
+ * questions are owner slots. Course names, batches and exam names stay as typed.
+ * @param {Object} form
+ * @param {{ formKey: string, tr: Function, languages: string[] }} [t]
  */
-const buildFormFields = (form) => {
+const buildFormFields = (form, t) => {
+  const langs = t ? t.languages : [];
+  const formLabel = t ? FORMS[t.formKey].requestTitle : '';
+  const withLabelTr = (field, map) => (map ? { ...field, labelTranslations: map } : field);
+  const builtInOptions = (key, options) => {
+    const out = {};
+    for (const lang of langs) {
+      const byOption = {};
+      for (const o of options || []) {
+        const shown = OPTION_LABELS[key] && OPTION_LABELS[key][o] && OPTION_LABELS[key][o][lang];
+        if (shown) byOption[o] = shown;
+      }
+      if (Object.keys(byOption).length) out[lang] = byOption;
+    }
+    return Object.keys(out).length ? out : undefined;
+  };
+  const withOptionTr = (field, map) => (map ? { ...field, optionTranslations: map } : field);
+
   const fields = [];
-  if (isNonEmptyString(form.note)) fields.push({ name: 'note', label: form.note.trim(), type: 'display_text' });
-  fields.push({ name: 'studentName', label: 'Student name', type: 'text', required: true });
-  fields.push({ name: 'course', label: 'Course', type: 'dropdown', source: BUSINESS_COURSES_SOURCE, required: true });
+  if (isNonEmptyString(form.note)) {
+    fields.push(withLabelTr({ name: 'note', label: form.note.trim(), type: 'display_text' },
+      t && t.tr(`form.${t.formKey}.note`, form.note, MAX_NOTE, { group: 'Forms', label: `${formLabel} form — note at the top` })));
+  }
+  fields.push(withLabelTr({ name: 'studentName', label: 'Student name', type: 'text', required: true }, pickLanguages(FIELD_LABELS.studentName, langs)));
+  fields.push(withLabelTr({ name: 'course', label: 'Course', type: 'dropdown', source: BUSINESS_COURSES_SOURCE, required: true }, pickLanguages(FIELD_LABELS.course, langs)));
   for (const lib of FIELD_LIBRARY) {
     if (!form.fields.includes(lib.key)) continue;
     if (lib.key === 'batch') {
       // The picked course's batches; lib.options (Weekday / Weekend) when it has none.
-      fields.push({ name: lib.key, label: lib.label, type: 'dropdown', source: COURSE_BATCHES_SOURCE, dependsOn: 'course', options: lib.options });
+      fields.push(withOptionTr(withLabelTr(
+        { name: lib.key, label: lib.label, type: 'dropdown', source: COURSE_BATCHES_SOURCE, dependsOn: 'course', options: lib.options },
+        pickLanguages(FIELD_LABELS.batch, langs)), builtInOptions('batch', lib.options)));
       continue;
     }
     const options = lib.key === 'targetExam' ? form.targetExamOptions.map(o => o.trim()) : lib.options;
-    fields.push({ name: lib.key, label: lib.label, type: lib.type, ...(options ? { options } : {}) });
+    fields.push(withOptionTr(withLabelTr(
+      { name: lib.key, label: lib.label, type: lib.type, ...(options ? { options } : {}) },
+      pickLanguages(FIELD_LABELS[lib.key], langs)), lib.key === 'targetExam' ? undefined : builtInOptions(lib.key, options)));
   }
   (form.customFields || []).forEach((q, i) => {
-    fields.push({
+    const at = `form.${t ? t.formKey : ''}.custom${i + 1}`;
+    const question = `${formLabel} form — your question ${i + 1}`;
+    let field = withLabelTr({
       name: `custom${i + 1}`, label: q.label.trim(), type: q.type,
       ...(q.type === 'dropdown' ? { options: q.options.map(o => o.trim()) } : {})
-    });
+    }, t && t.tr(`${at}.label`, q.label, MAX_NOTE, { group: 'Forms', label: question }));
+    if (t && q.type === 'dropdown') {
+      const out = {};
+      q.options.forEach((o, j) => {
+        const map = t.tr(`${at}.option${j + 1}`, o, MAX_NOTE, { group: 'Forms', label: `${question} — choice ${j + 1}` });
+        for (const [lang, shown] of Object.entries(map || {})) (out[lang] = out[lang] || {})[o.trim()] = shown;
+      });
+      // Two choices that read the same in a language: show both in English.
+      for (const lang of Object.keys(out)) {
+        const shownCount = {};
+        Object.values(out[lang]).forEach(s => { shownCount[s.trim().toLowerCase()] = (shownCount[s.trim().toLowerCase()] || 0) + 1; });
+        for (const [o, s] of Object.entries(out[lang])) if (shownCount[s.trim().toLowerCase()] > 1) delete out[lang][o];
+        if (!Object.keys(out[lang]).length) delete out[lang];
+      }
+      field = withOptionTr(field, Object.keys(out).length ? out : undefined);
+    }
+    fields.push(field);
   });
   return fields;
 };
@@ -477,7 +530,7 @@ const mapCoachingSettingsToSpec = (settings, { businessName, courses, languages 
     const buttonText = fixed('fixed.button.fillForm', null, BUTTON, { ...MENU_GROUP, label: BUILT_IN['fixed.button.fillForm'].en });
     let form = withTr({
       id: key, text: text.text, buttonText: buttonText.text, keyword: meta.keyword, aliases: meta.aliases,
-      fields: buildFormFields(settings[meta.settingsKey])
+      fields: buildFormFields(settings[meta.settingsKey], { formKey: key, tr, languages })
     }, 'textTranslations', text.translations);
     form = withTr(form, 'buttonTextTranslations', buttonText.translations);
     forms.push(form);
@@ -584,11 +637,18 @@ const courseIndexFromPageKeyword = (keyword) => {
  * keyword, not form_<id>, when it has one). { title, subtitle } or null for
  * any other keyword. The caller must also check the business actually
  * published Bot Builder settings, so a hand-built 'demo' node elsewhere
- * doesn't pick this up.
+ * doesn't pick this up. languageCode: the parent's preferred_language —
+ * built-in Hindi / Marathi titles (coachingTranslations.js FORM_TITLES).
  */
-const formTitleForKeyword = (keyword) => {
-  const meta = Object.values(FORMS).find(f => f.keyword === keyword);
-  return meta ? { title: meta.formTitle, subtitle: meta.formSubtitle } : null;
+const formTitleForKeyword = (keyword, languageCode = null) => {
+  const entry = Object.entries(FORMS).find(([, f]) => f.keyword === keyword);
+  if (!entry) return null;
+  const [key, meta] = entry;
+  const tr = FORM_TITLES[key] || {};
+  return {
+    title: (tr.title && tr.title[languageCode]) || meta.formTitle,
+    subtitle: (tr.subtitle && tr.subtitle[languageCode]) || meta.formSubtitle
+  };
 };
 
 /**

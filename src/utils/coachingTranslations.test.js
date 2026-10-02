@@ -1,7 +1,8 @@
 // Run: node --test src/utils/coachingTranslations.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { mapCoachingSettingsToSpec, validateCoachingSettings } = require('./coachingBotSettings');
+const { mapCoachingSettingsToSpec, validateCoachingSettings, formTitleForKeyword } = require('./coachingBotSettings');
+const { validateFlowFields } = require('./flowFieldsValidation');
 const { compileFlowSpecV2 } = require('./flowSpecV2');
 const { validateTranslations, translationWarnings } = require('./coachingTranslations');
 
@@ -111,6 +112,47 @@ test('compiled graph carries the translations to nodes and edges', () => {
   const form = graph.replyNodes.find(n => n.replyKind === 'web_form_trigger');
   assert.equal(form.buttonTextTranslations.hi, 'फॉर्म भरें');
   assert.equal(form.labelTranslations.mr, 'मोफत डेमो क्लास बुक करा — खालील बटणावर टॅप करून छोटा फॉर्म भरा.');
+});
+
+test('web form fields: built-in question/choice translations, owner custom questions + note, values stay English', () => {
+  const s = settings({
+    demoForm: {
+      enabled: true, fields: ['mode', 'batch', 'standard'], note: 'Bring a notebook',
+      customFields: [{ label: 'How did you hear of us?', type: 'dropdown', options: ['Friend', 'Instagram'] }]
+    },
+    translations: {
+      mr: {
+        'form.demo.note': entry('वही आणा', 'Bring a notebook'),
+        'form.demo.custom1.label': entry('आमच्याबद्दल कसे कळले?', 'How did you hear of us?'),
+        'form.demo.custom1.option1': entry('मित्र', 'Friend')
+      }
+    }
+  });
+  const fields = map(s).spec.forms[0].fields;
+  const byName = Object.fromEntries(fields.map(f => [f.name, f]));
+  assert.equal(byName.note.labelTranslations.mr, 'वही आणा');
+  assert.equal(byName.studentName.labelTranslations.mr, 'विद्यार्थ्याचे नाव');
+  assert.equal(byName.course.optionTranslations, undefined); // course names stay as typed
+  assert.deepEqual(byName.mode.options, ['Online', 'Offline']);
+  assert.equal(byName.mode.optionTranslations.hi.Online, 'ऑनलाइन');
+  assert.equal(byName.batch.optionTranslations.mr.Weekend, 'शनिवार–रविवार');
+  assert.equal(byName.standard.optionTranslations.mr['12th passed'], '12वी उत्तीर्ण');
+  assert.equal(byName.custom1.labelTranslations.mr, 'आमच्याबद्दल कसे कळले?');
+  assert.deepEqual(byName.custom1.optionTranslations, { mr: { Friend: 'मित्र' } });
+  assert.equal(validateFlowFields(fields), null);
+  // No languages → exactly the English fields, no translation keys.
+  const plain = map(s, []).spec.forms[0].fields;
+  assert.ok(plain.every(f => !f.labelTranslations && !f.optionTranslations));
+  assert.equal(formTitleForKeyword('demo', 'mr').title, 'मोफत डेमो क्लास बुक करा');
+  assert.equal(formTitleForKeyword('demo', null).title, 'Book a free demo class');
+});
+
+test('form field translation keys are validated', () => {
+  const base = { name: 'mode', label: 'Mode', type: 'radio', options: ['Online', 'Offline'] };
+  assert.equal(validateFlowFields([{ ...base, optionTranslations: { mr: { Online: 'ऑनलाइन' } } }]), null);
+  assert.match(validateFlowFields([{ ...base, optionTranslations: { mr: { Hybrid: 'x' } } }]), /optionTranslations/);
+  assert.match(validateFlowFields([{ ...base, labelTranslations: { en: 'Mode' } }]), /labelTranslations/);
+  assert.match(validateFlowFields([{ ...base, labelTranslations: { mr: '' } }]), /labelTranslations/);
 });
 
 test('settings.translations shape is checked', () => {
