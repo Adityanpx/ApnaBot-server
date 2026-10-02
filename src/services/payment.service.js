@@ -9,6 +9,7 @@ const subscriptionNotifications = require('./subscriptionNotifications.service')
 const customerPipelineService = require('./customerPipeline.service');
 const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
 const { toCamelCase } = require('../utils/caseConvert');
+const { getSystemMessage } = require('../utils/systemMessages');
 const logger = require('../utils/logger');
 
 /**
@@ -339,18 +340,19 @@ const handlePaymentFailed = async (payload, eventId) => {
  * @param {string|null} [opts.bookingCode]
  * @param {string|null} [opts.upiId] - business.upiId, optional
  * @param {string|null} [opts.intro] - replaces the default first line
+ * @param {string|null} [opts.languageCode] - the customer's preferred_language (systemMessages.js)
  * @returns {string}
  */
-const buildPaymentQrCaption = ({ amount, bookingCode, upiId, intro } = {}) => {
-  const amountText = amount ? ` *₹${Number(amount).toLocaleString('en-IN')}*` : '';
-  const bookingText = bookingCode ? ` for booking *${bookingCode}*` : '';
+const buildPaymentQrCaption = ({ amount, bookingCode, upiId, intro, languageCode = null } = {}) => {
+  const vars = { amount: amount ? Number(amount).toLocaleString('en-IN') : '', code: bookingCode || '' };
+  const payKey = amount ? (bookingCode ? 'qrPayAmountCode' : 'qrPayAmount') : (bookingCode ? 'qrPayCode' : 'qrPay');
   const lines = [
-    intro || `Please pay${amountText}${bookingText} by scanning this QR code.`,
+    intro || getSystemMessage(payKey, languageCode, vars),
     '',
-    'Paying from this phone? Save this image, then in any UPI app (GPay, PhonePe, Paytm) tap *Scan* → *Upload from gallery*.'
+    getSystemMessage('qrHowTo', languageCode)
   ];
-  if (upiId) lines.push('', `Or pay to UPI ID: ${upiId}`);
-  lines.push('', 'Please share a screenshot here after paying.');
+  if (upiId) lines.push('', getSystemMessage('qrUpiId', languageCode, { upiId }));
+  lines.push('', getSystemMessage('qrScreenshot', languageCode));
   return lines.join('\n');
 };
 
@@ -417,9 +419,9 @@ const setBookingPaymentStatus = async (businessId, bookingId, status) => {
       .from('customers').select('*').eq('id', booking.customer_id).maybeSingle();
     if (customerErr) throw customerErr;
 
-    const confirmationText = isAdmissionFee
-      ? `✅ Fees received! Admission ${booking.booking_code} is confirmed. Welcome to ${business.displayName || business.name}!`
-      : `✅ Advance received! Your booking ${booking.booking_code} is confirmed. Our team will contact you shortly.`;
+    const confirmationText = getSystemMessage(isAdmissionFee ? 'admissionFeePaid' : 'advancePaid', customerRow?.preferred_language, {
+      code: booking.booking_code, business: business.displayName || business.name
+    });
 
     const { data: messageRow, error: msgErr } = await supabase.from('messages').insert({
       business_id: businessId,

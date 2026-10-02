@@ -66,11 +66,13 @@ const recordOutbound = async (business, booking, customerRow, text, status) => {
 };
 
 /**
- * Sends `text` to the parent: free-form inside the 24-hour window, else the
- * approved reminder template (wallet-charged when billing is on).
+ * Sends textFor(parent's language) to the parent: free-form inside the
+ * 24-hour window, else the approved reminder template (English;
+ * wallet-charged when billing is on).
+ * @param {(languageCode: string|null) => string} textFor
  * @returns {Promise<{ sent: 'text'|'template' } | { sent: false, reason: string }>}
  */
-const sendToParent = async (business, booking, details, text) => {
+const sendToParent = async (business, booking, details, textFor) => {
   if (!business.isWhatsappConnected || !business.phoneNumberId) return { sent: false, reason: 'WhatsApp is not connected.' };
 
   const { data: customerRow, error: customerErr } = await supabase
@@ -83,6 +85,7 @@ const sendToParent = async (business, booking, details, text) => {
     Date.now() < new Date(customerRow.last_message_at).getTime() + FREE_FORM_WINDOW_MS;
 
   if (windowOpen) {
+    const text = textFor(customerRow.preferred_language || null);
     const message = await recordOutbound(business, booking, customerRow, text, 'sent');
     await addToWhatsappQueue({
       businessId: business.id,
@@ -193,7 +196,7 @@ const setDemoTime = async (businessId, bookingId, scheduledFor) => {
   try {
     const business = await businessService.getBusinessById(businessId);
     const details = demoDetails(booking, business.displayName || business.name, demoAt);
-    confirmation = await sendToParent(business, booking, details, confirmationText(details));
+    confirmation = await sendToParent(business, booking, details, (lang) => confirmationText(details, lang));
   } catch (sendErr) {
     // The time is saved — a failed WhatsApp send is reported, not an error.
     logger.error('Demo time: confirmation not sent', { bookingId: booking.id, error: sendErr.message });
@@ -246,7 +249,7 @@ const runReminder = async ({ bookingId, businessId, scheduledFor }) => {
   const details = demoDetails(booking, business.displayName || business.name, scheduledFor);
   let result;
   try {
-    result = await sendToParent(business, booking, details, reminderText(details));
+    result = await sendToParent(business, booking, details, (lang) => reminderText(details, lang));
   } catch (sendErr) {
     logger.error('Demo reminder: send failed', { bookingId, error: sendErr.message });
     await setReminderOutcome(bookingId, 'failed', 'The reminder could not be sent.');

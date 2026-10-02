@@ -58,6 +58,26 @@ const compileBotSettings = async (req, res, next) => {
 };
 
 /**
+ * POST /api/bot-settings/translation-slots
+ * Body: {} (saved draft) or { preset, settings } (unsaved edits). Returns
+ * { languages, slots: [{ id, group, label, english, max, builtIn? }] } —
+ * every text the bot sends, for the Translations screen. No writes.
+ */
+const getTranslationSlots = async (req, res, next) => {
+  try {
+    const { preset, settings } = req.body || {};
+    const result = await botSettingsService.translationSlots({
+      businessId: req.user.businessId, graphBusiness: req.graphBusiness, preset, settings
+    });
+    if (result.error) return errorResponse(res, result.status, result.error);
+    return successResponse(res, 200, result);
+  } catch (error) {
+    logger.error('Error in getTranslationSlots:', error);
+    next(error);
+  }
+};
+
+/**
  * POST /api/bot-settings/publish
  * Publishes the SAVED settings: snapshot of the current flow, then replace
  * it. A live cutover for this business the moment it succeeds.
@@ -112,4 +132,4 @@ const previewBotSettingsMessage = async (req, res, next) => {
   }
 };
 
-module.exports = { getBotSettings, saveBotSettings, compileBotSettings, publishBotSettings, previewBotSettingsMessage };
+module.exports = { getBotSettings, saveBotSettings, compileBotSettings, getTranslationSlots, publishBotSettings, previewBotSettingsMessage };

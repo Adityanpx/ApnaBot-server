@@ -416,6 +416,25 @@ question nodes) plus web-form links for Free demo / Admission.
   submitted to Meta on Publish when a reminder is on; Bot Builder shows its
   approval. The worker re-checks the booking (time, status, reminder still
   on) when it fires, so stale jobs do nothing. Times are India time.
+- **Hindi / Marathi bot (`settings.translations`, owner-typed, no API):**
+  `{ hi|mr: { textId: { text, source } } }` inside the Bot Builder settings
+  (saved with the draft, live on Publish). `utils/coachingTranslations.js`:
+  every text the bot sends is a slot (`welcome`, `section.fees`,
+  `course.<id>.page|name|description`, `faq.N.question|answer`,
+  `fixed.*` = the builder's own wording with BUILT_IN hi/mr). Publish puts
+  usable translations into the node/edge `*_translations` columns the live
+  chat already sends to a customer by `preferred_language`; a translation
+  whose `source` no longer matches the English, that is over the WhatsApp
+  limit, or that changes `{{…}}` placeholders is skipped (English sent) and
+  warned about. `POST /api/bot-settings/translation-slots` lists the slots
+  for the Translations card (web + app). The public web form page is still
+  English (next step).
+- **Fixed system messages in hi/mr (all businesses):** booking-received
+  confirmation + summary lines (fare/distance/DA/toll/rental notes),
+  advance / admission-fee requests, QR caption, "advance/fees received",
+  session timeout, demo time/reminder, and the older `SYSTEM_MESSAGES`
+  fallbacks — all in `utils/systemMessages.js`, chosen by the customer's
+  `preferred_language`; English text unchanged.
 - **Course photos (`business_courses.image_media_id` → `business_media`):**
   an optional image, checked to be an image of the same business, sent
   above the WhatsApp course page (FlowSpec v2 page `mediaId` → node

@@ -16,6 +16,7 @@
 //       location: { enabled }                            // uses the shop location in Settings
 //     },
 //     demoForm:      { enabled, fields: [libraryKey], customFields: [ { label, type, options? } ], note?, reminder?: 'off'|'2h'|'evening' },
+//     translations?: { hi?|mr?: { [textId]: { text, source } } },   // coachingTranslations.js
 //     admissionForm: { enabled, fields: [libraryKey], customFields: [...], note?, targetExamOptions? }
 //   }
 //
@@ -35,6 +36,7 @@ const { BUSINESS_COURSES_SOURCE, COURSE_BATCHES_SOURCE } = require('./flowFields
 const { hasPlaceholder, coursePageText } = require('./courseValidation');
 const { INSTITUTE_TYPES } = require('./coachingInstitutePresets');
 const { REMINDER_CHOICES } = require('./demoReminder');
+const { BUILT_IN, makeTranslator, validateTranslations } = require('./coachingTranslations');
 
 const MAX_COURSES = LIMITS.MAX_LIST_ROWS;
 const MAX_INTRO = 300;
@@ -103,8 +105,6 @@ const FORMS = {
     requestTitle: 'Admission'
   }
 };
-const FORM_BUTTON_TEXT = 'Fill form';
-const MAIN_MENU = { title: 'Main menu', target: { type: 'menu' } };
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim() !== '';
 const isOptionalString = (v) => v === undefined || v === null || typeof v === 'string';
@@ -130,6 +130,9 @@ const validateCoachingSettings = (settings, { forPublish = false } = {}) => {
   }
 
   if (settings.courses !== undefined) return 'Courses are managed in "My courses", not in bot settings';
+  // Owner-typed Hindi / Marathi (coachingTranslations.js) — never blocks a publish.
+  const translationsError = validateTranslations(settings.translations);
+  if (translationsError) return translationsError;
   // Which "kind of institute" preset the owner started from (optional).
   if (settings.instituteType !== undefined && settings.instituteType !== null && !INSTITUTE_TYPES.includes(settings.instituteType)) {
     return `instituteType must be one of: ${INSTITUTE_TYPES.join(', ')}`;
@@ -356,66 +359,103 @@ const buildFormFields = (form) => {
  * course order, grouped or not) — they're rebuilt on every publish, so they
  * needn't match course row ids. With 2+ course groups (groupCourses), the
  * Courses page lists the groups and each group gets its own list page.
+ *
+ * Translations (coachingTranslations.js): for each of `languages` (the
+ * business's enabled languages other than English) every text also gets the
+ * owner's / built-in translation from settings.translations when it is
+ * usable — spec texts carry textTranslations / titleTranslations /
+ * descriptionTranslations / buttonTextTranslations. The English spec is
+ * exactly what it was without translations.
  * @param {Object} settings
- * @param {{ businessName: string, courses: Object[] }} context
- * @returns {{ spec: Object|null, error: string|null }}
+ * @param {{ businessName: string, courses: Object[], languages?: string[] }} context
+ *   courses may carry `id` (business_courses.id) — the key of their translations
+ * @returns {{ spec: Object|null, error: string|null, translation?: { slots: Object[], report: Object } }}
  */
-const mapCoachingSettingsToSpec = (settings, { businessName, courses } = {}) => {
+const mapCoachingSettingsToSpec = (settings, { businessName, courses, languages = [] } = {}) => {
   if (!isNonEmptyString(businessName)) return { spec: null, error: 'businessName is required' };
   const settingsError = validateCoachingSettings(settings, { forPublish: true });
   if (settingsError) return { spec: null, error: settingsError };
   const coursesError = validateCoursesForPublish(courses);
   if (coursesError) return { spec: null, error: coursesError };
   const formEnabled = (key) => settings[FORMS[key].settingsKey].enabled;
-  const formButton = (key) => ({ title: FORMS[key].buttonTitle, target: { type: 'form', id: key } });
+  const { tr, fixed, fit, slots, report } = makeTranslator(settings.translations, languages);
+  const withTr = (obj, key, map) => (map ? { ...obj, [key]: map } : obj);
+  const BUTTON = LIMITS.BUTTON_TITLE;
+  const ROW = LIMITS.LIST_ROW_TITLE;
+  const BODY = LIMITS.INTERACTIVE_BODY;
+  const MENU_GROUP = { group: 'Menu & buttons' };
+
+  const fixedChoice = (id, target, max = BUTTON) => {
+    const f = fixed(id, null, max, { ...MENU_GROUP, label: BUILT_IN[id].en });
+    return withTr({ title: f.text, target }, 'titleTranslations', f.translations);
+  };
+  const formButton = (key) => fixedChoice(`fixed.button.${key}`, { type: 'form', id: key });
+  const mainMenu = () => fixedChoice('fixed.button.mainMenu', { type: 'menu' });
+  // Menu items: the limit (button or list row) is only known once the menu is complete.
+  const menuItem = (id, target) => fixedChoice(id, target, ROW);
 
   const pages = [];
   const forms = [];
   const menu = [];
 
   // Courses: a list page for 2+ courses, straight to the course page for 1.
+  const courseKey = (c, i) => `course.${c.id || `n${i + 1}`}`;
   courses.forEach((c, i) => {
     const buttons = [];
     if (c.showDemoButton && formEnabled('demo')) buttons.push(formButton('demo'));
     if (c.showAdmissionButton && formEnabled('admission')) buttons.push(formButton('admission'));
-    buttons.push(MAIN_MENU);
-    pages.push({
-      id: `course_${i + 1}`, text: coursePageText(c), buttons,
+    buttons.push(mainMenu());
+    const text = coursePageText(c);
+    pages.push(withTr({
+      id: `course_${i + 1}`, text, buttons,
       // Course photo, sent above the course page (business_courses.image_media_id)
       ...(c.imageMediaId ? { mediaId: c.imageMediaId } : {})
-    });
+    }, 'textTranslations', tr(`${courseKey(c, i)}.page`, text, BODY, { group: 'Courses', label: `${c.name.trim()} — course page` })));
   });
-  const courseRow = (i) => ({
-    title: courses[i].name.trim(),
-    ...(isNonEmptyString(courses[i].description) ? { description: courses[i].description.trim() } : {}),
-    target: { type: 'page', id: `course_${i + 1}` }
-  });
+  const courseRow = (i) => {
+    const c = courses[i];
+    const hasDescription = isNonEmptyString(c.description);
+    let row = withTr({
+      title: c.name.trim(),
+      ...(hasDescription ? { description: c.description.trim() } : {}),
+      target: { type: 'page', id: `course_${i + 1}` }
+    }, 'titleTranslations', tr(`${courseKey(c, i)}.name`, c.name, ROW, { group: 'Courses', label: `${c.name.trim()} — name in the list` }));
+    if (hasDescription) {
+      row = withTr(row, 'descriptionTranslations', tr(`${courseKey(c, i)}.description`, c.description, LIMITS.LIST_ROW_DESCRIPTION, { group: 'Courses', label: `${c.name.trim()} — short line in the list` }));
+    }
+    return row;
+  };
   const groups = groupCourses(courses);
   if (groups) {
     // Courses → groups → that group's courses → course page.
-    const allGroups = { title: 'All groups', target: { type: 'page', id: 'courses' } };
+    const allGroups = fixedChoice('fixed.button.allGroups', { type: 'page', id: 'courses' });
     groups.forEach((g, gi) => {
       const list = g.indexes.map(courseRow);
       list.push(allGroups);
-      if (list.length < LIMITS.MAX_LIST_ROWS) list.push(MAIN_MENU);
-      pages.push({ id: `group_${gi + 1}`, text: `${g.title} — tap a course to see the details:`, list });
+      if (list.length < LIMITS.MAX_LIST_ROWS) list.push(mainMenu());
+      const pageText = fixed('fixed.page.group', { group: g.title }, BODY, { ...MENU_GROUP, label: `Group "${g.title}" — page text` });
+      pages.push(withTr({ id: `group_${gi + 1}`, text: pageText.text, list }, 'textTranslations', pageText.translations));
     });
-    const groupList = groups.map((g, gi) => ({
-      title: g.title,
-      description: `${g.indexes.length} course${g.indexes.length === 1 ? '' : 's'}`,
-      target: { type: 'page', id: `group_${gi + 1}` }
-    }));
-    groupList.push(MAIN_MENU);
-    pages.push({ id: 'courses', text: 'Our courses — choose a group:', keyword: 'course', list: groupList });
-    menu.push({ title: '📚 Courses', target: { type: 'page', id: 'courses' } });
+    const groupList = groups.map((g, gi) => {
+      const count = fixed(g.indexes.length === 1 ? 'fixed.page.groupCountOne' : 'fixed.page.groupCountMany', { count: g.indexes.length }, LIMITS.LIST_ROW_DESCRIPTION, { ...MENU_GROUP, label: `"${g.indexes.length} courses" under a group` });
+      let row = withTr({ title: g.title, description: count.text, target: { type: 'page', id: `group_${gi + 1}` } },
+        'titleTranslations', tr(`group.${g.title.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 100)}.title`, g.title, ROW, { group: 'Courses', label: `Group "${g.title}" — name` }));
+      row = withTr(row, 'descriptionTranslations', count.translations);
+      return row;
+    });
+    groupList.push(mainMenu());
+    const pageText = fixed('fixed.page.courseGroups', null, BODY, { ...MENU_GROUP, label: 'Courses page (groups)' });
+    pages.push(withTr({ id: 'courses', text: pageText.text, keyword: 'course', list: groupList }, 'textTranslations', pageText.translations));
+    menu.push(menuItem('fixed.menu.courses', { type: 'page', id: 'courses' }));
   } else if (courses.length >= 2) {
     const list = courses.map((_, i) => courseRow(i));
-    if (list.length < LIMITS.MAX_LIST_ROWS) list.push(MAIN_MENU);
-    pages.push({ id: 'courses', text: 'Our courses — tap one to see the details:', keyword: 'course', list });
-    menu.push({ title: '📚 Courses', target: { type: 'page', id: 'courses' } });
+    if (list.length < LIMITS.MAX_LIST_ROWS) list.push(mainMenu());
+    const pageText = fixed('fixed.page.courses', null, BODY, { ...MENU_GROUP, label: 'Courses page' });
+    pages.push(withTr({ id: 'courses', text: pageText.text, keyword: 'course', list }, 'textTranslations', pageText.translations));
+    menu.push(menuItem('fixed.menu.courses', { type: 'page', id: 'courses' }));
   } else {
     pages[0].keyword = 'course';
-    menu.push({ title: '📚 Courses', target: { type: 'page', id: 'course_1' } });
+    menu.push(menuItem('fixed.menu.courses', { type: 'page', id: 'course_1' }));
   }
 
   const sectionMenu = (key) => {
@@ -424,18 +464,24 @@ const mapCoachingSettingsToSpec = (settings, { businessName, courses } = {}) => 
     if (!sec.enabled) return;
     const buttons = [];
     if (s.formButton && formEnabled(s.formButton)) buttons.push(formButton(s.formButton));
-    buttons.push(MAIN_MENU);
-    pages.push({ id: key, text: sec.text.trim(), keyword: s.keyword, aliases: s.aliases, buttons });
-    menu.push({ title: s.title, target: { type: 'page', id: key } });
+    buttons.push(mainMenu());
+    const text = sec.text.trim();
+    pages.push(withTr({ id: key, text, keyword: s.keyword, aliases: s.aliases, buttons },
+      'textTranslations', tr(`section.${key}`, text, BODY, { group: 'Sections', label: s.title })));
+    menu.push(menuItem(`fixed.menu.${key}`, { type: 'page', id: key }));
   };
   const formMenu = (key) => {
     if (!formEnabled(key)) return;
     const meta = FORMS[key];
-    forms.push({
-      id: key, text: meta.text, buttonText: FORM_BUTTON_TEXT, keyword: meta.keyword, aliases: meta.aliases,
+    const text = fixed(`fixed.form.${key}`, null, BODY, { group: 'Forms', label: `${meta.requestTitle} — message with the form link` });
+    const buttonText = fixed('fixed.button.fillForm', null, BUTTON, { ...MENU_GROUP, label: BUILT_IN['fixed.button.fillForm'].en });
+    let form = withTr({
+      id: key, text: text.text, buttonText: buttonText.text, keyword: meta.keyword, aliases: meta.aliases,
       fields: buildFormFields(settings[meta.settingsKey])
-    });
-    menu.push({ title: meta.menuTitle, target: { type: 'form', id: key } });
+    }, 'textTranslations', text.translations);
+    form = withTr(form, 'buttonTextTranslations', buttonText.translations);
+    forms.push(form);
+    menu.push(menuItem(`fixed.menu.${key}`, { type: 'form', id: key }));
   };
 
   ['fees', 'timings', 'results', 'material'].forEach(sectionMenu);
@@ -444,29 +490,68 @@ const mapCoachingSettingsToSpec = (settings, { businessName, courses } = {}) => 
   let location = null;
   if (settings.sections.location.enabled) {
     location = { keyword: 'location' };
-    menu.push({ title: '📍 Location', target: { type: 'location' } });
+    menu.push(menuItem('fixed.menu.location', { type: 'location' }));
   }
   // FAQ: a question list (typed "faqs"/"doubt"; "faq" reaches it by close
   // spelling — typed keywords must be 4+ characters) → one answer page each.
   if (settings.faq && settings.faq.enabled) {
-    const moreQuestions = { title: 'More questions', target: { type: 'page', id: 'faq' } };
+    const moreQuestions = fixedChoice('fixed.button.moreQuestions', { type: 'page', id: 'faq' });
+    const questionTr = settings.faq.items.map((item, i) =>
+      tr(`faq.${i + 1}.question`, item.question, FAQ_QUESTION_MAX, { group: 'FAQ', label: `FAQ ${i + 1} — question` }));
     settings.faq.items.forEach((item, i) => {
-      pages.push({
+      // The answer page shows "*question*\n\nanswer" — translated only when both are.
+      const answerTr = tr(`faq.${i + 1}.answer`, item.answer, FAQ_ANSWER_MAX, { group: 'FAQ', label: `FAQ ${i + 1} — answer` });
+      const pageTr = {};
+      for (const lang of Object.keys(answerTr || {})) {
+        if (questionTr[i] && questionTr[i][lang]) pageTr[lang] = `*${questionTr[i][lang]}*\n\n${answerTr[lang]}`;
+      }
+      pages.push(withTr({
         id: `faq_${i + 1}`,
         text: `*${item.question.trim()}*\n\n${item.answer.trim()}`,
-        buttons: [moreQuestions, ...(formEnabled('demo') ? [formButton('demo')] : []), MAIN_MENU]
-      });
+        buttons: [moreQuestions, ...(formEnabled('demo') ? [formButton('demo')] : []), mainMenu()]
+      }, 'textTranslations', Object.keys(pageTr).length ? pageTr : undefined));
     });
-    const list = settings.faq.items.map((item, i) => ({ title: item.question.trim(), target: { type: 'page', id: `faq_${i + 1}` } }));
-    list.push(MAIN_MENU);
-    pages.push({ id: 'faq', text: 'Common questions — tap one to see the answer:', keyword: 'faqs', aliases: ['doubt'], list });
-    menu.push({ title: '❓ FAQ', target: { type: 'page', id: 'faq' } });
+    const list = settings.faq.items.map((item, i) => withTr({ title: item.question.trim(), target: { type: 'page', id: `faq_${i + 1}` } }, 'titleTranslations', questionTr[i]));
+    list.push(mainMenu());
+    const pageText = fixed('fixed.page.faq', null, BODY, { ...MENU_GROUP, label: 'FAQ list page' });
+    pages.push(withTr({ id: 'faq', text: pageText.text, keyword: 'faqs', aliases: ['doubt'], list }, 'textTranslations', pageText.translations));
+    menu.push(menuItem('fixed.menu.faq', { type: 'page', id: 'faq' }));
   }
   sectionMenu('contact');
 
+  // A menu of 3 or fewer items is sent as buttons (20 characters each).
+  if (menu.length <= LIMITS.MAX_BUTTONS) {
+    menu.forEach((m) => { if (m.titleTranslations) m.titleTranslations = fit(m.titleTranslations, BUTTON, m.title); if (!m.titleTranslations) delete m.titleTranslations; });
+  }
+  // Two choices in one message may not read the same in a language.
+  const dedupe = (choices) => {
+    for (const lang of languages) {
+      const seen = new Map();
+      choices.forEach((c) => {
+        const t = c.titleTranslations && c.titleTranslations[lang];
+        if (!t) return;
+        const k = t.trim().toLowerCase();
+        seen.set(k, [...(seen.get(k) || []), c]);
+      });
+      for (const same of seen.values()) {
+        if (same.length < 2) continue;
+        same.forEach((c) => { delete c.titleTranslations[lang]; if (!Object.keys(c.titleTranslations).length) delete c.titleTranslations; });
+      }
+    }
+  };
+  // Choices are shared objects (mainMenu() / formButton() make fresh ones; allGroups and
+  // moreQuestions are reused) — copy before de-duplicating per page.
+  const own = (choices) => choices.map(c => ({ ...c, ...(c.titleTranslations ? { titleTranslations: { ...c.titleTranslations } } : {}) }));
+  dedupe(menu);
+  pages.forEach((p) => {
+    if (p.buttons) { p.buttons = own(p.buttons); dedupe(p.buttons); }
+    if (p.list) { p.list = own(p.list); dedupe(p.list); }
+  });
+
+  const welcome = welcomeMessageFor(settings);
   const spec = {
     version: 2,
-    greeting: { text: welcomeMessageFor(settings) },
+    greeting: withTr({ text: welcome }, 'textTranslations', tr('welcome', welcome, BODY, { group: 'Welcome', label: 'Welcome message (the menu)' })),
     menu,
     pages,
     forms,
@@ -474,7 +559,7 @@ const mapCoachingSettingsToSpec = (settings, { businessName, courses } = {}) => 
   };
   const specError = validateFlowSpecV2(spec);
   if (specError) return { spec: null, error: `The generated flow is invalid: ${specError}` };
-  return { spec, error: null };
+  return { spec, error: null, translation: { slots: slots(), report } };
 };
 
 /**

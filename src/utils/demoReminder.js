@@ -6,6 +6,8 @@
 // Times are shown and "evening before" is computed in India time — the
 // product is India-only today (see broadcast.controller.js countryCode).
 
+const { getSystemMessage } = require('./systemMessages');
+
 const REMINDER_CHOICES = ['off', '2h', 'evening'];
 const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
 const HOUR_MS = 60 * 60 * 1000;
@@ -62,11 +64,10 @@ const demoDetails = (booking, businessName, demoAt) => {
   };
 };
 
-const confirmationText = (d) =>
-  `✅ ${d.student}'s free demo class for ${d.course} is fixed for ${d.time}. Reply here if you need to change it.`;
+// In the parent's chosen language (systemMessages.js demoFixed / demoReminder).
+const confirmationText = (d, languageCode = null) => getSystemMessage('demoFixed', languageCode, d);
 
-const reminderText = (d) =>
-  `⏰ Reminder: ${d.student}'s free demo class for ${d.course} at ${d.business} is on ${d.time}. Reply here if you can't make it.`;
+const reminderText = (d, languageCode = null) => getSystemMessage('demoReminder', languageCode, d);
 
 /** {{1}}..{{4}} of REMINDER_TEMPLATE, and the same message as it reads in the chat. */
 const templateParams = (d) => [d.student, d.course, d.business, d.time];

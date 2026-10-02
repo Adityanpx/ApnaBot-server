@@ -1,6 +1,8 @@
 const { Worker } = require('bullmq');
 const whatsappService = require('../services/whatsapp.service');
 const bookingService = require('../services/booking.service');
+const supabase = require('../config/supabase');
+const { getSystemMessage } = require('../utils/systemMessages');
 const logger = require('../utils/logger');
 const config = require('../config/env');
 
@@ -33,11 +35,15 @@ const worker = new Worker('session-timeout', async (job) => {
       return;
     }
 
+    // The customer's chosen language (systemMessages.js); English if unknown.
+    const { data: customer } = await supabase
+      .from('customers').select('preferred_language')
+      .eq('business_id', businessId).eq('whatsapp_number', customerNumber).maybeSingle();
     await whatsappService.sendTextMessage(
       phoneNumberId,
       encryptedAccessToken,
       customerNumber,
-      "Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again."
+      getSystemMessage('sessionTimeout', customer?.preferred_language)
     );
     await bookingService.deleteBookingSession(businessId, customerNumber);
   } catch (error) {

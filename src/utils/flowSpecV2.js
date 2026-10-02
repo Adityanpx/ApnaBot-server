@@ -21,11 +21,16 @@
 //     forms: [ { id, text, buttonText, keyword?, aliases?, fields } ],  // fields: flowFieldsValidation.js shape
 //     location?: { keyword? }                               // required if any target is { type: 'location' }
 //   }
+//   Optional translations on any text: greeting/page/form textTranslations,
+//   form buttonTextTranslations, choice titleTranslations /
+//   descriptionTranslations — { hi?: '...', mr?: '...' }, same limits as the
+//   English; compiled to the node/edge *_translations columns.
 //   target: { type: 'page', id } | { type: 'form', id } | { type: 'menu' } | { type: 'location' }
 //
 // Pure — no Supabase/Redis — same as flowSpec.js.
 const { normalizeText, ID_PATTERN, GREETING_WORDS, LIMITS, DX, DY } = require('./flowSpec');
 const { validateFlowFields } = require('./flowFieldsValidation');
+const { isValidLanguageCode } = require('./languageCatalog');
 
 const TARGET_TYPES = ['page', 'form', 'menu', 'location'];
 const LOCATION_TAP_KEYWORD = 'menu_location';
@@ -44,6 +49,23 @@ const isNonEmptyString = (v) => typeof v === 'string' && v.trim() !== '';
 const len = (v) => v.trim().length;
 
 /**
+ * Optional per-language versions of a text ({ hi: '...', mr: '...' }) —
+ * compiled to the node/edge *_translations columns the live chat sends to a
+ * customer who chose that language. Same limit as the English text.
+ */
+const validateTranslationMap = (map, max, at) => {
+  if (map === undefined || map === null) return null;
+  if (typeof map !== 'object' || Array.isArray(map)) return `${at} must be an object`;
+  for (const [code, text] of Object.entries(map)) {
+    if (code === 'en' || !isValidLanguageCode(code)) return `${at} has an invalid language code "${code}"`;
+    if (!isNonEmptyString(text)) return `${at}.${code} must be a non-empty string`;
+    if (len(text) > max) return `${at}.${code} must be ${max} characters or less`;
+  }
+  return null;
+};
+const trimMap = (map) => (map ? Object.fromEntries(Object.entries(map).map(([k, v]) => [k, v.trim()])) : null);
+
+/**
  * Validates a set of tappable choices (the menu, a page's buttons or list).
  * asButtons decides the title limit; rows may carry a description only in
  * list form.
@@ -60,10 +82,17 @@ const validateChoices = (choices, at, { asButtons, allowDescription, targetExist
     const t = c.title.trim().toLowerCase();
     if (titles.has(t)) return `${where}.title duplicates another choice's title`;
     titles.add(t);
+    const titleTrError = validateTranslationMap(c.titleTranslations, titleMax, `${where}.titleTranslations`);
+    if (titleTrError) return titleTrError;
     if (c.description !== undefined && c.description !== null) {
       if (!allowDescription) return `${where}.description is only allowed on list rows`;
       if (!isNonEmptyString(c.description)) return `${where}.description must be a non-empty string`;
       if (len(c.description) > LIMITS.LIST_ROW_DESCRIPTION) return `${where}.description must be ${LIMITS.LIST_ROW_DESCRIPTION} characters or less`;
+    }
+    if (c.descriptionTranslations !== undefined && c.descriptionTranslations !== null) {
+      if (c.description === undefined || c.description === null) return `${where}.descriptionTranslations needs a description`;
+      const descTrError = validateTranslationMap(c.descriptionTranslations, LIMITS.LIST_ROW_DESCRIPTION, `${where}.descriptionTranslations`);
+      if (descTrError) return descTrError;
     }
     const target = c.target;
     if (!target || !TARGET_TYPES.includes(target.type)) return `${where}.target.type must be one of: ${TARGET_TYPES.join(', ')}`;
@@ -85,6 +114,8 @@ const validateFlowSpecV2 = (spec) => {
   if (spec.version !== 2) return 'spec.version must be 2';
   if (!spec.greeting || !isNonEmptyString(spec.greeting.text)) return 'greeting.text is required';
   if (len(spec.greeting.text) > LIMITS.INTERACTIVE_BODY) return `greeting.text must be ${LIMITS.INTERACTIVE_BODY} characters or less`;
+  const greetingTrError = validateTranslationMap(spec.greeting.textTranslations, LIMITS.INTERACTIVE_BODY, 'greeting.textTranslations');
+  if (greetingTrError) return greetingTrError;
 
   const pages = spec.pages === undefined ? [] : spec.pages;
   const forms = spec.forms === undefined ? [] : spec.forms;
@@ -125,6 +156,8 @@ const validateFlowSpecV2 = (spec) => {
     if (hasButtons && hasList) return `${at} can have buttons or a list, not both`;
     const textMax = hasButtons || hasList ? LIMITS.INTERACTIVE_BODY : LIMITS.TEXT_BODY;
     if (len(page.text) > textMax) return `${at}.text must be ${textMax} characters or less`;
+    const pageTrError = validateTranslationMap(page.textTranslations, textMax, `${at}.textTranslations`);
+    if (pageTrError) return pageTrError;
     if (hasButtons) {
       if (!Array.isArray(page.buttons) || page.buttons.length === 0) return `${at}.buttons must have at least one button`;
       if (page.buttons.length > LIMITS.MAX_BUTTONS) return `${at} may have at most ${LIMITS.MAX_BUTTONS} buttons (WhatsApp limit)`;
@@ -151,6 +184,9 @@ const validateFlowSpecV2 = (spec) => {
     if (len(form.text) > LIMITS.INTERACTIVE_BODY) return `${at}.text must be ${LIMITS.INTERACTIVE_BODY} characters or less`;
     if (!isNonEmptyString(form.buttonText)) return `${at}.buttonText is required`;
     if (len(form.buttonText) > LIMITS.BUTTON_TITLE) return `${at}.buttonText must be ${LIMITS.BUTTON_TITLE} characters or less`;
+    const formTrError = validateTranslationMap(form.textTranslations, LIMITS.INTERACTIVE_BODY, `${at}.textTranslations`) ||
+      validateTranslationMap(form.buttonTextTranslations, LIMITS.BUTTON_TITLE, `${at}.buttonTextTranslations`);
+    if (formTrError) return formTrError;
     if (!Array.isArray(form.fields) || form.fields.filter(f => f && f.type !== 'display_text').length === 0) {
       return `${at}.fields must include at least one question`;
     }
@@ -233,7 +269,8 @@ const compileFlowSpecV2 = (spec) => {
   nodes.set(MENU_ID, {
     id: MENU_ID, nodeType: 'reply', keyword: 'hi', matchType: 'exact',
     hindiAliases: GREETING_WORDS.filter(w => w !== 'hi'),
-    replyKind: 'text', contentType: menuAsButtons ? 'buttons' : 'list', label: spec.greeting.text.trim()
+    replyKind: 'text', contentType: menuAsButtons ? 'buttons' : 'list', label: spec.greeting.text.trim(),
+    ...(spec.greeting.textTranslations ? { labelTranslations: trimMap(spec.greeting.textTranslations) } : {})
   });
   for (const page of pages) {
     const hasButtons = Array.isArray(page.buttons);
@@ -242,6 +279,7 @@ const compileFlowSpecV2 = (spec) => {
       id: `tmp:page:${page.id}`, nodeType: 'reply',
       ...(typedFields(page) || { keyword: pageTapKeyword(page.id), matchType: 'exact', hindiAliases: [] }),
       replyKind: 'text', contentType: hasButtons ? 'buttons' : hasList ? 'list' : 'text', label: page.text.trim(),
+      ...(page.textTranslations ? { labelTranslations: trimMap(page.textTranslations) } : {}),
       // Optional image sent above the message (saveFullGraph resolves image_url)
       ...(page.mediaId ? { mediaId: page.mediaId } : {})
     });
@@ -251,7 +289,9 @@ const compileFlowSpecV2 = (spec) => {
       id: `tmp:form:${form.id}`, nodeType: 'reply',
       ...(typedFields(form) || { keyword: formTapKeyword(form.id), matchType: 'exact', hindiAliases: [] }),
       replyKind: 'web_form_trigger', contentType: 'text', label: form.text.trim(),
-      buttonText: form.buttonText.trim(), formFields: form.fields
+      buttonText: form.buttonText.trim(), formFields: form.fields,
+      ...(form.textTranslations ? { labelTranslations: trimMap(form.textTranslations) } : {}),
+      ...(form.buttonTextTranslations ? { buttonTextTranslations: trimMap(form.buttonTextTranslations) } : {})
     });
   }
   if (spec.location) {
@@ -267,10 +307,13 @@ const compileFlowSpecV2 = (spec) => {
 
   const edges = [];
   const addChoices = (fromId, choices, isList) => choices.forEach((c, index) => {
+    const description = isList && isNonEmptyString(c.description) ? c.description.trim() : null;
     edges.push({
       fromNodeId: fromId, toNodeId: nodeIdFor(c.target), label: c.title.trim(),
-      description: isList && isNonEmptyString(c.description) ? c.description.trim() : null,
-      condition: null, preset: null, displayOrder: index
+      description,
+      condition: null, preset: null, displayOrder: index,
+      ...(c.titleTranslations ? { labelTranslations: trimMap(c.titleTranslations) } : {}),
+      ...(description && c.descriptionTranslations ? { descriptionTranslations: trimMap(c.descriptionTranslations) } : {})
     });
   });
   addChoices(MENU_ID, spec.menu, !menuAsButtons);

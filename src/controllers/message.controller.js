@@ -290,7 +290,8 @@ const sendPaymentQr = async (req, res, next) => {
     const caption = paymentService.buildPaymentQrCaption({
       amount,
       bookingCode: booking?.booking_code,
-      upiId: business.upiId
+      upiId: business.upiId,
+      languageCode: customer.preferredLanguage
     });
 
     const { data: outboundMsgRow, error: msgErr } = await supabase.from('messages').insert({

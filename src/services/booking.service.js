@@ -3,6 +3,7 @@ const redis = require('../config/redis');
 const supabase = require('../config/supabase');
 const { toCamelCase } = require('../utils/caseConvert');
 const { getLocalizedText } = require('../utils/localization');
+const { getSystemMessage } = require('../utils/systemMessages');
 const businessService = require('./business.service');
 const paymentService = require('./payment.service');
 const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
@@ -412,7 +413,10 @@ const recordBookingLead = async (businessId, customerId) => {
  * @param {boolean} localRentalUnconfigured
  * @returns {string}
  */
-const buildBookingSummaryBody = (collected, orderedFields, localRentalUnconfigured) => {
+// languageCode: the customer's preferred_language — the fixed lines (fare,
+// distance, notes) come from systemMessages.js; field labels are as given.
+const buildBookingSummaryBody = (collected, orderedFields, localRentalUnconfigured, languageCode = null) => {
+  const msg = (key, vars) => getSystemMessage(key, languageCode, vars);
   const fieldLines = orderedFields
     .map(f => {
       const value = collected[f.fieldKey];
@@ -439,26 +443,26 @@ const buildBookingSummaryBody = (collected, orderedFields, localRentalUnconfigur
   const fareLine = !hasFare
     ? ''
     : collected.fareSource === 'distance_estimate'
-      ? '\nFare: *₹' + collected.vehicleFare + ' (estimated, based on distance)*' +
-        '\nDistance: *' + collected.distanceKm + ' km*'
-      : '\nFare: *₹' + collected.vehicleFare + '*';
+      ? '\n' + msg('summaryFareEstimated', { fare: collected.vehicleFare }) +
+        '\n' + msg('summaryDistance', { km: collected.distanceKm })
+      : '\n' + msg('summaryFare', { fare: collected.vehicleFare });
 
   const driverDaLine = collected.driverDaTotal
-    ? '\nDriver DA: *₹' + collected.driverDaTotal + ' (' + collected.driverDaDays + ' days × ₹' + collected.driverDaPerDay + ')*'
+    ? '\n' + msg('summaryDriverDa', { total: collected.driverDaTotal, days: collected.driverDaDays, perDay: collected.driverDaPerDay })
     : '';
 
   const tollNoteLine = hasFare
-    ? '\n\n_Note: Toll & parking charges are not included in this fare and will be collected separately._'
+    ? '\n\n' + msg('summaryTollNote')
     : '';
 
   const extraRateNoteLine = (collected.fareSource === 'rental_package' &&
     collected.extraKmRate !== undefined && collected.extraKmRate !== null &&
     collected.extraHrRate !== undefined && collected.extraHrRate !== null)
-    ? '\n\n_Extra km: ₹' + collected.extraKmRate + '/km, Extra hour: ₹' + collected.extraHrRate + '/hr beyond package limits._'
+    ? '\n\n' + msg('summaryExtraRate', { km: collected.extraKmRate, hr: collected.extraHrRate })
     : '';
 
   const localRentalUnconfiguredNoteLine = localRentalUnconfigured
-    ? '\n\n_Note: this business hasn\'t set up rental packages yet — our team will call you to confirm pricing for this rental._'
+    ? '\n\n' + msg('summaryRentalUnconfigured')
     : '';
 
   return fieldLines + fareLine + driverDaLine + tollNoteLine + extraRateNoteLine + localRentalUnconfiguredNoteLine;
@@ -493,7 +497,7 @@ const buildBookingSummaryBody = (collected, orderedFields, localRentalUnconfigur
  */
 const createBookingAndConfirmation = async (businessId, customerNumber, collected, orderedFields, localRentalUnconfigured, formMeta = null) => {
   const { data: customer, error: custErr } = await supabase
-    .from('customers').select('id, name').eq('business_id', businessId).eq('whatsapp_number', customerNumber).maybeSingle();
+    .from('customers').select('id, name, preferred_language').eq('business_id', businessId).eq('whatsapp_number', customerNumber).maybeSingle();
   if (custErr || !customer) {
     logger.error('Cannot create booking: no customer record found', {
       businessId, customerNumber, custErr, collected
@@ -509,8 +513,10 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
   // compute a sane amount, so that case falls back to normal (no-advance)
   // behavior rather than inventing a number.
   const business = await businessService.getBusinessById(businessId);
+  // The customer's chosen language for the fixed confirmation wording (systemMessages.js).
+  const language = customer.preferred_language || null;
 
-  // Booking code = the first two English letters of the name customers see
+  // Booking code =the first two English letters of the name customers see
   // (displayName, else name), uppercased, + 4 random digits — "search cab" ->
   // SE4821. Fewer than two letters (e.g. a Devanagari-only name) or no
   // business -> "BK". The 🚕 sign-off stays only for travel/cab businesses
@@ -587,20 +593,18 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
     // payment without a QR, but a business that enabled it before QR payments
     // existed can still have none — fall back to a text-only request then.
     const amountText = `₹${Number(advanceAmount).toLocaleString('en-IN')}`;
+    const vars = { code: bookingCode, amount: amountText };
     const advanceConfirmation = business.paymentQrUrl
       ? {
         text: paymentService.buildPaymentQrCaption({
           upiId: business.upiId,
-          intro: isAdmissionFee
-            ? `Almost done! To confirm admission *${bookingCode}*, please pay the admission fee of *${amountText}* by scanning this QR code.`
-            : `Almost done! To confirm your booking *${bookingCode}*, please pay the advance of *${amountText}* by scanning this QR code.`
+          intro: getSystemMessage(isAdmissionFee ? 'admissionFeeQrIntro' : 'advanceQrIntro', language, vars),
+          languageCode: language
         }),
         imageUrl: business.paymentQrUrl
       }
       : {
-        text: isAdmissionFee
-          ? `Almost done! To confirm admission, the admission fee of *${amountText}* is required. Our team will share the payment details with you shortly.\n\nAdmission ID: *${bookingCode}*`
-          : `Almost done! To confirm your booking, an advance of *${amountText}* is required. Our team will share the payment details with you shortly.\n\nBooking ID: *${bookingCode}*`,
+        text: getSystemMessage(isAdmissionFee ? 'admissionFeeNoQr' : 'advanceNoQr', language, vars),
         imageUrl: null
       };
 
@@ -617,10 +621,10 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
   }
 
   // Build confirmation message (WhatsApp bold = *value*)
-  const confirmationText = '✅ *Booking request received!*\n' +
-    'Booking ID: *' + bookingCode + '*\n\n' +
-    buildBookingSummaryBody(collected, orderedFields, localRentalUnconfigured) +
-    '\n\nOur team will contact you shortly to confirm.' + (isTravelBusiness ? ' 🚕' : '');
+  const confirmationText = getSystemMessage('bookingReceived', language) + '\n' +
+    getSystemMessage('bookingIdLine', language, { code: bookingCode }) + '\n\n' +
+    buildBookingSummaryBody(collected, orderedFields, localRentalUnconfigured, language) +
+    '\n\n' + getSystemMessage('bookingContactSoon', language) + (isTravelBusiness ? ' 🚕' : '');
 
   // Emit Socket.io event (wrap in try/catch)
   try {

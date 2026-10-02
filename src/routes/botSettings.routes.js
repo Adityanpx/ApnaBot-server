@@ -22,6 +22,9 @@ router.put('/', requireRole('owner'), botSettingsController.saveBotSettings);
 // POST /compile - what Publish would produce (saved draft or given settings), no writes
 router.post('/compile', botSettingsController.compileBotSettings);
 
+// POST /translation-slots - every text the bot sends (saved draft or given settings), for Translations, no writes
+router.post('/translation-slots', botSettingsController.getTranslationSlots);
+
 // POST /preview-message - "Try it" chat on unsaved settings, no writes
 router.post('/preview-message', botSettingsController.previewBotSettingsMessage);
 

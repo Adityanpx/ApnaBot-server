@@ -14,6 +14,7 @@ const aiFlowService = require('./aiFlow.service');
 const { compileFlowSpecV2 } = require('../utils/flowSpecV2');
 const { validateCoachingSettings, mapCoachingSettingsToSpec, demoReminderFor, FIELD_LIBRARY } = require('../utils/coachingBotSettings');
 const demoReminderTemplateService = require('./demoReminderTemplate.service');
+const { TRANSLATION_LANGUAGES, translationWarnings } = require('../utils/coachingTranslations');
 const { listInstitutePresets } = require('../utils/coachingInstitutePresets');
 const logger = require('../utils/logger');
 
@@ -31,7 +32,7 @@ const PRESETS = {
 const loadBusiness = async (businessId) => {
   const { data, error } = await supabase
     .from('businesses')
-    .select('id, name, display_name, business_category, welcome_message, welcome_message_translations, business_latitude, business_longitude, payment_qr_url')
+    .select('id, name, display_name, business_category, welcome_message, welcome_message_translations, business_latitude, business_longitude, payment_qr_url, enabled_languages')
     .eq('id', businessId)
     .maybeSingle();
   if (error) throw error;
@@ -44,11 +45,13 @@ const OPTIONAL_COURSE_KEYS = ['groupName', 'ageGroup', 'duration', 'fees', 'mode
  * The business's ACTIVE courses (business_courses) in display order, in the
  * shape coachingBotSettings.js#mapCoachingSettingsToSpec expects. Also what
  * a publish records (published_settings.courses) to detect later edits.
+ * withIds: also `id` — the key of a course's translations, for the mapper
+ * only (never recorded, so published_settings.courses keeps its shape).
  */
-const loadActiveCourses = async (businessId) => {
+const loadActiveCourses = async (businessId, { withIds = false } = {}) => {
   const { data, error } = await supabase
     .from('business_courses')
-    .select('name, description, details, show_demo_button, show_admission_button, group_name, age_group, duration, fees, mode, more_details, batches, image_media_id')
+    .select(`${withIds ? 'id, ' : ''}name, description, details, show_demo_button, show_admission_button, group_name, age_group, duration, fees, mode, more_details, batches, image_media_id`)
     .eq('business_id', businessId).eq('is_active', true)
     .order('order', { ascending: true }).order('created_at', { ascending: true });
   if (error) throw error;
@@ -152,8 +155,11 @@ const buildFromSettings = async ({ businessId, graphBusiness, presetName, settin
   const business = await loadBusiness(businessId);
   if (!business) return { status: 404, error: 'Business not found' };
 
-  const courses = await loadActiveCourses(businessId);
-  const { spec, error } = resolved.preset.mapToSpec(settings, { businessName: business.display_name || business.name, courses });
+  const coursesWithIds = await loadActiveCourses(businessId, { withIds: true });
+  const courses = coursesWithIds.map(({ id, ...c }) => c);
+  const { spec, error, translation } = resolved.preset.mapToSpec(settings, {
+    businessName: business.display_name || business.name, courses: coursesWithIds, languages: translationLanguagesOf(business)
+  });
   if (error) return { status: 400, error };
 
   if (spec.location && (business.business_latitude == null || business.business_longitude == null)) {
@@ -173,7 +179,31 @@ const buildFromSettings = async ({ businessId, graphBusiness, presetName, settin
         : 'Until WhatsApp approves the demo reminder message (sent for approval on Publish, usually within a day), reminders reach only parents who messaged in the last 24 hours.');
     }
   }
-  return { business, spec, graph, warnings, courses };
+  warnings.push(...translationWarnings(translation && translation.report));
+  return { business, spec, graph, warnings, courses, translationSlots: translation ? translation.slots : [] };
+};
+
+/** The business's languages other than English that Bot Builder translates into. */
+const translationLanguagesOf = (business) =>
+  (business.enabled_languages || []).filter(code => TRANSLATION_LANGUAGES.includes(code));
+
+/**
+ * POST /translation-slots: every text the bot would send for these settings
+ * (unsaved edits allowed), for the Translations screen. Read-only.
+ * @returns {{ languages: string[], slots: Object[] } | { status, error }}
+ */
+const translationSlots = async ({ businessId, graphBusiness, preset, settings }) => {
+  let presetName = preset;
+  let source = settings;
+  if (source === undefined || source === null) {
+    const row = await loadRow(businessId);
+    if (!row) return { status: 404, error: 'No bot settings saved yet.' };
+    presetName = row.preset;
+    source = row.settings;
+  }
+  const built = await buildFromSettings({ businessId, graphBusiness, presetName, settings: source });
+  if (built.error) return { status: built.status, error: `Finish your bot settings first: ${built.error}` };
+  return { languages: translationLanguagesOf(built.business), slots: built.translationSlots };
 };
 
 /** POST /compile: what Publish would produce. No writes. */
@@ -283,6 +313,7 @@ module.exports = {
   saveDraft,
   buildFromSettings,
   compile,
+  translationSlots,
   preparePublish,
   executePublish
 };
