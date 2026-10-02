@@ -99,3 +99,33 @@ test('structuredColumns: only present keys, "" clears, mode cleaned', () => {
   assert.deepEqual(structuredColumns({ duration: '', mode: '' }), { duration: null, mode: null });
   assert.deepEqual(structuredColumns({ name: 'x' }), {});
 });
+
+test('batches: list of up to 10 labels, each ≤72, no blanks or duplicates', () => {
+  assert.equal(validateCourseFields({ name: 'Abacus', batches: ['Mon–Fri 5–6 pm', 'Sat–Sun 10–11 am (online)'] }), null);
+  assert.equal(validateCourseFields({ batches: [] }, { partial: true }), null);
+  assert.match(validateCourseFields({ name: 'A', batches: 'Mon' }), /Batches must be a list/);
+  assert.match(validateCourseFields({ name: 'A', batches: ['Mon', ' '] }), /Each batch needs a name/);
+  assert.match(validateCourseFields({ name: 'A', batches: Array.from({ length: 11 }, (_, i) => `B${i}`) }), /at most 10 batches/);
+  assert.match(validateCourseFields({ name: 'A', batches: ['x'.repeat(73)] }), /72 characters or less/);
+  assert.match(validateCourseFields({ name: 'A', batches: ['Mon 5 pm', 'mon 5 pm'] }), /listed twice/);
+  assert.deepEqual(structuredColumns({ batches: [' Mon 5 pm ', 'Sat 10 am'] }), { batches: ['Mon 5 pm', 'Sat 10 am'] });
+});
+
+test('coursePageText: batches section after the details (structured and old text); none = unchanged', () => {
+  assert.equal(coursePageText({ name: 'Chess', fees: '₹2,000', batches: ['Sat 10–11 am', 'Sun 4–5 pm'] }),
+    '*Chess*\n\n💰 Fees: ₹2,000\n\n🗓 Batches:\n• Sat 10–11 am\n• Sun 4–5 pm');
+  assert.equal(coursePageText({ name: 'Chess', details: 'Old text', batches: ['Sat 10 am'] }), 'Old text\n\n🗓 Batches:\n• Sat 10 am');
+  assert.equal(coursePageText({ name: 'Chess', details: 'Old text', batches: [] }), 'Old text');
+  assert.equal(coursePageText({ name: 'Chess', batches: ['Sat 10 am'] }), null); // batches alone are not a page
+});
+
+test('flow fields: a course_batches dropdown must depend on an EARLIER course-list field', () => {
+  const course = { name: 'course', label: 'Course', type: 'dropdown', source: BUSINESS_COURSES_SOURCE, required: true };
+  const batch = { name: 'batch', label: 'Batch', type: 'dropdown', source: 'course_batches', dependsOn: 'course', options: ['Weekday', 'Weekend'] };
+  assert.equal(validateFlowFields([course, batch]), null);
+  assert.match(validateFlowFields([batch, course]), /dependsOn must name an earlier course-list field/);
+  assert.match(validateFlowFields([course, { ...batch, dependsOn: 'nope' }]), /dependsOn must name an earlier course-list field/);
+  assert.match(validateFlowFields([{ name: 'x', label: 'X', type: 'dropdown', options: ['a', 'b'] }, { ...batch, dependsOn: 'x' }]),
+    /dependsOn must name an earlier course-list field/);
+  assert.match(validateFlowFields([course, { ...batch, options: [] }]), /needs at least 2 non-empty options/);
+});

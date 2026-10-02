@@ -31,7 +31,7 @@
 // or hiding a course updates the forms without a re-publish.
 const { validateFlowSpecV2, pageTapKeyword } = require('./flowSpecV2');
 const { LIMITS } = require('./flowSpec');
-const { BUSINESS_COURSES_SOURCE } = require('./flowFieldsValidation');
+const { BUSINESS_COURSES_SOURCE, COURSE_BATCHES_SOURCE } = require('./flowFieldsValidation');
 const { hasPlaceholder, coursePageText } = require('./courseValidation');
 
 const MAX_COURSES = LIMITS.MAX_LIST_ROWS;
@@ -64,6 +64,8 @@ const FIELD_LIBRARY = [
   { key: 'stream', label: 'Stream', type: 'radio', options: ['Science', 'Commerce', 'Arts'] },
   { key: 'targetExam', label: 'Target exam', type: 'dropdown' },
   { key: 'tenthPercent', label: '10th percentage', type: 'text' },
+  // On the form: the chosen course's batches (Courses → batches), falling
+  // back to these options when that course has none — see buildFormFields.
   { key: 'batch', label: 'Batch', type: 'radio', options: ['Weekday', 'Weekend'] },
   { key: 'mode', label: 'Mode', type: 'radio', options: ['Online', 'Offline'] },
   { key: 'preferredTime', label: 'Preferred time', type: 'radio', options: ['Morning', 'Afternoon', 'Evening'] },
@@ -296,6 +298,11 @@ const buildFormFields = (form) => {
   fields.push({ name: 'course', label: 'Course', type: 'dropdown', source: BUSINESS_COURSES_SOURCE, required: true });
   for (const lib of FIELD_LIBRARY) {
     if (!form.fields.includes(lib.key)) continue;
+    if (lib.key === 'batch') {
+      // The picked course's batches; lib.options (Weekday / Weekend) when it has none.
+      fields.push({ name: lib.key, label: lib.label, type: 'dropdown', source: COURSE_BATCHES_SOURCE, dependsOn: 'course', options: lib.options });
+      continue;
+    }
     const options = lib.key === 'targetExam' ? form.targetExamOptions.map(o => o.trim()) : lib.options;
     fields.push({ name: lib.key, label: lib.label, type: lib.type, ...(options ? { options } : {}) });
   }

@@ -8,7 +8,9 @@
 
 const COURSE_LIMITS = {
   NAME: 24, DESCRIPTION: 72, DETAILS: 1024, GROUP_NAME: 24,
-  LINE: 100, MORE_DETAILS: 800
+  LINE: 100, MORE_DETAILS: 800,
+  // 20260930150000_course_batches.sql
+  BATCHES: 10, BATCH_LABEL: 72
 };
 
 // Group names that would clash with the bot's own list rows.
@@ -70,8 +72,26 @@ const validateCourseFields = (body, { partial = false } = {}) => {
     if (typeof moreDetails !== 'string') return 'More details must be text';
     if (moreDetails.trim().length > COURSE_LIMITS.MORE_DETAILS) return `More details must be ${COURSE_LIMITS.MORE_DETAILS} characters or less`;
   }
+  const { batches } = body;
+  if (batches !== undefined && batches !== null) {
+    if (!Array.isArray(batches)) return 'Batches must be a list';
+    const labels = batches.filter(b => typeof b === 'string' && b.trim());
+    if (labels.length !== batches.length) return 'Each batch needs a name, e.g. "Mon–Fri 5–6 pm"';
+    if (labels.length > COURSE_LIMITS.BATCHES) return `A course can have at most ${COURSE_LIMITS.BATCHES} batches`;
+    const tooLong = labels.find(b => b.trim().length > COURSE_LIMITS.BATCH_LABEL);
+    if (tooLong) return `Batch "${tooLong.trim().slice(0, 20)}…" must be ${COURSE_LIMITS.BATCH_LABEL} characters or less`;
+    const seen = new Set();
+    for (const b of labels) {
+      const key = b.trim().toLowerCase();
+      if (seen.has(key)) return `Batch "${b.trim()}" is listed twice`;
+      seen.add(key);
+    }
+  }
   return null;
 };
+
+/** Validated batches → trimmed labels (null/undefined → []). */
+const cleanBatches = (batches) => (Array.isArray(batches) ? batches.map(b => b.trim()).filter(Boolean) : []);
 
 /** '' / whitespace -> null, otherwise trimmed. */
 const cleanText = (v) => (typeof v === 'string' && v.trim() ? v.trim() : null);
@@ -85,8 +105,8 @@ const hasPlaceholder = (text) => typeof text === 'string' && PLACEHOLDER_PATTERN
 const STRUCTURED_COLUMNS = { ageGroup: 'age_group', duration: 'duration', fees: 'fees', mode: 'mode', moreDetails: 'more_details' };
 
 /**
- * DB column values for the structured-detail keys present in `body` (''
- * clears a field), for an insert/update — validate with validateCourseFields
+ * DB column values for the structured-detail keys (and batches) present in
+ * `body` ('' clears a field), for an insert/update — validate with validateCourseFields
  * first. Used by coaching/course.controller.js and courseCatalog.controller.js.
  */
 const structuredColumns = (body) => {
@@ -94,6 +114,7 @@ const structuredColumns = (body) => {
   for (const [key, column] of Object.entries(STRUCTURED_COLUMNS)) {
     if (body[key] !== undefined) out[column] = key === 'mode' ? cleanMode(body[key]) : cleanText(body[key]);
   }
+  if (body.batches !== undefined) out.batches = cleanBatches(body.batches);
   return out;
 };
 
@@ -111,6 +132,16 @@ const hasStructuredDetails = (course) =>
  */
 const coursePageText = (course) => {
   if (!course) return null;
+  const main = coursePageMain(course);
+  // Batches (when any) follow the details — on both the structured and the
+  // old free-text page. No batches = the page exactly as before batches.
+  const batches = Array.isArray(course.batches) ? course.batches.filter(isFilled).map(b => b.trim()) : [];
+  if (batches.length === 0) return main;
+  const section = `🗓 Batches:\n${batches.map(b => `• ${b}`).join('\n')}`;
+  return main ? `${main}\n\n${section}` : null;
+};
+
+const coursePageMain = (course) => {
   if (!hasStructuredDetails(course)) return isFilled(course.details) ? course.details.trim() : null;
   const lines = [`*${course.name.trim()}*`];
   if (isFilled(course.description)) lines.push(course.description.trim());
@@ -122,5 +153,5 @@ const coursePageText = (course) => {
 
 module.exports = {
   COURSE_LIMITS, COURSE_MODES, STRUCTURED_KEYS,
-  validateCourseFields, cleanText, cleanMode, hasPlaceholder, hasStructuredDetails, coursePageText, structuredColumns
+  validateCourseFields, cleanText, cleanMode, cleanBatches, hasPlaceholder, hasStructuredDetails, coursePageText, structuredColumns
 };

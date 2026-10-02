@@ -10,6 +10,7 @@
 //   "… Age: X"            → age_group
 //   "… Duration: X"       → duration
 //   "… Fees: X"           → fees
+//   "… Batch timings: X"  → dropped (course batches replace it)
 //   every other line      → more_details (in order)
 //
 // Mode stays empty (each institute sets its own). `details` is left as it
@@ -31,9 +32,14 @@ const FIELD_LINES = [
   { column: 'fees', key: 'fees', pattern: /^\s*\S*\s*Fees:\s*(.+)$/i }
 ];
 
+// "Batch timings: ____" lines are dropped: course batches (B4, the
+// business_courses.batches list) replace them, so the blank would only make
+// owners fill in the same thing twice.
+const DROPPED_LINE = /^\s*\S*\s*Batch timings:/i;
+
 /** details text → { age_group?, duration?, fees?, more_details? } */
 const parseDetails = (details) => {
-  const lines = details.split('\n').map(l => l.trim()).filter(Boolean).slice(1);
+  const lines = details.split('\n').map(l => l.trim()).filter(Boolean).slice(1).filter(l => !DROPPED_LINE.test(l));
   const out = {};
   const rest = [];
   for (const line of lines) {

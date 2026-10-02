@@ -16,6 +16,11 @@ const DISPLAY_TEXT_FONT_SIZES = ['sm', 'md', 'lg', 'xl'];
 // .controller.js#resolveDynamicOptions.
 const BUSINESS_COURSES_SOURCE = 'business_courses';
 
+// A dropdown with this source lists the batches of the course picked in an
+// EARLIER course-list field (field.dependsOn = that field's name); its own
+// options are the fallback shown when the picked course has no batches.
+const COURSE_BATCHES_SOURCE = 'course_batches';
+
 // Which field types each vehicle-quote role may be attached to — see
 // validateFlowFields' doc comment. Keyed by role value.
 const ROLE_ALLOWED_TYPES = {
@@ -102,6 +107,13 @@ const validateFlowFields = (fields) => {
       }
     }
 
+    if (type === 'dropdown' && field.source === COURSE_BATCHES_SOURCE) {
+      const courseField = typeof field.dependsOn === 'string' ? seenNames.get(field.dependsOn) : null;
+      if (!courseField || courseField.type !== 'dropdown' || courseField.source !== BUSINESS_COURSES_SOURCE) {
+        return `fields[${i}] ("${name}") lists course batches, so dependsOn must name an earlier course-list field`;
+      }
+    }
+
     if (type === 'icon_select' && field.source !== 'vehicle_catalog') {
       return `fields[${i}] ("${name}") is icon_select and needs source: 'vehicle_catalog'`;
     }
@@ -161,4 +173,4 @@ const validateFlowFields = (fields) => {
   return null;
 };
 
-module.exports = { validateFlowFields, BUSINESS_COURSES_SOURCE };
+module.exports = { validateFlowFields, BUSINESS_COURSES_SOURCE, COURSE_BATCHES_SOURCE };

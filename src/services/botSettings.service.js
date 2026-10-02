@@ -34,7 +34,7 @@ const loadBusiness = async (businessId) => {
   return data;
 };
 
-const OPTIONAL_COURSE_KEYS = ['groupName', 'ageGroup', 'duration', 'fees', 'mode', 'moreDetails'];
+const OPTIONAL_COURSE_KEYS = ['groupName', 'ageGroup', 'duration', 'fees', 'mode', 'moreDetails', 'batches'];
 
 /**
  * The business's ACTIVE courses (business_courses) in display order, in the
@@ -44,7 +44,7 @@ const OPTIONAL_COURSE_KEYS = ['groupName', 'ageGroup', 'duration', 'fees', 'mode
 const loadActiveCourses = async (businessId) => {
   const { data, error } = await supabase
     .from('business_courses')
-    .select('name, description, details, show_demo_button, show_admission_button, group_name, age_group, duration, fees, mode, more_details')
+    .select('name, description, details, show_demo_button, show_admission_button, group_name, age_group, duration, fees, mode, more_details, batches')
     .eq('business_id', businessId).eq('is_active', true)
     .order('order', { ascending: true }).order('created_at', { ascending: true });
   if (error) throw error;
@@ -53,7 +53,10 @@ const loadActiveCourses = async (businessId) => {
   // null here would wrongly flag "unpublished changes".
   return (data || []).map(row => {
     const course = toCamelCase(row);
-    for (const key of OPTIONAL_COURSE_KEYS) if (course[key] === null || course[key] === undefined) delete course[key];
+    for (const key of OPTIONAL_COURSE_KEYS) {
+      const v = course[key];
+      if (v === null || v === undefined || (Array.isArray(v) && v.length === 0)) delete course[key];
+    }
     return course;
   });
 };

@@ -46,7 +46,7 @@ const getCourseCatalogForBusiness = async (req, res, next) => {
 
     const [{ data: catalog, error }, { data: mine, error: mineErr }] = await Promise.all([
       supabase.from('course_catalog')
-        .select('id, name, description, details, group_name, age_group, duration, fees, mode, more_details, order')
+        .select('id, name, description, details, group_name, age_group, duration, fees, mode, more_details, batches, order')
         .eq('category', business.business_category).eq('is_active', true)
         .order('order', { ascending: true }).order('name', { ascending: true }),
       supabase.from('business_courses').select('catalog_id').eq('business_id', businessId)
@@ -83,9 +83,10 @@ const getCourses = async (req, res, next) => {
 
 /**
  * POST /api/courses
- * Body: { catalogId } — copy a catalog entry's text, group and structured
- * details, or { name, description?, details?, groupName?, ageGroup?,
- * duration?, fees?, mode?, moreDetails? } — a course of the owner's own. Either way
+ * Body: { catalogId } — copy a catalog entry's text, group, structured
+ * details and batches, or { name, description?, details?, groupName?,
+ * ageGroup?, duration?, fees?, mode?, moreDetails?, batches? } — a course of
+ * the owner's own. Either way
  * the new course is appended at the end and shown (is_active true).
  */
 const createCourse = async (req, res, next) => {
@@ -108,7 +109,8 @@ const createCourse = async (req, res, next) => {
       if (!entry) return errorResponse(res, 404, 'Catalog course not found');
       row = {
         catalog_id: entry.id, name: entry.name, description: entry.description, details: entry.details, group_name: entry.group_name,
-        age_group: entry.age_group, duration: entry.duration, fees: entry.fees, mode: entry.mode, more_details: entry.more_details
+        age_group: entry.age_group, duration: entry.duration, fees: entry.fees, mode: entry.mode, more_details: entry.more_details,
+        batches: entry.batches || []
       };
     } else {
       const fieldError = validateCourseFields(body);
@@ -140,7 +142,8 @@ const createCourse = async (req, res, next) => {
 /**
  * PUT /api/courses/:id
  * Body: any of { name, description, details, groupName, ageGroup, duration,
- * fees, mode, moreDetails, showDemoButton, showAdmissionButton, isActive }.
+ * fees, mode, moreDetails, batches, showDemoButton, showAdmissionButton,
+ * isActive }. batches replaces the whole list.
  * '' / null clears a text field (groupName: no group; mode: not shown). Changes the business's own copy only —
  * the WhatsApp bot shows them after the next Bot Builder Publish; the
  * service form's course dropdown shows them immediately.

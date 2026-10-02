@@ -385,6 +385,13 @@ question nodes) plus web-form links for Free demo / Admission.
   catalog entries are moved over by `scripts/convertCatalogToStructured.js`
   (dry run / `--confirm`); business courses switch when the owner fills the
   fields in.
+- **Course batches (`batches` jsonb list of labels, max 10 × 72 chars, on
+  both course tables):** listed as a "🗓 Batches" section after the course
+  page details. Bot Builder forms' "Batch" question is a dropdown with
+  `source: 'course_batches'`, `dependsOn: 'course'` and options Weekday /
+  Weekend as the fallback: the public form GET adds `optionsByCourse`
+  (`resolveDynamicOptions`), `/book` shows the picked course's batches and
+  clears a stale pick, submit checks the answer (`allowedOptions`).
 - **Course groups (`business_courses.group_name`, catalog suggests one):**
   with 2+ distinct groups among shown courses, WhatsApp shows Courses →
   groups ("N courses") → that group's courses (+ All groups / Main menu) →

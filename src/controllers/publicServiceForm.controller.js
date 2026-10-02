@@ -10,7 +10,7 @@ const bookingService = require('../services/booking.service');
 const whatsappService = require('../services/whatsapp.service');
 const placesService = require('../services/places.service');
 const { toCamelCase } = require('../utils/caseConvert');
-const { BUSINESS_COURSES_SOURCE } = require('../utils/flowFieldsValidation');
+const { BUSINESS_COURSES_SOURCE, COURSE_BATCHES_SOURCE } = require('../utils/flowFieldsValidation');
 const { courseIndexFromPageKeyword, formTitleForKeyword, formRequestForKeyword } = require('../utils/coachingBotSettings');
 const { isTravelFeaturedCategory } = require('../config/categoryFeatures');
 const { successResponse, errorResponse } = require('../utils/response');
@@ -76,20 +76,44 @@ const resolveFlowFields = async (formToken, business, formNode) => {
 
 /**
  * Fills in options for dropdowns whose list comes from live data rather than
- * the stored field — today only source 'business_courses' (the business's
- * active courses, in display order; see coaching/course.controller.js). A
- * form with no such field is returned unchanged without any DB call, so
- * every existing form behaves exactly as before.
+ * the stored field:
+ *  - source 'business_courses': the business's active courses, in display
+ *    order (see coaching/course.controller.js);
+ *  - source 'course_batches': adds optionsByCourse { courseName: [batches] }
+ *    for courses that have batches — the form shows the picked course's list,
+ *    and the field's own options (e.g. Weekday / Weekend) otherwise.
+ * A form with no course list is returned unchanged without any DB call, so
+ * every other form behaves exactly as before.
  */
 const resolveDynamicOptions = async (businessId, fields) => {
   const isCourseList = (f) => f.type === 'dropdown' && f.source === BUSINESS_COURSES_SOURCE;
+  const isBatchList = (f) => f.type === 'dropdown' && f.source === COURSE_BATCHES_SOURCE;
   if (!fields.some(isCourseList)) return fields;
   const { data, error } = await supabase
-    .from('business_courses').select('name').eq('business_id', businessId).eq('is_active', true)
+    .from('business_courses').select('name, batches').eq('business_id', businessId).eq('is_active', true)
     .order('order', { ascending: true }).order('created_at', { ascending: true });
   if (error) throw error;
   const names = (data || []).map(c => c.name);
-  return fields.map(f => (isCourseList(f) ? { ...f, options: names } : f));
+  const optionsByCourse = Object.fromEntries((data || [])
+    .filter(c => Array.isArray(c.batches) && c.batches.length > 0)
+    .map(c => [c.name, c.batches]));
+  return fields.map(f => {
+    if (isCourseList(f)) return { ...f, options: names };
+    if (isBatchList(f)) return { ...f, optionsByCourse };
+    return f;
+  });
+};
+
+/**
+ * The options a field accepts for the answers given so far: a course-batches
+ * field → the picked course's batches, else its own (fallback) options.
+ */
+const allowedOptions = (field, values) => {
+  if (field.source === COURSE_BATCHES_SOURCE && field.optionsByCourse) {
+    const byCourse = field.optionsByCourse[values[field.dependsOn]];
+    if (Array.isArray(byCourse) && byCourse.length > 0) return byCourse;
+  }
+  return field.options || [];
 };
 
 /**
@@ -255,6 +279,13 @@ const submitServiceForm = async (req, res, next) => {
       !f.options.includes(values[f.name]));
     if (staleCourse) {
       return errorResponse(res, 400, `${staleCourse.label}: please choose one of the listed options`);
+    }
+    // Same for a batch: one of the picked course's batches (or the fallback).
+    const staleBatch = flowFields.find(f => f.source === COURSE_BATCHES_SOURCE && f.type === 'dropdown' &&
+      values[f.name] !== undefined && values[f.name] !== null && String(values[f.name]).trim() !== '' &&
+      !allowedOptions(f, values).includes(values[f.name]));
+    if (staleBatch) {
+      return errorResponse(res, 400, `${staleBatch.label}: please choose one of the batches listed for your course`);
     }
 
     // A required field hidden by an unmet visibleWhen condition (e.g.

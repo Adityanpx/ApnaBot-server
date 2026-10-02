@@ -37,7 +37,7 @@ const getCourseCatalog = async (req, res, next) => {
 /**
  * POST /api/admin/course-catalog
  * Body: { category, name, description?, details?, groupName?, ageGroup?,
- * duration?, fees?, mode?, moreDetails?, order? }
+ * duration?, fees?, mode?, moreDetails?, batches?, order? }
  */
 const createCourseCatalogEntry = async (req, res, next) => {
   try {
@@ -76,7 +76,7 @@ const createCourseCatalogEntry = async (req, res, next) => {
 /**
  * PUT /api/admin/course-catalog/:id
  * Body: any of { name, description, details, groupName, ageGroup, duration,
- * fees, mode, moreDetails, isActive, order }. category is
+ * fees, mode, moreDetails, batches, isActive, order }. category is
  * fixed once created (delete + re-add to move an entry).
  */
 const updateCourseCatalogEntry = async (req, res, next) => {

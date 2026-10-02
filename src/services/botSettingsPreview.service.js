@@ -20,7 +20,7 @@ const { GREETING_KEYWORDS } = require('../controllers/webhook.controller');
 const { applyMessageTemplate, applyMessageTemplateWithFooter } = require('../utils/messageTemplating');
 const { getLocalizedText } = require('../utils/localization');
 const { getSystemMessage } = require('../utils/systemMessages');
-const { BUSINESS_COURSES_SOURCE } = require('../utils/flowFieldsValidation');
+const { BUSINESS_COURSES_SOURCE, COURSE_BATCHES_SOURCE } = require('../utils/flowFieldsValidation');
 const { formTitleForKeyword } = require('../utils/coachingBotSettings');
 
 // Preview-only interaction ids (never real WhatsApp ids).
@@ -87,13 +87,19 @@ const renderNode = (draft, node, business) => {
 /** The form a form node opens, as the parent sees it (course list filled in). */
 const renderForm = (node, courses) => {
   const courseNames = courses.map(c => c.name);
+  // Same shape publicServiceForm.controller.js#resolveDynamicOptions gives the real form.
+  const optionsByCourse = Object.fromEntries(courses
+    .filter(c => Array.isArray(c.batches) && c.batches.length > 0)
+    .map(c => [c.name, c.batches]));
   const title = formTitleForKeyword(node.keyword);
   return {
     title: title ? title.title : null,
     subtitle: title ? title.subtitle : null,
-    fields: (node.formFields || []).map(f => (f.type === 'dropdown' && f.source === BUSINESS_COURSES_SOURCE
-      ? { ...f, options: courseNames }
-      : { ...f, options: Array.isArray(f.options) ? f.options : [] }))
+    fields: (node.formFields || []).map(f => {
+      if (f.type === 'dropdown' && f.source === BUSINESS_COURSES_SOURCE) return { ...f, options: courseNames };
+      const base = { ...f, options: Array.isArray(f.options) ? f.options : [] };
+      return f.type === 'dropdown' && f.source === COURSE_BATCHES_SOURCE ? { ...base, optionsByCourse } : base;
+    })
   };
 };
 

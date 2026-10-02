@@ -366,3 +366,18 @@ test('publish: blanks in a structured field, and an over-long built page, are ca
   assert.match(map(settings(), [course('JEE', full)]).error, /the course page is \d+ characters — WhatsApp allows 1024/);
   assert.equal(map(settings(), [course('JEE', { details: null, duration: '2 years' })]).error, null);
 });
+
+// ---- Course batches ----
+test('forms: Batch lists the picked course\'s batches (Weekday/Weekend when none), after Course', () => {
+  const fields = formById(map(settings()).spec, 'admission').fields;
+  const batch = fields.find(f => f.name === 'batch');
+  assert.deepEqual(batch, { name: 'batch', label: 'Batch', type: 'dropdown', source: 'course_batches', dependsOn: 'course', options: ['Weekday', 'Weekend'] });
+  assert.ok(fields.findIndex(f => f.name === 'course') < fields.findIndex(f => f.name === 'batch'));
+  assert.equal(validateFlowFields(fields), null);
+});
+
+test('course page shows its batches', () => {
+  const { spec } = map(settings(), [course('Abacus', { batches: ['Mon–Fri 5–6 pm'] }), course('Vedic Maths')]);
+  assert.equal(pageById(spec, 'course_1').text, 'Abacus details\n\n🗓 Batches:\n• Mon–Fri 5–6 pm');
+  assert.equal(pageById(spec, 'course_2').text, 'Vedic Maths details');
+});
