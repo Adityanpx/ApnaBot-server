@@ -1,12 +1,15 @@
 const Redis = require('ioredis');
 const config = require('./env');
+const { reconnectDelay } = require('./redisRetry');
 const logger = require('../utils/logger');
 
+// The app's general Redis client (caches, usage counters, sessions) — and,
+// shared, the connection every BullMQ Queue sends jobs on (see
+// config/queueConnection.js). maxRetriesPerRequest 3: while Redis is
+// unreachable a command fails after a few reconnect attempts instead of
+// hanging the request that issued it. Reconnects forever (redisRetry.js).
 const redis = new Redis(config.REDIS_URL, {
-  retryStrategy(times) {
-    if (times > 10) return null;
-    return Math.min(times * 50, 2000);
-  },
+  retryStrategy: reconnectDelay,
   maxRetriesPerRequest: 3
 });
 
@@ -16,15 +19,6 @@ redis.on('connect', () => {
 
 redis.on('error', (err) => {
   logger.error('Redis connection error:', err);
-});
-
-// retryStrategy above returns null after 10 attempts, which makes ioredis
-// give up and emit 'end' instead of retrying further. There's no automatic
-// recovery from that state, so exit and let pm2 (see deploy.yml) restart
-// the process and reconnect from scratch.
-redis.on('end', () => {
-  logger.error('CRITICAL: Redis connection permanently closed (retries exhausted); exiting to trigger process restart');
-  process.exit(1);
 });
 
 module.exports = redis;

@@ -4,20 +4,7 @@ const walletService = require('../services/wallet.service');
 const supabase = require('../config/supabase');
 const logger = require('../utils/logger');
 const config = require('../config/env');
-
-const redisUrl = new URL(process.env.REDIS_URL);
-
-const connection = {
-  host: redisUrl.hostname,
-  port: parseInt(redisUrl.port),
-  password: redisUrl.password,
-  username: redisUrl.username || 'default',
-  tls: process.env.REDIS_URL.startsWith('rediss://') ? {} : undefined,
-  retryStrategy(times) {
-    if (times > 10) return null;
-    return Math.min(times * 50, 2000);
-  }
-};
+const { workerConnection } = require('../config/queueConnection');
 
 // Must match the prefix used by broadcast.queue.js - see comment there.
 const prefix = `apnabot:${config.QUEUE_NAMESPACE}`;
@@ -92,7 +79,7 @@ const worker = new Worker('broadcast-outbound', async (job) => {
   logger.info(`Broadcast batch processed for business ${businessId}: ${sent} sent, ${failed} failed`, { broadcastId });
   return { sent, failed };
 }, {
-  connection,
+  connection: workerConnection,
   prefix,
   concurrency: 5
 });
@@ -108,16 +95,5 @@ worker.on('failed', (job, err) => {
 worker.on('error', (err) => {
   logger.error(`Broadcast worker error: ${err.message}`);
 });
-
-// connection's retryStrategy gives up after 10 attempts, which makes
-// ioredis emit 'end' on its underlying client instead of retrying further.
-// There's no automatic recovery from that state, so exit and let pm2 (see
-// deploy.yml) restart the process and reconnect from scratch.
-worker.client.then((client) => {
-  client.on('end', () => {
-    logger.error('CRITICAL: Redis connection for broadcast worker permanently closed (retries exhausted); exiting to trigger process restart');
-    process.exit(1);
-  });
-}).catch(() => {});
 
 module.exports = worker;

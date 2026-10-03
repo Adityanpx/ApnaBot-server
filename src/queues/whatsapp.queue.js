@@ -1,20 +1,7 @@
 const { Queue, QueueEvents } = require('bullmq');
 const logger = require('../utils/logger');
 const config = require('../config/env');
-
-const redisUrl = new URL(process.env.REDIS_URL);
-
-const connection = {
-  host: redisUrl.hostname,
-  port: parseInt(redisUrl.port),
-  password: redisUrl.password,
-  username: redisUrl.username || 'default',
-  tls: process.env.REDIS_URL.startsWith('rediss://') ? {} : undefined,
-  retryStrategy(times) {
-    if (times > 10) return null;
-    return Math.min(times * 50, 2000);
-  }
-};
+const { queueConnection, workerConnection } = require('../config/queueConnection');
 
 // Namespaces queue keys per environment so a local dev run can never join
 // the production queue, even if REDIS_URL is accidentally shared. Must
@@ -22,7 +9,7 @@ const connection = {
 const prefix = `apnabot:${config.QUEUE_NAMESPACE}`;
 
 const whatsappQueue = new Queue('whatsapp-outbound', {
-  connection,
+  connection: queueConnection,
   prefix,
   defaultJobOptions: {
     attempts: 3,
@@ -36,17 +23,6 @@ whatsappQueue.on('error', (err) => {
   logger.error(`WhatsApp queue error: ${err.message}`);
 });
 
-// connection's retryStrategy gives up after 10 attempts, which makes
-// ioredis emit 'end' on its underlying client instead of retrying further.
-// There's no automatic recovery from that state, so exit and let pm2 (see
-// deploy.yml) restart the process and reconnect from scratch.
-whatsappQueue.client.then((client) => {
-  client.on('end', () => {
-    logger.error('CRITICAL: Redis connection for whatsapp queue permanently closed (retries exhausted); exiting to trigger process restart');
-    process.exit(1);
-  });
-}).catch(() => {});
-
 // Only instantiated lazily because it opens its own blocking Redis
 // connection; most callers (single-message replies) never need it.
 // Cache the readiness promise (not just the instance) so concurrent
@@ -56,7 +32,7 @@ let whatsappQueueEventsReady = null;
 const getQueueEvents = () => {
   if (!whatsappQueueEventsReady) {
     const startedAt = Date.now();
-    const queueEvents = new QueueEvents('whatsapp-outbound', { connection, prefix });
+    const queueEvents = new QueueEvents('whatsapp-outbound', { connection: workerConnection, prefix });
     queueEvents.on('error', (err) => {
       logger.error('WhatsApp QueueEvents connection error', { error: err.message });
     });
