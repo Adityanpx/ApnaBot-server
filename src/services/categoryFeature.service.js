@@ -21,6 +21,11 @@ const FEATURES = {
     label: 'Follow-up automations',
     description: 'Lets these businesses set up automatic follow-up messages to their customers (enquiry nudges, review requests, payment reminders, win-back).',
     categories: ALL_CATEGORIES
+  },
+  opt_in_links: {
+    label: 'Opt-in links & QR poster',
+    description: 'Lets these businesses create WhatsApp links / QR posters that ask customers to opt in to offers with a Yes/No button.',
+    categories: ALL_CATEGORIES
   }
 };
 
@@ -54,7 +59,9 @@ const getBusinessOverride = async (businessId, feature) => {
  * the feature doesn't apply to; otherwise the business's own override when it
  * has one (businessId given), else the category switch. Read on every call (no
  * cache) so a Super Admin toggle applies immediately on every server
- * instance; callers are dashboard-frequency routes, not the webhook.
+ * instance; callers are dashboard-frequency routes — the webhook only calls
+ * it for 'opt_in_links', on a message whose JOIN code matched an active link
+ * or on a language-picker tap (webhook.controller.js).
  */
 const isEnabled = async (category, feature, businessId = null) => {
   if (!appliesTo(category, feature)) return false;

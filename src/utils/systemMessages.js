@@ -190,6 +190,33 @@ const SYSTEM_MESSAGES = {
     mr: 'ठीक आहे — आता तुम्हाला आमच्याकडून ऑफर्स किंवा रिमाइंडर्स मिळणार नाहीत. ते पुन्हा सुरू करण्यासाठी कधीही START पाठवा.'
   },
 
+  // ── Opt-in link consent (webhook.controller.js, utils/optInLink.js) ──
+  // Sent when a customer messages a JOIN-<code> from an opt-in link / QR
+  // poster. Must name the business and mention STOP in every language
+  // (systemMessages.test.js). Button titles: WhatsApp cuts them at 20
+  // characters — also asserted there. 'STOP' is the typed keyword, so it
+  // stays in English.
+  optInConsentQuestion: {
+    en: '{{business}} would like to send you offers and updates on WhatsApp. Would you like to receive them?\n\nYou can reply STOP anytime to stop.',
+    hi: '{{business}} आपको WhatsApp पर ऑफ़र और अपडेट भेजना चाहता है। क्या आप इन्हें पाना चाहेंगे?\n\nबंद करने के लिए कभी भी STOP लिखकर भेजें।',
+    mr: '{{business}} तुम्हाला WhatsApp वर ऑफर्स आणि अपडेट्स पाठवू इच्छिते. तुम्हाला ते मिळवायचे आहेत का?\n\nथांबवण्यासाठी कधीही STOP पाठवा.'
+  },
+  optInYesButton: {
+    en: 'Yes, send offers',
+    hi: 'हाँ, ऑफ़र भेजें',
+    mr: 'होय, ऑफर पाठवा'
+  },
+  optInNoButton: {
+    en: 'No thanks',
+    hi: 'नहीं, धन्यवाद',
+    mr: 'नको, धन्यवाद'
+  },
+  optInConfirmed: {
+    en: "Thanks! You'll now get offers and updates from {{business}}. Reply STOP anytime to stop.",
+    hi: 'धन्यवाद! अब आपको {{business}} से ऑफ़र और अपडेट मिलेंगे। बंद करने के लिए कभी भी STOP लिखकर भेजें।',
+    mr: 'धन्यवाद! आता तुम्हाला {{business}} कडून ऑफर्स आणि अपडेट्स मिळतील. थांबवण्यासाठी कधीही STOP पाठवा.'
+  },
+
   // ── Follow-up automation default texts (utils/followup.js PRESETS) ──
   // Copied into the automation when the owner creates it (and editable
   // there); {{customerName}} is filled at send time by

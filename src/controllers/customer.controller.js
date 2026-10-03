@@ -3,6 +3,7 @@ const { successResponse, errorResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
 const { toCamelCase } = require('../utils/caseConvert');
 const businessService = require('../services/business.service');
+const optInLinkService = require('../services/optInLink.service');
 const logger = require('../utils/logger');
 
 const WINDOW_DURATION_MS = 24 * 60 * 60 * 1000;
@@ -136,10 +137,16 @@ const getCustomers = async (req, res, next) => {
       bookingStatsByCustomer = await fetchBookingStatsByCustomer(businessId, data.map((c) => c.id));
     }
 
+    // "Opted in via <link name>" — a second query rather than a PostgREST
+    // embed: opt_in_link_events also links customers to opt_in_links, which
+    // would make the embed ambiguous.
+    const linkNames = await optInLinkService.fetchLinkNames(businessId, (data || []).map((c) => c.opt_in_link_id));
+
     let customers = (data || []).map((c) => withWindowExpiresAt({
       ...toCamelCase(c),
       isVip: computeIsVip(business, bookingStatsByCustomer[c.id] || { count: 0, spend: 0 }),
-      broadcastEligible: isBroadcastEligible(c)
+      broadcastEligible: isBroadcastEligible(c),
+      optInLinkName: linkNames.get(c.opt_in_link_id) || null
     }));
 
     let total = count || 0;
@@ -224,12 +231,14 @@ const getCustomerById = async (req, res, next) => {
     const bookingStatsByCustomer = business?.vipEnabled
       ? await fetchBookingStatsByCustomer(businessId, [customer.id])
       : {};
+    const linkNames = await optInLinkService.fetchLinkNames(businessId, [customer.opt_in_link_id]);
 
     return successResponse(res, 200, {
       customer: withWindowExpiresAt({
         ...toCamelCase(customer),
         isVip: computeIsVip(business, bookingStatsByCustomer[customer.id] || { count: 0, spend: 0 }),
-        broadcastEligible: isBroadcastEligible(customer)
+        broadcastEligible: isBroadcastEligible(customer),
+        optInLinkName: linkNames.get(customer.opt_in_link_id) || null
       }),
       messages: (messages || []).map(toCamelCase).reverse()
     });
@@ -374,7 +383,9 @@ const toggleCustomerOptIn = async (req, res, next) => {
       .from('customers').update({
         opted_in: optedIn,
         opted_in_at: optedIn ? new Date().toISOString() : null,
-        opt_in_source: source
+        opt_in_source: source,
+        // A manual toggle replaces whatever link the customer opted in through.
+        opt_in_link_id: null
       }).eq('id', id).select().single();
     if (error) throw error;
 

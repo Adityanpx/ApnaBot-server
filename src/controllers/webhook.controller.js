@@ -16,6 +16,8 @@ const { LANGUAGE_CATALOG, isValidLanguageCode } = require('../utils/languageCata
 const { getLocalizedText } = require('../utils/localization');
 const { getSystemMessage } = require('../utils/systemMessages');
 const { isIndefinitePause } = require('../utils/botPause');
+const { parseJoinCode, isSystemTapId, parseOptInTapId, OPT_IN_YES_PREFIX, OPT_IN_NO_PREFIX } = require('../utils/optInLink');
+const optInLinkService = require('../services/optInLink.service');
 const whatsappService = require('../services/whatsapp.service');
 const r2 = require('../services/r2.service');
 const logger = require('../utils/logger');
@@ -523,6 +525,115 @@ const sendFallbackTextMessage = async (ctx, text) => {
   } catch (socketError) {
     logger.error('Error emitting socket event:', socketError);
   }
+};
+
+/**
+ * Ask for marketing consent after a JOIN-<code> message from an opt-in link
+ * (Step 11.7 / the lang_ handler / Step 12.55). Two reply buttons whose ids
+ * are the reserved "optin_yes:<linkId>" / "optin_no:<linkId>" — handled at
+ * Step 11.7 on the next inbound tap. Text in the customer's language.
+ * @param {Object} ctx - { tenant, customer, customerNumber }
+ * @param {Object} link - raw opt_in_links row
+ */
+const sendOptInConsentQuestion = async (ctx, link) => {
+  const { tenant, customer, customerNumber } = ctx;
+  const languageCode = customer.preferredLanguage;
+  const text = getSystemMessage('optInConsentQuestion', languageCode, { business: tenant.displayName || tenant.businessName });
+
+  const consentMsg = await saveMessage({
+    business_id: tenant.businessId,
+    customer_id: customer.id,
+    customer_number: customerNumber,
+    direction: 'outbound',
+    type: 'text',
+    content: text,
+    status: 'sent',
+    sender_type: 'bot',
+    is_read: true
+  });
+  await addToWhatsappQueue({
+    businessId: tenant.businessId,
+    phoneNumberId: tenant.phoneNumberId,
+    encryptedAccessToken: tenant.accessToken,
+    to: customerNumber,
+    message: text,
+    type: 'text',
+    buttons: [
+      { title: getSystemMessage('optInYesButton', languageCode), nextKeyword: `${OPT_IN_YES_PREFIX}${link.id}` },
+      { title: getSystemMessage('optInNoButton', languageCode), nextKeyword: `${OPT_IN_NO_PREFIX}${link.id}` }
+    ],
+    messageId: consentMsg.id
+  });
+  usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
+    logger.error('Error incrementing outbound usage:', err)
+  );
+  try {
+    socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
+      customer,
+      message: consentMsg,
+      customerNumber
+    });
+  } catch (socketError) {
+    logger.error('Error emitting socket event:', socketError);
+  }
+};
+
+/**
+ * "Thanks, you're opted in" after an optin_yes tap. Awaited-to-completion
+ * (like the carousel intro) so it lands before the greeting the tap falls
+ * through to, even with the worker's concurrency: 5.
+ * @param {Object} ctx - { tenant, customer, customerNumber }
+ */
+const sendOptInConfirmation = async (ctx) => {
+  const { tenant, customer, customerNumber } = ctx;
+  const text = getSystemMessage('optInConfirmed', customer.preferredLanguage, { business: tenant.displayName || tenant.businessName });
+
+  const confirmMsg = await saveMessage({
+    business_id: tenant.businessId,
+    customer_id: customer.id,
+    customer_number: customerNumber,
+    direction: 'outbound',
+    type: 'text',
+    content: text,
+    status: 'sent',
+    sender_type: 'bot',
+    is_read: true
+  });
+  await addToWhatsappQueueAndWait({
+    businessId: tenant.businessId,
+    phoneNumberId: tenant.phoneNumberId,
+    encryptedAccessToken: tenant.accessToken,
+    to: customerNumber,
+    message: text,
+    type: 'text',
+    messageId: confirmMsg.id
+  });
+  usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
+    logger.error('Error incrementing outbound usage:', err)
+  );
+  try {
+    socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
+      customer,
+      message: confirmMsg,
+      customerNumber
+    });
+  } catch (socketError) {
+    logger.error('Error emitting socket event:', socketError);
+  }
+};
+
+/**
+ * Re-send an active booking session's current question (same as the lang_
+ * handler's mid-booking resume). Returns false when the session has no
+ * current field to show, so the caller can fall through instead.
+ * @param {Object} ctx - { tenant, customer, customerNumber }
+ * @param {Object} activeSession
+ */
+const resendCurrentBookingPrompt = async (ctx, activeSession) => {
+  const field = await bookingGraphService.getCurrentNodeField(ctx.tenant.businessId, activeSession, ctx.customer.preferredLanguage);
+  if (!field) return false;
+  await sendFieldPrompt({ ...ctx, triggeredRuleId: activeSession.ruleId }, field);
+  return true;
 };
 
 /**
@@ -1100,27 +1211,94 @@ const receiveWebhook = async (req, res) => {
 
     // Step 12 - Check active booking session
     const activeSession = await bookingService.getBookingSession(tenant.businessId, customerNumber);
-    // A language-picker tap (lang_{code}) must never be treated as a booking-
-    // session answer — its id shape ("lang_{code}") doesn't match the graph
-    // engine's "{node_id}:{index}" options scheme, so left unguarded it would
-    // be misread as a stale tap below and silently re-prompt the current
-    // booking question instead of ever reaching the lang_ handler further
-    // down (Step 12.6-adjacent). This matters now that "language" (above) can
-    // fire mid-booking, leaving activeSession untouched on purpose.
-    const isLanguagePickerTap = !!(buttonReplyId && buttonReplyId.startsWith('lang_'));
+
+    // Step 11.7 - Opt-in links (utils/optInLink.js). Sits after the
+    // isBotPaused return (a paused customer gets no reply and no event) and
+    // before Step 12, so neither a JOIN-<code> message nor an optin_ tap is
+    // ever consumed as a booking answer. A business with no opt-in links is
+    // untouched: an unknown code changes nothing below.
+    const ctx = { tenant, customer, customerNumber };
+    // Set when a JOIN message needs the consent question but the customer has
+    // no language yet — asked at Step 12.55, after Step 12.6's picker (or,
+    // for a 2–3 language business, from the lang_ handler via the logged
+    // 'message' event).
+    let pendingOptInLink = null;
+    const optInTap = parseOptInTapId(buttonReplyId);
+    if (optInTap) {
+      // Honoured even if the link (or the feature) was switched off since the
+      // question went out — see handleConsentTap. Not gated on the feature
+      // switch: the customer answered a question we asked.
+      try {
+        const { newlyOptedIn, customer: updatedCustomer } =
+          await optInLinkService.handleConsentTap(tenant.businessId, customer, optInTap);
+        Object.assign(customer, updatedCustomer);
+        logger.info(`Opt-in tap '${optInTap.answer}' from ${customerNumber} for business ${tenant.businessId}, link ${optInTap.linkId} (newly opted in: ${newlyOptedIn})`);
+        if (newlyOptedIn) await sendOptInConfirmation(ctx);
+      } catch (optInErr) {
+        logger.error('Error handling opt-in tap, continuing as greeting:', optInErr);
+      }
+
+      if (activeSession && await resendCurrentBookingPrompt(ctx, activeSession)) {
+        return; // Back to the pending booking question - session untouched
+      }
+      messageText = 'hi'; // Continue as if the customer said "hi"
+    } else if (isPlainTextStopStart) {
+      const joinCode = parseJoinCode(message.text?.body);
+      let joinLink = null;
+      let joinFeatureOn = false;
+      if (joinCode) {
+        try {
+          joinLink = await optInLinkService.findLinkByCode(tenant.businessId, joinCode);
+          joinFeatureOn = !!joinLink?.is_active && await optInLinkService.isFeatureEnabled(tenant);
+        } catch (joinErr) {
+          // Lookup failed — handle the message as if it had no code.
+          logger.error('Error looking up opt-in link code, ignoring it:', joinErr);
+          joinLink = null;
+        }
+      }
+
+      if (joinLink) {
+        const needsConsent = joinFeatureOn && !optInLinkService.isOptedIn(customer);
+        if (joinFeatureOn) await optInLinkService.logEvent(joinLink, customer.id, 'message');
+        logger.info(`JOIN-${joinCode} from ${customerNumber} for business ${tenant.businessId} (link ${joinLink.id}, active=${joinLink.is_active}, feature=${joinFeatureOn}, needsConsent=${needsConsent})`);
+
+        if (activeSession) {
+          // Mid-booking: never a booking answer. Ask (the tap resumes the
+          // booking), or just show the pending question again.
+          if (needsConsent) {
+            await sendOptInConsentQuestion(ctx, joinLink);
+            return;
+          }
+          if (await resendCurrentBookingPrompt(ctx, activeSession)) return;
+        }
+        // Inactive link, feature off or already opted in: a plain greeting.
+        messageText = 'hi';
+        if (needsConsent) pendingOptInLink = joinLink;
+      }
+    }
+
+    // A language-picker tap (lang_{code}) or opt-in tap (optin_...) must
+    // never be treated as a booking-session answer — neither id shape
+    // matches the graph engine's "{node_id}:{index}" options scheme, so left
+    // unguarded it would be misread as a stale tap below and silently
+    // re-prompt the current booking question instead of ever reaching the
+    // lang_ handler further down (Step 12.6-adjacent). This matters now that
+    // "language" (above) can fire mid-booking, leaving activeSession
+    // untouched on purpose.
+    const isSystemTap = isSystemTapId(buttonReplyId);
 
     // A shared location with no eligible active session to consume it (none
-    // at all, or a stale one about to be treated as a language-picker tap) —
+    // at all, or a stale one about to be treated as a system tap) —
     // this is the other half of Step 11's deferred skip: fall through to the
     // same "skip chatbot" behavior a non-text message would have gotten
     // there, rather than letting an empty-text location message reach
     // greeting/rule matching below.
-    if (messageLocation && (!activeSession || isLanguagePickerTap)) {
+    if (messageLocation && (!activeSession || isSystemTap)) {
       logger.info('Location message received with no active booking session, skipping chatbot');
       return;
     }
 
-    if (activeSession && !isLanguagePickerTap) {
+    if (activeSession && !isSystemTap) {
       logger.info(`Active booking session for ${customerNumber}`);
 
       // Escape hatch: let the customer cancel out of the booking flow with a
@@ -1491,8 +1669,8 @@ const receiveWebhook = async (req, res) => {
         // resume the pending question in the new language instead of falling
         // through to the greeting/menu below, which would otherwise abandon
         // the booking's visible flow even though the session is still alive
-        // in Redis (isLanguagePickerTap kept Step 12 from consuming this tap
-        // as a booking answer).
+        // in Redis (isSystemTap kept Step 12 from consuming this tap as a
+        // booking answer).
         const resumedField = await bookingGraphService.getCurrentNodeField(tenant.businessId, activeSession, customer.preferredLanguage);
         if (resumedField) {
           await sendFieldPrompt(
@@ -1504,12 +1682,42 @@ const receiveWebhook = async (req, res) => {
         }
       }
 
+      // A new customer who arrived through an opt-in link got the language
+      // picker first (Step 12.6); now that the language is known, ask for
+      // consent instead of greeting — the Yes/No tap greets afterwards.
+      // Only looked up while the feature is on and the customer isn't
+      // already opted in; a failure here just greets as usual.
+      if (!optInLinkService.isOptedIn(customer)) {
+        try {
+          if (await optInLinkService.isFeatureEnabled(tenant)) {
+            const pendingLink = await optInLinkService.findPendingLink(tenant.businessId, customer.id);
+            if (pendingLink) {
+              await sendOptInConsentQuestion(ctx, pendingLink);
+              logger.info(`Set preferred language ${tappedCode} for business ${tenant.businessId}, customer ${customerNumber}; asked opt-in consent for link ${pendingLink.id}`);
+              return; // The Yes/No tap continues as greeting
+            }
+          }
+        } catch (pendingErr) {
+          logger.error('Error checking pending opt-in after language tap, continuing as greeting:', pendingErr);
+        }
+      }
+
       logger.info(`Set preferred language ${tappedCode} for business ${tenant.businessId}, customer ${customerNumber}; falling through to greeting`);
       messageText = 'hi';
       // No return - fall through to Step 12.5 / Step 13 below, which will
       // greet with the business's welcomeMessage if configured, or
       // otherwise run rule matching against 'hi' exactly like a real
       // greeting message would.
+    }
+
+    // Step 12.55 - Opt-in consent for a JOIN message (Step 11.7) from a
+    // customer whose language is now known — Step 12.6 either set it (one
+    // language) or already returned with the picker (2–3 languages; the
+    // lang_ handler above asks instead).
+    if (pendingOptInLink) {
+      await sendOptInConsentQuestion(ctx, pendingOptInLink);
+      logger.info(`Asked opt-in consent for link ${pendingOptInLink.id}, business ${tenant.businessId}, customer ${customerNumber}`);
+      return; // The Yes/No tap continues as greeting
     }
 
     // Step 12.5 - Greeting -> welcome message (exact match only, so
@@ -1574,8 +1782,9 @@ const receiveWebhook = async (req, res) => {
     // chatbot.service.js's getOutgoingEdges) — resolve it structurally
     // first, since a UUID will never match a keyword. Only reached with no
     // active session (Step 12 returns early otherwise) and past the lang_
-    // picker tap (handled above; it falls through with messageText='hi'
-    // instead of a real edge id, hence the startsWith('lang_') guard here).
+    // picker / optin_ taps (handled above; they fall through with
+    // messageText='hi' instead of a real edge id, hence the isSystemTapId
+    // guard here).
     // Falls back to keyword text matching — same as before this fix — for
     // an actual typed message, or for a stale tap whose id predates this
     // scheme (an old keyword-text button id already delivered to a
@@ -1593,7 +1802,7 @@ const receiveWebhook = async (req, res) => {
     // Bot Builder course page, publicServiceForm.controller.js).
     let tappedFromNodeId = null;
 
-    const tappedEdgeId = (buttonReplyId && !buttonReplyId.startsWith('lang_')) ? buttonReplyId : listReplyId;
+    const tappedEdgeId = (buttonReplyId && !isSystemTapId(buttonReplyId)) ? buttonReplyId : listReplyId;
     if (tappedEdgeId) {
       const resolvedTap = await chatbotService.resolveTappedEdge(tenant.businessId, tappedEdgeId);
       if (resolvedTap?.targetNode?.nodeType === 'question') {

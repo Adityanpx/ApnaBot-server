@@ -62,8 +62,8 @@ test('listForBusiness: category state, override and result', async () => {
   const [f] = await svc.listForBusiness('daring', 'coaching');
   assert.deepEqual({ feature: f.feature, categoryEnabled: f.categoryEnabled, override: f.override, isEnabled: f.isEnabled },
     { feature: 'bot_builder', categoryEnabled: false, override: true, isEnabled: true });
-  // bot_builder is coaching-only; followups ('*') applies everywhere.
-  assert.deepEqual((await svc.listForBusiness('swanand', 'internet_cafe')).map(f => f.feature), ['followups']);
+  // bot_builder is coaching-only; followups and opt_in_links ('*') apply everywhere.
+  assert.deepEqual((await svc.listForBusiness('swanand', 'internet_cafe')).map(f => f.feature), ['followups', 'opt_in_links']);
 });
 
 test('followups: off for every category until switched on; per-business pilot works', async () => {
@@ -75,7 +75,17 @@ test('followups: off for every category until switched on; per-business pilot wo
   assert.equal(await svc.isEnabled('travels', 'followups', 'searchcab'), false);
   // bot_builder stays coaching-only
   assert.equal(svc.appliesTo('travels', 'bot_builder'), false);
-  assert.deepEqual((await svc.listForBusiness('sg', 'travels')).map(f => [f.feature, f.isEnabled]), [['followups', true]]);
+  assert.deepEqual((await svc.listForBusiness('sg', 'travels')).map(f => [f.feature, f.isEnabled]), [['followups', true], ['opt_in_links', false]]);
+});
+
+test('opt_in_links: off for every category until switched on; per-business pilot works', async () => {
+  reset(null);
+  assert.equal(svc.FEATURES.opt_in_links.categories, '*');
+  assert.equal(await svc.isEnabled('travels', 'opt_in_links', 'sg'), false);
+  assert.equal(await svc.isEnabled('travels', 'opt_in_links', 'searchcab'), false);
+  await svc.setBusinessOverride('sg', 'opt_in_links', true);
+  assert.equal(await svc.isEnabled('travels', 'opt_in_links', 'sg'), true);
+  assert.equal(await svc.isEnabled('travels', 'opt_in_links', 'searchcab'), false);
 });
 
 test("'*' covers every category, including one added later; a list stays a list", async () => {
@@ -85,8 +95,8 @@ test("'*' covers every category, including one added later; a list stays a list"
   assert.equal(svc.appliesTo('pet_shop', 'bot_builder'), false);
   assert.equal(svc.appliesTo('coaching', 'bot_builder'), true);
   assert.equal(svc.appliesTo('pet_shop', 'no_such_feature'), false);
-  assert.deepEqual((await svc.listForCategory('pet_shop')).map(f => f.feature), ['followups']);
-  assert.deepEqual((await svc.listForCategory('coaching')).map(f => f.feature), ['bot_builder', 'followups']);
+  assert.deepEqual((await svc.listForCategory('pet_shop')).map(f => f.feature), ['followups', 'opt_in_links']);
+  assert.deepEqual((await svc.listForCategory('coaching')).map(f => f.feature), ['bot_builder', 'followups', 'opt_in_links']);
   await svc.setBusinessOverride('pets', 'followups', true);
   assert.equal(await svc.isEnabled('pet_shop', 'followups', 'pets'), true);
 });

@@ -42,6 +42,7 @@ const nodeLibraryRoutes = require('./routes/nodeLibrary.routes');
 const nodeLibraryPublicRoutes = require('./routes/nodeLibraryPublic.routes');
 const reportsRoutes = require('./routes/reports.routes');
 const followupRoutes = require('./routes/followup.routes');
+const optInLinkRoutes = require('./routes/optInLink.routes');
 
 const app = express();
 
@@ -152,6 +153,9 @@ app.use('/api/reports', reportsRoutes);
 // 'followups' switch (category or per-business, Super Admin → Features),
 // 404 while it's off. Sending is the sweeper (server.js).
 app.use('/api/followups', followupRoutes);
+// Opt-in links (wa.me link / QR poster → consent buttons). Always mounted;
+// each request is gated by the 'opt_in_links' switch, 404 while it's off.
+app.use('/api/opt-in-links', optInLinkRoutes);
 
 // Error handler middleware
 app.use(errorHandler);
