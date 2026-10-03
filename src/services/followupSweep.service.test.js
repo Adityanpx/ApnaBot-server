@@ -38,7 +38,7 @@ const orClause = (part) => {
 };
 
 const from = (table) => {
-  const filters = []; let op = 'select'; let payload; let countHead = false; const orders = []; let rng = null; let lim = null;
+  const filters = []; let op = 'select'; let payload; let countHead = false; const orders = []; let rng = null; let lim = null; let embedCustomer = false;
   const matching = () => db[table].filter(r => filters.every(f => f(r)));
   const run = () => {
     if (op === 'insert') {
@@ -73,10 +73,12 @@ const from = (table) => {
     }
     if (rng) rows = rows.slice(rng[0], rng[1] + 1);
     if (lim !== null) rows = rows.slice(0, lim);
+    // PostgREST embed: bookings ... customer:customers(...)
+    if (embedCustomer) rows = rows.map(r => ({ ...r, customer: db.customers.find(c => c.id === r.customer_id) || null }));
     return { data: rows, error: null };
   };
   const q = {
-    select: (cols, opts) => { if (opts && opts.head) countHead = true; return q; },
+    select: (cols, opts) => { if (opts && opts.head) countHead = true; if (typeof cols === 'string' && cols.includes('customer:customers(')) embedCustomer = true; return q; },
     insert: (p) => { op = 'insert'; payload = p; return q; },
     update: (p) => { op = 'update'; payload = p; return q; },
     delete: () => { op = 'delete'; return q; },
@@ -413,13 +415,15 @@ test('compareAutomations: trigger priority, then created_at, then id; unknown tr
   const a = (id, trigger_type, created_at) => ({ id, trigger_type, created_at });
   const list = [
     a('w-old', 'inactive_for', '2026-01-01T00:00:00Z'),
-    a('future', 'after_completed', '2025-01-01T00:00:00Z'),
+    a('future', 'some_future_trigger', '2025-01-01T00:00:00Z'),
+    a('review', 'after_completed', '2026-09-30T00:00:00Z'),
+    a('payment', 'after_payment_requested', '2026-09-30T00:00:00Z'),
     a('n-new-b', 'after_last_inbound', '2026-09-01T00:00:00Z'),
     a('n-new-a', 'after_last_inbound', '2026-09-01T00:00:00Z'),
     a('n-old', 'after_last_inbound', '2026-05-01T00:00:00Z')
   ];
-  assert.deepEqual([...list].sort(compareAutomations).map(x => x.id), ['n-old', 'n-new-a', 'n-new-b', 'w-old', 'future']);
-  assert.deepEqual(TRIGGER_PRIORITY, { after_last_inbound: 0, inactive_for: 1 });
+  assert.deepEqual([...list].sort(compareAutomations).map(x => x.id), ['n-old', 'n-new-a', 'n-new-b', 'payment', 'review', 'w-old', 'future']);
+  assert.deepEqual(TRIGGER_PRIORITY, { after_last_inbound: 0, after_payment_requested: 1, after_completed: 2, inactive_for: 3 });
 });
 
 test('the next India-time day the other automation can send', async () => {
@@ -484,4 +488,151 @@ test('template params: Hindi template, unnamed customer, no owner fallback → �
   db.message_templates[0].language = 'hi';
   await sweep();
   assert.deepEqual(sendCalls[0].params, ['जी', 'Bright Minds']);
+});
+
+// ── Booking triggers: review request (after_completed) / payment reminder (after_payment_requested) ──
+const utilityTemplate = { id: 't2', business_id: 'b1', name: 'booking_followup', status: 'approved', category: 'UTILITY', header_type: 'NONE', language: 'en_US', body_text: 'Hi {{1}}, about booking {{2}}' };
+const review = (over = {}) => ({
+  id: 'a-review', business_id: 'b1', name: 'Review', preset: 'review_request', trigger_type: 'after_completed',
+  delay_minutes: 1440, trigger_params: {}, message_category: 'utility',
+  message_text: 'Thanks {{customerName}} for {{bookingCode}}!', message_text_translations: null, template_id: 't2',
+  template_variable_mapping: [{ source: 'customer.name', fallback: '' }, { source: 'booking.code', fallback: '' }],
+  send_start_minute: 600, send_end_minute: 1200, daily_cap: 100, per_customer_cap: 3, is_active: true, created_at: ago(30 * DAY),
+  ...over
+});
+const payment = (over = {}) => review({
+  id: 'a-pay', name: 'Payment', preset: 'payment_pending', trigger_type: 'after_payment_requested', delay_minutes: 360,
+  message_text: '{{amount}} for {{bookingCode}} is pending',
+  template_variable_mapping: [{ source: 'customer.name', fallback: '' }, { source: 'booking.amount', fallback: '' }],
+  ...over
+});
+const booking = (id, customerId, over = {}) => ({
+  id, business_id: 'b1', customer_id: customerId, booking_code: `SG${id.slice(-2)}`, payment_amount: 0,
+  status: 'confirmed', payment_status: 'not_required', completed_at: null, payment_requested_at: null, ...over
+});
+const resetBooking = (opts) => { reset(opts); db.message_templates.push(utilityTemplate); };
+
+test('review request: due 1 day after completion; template with the booking code; claim carries booking_id', async () => {
+  resetBooking({
+    automations: [review()],
+    customers: [customer('c01', { last_message_at: ago(5 * DAY), name: 'Asha' }), customer('c02', { last_message_at: ago(5 * DAY) }), customer('c03', { last_message_at: ago(9 * DAY) })],
+    bookings: [
+      booking('bk01', 'c01', { status: 'completed', completed_at: ago(DAY + MIN) }),        // due
+      booking('bk02', 'c02', { status: 'completed', completed_at: ago(23 * HOUR) }),        // not yet
+      booking('bk03', 'c03', { status: 'completed', completed_at: ago(3 * DAY + HOUR) })    // missed by > 2 days: never sent late
+    ]
+  });
+  const s = await sweep();
+  assert.equal(s.sent, 1);
+  assert.deepEqual(sendCalls.map(c => c.customerId), ['c01']);
+  assert.deepEqual(sendCalls[0].params, ['Asha', 'SG01']);
+  assert.equal(sendCalls[0].templateText, 'Hi Asha, about booking SG01');
+  const row = sendFor('c01');
+  assert.equal(row.booking_id, 'bk01');
+  assert.equal(row.trigger_key, 'completed:bk01');
+  assert.equal(row.status, 'sent_template');
+  // utility: no marketing opt-in needed (c01 is not opted in)
+  assert.equal(db.customers[0].opted_in, false);
+});
+
+test('review request: one per booking — a second sweep sends nothing', async () => {
+  resetBooking({ automations: [review()], customers: [customer('c01', { last_message_at: ago(5 * DAY) })],
+    bookings: [booking('bk01', 'c01', { status: 'completed', completed_at: ago(DAY + MIN) })] });
+  await sweep();
+  const s2 = await runSweep({ now: new Date(NOW.getTime() + 15 * MIN) });
+  assert.equal(s2.sent, 0);
+  assert.equal(sendCalls.length, 1);
+});
+
+test('review request: booking reopened after the claim → skipped booking_reopened', async () => {
+  resetBooking({ automations: [review()], customers: [customer('c01', { last_message_at: ago(5 * DAY) })],
+    bookings: [booking('bk01', 'c01', { status: 'completed', completed_at: ago(DAY + MIN) })] });
+  hooks.afterClaim = () => { db.bookings[0].status = 'confirmed'; };
+  await sweep();
+  assert.equal(sendCalls.length, 0);
+  assert.equal(sendFor('c01').reason, 'booking_reopened');
+});
+
+test('payment reminder: text in the open window with the amount; replied / cancelled / paid customers skipped', async () => {
+  resetBooking({
+    automations: [payment()],
+    customers: [
+      customer('c01', { last_message_at: ago(7 * HOUR) }),   // messaged before the request → due, window open
+      customer('c02', { last_message_at: ago(HOUR) }),       // messaged after the request (screenshot?) → wait
+      customer('c03', { last_message_at: ago(7 * HOUR) }),   // booking cancelled
+      customer('c04', { last_message_at: ago(7 * HOUR) })    // already paid
+    ],
+    bookings: [
+      booking('bk01', 'c01', { payment_status: 'pending', payment_amount: 1500, payment_requested_at: ago(6 * HOUR + MIN) }),
+      booking('bk02', 'c02', { payment_status: 'pending', payment_amount: 900, payment_requested_at: ago(6 * HOUR + MIN) }),
+      booking('bk03', 'c03', { status: 'cancelled', payment_status: 'pending', payment_requested_at: ago(6 * HOUR + MIN) }),
+      booking('bk04', 'c04', { payment_status: 'paid', payment_requested_at: ago(6 * HOUR + MIN) })
+    ]
+  });
+  const s = await sweep();
+  assert.deepEqual(sendCalls.map(c => c.customerId), ['c01']);
+  assert.equal(sendCalls[0].text, '₹1,500 for SG01 is pending');
+  assert.equal(sendFor('c01').status, 'sent_text');
+  assert.equal(s.sent, 1);
+  // filtered before claiming — no wasted claim rows for the others
+  assert.deepEqual(db.followup_sends.map(r => r.customer_id), ['c01']);
+});
+
+test('payment reminder: paid between claim and send → skipped paid; no amount reads "your payment"', async () => {
+  resetBooking({ automations: [payment()],
+    customers: [customer('c01', { last_message_at: ago(7 * HOUR) }), customer('c02', { last_message_at: ago(7 * HOUR) })],
+    bookings: [
+      booking('bk01', 'c01', { payment_status: 'pending', payment_requested_at: ago(6 * HOUR + MIN) }),
+      booking('bk02', 'c02', { payment_status: 'pending', payment_requested_at: ago(6 * HOUR + 2 * MIN) })
+    ] });
+  hooks.afterClaim = (row) => { if (row.customer_id === 'c01') db.bookings[0].payment_status = 'paid'; };
+  await sweep();
+  assert.equal(sendFor('c01').reason, 'paid');
+  assert.deepEqual(sendCalls.map(c => c.customerId), ['c02']);
+  assert.equal(sendCalls[0].text, 'your payment for SG02 is pending');
+});
+
+test('payment reminder: a new request (paid → pending again) is a new occurrence', async () => {
+  const firstRequest = ago(3 * DAY);
+  resetBooking({ automations: [payment()], customers: [customer('c01', { last_message_at: ago(7 * HOUR) })],
+    bookings: [booking('bk01', 'c01', { payment_status: 'pending', payment_requested_at: ago(6 * HOUR + MIN) })],
+    sends: [{ id: 'old', automation_id: 'a-pay', business_id: 'b1', customer_id: 'c01', booking_id: 'bk01', trigger_key: `payment:bk01:${new Date(firstRequest).toISOString()}`, status: 'sent_template', created_at: ago(3 * DAY) }] });
+  await sweep();
+  assert.equal(sendCalls.length, 1);
+  assert.notEqual(db.followup_sends.at(-1).trigger_key, db.followup_sends[0].trigger_key);
+});
+
+test('booking triggers respect the one-follow-up-per-customer-per-day rule (two bookings, same customer)', async () => {
+  resetBooking({ automations: [review()], customers: [customer('c01', { last_message_at: ago(5 * DAY) })],
+    bookings: [
+      booking('bk01', 'c01', { status: 'completed', completed_at: ago(DAY + MIN) }),
+      booking('bk02', 'c01', { status: 'completed', completed_at: ago(DAY + 2 * MIN) })
+    ] });
+  const s = await sweep();
+  assert.equal(s.sent, 1);
+  assert.equal(db.followup_sends.length, 1);
+});
+
+test('booking triggers: blocked / opted out / paused customers are not candidates', async () => {
+  resetBooking({ automations: [review()],
+    customers: [
+      customer('c01', { last_message_at: ago(5 * DAY), is_blocked: true }),
+      customer('c02', { last_message_at: ago(5 * DAY), opted_out_at: ago(DAY) }),
+      customer('c03', { last_message_at: ago(5 * DAY), bot_paused_until: new Date(NOW.getTime() + HOUR).toISOString() })
+    ],
+    bookings: ['c01', 'c02', 'c03'].map((c, i) => booking(`bk0${i + 1}`, c, { status: 'completed', completed_at: ago(DAY + MIN) })) });
+  const s = await sweep();
+  assert.equal(s.candidates, 0);
+  assert.equal(db.followup_sends.length, 0);
+});
+
+test('countDueCustomers counts due bookings for booking triggers', async () => {
+  resetBooking({ automations: [], customers: [customer('c01', { last_message_at: ago(5 * DAY) }), customer('c02', { last_message_at: ago(5 * DAY), is_blocked: true })],
+    bookings: [
+      booking('bk01', 'c01', { status: 'completed', completed_at: ago(DAY + MIN) }),
+      booking('bk02', 'c02', { status: 'completed', completed_at: ago(DAY + MIN) }),
+      booking('bk03', 'c01', { status: 'completed', completed_at: ago(HOUR) })
+    ] });
+  const { countDueCustomers } = require('./followupSweep.service');
+  assert.deepEqual(await countDueCustomers({ ...review(), business_id: 'b1' }, NOW), { count: 1, capped: false });
 });

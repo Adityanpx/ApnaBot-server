@@ -17,9 +17,19 @@ const WINDOW_MARGIN_MINUTES = 10;
 const NAME_MAX = 35;
 const TEXT_MAX = 1000;
 const LANGUAGE_CODES = ['en', 'hi', 'mr'];
-const MAPPING_SOURCES = ['customer.name', 'business.name', 'static'];
 const TRIGGER_TYPES = ['after_last_inbound', 'after_completed', 'after_payment_requested', 'inactive_for'];
 const MESSAGE_CATEGORIES = ['marketing', 'utility'];
+// Triggers that fire for a booking (one follow-up per booking occurrence),
+// not for a customer's chat activity.
+const BOOKING_TRIGGERS = ['after_completed', 'after_payment_requested'];
+// A booking trigger missed by more than this (e.g. the server was asleep) is
+// skipped rather than sent late.
+const LATE_GRACE_MINUTES = 2 * DAY;
+const MAPPING_SOURCES = ['customer.name', 'business.name', 'static', 'booking.code', 'booking.amount'];
+const BOOKING_MAPPING_SOURCES = ['booking.code', 'booking.amount'];
+// Text placeholders filled from the booking (booking triggers only); the
+// rest ({{customerName}}, {{businessName}}, …) are applyMessageTemplate's.
+const BOOKING_PLACEHOLDER_RE = /\{\{(bookingCode|amount)\}\}/;
 
 // What a trigger allows, shared by the presets and custom automations.
 //   template  'none'     text-only (template_id must be empty)
@@ -76,17 +86,33 @@ const PRESETS = {
     triggerTypes: ['after_last_inbound', 'inactive_for'],
     defaults: { perCustomerCap: 1, dailyCap: 50, sendStartMinute: 540, sendEndMinute: 1260 }
   },
+  // Booking triggers: a follow-up about a completed booking or a pending
+  // payment is a transaction follow-up, so UTILITY (no marketing opt-in).
   review_request: {
     label: 'Review request',
     description: 'Thank customers and ask for a review after a completed booking.',
-    available: false,
-    triggerType: 'after_completed'
+    available: true,
+    triggerType: 'after_completed',
+    messageCategory: 'utility',
+    template: 'required',
+    templateCategory: 'UTILITY',
+    delay: { min: 30, max: 14 * DAY, default: DAY },
+    defaults: { perCustomerCap: 3, dailyCap: 100, sendStartMinute: 600, sendEndMinute: 1200 },
+    triggerParams: {},
+    textKey: 'followupReviewRequest'
   },
   payment_pending: {
     label: 'Payment reminder',
     description: 'Remind customers about a payment that is still pending.',
-    available: false,
-    triggerType: 'after_payment_requested'
+    available: true,
+    triggerType: 'after_payment_requested',
+    messageCategory: 'utility',
+    template: 'required',
+    templateCategory: 'UTILITY',
+    delay: { min: 30, max: 7 * DAY, default: 6 * HOUR },
+    defaults: { perCustomerCap: 3, dailyCap: 100, sendStartMinute: 600, sendEndMinute: 1200 },
+    triggerParams: {},
+    textKey: 'followupPaymentPending'
   }
 };
 
@@ -101,11 +127,17 @@ const countTemplateVariables = (bodyText) => {
 
 /** The rule set an automation follows: its preset's, or for custom its trigger's. */
 const ruleFor = (preset, triggerType) => {
-  if (preset === 'enquiry_nudge') return { ...RULES.textAfterInbound, delay: PRESETS.enquiry_nudge.delay, triggerParams: PRESETS.enquiry_nudge.triggerParams };
-  if (preset === 'win_back') {
-    const p = PRESETS.win_back;
-    return { triggerType: p.triggerType, template: p.template, templateCategory: p.templateCategory, delay: p.delay, triggerParams: p.triggerParams };
+  const p = PRESETS[preset];
+  if (p && preset !== 'custom' && p.available) {
+    return {
+      triggerType: p.triggerType,
+      template: p.template,
+      ...(p.templateCategory ? { templateCategory: p.templateCategory } : {}),
+      delay: p.delay,
+      triggerParams: p.triggerParams
+    };
   }
+  if (preset !== 'custom') return null;
   if (triggerType === 'after_last_inbound') return RULES.textAfterInbound;
   if (triggerType === 'inactive_for') return RULES.templateAfterInactive;
   return null;
@@ -175,7 +207,7 @@ const checkTriggerParams = (rule, params, delayMinutes) => {
     const days = p.recentBookingDays === undefined ? rule.triggerParams.recentBookingDays : p.recentBookingDays;
     if (!isInt(days) || days < 0 || days > 90) return { error: 'triggerParams.recentBookingDays must be a whole number from 0 to 90' };
     out.recentBookingDays = days;
-  } else {
+  } else if (rule.triggerType === 'inactive_for') {
     const only = p.onlyPastCustomers === undefined ? rule.triggerParams.onlyPastCustomers : p.onlyPastCustomers;
     if (typeof only !== 'boolean') return { error: 'triggerParams.onlyPastCustomers must be true or false' };
     const maxDays = p.maxInactiveDays === undefined ? rule.triggerParams.maxInactiveDays : p.maxInactiveDays;
@@ -201,7 +233,7 @@ const checkTranslations = (translations) => {
   return { value: Object.keys(out).length ? out : null };
 };
 
-const checkMapping = (mapping, variableCount) => {
+const checkMapping = (mapping, variableCount, triggerType) => {
   const list = mapping === undefined || mapping === null ? [] : mapping;
   if (!Array.isArray(list)) return { error: 'templateVariableMapping must be a list' };
   if (list.length !== variableCount) {
@@ -212,10 +244,13 @@ const checkMapping = (mapping, variableCount) => {
     const at = `templateVariableMapping[${i}] ({{${i + 1}}})`;
     if (!entry || typeof entry !== 'object') return { error: `${at} must be an object` };
     if (!MAPPING_SOURCES.includes(entry.source)) return { error: `${at}.source must be one of: ${MAPPING_SOURCES.join(', ')}` };
+    if (BOOKING_MAPPING_SOURCES.includes(entry.source) && !BOOKING_TRIGGERS.includes(triggerType)) {
+      return { error: `${at}.source ${entry.source} is only available for booking follow-ups (review request, payment reminder)` };
+    }
     if (entry.source === 'static' && isBlank(entry.value)) return { error: `${at}.value is required for a fixed value` };
-    // Optional: an empty customer name with no fallback reads 'जी' / 'there'
-    // by template language (renderTemplateParams); the business always has a
-    // name, and a fixed value is never empty.
+    // Optional: an empty customer name / amount with no fallback reads in the
+    // template's language (renderTemplateParams); the business always has a
+    // name, every booking has a code, and a fixed value is never empty.
     if (entry.fallback !== undefined && entry.fallback !== null && typeof entry.fallback !== 'string') {
       return { error: `${at}.fallback must be text` };
     }
@@ -287,6 +322,11 @@ const validateAutomation = (input, { templateRow = null } = {}) => {
   if (messageText.trim().length > TEXT_MAX) return { error: `messageText is too long (max ${TEXT_MAX} characters)` };
   const translations = checkTranslations(translationsInput);
   if (translations.error) return translations;
+  if (!BOOKING_TRIGGERS.includes(triggerType)) {
+    const texts = [messageText, ...Object.values(translations.value || {})];
+    const found = texts.map((t) => BOOKING_PLACEHOLDER_RE.exec(t)).find(Boolean);
+    if (found) return { error: `messageText: {{${found[1]}}} is only available for booking follow-ups (review request, payment reminder)` };
+  }
 
   const defaults = preset.defaults;
   const pick = (key) => (input[key] === undefined || input[key] === null ? defaults[key] : input[key]);
@@ -319,7 +359,7 @@ const validateAutomation = (input, { templateRow = null } = {}) => {
     if (templateRow.header_type && templateRow.header_type !== 'NONE') {
       return { error: `Template "${templateRow.name}" has an image header, which follow-ups can't send yet — pick a text-only template` };
     }
-    const m = checkMapping(input.templateVariableMapping, countTemplateVariables(templateRow.body_text));
+    const m = checkMapping(input.templateVariableMapping, countTemplateVariables(templateRow.body_text), triggerType);
     if (m.error) return m;
     mapping = m.value;
   }
@@ -366,13 +406,26 @@ const rowToInput = (row) => ({
 const iso = (t) => new Date(t).toISOString();
 const inboundTriggerKey = (lastMessageAt) => `inbound:${iso(lastMessageAt)}`;
 const inactiveTriggerKey = (lastMessageAt) => `inactive:${iso(lastMessageAt)}`;
-const triggerKeyFor = (automation, customerRow) => (automation.trigger_type === 'inactive_for'
-  ? inactiveTriggerKey(customerRow.last_message_at)
-  : inboundTriggerKey(customerRow.last_message_at));
+// One review request per booking, however often it's reopened / re-completed.
+const completedTriggerKey = (bookingId) => `completed:${bookingId}`;
+// One reminder per payment request; a new request (after paid → pending) is a new occurrence.
+const paymentTriggerKey = (bookingId, requestedAt) => `payment:${bookingId}:${iso(requestedAt)}`;
+
+const isBookingTrigger = (triggerType) => BOOKING_TRIGGERS.includes(triggerType);
+
+/** The key for this customer (customer triggers) or booking (booking triggers). */
+const triggerKeyFor = (automation, customerRow, booking = null) => {
+  switch (automation.trigger_type) {
+    case 'inactive_for': return inactiveTriggerKey(customerRow.last_message_at);
+    case 'after_completed': return completedTriggerKey(booking.id);
+    case 'after_payment_requested': return paymentTriggerKey(booking.id, booking.payment_requested_at);
+    default: return inboundTriggerKey(customerRow.last_message_at);
+  }
+};
 
 /**
- * The last_message_at range that makes a customer due at `now`:
- * after < last_message_at <= before.
+ * The time range that makes a customer / booking due at `now`:
+ * after < (last_message_at | completed_at | payment_requested_at) <= before.
  */
 const dueRange = (automation, now) => {
   const t = new Date(now).getTime();
@@ -380,6 +433,9 @@ const dueRange = (automation, now) => {
   if (automation.trigger_type === 'inactive_for') {
     const maxDays = (automation.trigger_params && automation.trigger_params.maxInactiveDays) || RULES.templateAfterInactive.triggerParams.maxInactiveDays;
     return { before, after: new Date(t - maxDays * DAY * 60 * 1000) };
+  }
+  if (isBookingTrigger(automation.trigger_type)) {
+    return { before, after: new Date(before.getTime() - LATE_GRACE_MINUTES * 60 * 1000) };
   }
   return { before, after: new Date(t - (DAY - WINDOW_MARGIN_MINUTES) * 60 * 1000) };
 };
@@ -389,45 +445,68 @@ const dueRange = (automation, now) => {
 // What a follow-up calls a customer with no name, per language. Follow-ups
 // only — bot replies keep applyMessageTemplate's English 'there'.
 const EMPTY_NAME = { en: 'there', hi: 'जी', mr: 'जी' };
+// What {{amount}} reads when the booking has no amount (a payment QR sent
+// without one), per language — the default reminder text reads naturally.
+const EMPTY_AMOUNT = { en: 'your payment', hi: 'आपका भुगतान', mr: 'तुमचे पेमेंट' };
 
 const customerNameOr = (customer, languageCode) => {
   const name = customer && typeof customer.name === 'string' ? customer.name.trim() : '';
   return name || EMPTY_NAME[languageCode] || EMPTY_NAME.en;
 };
 
+/** "₹1,500" / "₹1,500.50", or '' when the booking has no positive amount. */
+const formatAmount = (amount) => {
+  const n = Number(amount);
+  if (!Number.isFinite(n) || n <= 0) return '';
+  const digits = Number.isInteger(n) ? 0 : 2; // ₹1,500 / ₹1,500.50
+  return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n);
+};
+
+const bookingCodeOf = (booking) => (booking && typeof booking.booking_code === 'string' ? booking.booking_code.trim() : '');
+
 /** 'hi' from 'hi', 'hi_IN'; null for anything else. */
 const baseLanguage = (code) => (typeof code === 'string' && code ? code.split(/[_-]/)[0].toLowerCase() : null);
 
 /**
  * The automation's text in the customer's language, with {{customerName}} etc.
- * filled. {{customerName}} is filled here first so an empty name reads in the
- * language of the text actually used (a missing translation falls back to
- * English text, and so to 'there'); applyMessageTemplate does the rest.
+ * filled. {{customerName}} (and, for booking follow-ups, {{bookingCode}} /
+ * {{amount}}) are filled here first so empty values read in the language of
+ * the text actually used (a missing translation falls back to English text);
+ * applyMessageTemplate does the rest.
  */
-const renderText = (automation, business, customer, languageCode) => {
+const renderText = (automation, business, customer, languageCode, booking = null) => {
   const translations = automation.message_text_translations || {};
   const translated = languageCode && typeof translations[languageCode] === 'string' && translations[languageCode].trim() !== '';
   const textLanguage = translated ? languageCode : 'en';
-  const text = getLocalizedText(automation, 'message_text', languageCode);
-  return applyMessageTemplate(
-    text.replace(/\{\{customerName\}\}/g, () => customerNameOr(customer, textLanguage)),
-    business, customer
-  );
+  let text = getLocalizedText(automation, 'message_text', languageCode)
+    .replace(/\{\{customerName\}\}/g, () => customerNameOr(customer, textLanguage));
+  if (booking) {
+    text = text
+      .replace(/\{\{bookingCode\}\}/g, () => bookingCodeOf(booking))
+      .replace(/\{\{amount\}\}/g, () => formatAmount(booking.payment_amount) || EMPTY_AMOUNT[textLanguage] || EMPTY_AMOUNT.en);
+  }
+  return applyMessageTemplate(text, business, customer);
 };
 
 /**
  * {{1}}..{{n}} values from template_variable_mapping, each falling back when
- * empty to the owner's mapping fallback. An empty customer name with no
- * fallback reads in the template's language ('जी' for hi / mr, else 'there').
+ * empty to the owner's mapping fallback. An empty customer name / amount with
+ * no fallback reads in the template's language ('जी' / 'आपका भुगतान' for hi,
+ * etc., else English).
  */
-const renderTemplateParams = (mapping, business, customer, templateLanguage = null) => (mapping || []).map((entry) => {
+const renderTemplateParams = (mapping, business, customer, templateLanguage = null, booking = null) => (mapping || []).map((entry) => {
   const fallback = typeof entry.fallback === 'string' ? entry.fallback.trim() : '';
+  const lang = baseLanguage(templateLanguage);
   let v = '';
   if (entry.source === 'customer.name') {
     v = customer && customer.name;
-    if (!(typeof v === 'string' && v.trim()) && !fallback) return customerNameOr(null, baseLanguage(templateLanguage));
+    if (!(typeof v === 'string' && v.trim()) && !fallback) return customerNameOr(null, lang);
   } else if (entry.source === 'business.name') v = business && (business.displayName || business.name);
-  else v = entry.value;
+  else if (entry.source === 'booking.code') v = bookingCodeOf(booking);
+  else if (entry.source === 'booking.amount') {
+    v = booking ? formatAmount(booking.payment_amount) : '';
+    if (!v && !fallback) return EMPTY_AMOUNT[lang] || EMPTY_AMOUNT.en;
+  } else v = entry.value;
   return typeof v === 'string' && v.trim() ? v.trim() : fallback;
 });
 
@@ -445,6 +524,8 @@ module.exports = {
   PRESETS,
   RULES,
   WINDOW_MARGIN_MINUTES,
+  BOOKING_TRIGGERS,
+  LATE_GRACE_MINUTES,
   presetsForWeb,
   templateFilterFor,
   ruleFor,
@@ -452,10 +533,14 @@ module.exports = {
   countTemplateVariables,
   validateAutomation,
   rowToInput,
+  isBookingTrigger,
   inboundTriggerKey,
   inactiveTriggerKey,
+  completedTriggerKey,
+  paymentTriggerKey,
   triggerKeyFor,
   dueRange,
+  formatAmount,
   renderText,
   renderTemplateParams,
   renderTemplateText,

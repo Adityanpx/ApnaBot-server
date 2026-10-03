@@ -208,6 +208,22 @@ const SYSTEM_MESSAGES = {
     mr: 'नमस्कार {{customerName}}, बराच काळ झाला! आम्हाला पुन्हा तुमची मदत करायला आवडेल — कधीही इथे उत्तर द्या.'
   },
 
+  // Review request / payment reminder send an approved UTILITY template; the
+  // text is only used while the customer's 24-hour window is open.
+  // {{bookingCode}} / {{amount}} are filled from the booking by
+  // utils/followup.js#renderText ({{amount}} reads "your payment" etc. when
+  // the booking has no amount).
+  followupReviewRequest: {
+    en: "Hi {{customerName}}, thank you for choosing {{businessName}}! How was your experience? Reply here — we'd love your feedback.",
+    hi: 'नमस्ते {{customerName}}, {{businessName}} चुनने के लिए धन्यवाद! आपका अनुभव कैसा रहा? यहाँ जवाब देकर हमें ज़रूर बताएं।',
+    mr: 'नमस्कार {{customerName}}, {{businessName}} निवडल्याबद्दल धन्यवाद! तुमचा अनुभव कसा होता? इथे उत्तर देऊन आम्हाला नक्की कळवा.'
+  },
+  followupPaymentPending: {
+    en: 'Hi {{customerName}}, a gentle reminder: {{amount}} for booking {{bookingCode}} is still pending. Reply here if you need the payment details again.',
+    hi: 'नमस्ते {{customerName}}, याद दिला दें: बुकिंग {{bookingCode}} के लिए {{amount}} अभी बाकी है। भुगतान की जानकारी फिर से चाहिए तो यहाँ जवाब दें।',
+    mr: 'नमस्कार {{customerName}}, आठवण: बुकिंग {{bookingCode}} साठी {{amount}} अजून बाकी आहे. पेमेंटची माहिती पुन्हा हवी असल्यास इथे उत्तर द्या.'
+  },
+
   // ── Free demo time + reminder (demoReminder.service.js) ──
   demoFixed: {
     en: "✅ {{student}}'s free demo class for {{course}} is fixed for {{time}}. Reply here if you need to change it.",

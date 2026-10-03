@@ -120,13 +120,91 @@ test('custom: after_last_inbound follows the text-only rules; inactive_for needs
   assert.match(f.validateAutomation({ preset: 'custom', name: 'C', triggerType: 'inactive_for', delayMinutes: 600, messageText: 'Hi' }).error, /between 1440/);
 });
 
-test('custom: other triggers and the unbuilt presets are "available soon"', () => {
+test('custom: the booking triggers stay preset-only ("available soon"); unknown preset refused', () => {
   assert.match(f.validateAutomation({ preset: 'custom', name: 'C', triggerType: 'after_completed', messageText: 'Hi' }).error, /available soon/);
   assert.match(f.validateAutomation({ preset: 'custom', name: 'C', triggerType: 'after_payment_requested', messageText: 'Hi' }).error, /available soon/);
   assert.match(f.validateAutomation({ preset: 'custom', name: 'C', triggerType: 'nope', messageText: 'Hi' }).error, /triggerType must be one of/);
-  assert.match(f.validateAutomation({ preset: 'review_request', name: 'R' }).error, /available soon/);
-  assert.match(f.validateAutomation({ preset: 'payment_pending', name: 'P' }).error, /available soon/);
   assert.match(f.validateAutomation({ preset: 'booking_reminder', name: 'B' }).error, /preset must be one of/);
+});
+
+const utilityTpl = (over = {}) => ({
+  id: 'u1', name: 'pay_reminder', status: 'approved', category: 'UTILITY', header_type: 'NONE',
+  body_text: 'Hi {{1}}, {{2}} for booking {{3}} is pending.', ...over
+});
+const bookingMapping = [
+  { source: 'customer.name', fallback: '' },
+  { source: 'booking.amount', fallback: '' },
+  { source: 'booking.code', fallback: '' }
+];
+
+test('review_request / payment_pending: UTILITY template required, defaults and ranges', () => {
+  const pay = f.validateAutomation({ preset: 'payment_pending', name: 'Pay', templateId: 'u1', templateVariableMapping: bookingMapping }, { templateRow: utilityTpl() });
+  assert.ok(pay.value, pay.error);
+  assert.equal(pay.value.trigger_type, 'after_payment_requested');
+  assert.equal(pay.value.message_category, 'utility');
+  assert.equal(pay.value.delay_minutes, 360);
+  assert.deepEqual(pay.value.trigger_params, {});
+  assert.equal(pay.value.send_start_minute, 600);
+  assert.equal(pay.value.send_end_minute, 1200);
+  assert.equal(pay.value.per_customer_cap, 3);
+  assert.match(pay.value.message_text, /\{\{amount\}\} for booking \{\{bookingCode\}\}/);
+
+  const review = f.validateAutomation({ preset: 'review_request', name: 'Review', templateId: 'u1', templateVariableMapping: bookingMapping }, { templateRow: utilityTpl() });
+  assert.ok(review.value, review.error);
+  assert.equal(review.value.trigger_type, 'after_completed');
+  assert.equal(review.value.delay_minutes, 1440);
+
+  assert.match(f.validateAutomation({ preset: 'review_request', name: 'R' }).error, /Pick an approved/);
+  assert.match(f.validateAutomation({ preset: 'review_request', name: 'R', templateId: 'u1', templateVariableMapping: bookingMapping }, { templateRow: utilityTpl({ category: 'MARKETING' }) }).error, /needs a UTILITY template/);
+  const at = (preset, delayMinutes) => f.validateAutomation({ preset, name: 'X', delayMinutes, templateId: 'u1', templateVariableMapping: bookingMapping }, { templateRow: utilityTpl() });
+  assert.ok(at('review_request', 30).value);
+  assert.ok(at('review_request', 14 * DAY).value);
+  assert.match(at('review_request', 14 * DAY + 1).error, /between 30 and 20160/);
+  assert.ok(at('payment_pending', 7 * DAY).value);
+  assert.match(at('payment_pending', 7 * DAY + 1).error, /between 30 and 10080/);
+  assert.match(at('payment_pending', 29).error, /between/);
+});
+
+test('booking sources and placeholders only on booking triggers', () => {
+  // template variable sources
+  const winBack = f.validateAutomation({ preset: 'win_back', name: 'W', templateId: 't1', templateVariableMapping: [{ source: 'booking.code' }, nameMapping[1]] }, { templateRow: marketingTpl() });
+  assert.match(winBack.error, /only available for booking follow-ups/);
+  // text placeholders, incl. inside a translation
+  assert.match(f.validateAutomation({ preset: 'enquiry_nudge', name: 'N', messageText: 'Pay {{amount}}' }).error, /\{\{amount\}\} is only available/);
+  assert.match(f.validateAutomation({ preset: 'enquiry_nudge', name: 'N', messageText: 'Hi', messageTextTranslations: { hi: 'बुकिंग {{bookingCode}}' } }).error, /\{\{bookingCode\}\} is only available/);
+  assert.ok(f.validateAutomation({ preset: 'payment_pending', name: 'P', messageText: '{{amount}} · {{bookingCode}}', templateId: 'u1', templateVariableMapping: bookingMapping }, { templateRow: utilityTpl() }).value);
+});
+
+test('booking trigger keys and due range (2-day grace, never sent late)', () => {
+  assert.equal(f.completedTriggerKey('bk1'), 'completed:bk1');
+  assert.equal(f.paymentTriggerKey('bk1', '2026-10-03T10:00:00.123456+00:00'), 'payment:bk1:2026-10-03T10:00:00.123Z');
+  assert.equal(f.triggerKeyFor({ trigger_type: 'after_completed' }, {}, { id: 'bk9' }), 'completed:bk9');
+  assert.equal(f.triggerKeyFor({ trigger_type: 'after_payment_requested' }, {}, { id: 'bk9', payment_requested_at: '2026-10-03T10:00:00Z' }), 'payment:bk9:2026-10-03T10:00:00.000Z');
+  const now = new Date('2026-10-03T12:00:00Z');
+  const r = f.dueRange({ trigger_type: 'after_payment_requested', delay_minutes: 360 }, now);
+  assert.equal(r.before.toISOString(), '2026-10-03T06:00:00.000Z');
+  assert.equal(r.after.toISOString(), '2026-10-01T06:00:00.000Z');
+});
+
+test('booking rendering: {{amount}} / {{bookingCode}} in text and template, language-aware fallbacks', () => {
+  const automation = {
+    message_text: '{{amount}} for {{bookingCode}}, {{customerName}}',
+    message_text_translations: { hi: 'बुकिंग {{bookingCode}} के लिए {{amount}} बाकी' }
+  };
+  const business = { name: 'B' };
+  const withAmount = { id: 'bk1', booking_code: 'SG1234', payment_amount: 1500 };
+  const noAmount = { id: 'bk2', booking_code: 'SG5678', payment_amount: 0 };
+  assert.equal(f.renderText(automation, business, { name: 'Asha' }, null, withAmount), '₹1,500 for SG1234, Asha');
+  assert.equal(f.renderText(automation, business, { name: 'Asha' }, null, noAmount), 'your payment for SG5678, Asha');
+  assert.equal(f.renderText(automation, business, { name: 'Asha' }, 'hi', noAmount), 'बुकिंग SG5678 के लिए आपका भुगतान बाकी');
+  assert.equal(f.formatAmount(1500.5), '₹1,500.50');
+  assert.equal(f.formatAmount(null), '');
+  // without a booking (customer triggers) the placeholders are never touched
+  assert.equal(f.renderText({ message_text: 'Hi {{customerName}}' }, business, { name: 'Asha' }, null), 'Hi Asha');
+
+  const mapping = [{ source: 'booking.amount', fallback: '' }, { source: 'booking.code', fallback: '' }, { source: 'booking.amount', fallback: 'the balance' }];
+  assert.deepEqual(f.renderTemplateParams(mapping, business, {}, 'en_US', withAmount), ['₹1,500', 'SG1234', '₹1,500']);
+  assert.deepEqual(f.renderTemplateParams(mapping, business, {}, 'mr', noAmount), ['तुमचे पेमेंट', 'SG5678', 'the balance']);
 });
 
 test('presets cannot change their trigger or category', () => {
@@ -173,7 +251,10 @@ test('rendering: localized text with {{customerName}}, template params with fall
 test('presetsForWeb lists every preset with limits and default text', () => {
   const list = f.presetsForWeb();
   assert.deepEqual(list.map(p => p.key), ['enquiry_nudge', 'win_back', 'custom', 'review_request', 'payment_pending']);
-  assert.equal(list.find(p => p.key === 'review_request').available, false);
+  assert.equal(list.find(p => p.key === 'review_request').available, true);
+  assert.equal(list.find(p => p.key === 'payment_pending').available, true);
+  assert.match(list.find(p => p.key === 'review_request').defaultText, /How was your experience/);
+  assert.match(list.find(p => p.key === 'payment_pending').defaultTextTranslations.hi, /\{\{amount\}\}/);
   assert.match(list.find(p => p.key === 'win_back').defaultText, /it's been a while/);
   assert.deepEqual(list.find(p => p.key === 'custom').triggerTypes, ['after_last_inbound', 'inactive_for']);
 });
@@ -229,5 +310,7 @@ test('presets carry the template filter the web dropdown applies', () => {
     after_last_inbound: null,
     inactive_for: { status: 'approved', headerType: 'NONE', category: null, categoryMatchesMessageCategory: true }
   });
-  assert.equal(byKey.review_request.templateFilter, null);
+  const utility = { status: 'approved', headerType: 'NONE', category: 'UTILITY', categoryMatchesMessageCategory: false };
+  assert.deepEqual(byKey.review_request.templateFilter, utility);
+  assert.deepEqual(byKey.payment_pending.templateFilter, utility);
 });
