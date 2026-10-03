@@ -91,14 +91,20 @@ const applyBookingRules = async (automation, customers, now) => {
   const params = automation.trigger_params || {};
   if (automation.trigger_type === 'after_last_inbound') {
     const days = params.recentBookingDays === undefined ? 7 : params.recentBookingDays;
-    let query = supabase.from('bookings').select('customer_id')
-      .eq('business_id', automation.business_id).in('customer_id', ids);
-    query = days > 0
-      ? query.or(`status.in.(${OPEN_BOOKING_STATUSES.join(',')}),created_at.gte.${iso(new Date(now).getTime() - days * DAY_MS)}`)
-      : query.in('status', OPEN_BOOKING_STATUSES);
-    const { data, error } = await query;
-    if (error) throw error;
-    const excluded = new Set((data || []).map(r => r.customer_id));
+    // Paged past PostgREST's 1000-row cap — a capped read could nudge someone
+    // who just booked.
+    const excluded = new Set();
+    for (let from = 0; ; from += 1000) {
+      let query = supabase.from('bookings').select('customer_id')
+        .eq('business_id', automation.business_id).in('customer_id', ids);
+      query = days > 0
+        ? query.or(`status.in.(${OPEN_BOOKING_STATUSES.join(',')}),created_at.gte.${iso(new Date(now).getTime() - days * DAY_MS)}`)
+        : query.in('status', OPEN_BOOKING_STATUSES);
+      const { data, error } = await query.order('id', { ascending: true }).range(from, from + 999);
+      if (error) throw error;
+      for (const r of data || []) excluded.add(r.customer_id);
+      if (!data || data.length < 1000) break;
+    }
     return customers.filter(c => !excluded.has(c.id));
   }
   if (automation.trigger_type === 'inactive_for' && params.onlyPastCustomers) {
@@ -190,7 +196,7 @@ const loadSendHistory = async (automationId, customerIds) => {
   for (let from = 0; ; from += 1000) {
     const { data, error } = await supabase.from('followup_sends').select('customer_id, trigger_key, status')
       .eq('automation_id', automationId).in('customer_id', customerIds)
-      .range(from, from + 999);
+      .order('id', { ascending: true }).range(from, from + 999);
     if (error) throw error;
     for (const r of data || []) {
       const h = history.get(r.customer_id) || { keys: new Set(), sent: 0 };

@@ -67,7 +67,7 @@ const list = async (businessId, now = new Date()) => {
   for (let from = 0; ; from += 1000) {
     const { data, error: sendsErr } = await supabase.from('followup_sends').select('automation_id, status, created_at')
       .eq('business_id', businessId).gte('created_at', weekAgo)
-      .order('created_at', { ascending: true }).range(from, from + 999);
+      .order('created_at', { ascending: true }).order('id', { ascending: true }).range(from, from + 999);
     if (sendsErr) throw sendsErr;
     for (const s of data || []) {
       const st = stats.get(s.automation_id);

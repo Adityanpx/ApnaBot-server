@@ -15,6 +15,25 @@ const supabase = require('../config/supabase');
 const AUDIENCE_FILTERS = ['all_customers', 'coaching_requests'];
 const FORM_CHOICES = ['demo', 'admission', 'any'];
 const ID_CHUNK = 500; // keeps each `in (...)` filter a sensible URL length
+// PostgREST returns at most max_rows rows per request (1000 on the hosted
+// project, measured 2026-10-04) and silently drops the rest, so every
+// unbounded select here is read in pages of this size.
+const PAGE = 1000;
+
+/**
+ * Every row of a query, paged past the max_rows cap. `build` returns a fresh
+ * query each call, ordered by a unique column so pages never overlap.
+ */
+const fetchAllPages = async (build) => {
+  const rows = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await build().range(from, from + PAGE - 1);
+    if (error) throw error;
+    rows.push(...(data || []));
+    if (!data || data.length < PAGE) break;
+  }
+  return rows;
+};
 
 /**
  * Checks and normalizes an audience from a request body.
@@ -42,13 +61,14 @@ const normalizeAudience = (audienceFilter, audienceParams) => {
 
 /** Ids of customers with a matching Free demo / Admission request. */
 const requestCustomerIds = async (businessId, params) => {
-  let query = supabase.from('bookings').select('customer_id').eq('business_id', businessId)
-    .in('form_key', params.form === 'any' ? ['demo', 'admission'] : [params.form]);
-  if (params.course) query = query.eq('fields->>course', params.course);
-  if (params.skipClosed) query = query.neq('status', 'cancelled');
-  const { data, error } = await query;
-  if (error) throw error;
-  return [...new Set((data || []).map(r => r.customer_id).filter(Boolean))];
+  const rows = await fetchAllPages(() => {
+    let query = supabase.from('bookings').select('customer_id').eq('business_id', businessId)
+      .in('form_key', params.form === 'any' ? ['demo', 'admission'] : [params.form]);
+    if (params.course) query = query.eq('fields->>course', params.course);
+    if (params.skipClosed) query = query.neq('status', 'cancelled');
+    return query.order('id', { ascending: true });
+  });
+  return [...new Set(rows.map(r => r.customer_id).filter(Boolean))];
 };
 
 /**
@@ -60,12 +80,11 @@ const resolveAudience = async (businessId, filter, params) => {
   const base = () => supabase.from('customers').select('id, whatsapp_number, name')
     .eq('business_id', businessId).eq('opted_in', true).eq('is_blocked', false).is('opted_out_at', null);
   if (filter !== 'coaching_requests') {
-    const { data, error } = await base();
-    if (error) throw error;
-    return data || [];
+    return fetchAllPages(() => base().order('id', { ascending: true }));
   }
   const ids = await requestCustomerIds(businessId, params || { form: 'any', course: null, skipClosed: true });
   const customers = [];
+  // ID_CHUNK (500) ids per request — under the 1000-row cap, so no paging here.
   for (let i = 0; i < ids.length; i += ID_CHUNK) {
     const { data, error } = await base().in('id', ids.slice(i, i + ID_CHUNK));
     if (error) throw error;

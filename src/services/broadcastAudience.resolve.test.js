@@ -1,8 +1,13 @@
 // Run: node --test src/services/broadcastAudience.resolve.test.js
 // resolveAudience against an in-memory stand-in for the customers and
 // bookings tables (eq / neq / in, including the 'fields->>course' JSON path).
+// Like PostgREST on the hosted project, every response is capped at
+// MAX_ROWS rows (after .range()), so an un-paged read silently loses rows.
 const test = require('node:test');
 const assert = require('node:assert/strict');
+
+const MAX_ROWS = 1000;
+const requests = []; // { table, filters: [description] } per request, for the "every page" checks
 
 const tables = {
   customers: [
@@ -31,14 +36,28 @@ const valueOf = (row, col) => {
 };
 const query = (table) => {
   const filters = [];
+  const described = [];
+  const orders = [];
+  let range = null;
+  const add = (desc, f) => { described.push(desc); filters.push(f); return q; };
   const q = {
     select: () => q,
-    eq: (c, v) => { filters.push(r => valueOf(r, c) === v); return q; },
-    neq: (c, v) => { filters.push(r => valueOf(r, c) !== v); return q; },
-    in: (c, vs) => { filters.push(r => vs.includes(valueOf(r, c))); return q; },
+    eq: (c, v) => add(`eq ${c} ${v}`, r => valueOf(r, c) === v),
+    neq: (c, v) => add(`neq ${c} ${v}`, r => valueOf(r, c) !== v),
+    in: (c, vs) => add(`in ${c}`, r => vs.includes(valueOf(r, c))),
     // PostgREST `is null`: a missing column reads as null, like a row from before the column existed.
-    is: (c, v) => { filters.push(r => (valueOf(r, c) ?? null) === v); return q; },
-    then: (resolve) => resolve({ data: tables[table].filter(r => filters.every(f => f(r))), error: null })
+    is: (c, v) => add(`is ${c} ${v}`, r => (valueOf(r, c) ?? null) === v),
+    order: (c, { ascending = true } = {}) => { orders.push({ c, ascending }); return q; },
+    range: (from, to) => { range = [from, to]; return q; },
+    then: (resolve) => {
+      requests.push({ table, filters: described });
+      let rows = tables[table].filter(r => filters.every(f => f(r)));
+      for (const { c, ascending } of [...orders].reverse()) {
+        rows = [...rows].sort((a, b) => (a[c] < b[c] ? -1 : a[c] > b[c] ? 1 : 0) * (ascending ? 1 : -1));
+      }
+      if (range) rows = rows.slice(range[0], range[1] + 1);
+      resolve({ data: rows.slice(0, MAX_ROWS), error: null });
+    }
   };
   return q;
 };
@@ -71,4 +90,72 @@ test('form and course filters', async () => {
   assert.deepEqual(await names('coaching_requests', { form: 'demo', skipClosed: false }), ['Asha', 'Ravi']);
   assert.deepEqual(await names('coaching_requests', { form: 'any', course: 'Vedic Maths', skipClosed: false }), ['Ravi']);
   assert.deepEqual(await names('coaching_requests', { form: 'any', course: 'Chess' }), []);
+});
+
+// ── Past the 1000-row cap ──
+// Business 'big': 2,500 eligible customers, with ineligible ones (not opted
+// in / blocked / sent STOP) mixed in on every page, and 2,500 open demo
+// requests plus closed ones.
+const pad = (n) => String(n).padStart(5, '0');
+const bigEligible = [];
+for (let i = 0; i < 2500; i += 1) {
+  const c = { id: `big-${pad(i)}`, business_id: 'big', whatsapp_number: `91${pad(i)}`, name: `C${i}`, opted_in: true, is_blocked: false };
+  bigEligible.push(c);
+  tables.customers.push(c);
+  tables.bookings.push({ id: `bk-${pad(i)}`, customer_id: c.id, business_id: 'big', form_key: 'demo', status: 'pending', fields: { course: 'Abacus' } });
+  if (i % 3 === 0) {
+    tables.customers.push({ id: `big-${pad(i)}-x`, business_id: 'big', whatsapp_number: `92${pad(i)}`, name: `X${i}`, ...[
+      { opted_in: false, is_blocked: false },
+      { opted_in: true, is_blocked: true },
+      { opted_in: true, is_blocked: false, opted_out_at: '2026-10-01T10:00:00Z' }
+    ][i % 9 / 3] });
+    tables.bookings.push({ id: `bk-${pad(i)}-x`, customer_id: `big-${pad(i)}-x`, business_id: 'big', form_key: 'demo', status: 'pending', fields: { course: 'Abacus' } });
+  }
+  if (i % 5 === 0) {
+    // a closed request for the same parent — must not duplicate them
+    tables.bookings.push({ id: `bk-${pad(i)}-c`, customer_id: c.id, business_id: 'big', form_key: 'admission', status: 'cancelled', fields: { course: 'Abacus' } });
+  }
+}
+
+const bigIds = async (filter, params) => {
+  const a = normalizeAudience(filter, params);
+  return (await resolveAudience('big', a.filter, a.params)).map(c => c.id);
+};
+
+test('all customers: an audience of 2,500 resolves to all 2,500, each once', async () => {
+  const ids = await bigIds('all_customers');
+  assert.equal(ids.length, 2500);
+  assert.equal(new Set(ids).size, 2500);
+  assert.deepEqual([...ids].sort(), bigEligible.map(c => c.id).sort());
+});
+
+test('all customers: opted_in / not blocked / not opted out is applied on every page', async () => {
+  requests.length = 0;
+  await bigIds('all_customers');
+  const pages = requests.filter(r => r.table === 'customers');
+  assert.equal(pages.length, 3); // 1000 + 1000 + 500
+  for (const p of pages) {
+    assert.deepEqual(p.filters, ['eq business_id big', 'eq opted_in true', 'eq is_blocked false', 'is opted_out_at null']);
+  }
+});
+
+test('coaching requests: 2,500 requesting parents (more than 1000 booking rows) all resolve', async () => {
+  const ids = await bigIds('coaching_requests', { form: 'any', skipClosed: false });
+  assert.equal(ids.length, 2500);
+  assert.equal(new Set(ids).size, 2500);
+  requests.length = 0;
+  assert.equal((await bigIds('coaching_requests', { form: 'demo' })).length, 2500);
+  for (const p of requests.filter(r => r.table === 'bookings')) {
+    assert.deepEqual(p.filters, ['eq business_id big', 'in form_key', 'neq status cancelled']);
+  }
+});
+
+test('an exact multiple of the page size still ends (short last page is empty)', async () => {
+  const keep = tables.customers;
+  tables.customers = keep.filter(c => c.business_id !== 'big' || c.id < `big-${pad(2000)}`);
+  try {
+    assert.equal((await bigIds('all_customers')).length, 2000);
+  } finally {
+    tables.customers = keep;
+  }
 });

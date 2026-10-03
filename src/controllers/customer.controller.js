@@ -7,6 +7,10 @@ const optInLinkService = require('../services/optInLink.service');
 const logger = require('../utils/logger');
 
 const WINDOW_DURATION_MS = 24 * 60 * 60 * 1000;
+// PostgREST returns at most max_rows rows per request (1000 on the hosted
+// project, measured 2026-10-04) and silently drops the rest — unbounded
+// reads below go in pages of this size.
+const PAGE = 1000;
 
 // A booking only counts toward VIP status (either criteria) once it actually
 // went through — cancelled/pending bookings aren't "business done" with this
@@ -48,17 +52,21 @@ const buildBookingStatsByCustomer = (bookingRows) => {
 // One grouped query for just the given customer ids, not one query per row.
 // Counted/summed in Postgres (customer_booking_stats) rather than fetching
 // booking rows — an un-ranged select silently caps at PostgREST's 1000-row
-// max_rows, and heavy repeat customers are exactly the VIP case.
+// max_rows, and heavy repeat customers are exactly the VIP case. The RPC's
+// own result (one row per customer) is capped the same way, so ids go in
+// chunks of PAGE.
 const fetchBookingStatsByCustomer = async (businessId, customerIds) => {
-  const { data, error } = await supabase.rpc('customer_booking_stats', {
-    p_business_id: businessId,
-    p_customer_ids: customerIds,
-    p_statuses: BOOKING_STATUSES_FOR_VIP
-  });
-  if (error) throw error;
   const stats = {};
-  for (const row of data || []) {
-    stats[row.customer_id] = { count: Number(row.booking_count), spend: Number(row.spend) };
+  for (let i = 0; i < customerIds.length; i += PAGE) {
+    const { data, error } = await supabase.rpc('customer_booking_stats', {
+      p_business_id: businessId,
+      p_customer_ids: customerIds.slice(i, i + PAGE),
+      p_statuses: BOOKING_STATUSES_FOR_VIP
+    });
+    if (error) throw error;
+    for (const row of data || []) {
+      stats[row.customer_id] = { count: Number(row.booking_count), spend: Number(row.spend) };
+    }
   }
   return stats;
 };
@@ -95,40 +103,57 @@ const getCustomers = async (req, res, next) => {
     // instead of at the query level.
     const filterVip = isVip === 'true';
 
-    let query = supabase.from('customers').select('*', { count: 'exact' }).eq('business_id', businessId);
+    if (pipelineStage !== undefined && !PIPELINE_STAGES.includes(pipelineStage)) {
+      return errorResponse(res, 400, `pipelineStage must be one of: ${PIPELINE_STAGES.join(', ')}`);
+    }
 
-    if (search) {
-      // PostgREST's .or() parses commas/parens as filter syntax — strip them
-      // so the search term can't break out of these two conditions.
-      const safeSearch = search.replace(/[,()%*]/g, '');
-      query = query.or(`name.ilike.%${safeSearch}%,whatsapp_number.ilike.%${safeSearch}%`);
-    }
-    if (isBlocked !== undefined) {
-      query = query.eq('is_blocked', isBlocked === 'true');
-    }
-    if (optedIn !== undefined) {
-      query = query.eq('opted_in', optedIn === 'true');
-    }
-    if (broadcastEligible === 'true') {
-      // Mirrors isBroadcastEligible() above — opted_in, is_blocked and
-      // opted_out_at are all real columns, so this filters at the query level
-      // like isBlocked.
-      query = query.eq('opted_in', true).eq('is_blocked', false).is('opted_out_at', null);
-    }
-    if (pipelineStage !== undefined) {
-      if (!PIPELINE_STAGES.includes(pipelineStage)) {
-        return errorResponse(res, 400, `pipelineStage must be one of: ${PIPELINE_STAGES.join(', ')}`);
+    // A fresh query per call — the VIP path below reads it page by page.
+    const buildQuery = () => {
+      let query = supabase.from('customers').select('*', { count: 'exact' }).eq('business_id', businessId);
+
+      if (search) {
+        // PostgREST's .or() parses commas/parens as filter syntax — strip them
+        // so the search term can't break out of these two conditions.
+        const safeSearch = search.replace(/[,()%*]/g, '');
+        query = query.or(`name.ilike.%${safeSearch}%,whatsapp_number.ilike.%${safeSearch}%`);
       }
-      query = query.eq('pipeline_stage', pipelineStage);
-    }
+      if (isBlocked !== undefined) {
+        query = query.eq('is_blocked', isBlocked === 'true');
+      }
+      if (optedIn !== undefined) {
+        query = query.eq('opted_in', optedIn === 'true');
+      }
+      if (broadcastEligible === 'true') {
+        // Mirrors isBroadcastEligible() above — opted_in, is_blocked and
+        // opted_out_at are all real columns, so this filters at the query level
+        // like isBlocked.
+        query = query.eq('opted_in', true).eq('is_blocked', false).is('opted_out_at', null);
+      }
+      if (pipelineStage !== undefined) {
+        query = query.eq('pipeline_stage', pipelineStage);
+      }
 
-    query = query.order('last_message_at', { ascending: false });
-    if (!filterVip) {
-      query = query.range((pageNum - 1) * limitNum, pageNum * limitNum - 1);
-    }
+      return query.order('last_message_at', { ascending: false });
+    };
 
-    const { data, error, count } = await query;
-    if (error) throw error;
+    let data;
+    let count;
+    if (filterVip) {
+      // Every matching row, paged past the 1000-row cap; id breaks
+      // last_message_at ties so pages don't overlap.
+      data = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data: rows, error } = await buildQuery().order('id', { ascending: true }).range(from, from + PAGE - 1);
+        if (error) throw error;
+        data.push(...(rows || []));
+        if (!rows || rows.length < PAGE) break;
+      }
+    } else {
+      const result = await buildQuery().range((pageNum - 1) * limitNum, pageNum * limitNum - 1);
+      if (result.error) throw result.error;
+      data = result.data;
+      count = result.count;
+    }
 
     const business = await businessService.getBusinessById(businessId);
 
@@ -187,10 +212,17 @@ const getCustomerSummary = async (req, res, next) => {
 
     let vip = 0;
     if (business?.vipEnabled && business.vipCriteria && business.vipThreshold !== null && business.vipThreshold !== undefined) {
-      const { data: bookingRows, error: bookingErr } = await supabase
-        .from('bookings').select('customer_id, fare_amount')
-        .eq('business_id', businessId).in('status', BOOKING_STATUSES_FOR_VIP);
-      if (bookingErr) throw bookingErr;
+      // Paged past the 1000-row cap — a capped read would undercount VIPs.
+      const bookingRows = [];
+      for (let from = 0; ; from += PAGE) {
+        const { data: rows, error: bookingErr } = await supabase
+          .from('bookings').select('customer_id, fare_amount')
+          .eq('business_id', businessId).in('status', BOOKING_STATUSES_FOR_VIP)
+          .order('id', { ascending: true }).range(from, from + PAGE - 1);
+        if (bookingErr) throw bookingErr;
+        bookingRows.push(...(rows || []));
+        if (!rows || rows.length < PAGE) break;
+      }
 
       const statsByCustomer = buildBookingStatsByCustomer(bookingRows);
       vip = Object.values(statsByCustomer).filter((stat) => computeIsVip(business, stat)).length;
