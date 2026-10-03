@@ -572,6 +572,14 @@ tracked as a deferred "future initiative" — it's built and live.
 5. **Bot Builder v1 limits:** at most 10 courses shown (no course groups
    yet), no brochure button, no preview chat for an unpublished draft,
    English-only generated text.
+6. **Webhook first-message vs contact-import race (deferred 2026-10-04).**
+   `upsertCustomerForInboundMessage` (`webhook.controller.js`) is
+   read-then-insert. If a contact import (`import_contacts` RPC) inserts the
+   same number in the milliseconds between that read and insert, the
+   webhook's insert hits the `(business_id, whatsapp_number)` unique
+   violation (23505) and that one inbound message isn't processed. Fix =
+   catch 23505 there and re-select; deferred because it touches the live
+   webhook path for a millisecond-wide window.
 
 ## Session log (append here as major milestones land)
 - 2026-09-30: Coaching request tracking — `bookings.form_key/form_title/

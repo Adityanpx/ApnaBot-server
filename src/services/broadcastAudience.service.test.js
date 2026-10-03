@@ -25,3 +25,14 @@ test('rejects unknown filters and bad params', () => {
   assert.match(normalizeAudience('coaching_requests', { skipClosed: 'yes' }).error, /skipClosed must be true or false/);
   assert.match(normalizeAudience('coaching_requests', []).error, /must be an object/);
 });
+
+test('groups: 1-20 group ids, de-duplicated, ids only', () => {
+  const id = (n) => `aaaaaaaa-0000-4000-8000-${String(n).padStart(12, '0')}`;
+  assert.deepEqual(normalizeAudience('groups', { groupIds: [id(1), id(2), id(1)] }), { filter: 'groups', params: { groupIds: [id(1), id(2)] } });
+  assert.match(normalizeAudience('groups', undefined).error, /at least one group/);
+  assert.match(normalizeAudience('groups', { groupIds: [] }).error, /at least one group/);
+  assert.match(normalizeAudience('groups', { groupIds: 'x' }).error, /at least one group/);
+  assert.match(normalizeAudience('groups', { groupIds: ['nope'] }).error, /must be group ids/);
+  assert.match(normalizeAudience('groups', { groupIds: Array.from({ length: 21 }, (_, i) => id(i)) }).error, /at most 20 groups/);
+  assert.equal(normalizeAudience('groups', { groupIds: Array.from({ length: 20 }, (_, i) => id(i)) }).params.groupIds.length, 20);
+});

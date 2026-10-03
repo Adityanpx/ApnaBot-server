@@ -43,6 +43,8 @@ const nodeLibraryPublicRoutes = require('./routes/nodeLibraryPublic.routes');
 const reportsRoutes = require('./routes/reports.routes');
 const followupRoutes = require('./routes/followup.routes');
 const optInLinkRoutes = require('./routes/optInLink.routes');
+const contactImportRoutes = require('./routes/contactImport.routes');
+const contactGroupRoutes = require('./routes/contactGroup.routes');
 
 const app = express();
 
@@ -156,6 +158,11 @@ app.use('/api/followups', followupRoutes);
 // Opt-in links (wa.me link / QR poster → consent buttons). Always mounted;
 // each request is gated by the 'opt_in_links' switch, 404 while it's off.
 app.use('/api/opt-in-links', optInLinkRoutes);
+// Contact import (CSV / XLSX / Google Sheet) + customer groups. Always
+// mounted; each request is gated by the 'contact_import' switch, 404 while
+// it's off.
+app.use('/api/contacts/import', contactImportRoutes);
+app.use('/api/contacts/groups', contactGroupRoutes);
 
 // Error handler middleware
 app.use(errorHandler);

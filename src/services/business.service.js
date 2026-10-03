@@ -421,11 +421,15 @@ const getDashboardStats = async (businessId) => {
     }
   };
 
-  // eq: {column: value} filters; gteColumn/gteValue: an additional >= filter (for "today" cutoffs)
-  const countRows = async (table, { eq = {}, gteColumn, gteValue } = {}) => {
+  // eq: {column: value} filters; gt: {column: value} > filters; gteColumn/gteValue:
+  // an additional >= filter (for "today" cutoffs)
+  const countRows = async (table, { eq = {}, gt = {}, gteColumn, gteValue } = {}) => {
     let query = supabase.from(table).select('*', { count: 'exact', head: true }).eq('business_id', businessId);
     for (const [column, value] of Object.entries(eq)) {
       query = query.eq(column, value);
+    }
+    for (const [column, value] of Object.entries(gt)) {
+      query = query.gt(column, value);
     }
     if (gteColumn) query = query.gte(gteColumn, gteValue);
     const { count, error } = await query;
@@ -446,7 +450,9 @@ const getDashboardStats = async (businessId) => {
     safe(() => countRows('messages', { eq: { direction: 'inbound' }, gteColumn: 'created_at', gteValue: startOfToday.toISOString() }), 'todayInboundCount', 0),
     safe(() => countRows('bookings', { gteColumn: 'created_at', gteValue: startOfToday.toISOString() }), 'todayBookingCount', 0),
     safe(() => countRows('customers'), 'totalCustomers', 0),
-    safe(() => countRows('customers', { gteColumn: 'first_seen_at', gteValue: startOfToday.toISOString() }), 'newCustomersToday', 0),
+    // Only customers who have messaged: an imported contact's first_seen_at is
+    // the import time, and a 5,000-row import isn't 5,000 new customers today.
+    safe(() => countRows('customers', { gt: { total_messages: 0 }, gteColumn: 'first_seen_at', gteValue: startOfToday.toISOString() }), 'newCustomersToday', 0),
     safe(() => countRows('bookings', { eq: { status: 'pending' } }), 'pendingBookings', 0),
     require('./usage.service').getUsageForBusiness(businessId)
   ]);

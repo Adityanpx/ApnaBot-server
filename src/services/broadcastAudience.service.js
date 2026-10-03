@@ -10,9 +10,15 @@
 //                      course (bookings.fields.course), optionally skipping
 //                      requests marked cancelled ("Not interested" /
 //                      "Not joining"). A parent with several requests counts once.
+//   groups             those of them in any of the chosen customer groups
+//                      (contact_groups, 20261004120000_contact_import_groups.sql);
+//                      only this business's groups count. A customer in
+//                      several of the groups counts once.
 const supabase = require('../config/supabase');
 
-const AUDIENCE_FILTERS = ['all_customers', 'coaching_requests'];
+const AUDIENCE_FILTERS = ['all_customers', 'coaching_requests', 'groups'];
+const MAX_GROUPS = 20;
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FORM_CHOICES = ['demo', 'admission', 'any'];
 const ID_CHUNK = 500; // keeps each `in (...)` filter a sensible URL length
 // PostgREST returns at most max_rows rows per request (1000 on the hosted
@@ -45,6 +51,13 @@ const normalizeAudience = (audienceFilter, audienceParams) => {
   if (filter === 'all_customers') return { filter, params: null };
   const p = audienceParams || {};
   if (typeof p !== 'object' || Array.isArray(p)) return { error: 'audienceParams must be an object' };
+  if (filter === 'groups') {
+    if (!Array.isArray(p.groupIds) || p.groupIds.length === 0) return { error: 'audienceParams.groupIds must list at least one group' };
+    const groupIds = [...new Set(p.groupIds)];
+    if (!groupIds.every(id => typeof id === 'string' && UUID_PATTERN.test(id))) return { error: 'audienceParams.groupIds must be group ids' };
+    if (groupIds.length > MAX_GROUPS) return { error: `audienceParams.groupIds can list at most ${MAX_GROUPS} groups` };
+    return { filter, params: { groupIds } };
+  }
   const form = p.form === undefined ? 'any' : p.form;
   if (!FORM_CHOICES.includes(form)) return { error: `audienceParams.form must be one of: ${FORM_CHOICES.join(', ')}` };
   if (p.course !== undefined && p.course !== null && typeof p.course !== 'string') return { error: 'audienceParams.course must be text' };
@@ -71,6 +84,25 @@ const requestCustomerIds = async (businessId, params) => {
   return [...new Set(rows.map(r => r.customer_id).filter(Boolean))];
 };
 
+/** Which of these group ids are this business's groups. */
+const businessGroupIds = async (businessId, groupIds) => {
+  if (!groupIds || groupIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('contact_groups').select('id').eq('business_id', businessId).in('id', groupIds);
+  if (error) throw error;
+  return (data || []).map(r => r.id);
+};
+
+/** Ids of customers in any of these groups (of this business only). */
+const groupCustomerIds = async (businessId, params) => {
+  const groupIds = await businessGroupIds(businessId, (params && params.groupIds) || []);
+  if (groupIds.length === 0) return [];
+  const rows = await fetchAllPages(() => supabase.from('contact_group_members').select('customer_id')
+    .in('group_id', groupIds)
+    .order('customer_id', { ascending: true }).order('group_id', { ascending: true }));
+  return [...new Set(rows.map(r => r.customer_id))];
+};
+
 /**
  * The opted-in, non-blocked, not-opted-out customers a broadcast with this
  * audience reaches.
@@ -79,10 +111,12 @@ const requestCustomerIds = async (businessId, params) => {
 const resolveAudience = async (businessId, filter, params) => {
   const base = () => supabase.from('customers').select('id, whatsapp_number, name')
     .eq('business_id', businessId).eq('opted_in', true).eq('is_blocked', false).is('opted_out_at', null);
-  if (filter !== 'coaching_requests') {
+  if (filter !== 'coaching_requests' && filter !== 'groups') {
     return fetchAllPages(() => base().order('id', { ascending: true }));
   }
-  const ids = await requestCustomerIds(businessId, params || { form: 'any', course: null, skipClosed: true });
+  const ids = filter === 'groups'
+    ? await groupCustomerIds(businessId, params)
+    : await requestCustomerIds(businessId, params || { form: 'any', course: null, skipClosed: true });
   const customers = [];
   // ID_CHUNK (500) ids per request — under the 1000-row cap, so no paging here.
   for (let i = 0; i < ids.length; i += ID_CHUNK) {
@@ -93,4 +127,4 @@ const resolveAudience = async (businessId, filter, params) => {
   return customers;
 };
 
-module.exports = { AUDIENCE_FILTERS, normalizeAudience, resolveAudience };
+module.exports = { AUDIENCE_FILTERS, normalizeAudience, resolveAudience, businessGroupIds };

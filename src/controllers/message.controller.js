@@ -15,11 +15,12 @@ const logger = require('../utils/logger');
  * List conversations grouped by customer.
  * Returns latest message per customer + unread count.
  *
- * Every customer row is only ever created alongside a message (webhook
- * upsert, sendMessage upsert below), so "customers with a conversation" and
- * "all customers for this business" are the same set — paginating customers
- * by lastMessageAt stands in for the old Message-grouped aggregation, without
- * needing a Postgres view/RPC for it.
+ * A conversation = a customer who has messaged in (last_message_at set by
+ * upsertCustomerForInboundMessage in webhook.controller.js). Customers added
+ * by a contact import have never messaged (last_message_at null) and stay out
+ * of the inbox until they do. Paginating those customers by lastMessageAt
+ * stands in for the old Message-grouped aggregation, without needing a
+ * Postgres view/RPC for it.
  */
 const getConversations = async (req, res, next) => {
   try {
@@ -30,7 +31,8 @@ const getConversations = async (req, res, next) => {
 
     const { data: customers, error, count } = await supabase
       .from('customers').select('*', { count: 'exact' }).eq('business_id', businessId)
-      .order('last_message_at', { ascending: false })
+      .not('last_message_at', 'is', null)
+      .order('last_message_at', { ascending: false, nullsFirst: false })
       .range((pageNum - 1) * limitNum, pageNum * limitNum - 1);
     if (error) throw error;
 

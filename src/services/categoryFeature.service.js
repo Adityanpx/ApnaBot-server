@@ -26,6 +26,11 @@ const FEATURES = {
     label: 'Opt-in links & QR poster',
     description: 'Lets these businesses create WhatsApp links / QR posters that ask customers to opt in to offers with a Yes/No button.',
     categories: ALL_CATEGORIES
+  },
+  contact_import: {
+    label: 'Contact import & groups',
+    description: 'Lets these businesses import contacts from a CSV / Excel file or Google Sheet, group their customers, and broadcast to a group.',
+    categories: ALL_CATEGORIES
   }
 };
 

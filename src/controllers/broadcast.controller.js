@@ -5,7 +5,7 @@ const businessService = require('../services/business.service');
 const walletService = require('../services/wallet.service');
 const rateCardService = require('../services/rateCard.service');
 const { addToBroadcastQueue } = require('../queues/broadcast.queue');
-const { normalizeAudience, resolveAudience } = require('../services/broadcastAudience.service');
+const { normalizeAudience, resolveAudience, businessGroupIds } = require('../services/broadcastAudience.service');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
@@ -61,6 +61,12 @@ const createBroadcast = async (req, res, next) => {
     }
     const audience = normalizeAudience(audienceFilter, audienceParams);
     if (audience.error) return errorResponse(res, 400, audience.error);
+    if (audience.filter === 'groups') {
+      const found = await businessGroupIds(businessId, audience.params.groupIds);
+      if (found.length !== audience.params.groupIds.length) {
+        return errorResponse(res, 404, 'One or more of the chosen groups were not found');
+      }
+    }
 
     const { data: templateRow, error: templateErr } = await supabase
       .from('message_templates').select('*').eq('id', templateId).eq('business_id', businessId).maybeSingle();
@@ -145,9 +151,11 @@ const sendBroadcast = async (req, res, next) => {
     const customers = await resolveAudience(businessId, broadcastRow.audience_filter, broadcastRow.audience_params);
 
     if (!customers || customers.length === 0) {
-      return errorResponse(res, 400, broadcastRow.audience_filter === 'coaching_requests'
-        ? 'No opted-in parents match this audience'
-        : 'No opted-in customers to send this broadcast to');
+      const noRecipients = {
+        coaching_requests: 'No opted-in parents match this audience',
+        groups: 'No opted-in customers in the chosen groups (or the groups were deleted)'
+      };
+      return errorResponse(res, 400, noRecipients[broadcastRow.audience_filter] || 'No opted-in customers to send this broadcast to');
     }
 
     const usesCustomerNameMapping = (broadcastRow.variable_mapping || []).some((entry) => entry.source === 'customer.name');

@@ -4,6 +4,7 @@ const { getPagination } = require('../utils/pagination');
 const { toCamelCase } = require('../utils/caseConvert');
 const businessService = require('../services/business.service');
 const optInLinkService = require('../services/optInLink.service');
+const contactGroupService = require('../services/contactGroup.service');
 const logger = require('../utils/logger');
 
 const WINDOW_DURATION_MS = 24 * 60 * 60 * 1000;
@@ -88,11 +89,14 @@ const computeIsVip = (business, stat) => {
  * List all customers for business — paginated + searchable by name or number.
  * Optional filters: isBlocked ('true'/'false'), optedIn ('true'/'false'),
  * broadcastEligible ('true'), isVip ('true'), pipelineStage
- * ('new'/'contacted'/'converted'/'lost').
+ * ('new'/'contacted'/'converted'/'lost'), neverMessaged ('true' — imported
+ * contacts who haven't messaged yet, last_message_at null), groupId (members
+ * of one customer group). Each row carries groups: [{ id, name }].
+ * Customers who never messaged sort last.
  */
 const getCustomers = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, search, isBlocked, optedIn, broadcastEligible, isVip, pipelineStage } = req.query;
+    const { page = 1, limit = 20, search, isBlocked, optedIn, broadcastEligible, isVip, pipelineStage, neverMessaged, groupId } = req.query;
     const businessId = req.user.businessId;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
@@ -106,10 +110,21 @@ const getCustomers = async (req, res, next) => {
     if (pipelineStage !== undefined && !PIPELINE_STAGES.includes(pipelineStage)) {
       return errorResponse(res, 400, `pipelineStage must be one of: ${PIPELINE_STAGES.join(', ')}`);
     }
+    if (groupId !== undefined && !contactGroupService.isUuid(groupId)) {
+      return errorResponse(res, 400, 'groupId must be a group id');
+    }
 
     // A fresh query per call — the VIP path below reads it page by page.
     const buildQuery = () => {
-      let query = supabase.from('customers').select('*', { count: 'exact' }).eq('business_id', businessId);
+      // groupId: an inner embed keeps only customers with a membership in
+      // that group (customers are already this business's, so a foreign
+      // group id simply matches nobody). The embed is dropped from the rows below.
+      let query = supabase.from('customers')
+        .select(groupId !== undefined ? '*, contact_group_members!inner(group_id)' : '*', { count: 'exact' })
+        .eq('business_id', businessId);
+      if (groupId !== undefined) {
+        query = query.eq('contact_group_members.group_id', groupId);
+      }
 
       if (search) {
         // PostgREST's .or() parses commas/parens as filter syntax — strip them
@@ -132,8 +147,13 @@ const getCustomers = async (req, res, next) => {
       if (pipelineStage !== undefined) {
         query = query.eq('pipeline_stage', pipelineStage);
       }
+      if (neverMessaged === 'true') {
+        query = query.is('last_message_at', null);
+      }
 
-      return query.order('last_message_at', { ascending: false });
+      // nullsFirst: false — imported contacts who never messaged go last,
+      // not first (Postgres puts NULLs first in a descending sort).
+      return query.order('last_message_at', { ascending: false, nullsFirst: false });
     };
 
     let data;
@@ -167,7 +187,7 @@ const getCustomers = async (req, res, next) => {
     // would make the embed ambiguous.
     const linkNames = await optInLinkService.fetchLinkNames(businessId, (data || []).map((c) => c.opt_in_link_id));
 
-    let customers = (data || []).map((c) => withWindowExpiresAt({
+    let customers = (data || []).map(({ contact_group_members: _membership, ...c }) => withWindowExpiresAt({
       ...toCamelCase(c),
       isVip: computeIsVip(business, bookingStatsByCustomer[c.id] || { count: 0, spend: 0 }),
       broadcastEligible: isBroadcastEligible(c),
@@ -180,6 +200,10 @@ const getCustomers = async (req, res, next) => {
       total = customers.length;
       customers = customers.slice((pageNum - 1) * limitNum, pageNum * limitNum);
     }
+
+    // Group names for just the rows on this page.
+    const groups = await contactGroupService.groupsByCustomer(businessId, customers.map((c) => c.id));
+    customers = customers.map((c) => ({ ...c, groups: groups.get(c.id) || [] }));
 
     const pagination = getPagination(total, pageNum, limitNum);
     return successResponse(res, 200, { customers, pagination });
@@ -264,13 +288,15 @@ const getCustomerById = async (req, res, next) => {
       ? await fetchBookingStatsByCustomer(businessId, [customer.id])
       : {};
     const linkNames = await optInLinkService.fetchLinkNames(businessId, [customer.opt_in_link_id]);
+    const groups = await contactGroupService.groupsByCustomer(businessId, [customer.id]);
 
     return successResponse(res, 200, {
       customer: withWindowExpiresAt({
         ...toCamelCase(customer),
         isVip: computeIsVip(business, bookingStatsByCustomer[customer.id] || { count: 0, spend: 0 }),
         broadcastEligible: isBroadcastEligible(customer),
-        optInLinkName: linkNames.get(customer.opt_in_link_id) || null
+        optInLinkName: linkNames.get(customer.opt_in_link_id) || null,
+        groups: groups.get(customer.id) || []
       }),
       messages: (messages || []).map(toCamelCase).reverse()
     });

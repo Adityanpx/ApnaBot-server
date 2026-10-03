@@ -28,6 +28,23 @@ const tables = {
     { customer_id: 'c5', business_id: 'b', form_key: null, status: 'pending', fields: {} },                         // chat booking
     { customer_id: 'c6', business_id: 'b', form_key: 'demo', status: 'pending', fields: { course: 'Abacus' } },     // opted out
     { customer_id: 'x1', business_id: 'other', form_key: 'demo', status: 'pending', fields: { course: 'Abacus' } }
+  ],
+  // Groups (contact_groups / contact_group_members). g1 + g2 are business 'b''s;
+  // gx belongs to another business and must never widen b's audience.
+  contact_groups: [
+    { id: 'aaaaaaaa-0000-4000-8000-000000000001', business_id: 'b', name: 'Diwali' },
+    { id: 'aaaaaaaa-0000-4000-8000-000000000002', business_id: 'b', name: 'VIP' },
+    { id: 'aaaaaaaa-0000-4000-8000-0000000000ff', business_id: 'other', name: 'Theirs' }
+  ],
+  contact_group_members: [
+    { group_id: 'aaaaaaaa-0000-4000-8000-000000000001', customer_id: 'c1' },
+    { group_id: 'aaaaaaaa-0000-4000-8000-000000000001', customer_id: 'c3' }, // not opted in
+    { group_id: 'aaaaaaaa-0000-4000-8000-000000000001', customer_id: 'c4' }, // blocked
+    { group_id: 'aaaaaaaa-0000-4000-8000-000000000001', customer_id: 'c6' }, // sent STOP
+    { group_id: 'aaaaaaaa-0000-4000-8000-000000000002', customer_id: 'c1' }, // in both groups
+    { group_id: 'aaaaaaaa-0000-4000-8000-000000000002', customer_id: 'c5' },
+    { group_id: 'aaaaaaaa-0000-4000-8000-0000000000ff', customer_id: 'c2' },
+    { group_id: 'aaaaaaaa-0000-4000-8000-0000000000ff', customer_id: 'x1' }
   ]
 };
 const valueOf = (row, col) => {
@@ -157,5 +174,40 @@ test('an exact multiple of the page size still ends (short last page is empty)',
     assert.equal((await bigIds('all_customers')).length, 2000);
   } finally {
     tables.customers = keep;
+  }
+});
+
+// ── Groups ──
+const G1 = 'aaaaaaaa-0000-4000-8000-000000000001';
+const G2 = 'aaaaaaaa-0000-4000-8000-000000000002';
+const GX = 'aaaaaaaa-0000-4000-8000-0000000000ff';
+
+test('groups: members of the chosen groups, opted-in / not blocked / not opted out only, each once', async () => {
+  assert.deepEqual(await names('groups', { groupIds: [G1] }), ['Asha']);
+  assert.deepEqual(await names('groups', { groupIds: [G1, G2] }), ['Asha', 'Neha']);
+});
+
+test("groups: scoped by business — another business's group id adds nobody", async () => {
+  assert.deepEqual(await names('groups', { groupIds: [GX] }), []);
+  assert.deepEqual(await names('groups', { groupIds: [G2, GX] }), ['Asha', 'Neha']);
+  const a = normalizeAudience('groups', { groupIds: [G1] });
+  assert.deepEqual((await resolveAudience('other', a.filter, a.params)).map(c => c.name), []);
+});
+
+test('groups: a deleted group (no row) resolves to nobody', async () => {
+  assert.deepEqual(await names('groups', { groupIds: ['aaaaaaaa-0000-4000-8000-0000000000aa'] }), []);
+});
+
+test('groups: more than 1000 members are all reached', async () => {
+  const BIG = 'aaaaaaaa-0000-4000-8000-0000000000b1';
+  tables.contact_groups.push({ id: BIG, business_id: 'big', name: 'Everyone' });
+  for (const c of bigEligible) tables.contact_group_members.push({ group_id: BIG, customer_id: c.id });
+  try {
+    const ids = await bigIds('groups', { groupIds: [BIG] });
+    assert.equal(ids.length, 2500);
+    assert.equal(new Set(ids).size, 2500);
+  } finally {
+    tables.contact_group_members = tables.contact_group_members.filter(m => m.group_id !== BIG);
+    tables.contact_groups = tables.contact_groups.filter(g => g.id !== BIG);
   }
 });
