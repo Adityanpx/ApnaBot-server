@@ -60,6 +60,40 @@ setInterval(runDailyExpiryCheck, 24 * 60 * 60 * 1000);
 
 logger.info('Subscription expiry cron scheduled (runs every 24h)');
 
+// ── Follow-up automations sweeper (every 15 min) ───────────────────────────
+// Off unless ENABLE_FOLLOWUP_SWEEPER=true — see config/env.js for why it
+// must stay off everywhere but the production server. In-process timer, no
+// BullMQ/Redis: while the instance sleeps nothing runs, and the next sweep
+// after waking picks up whoever is due then. A tick that finds the previous
+// sweep still running is skipped.
+if (config.ENABLE_FOLLOWUP_SWEEPER) {
+  const followupSweepService = require('./src/services/followupSweep.service');
+  const FOLLOWUP_SWEEP_FIRST_DELAY_MS = 60 * 1000;
+  const FOLLOWUP_SWEEP_INTERVAL_MS = 15 * 60 * 1000;
+  let followupSweepRunning = false;
+
+  const runFollowupSweep = async () => {
+    if (followupSweepRunning) {
+      logger.warn('Follow-up sweep still running — skipping this tick');
+      return;
+    }
+    followupSweepRunning = true;
+    try {
+      await followupSweepService.runSweep();
+    } catch (err) {
+      logger.error('Follow-up sweep failed:', err);
+    } finally {
+      followupSweepRunning = false;
+    }
+  };
+
+  setTimeout(() => {
+    runFollowupSweep();
+    setInterval(runFollowupSweep, FOLLOWUP_SWEEP_INTERVAL_MS);
+  }, FOLLOWUP_SWEEP_FIRST_DELAY_MS);
+  logger.info('Follow-up sweeper scheduled (first run in 60 s, then every 15 min)');
+}
+
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
   logger.error('Unhandled Rejection:', err);

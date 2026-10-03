@@ -47,13 +47,13 @@ stub('./wallet.service', {
 stub('./whatsapp.service', {
   sendTemplateMessage: async (pn, tok, to, name, lang, components) => {
     if (metaRejects) throw new Error('(#131026) Message undeliverable');
-    sent.push({ via: 'template', to, name, lang, params: components[0].parameters.map(p => p.text) });
+    sent.push({ via: 'template', to, name, lang, params: (components[0] ? components[0].parameters : []).map(p => p.text) });
   }
 });
 stub('../queues/whatsapp.queue', { addToWhatsappQueue: async (job) => sent.push({ via: 'text', to: job.to, text: job.message, messageId: job.messageId }) });
 stub('../utils/logger', { error: () => {}, info: () => {}, warn: () => {} });
 
-const { sendWindowAwareMessage, recordOutbound } = require('./windowAwareSend.service');
+const { sendWindowAwareMessage, recordOutbound, isWindowOpen } = require('./windowAwareSend.service');
 
 const business = { id: 'b', isWhatsappConnected: true, phoneNumberId: 'pn', accessToken: 'enc' };
 const customer = (over = {}) => ({
@@ -73,7 +73,7 @@ const opts = (over = {}) => ({
 test('window open: free-form text in the customer\'s language, recorded in the chat, no charge', async () => {
   reset();
   const r = await sendWindowAwareMessage(business, customer(), opts());
-  assert.deepEqual(r, { sent: 'text', messageId: 'm1' });
+  assert.deepEqual(r, { sent: 'text', messageId: 'm1', costPaise: 0 });
   assert.deepEqual(sent, [{ via: 'text', to: '919800000001', text: 'text in hi', messageId: 'm1' }]);
   assert.equal(messages.length, 1);
   assert.equal(messages[0].customer_id, 'c1');
@@ -93,7 +93,7 @@ test('window open: a template loader is never called', async () => {
 test('window closed + approved template: template sent, wallet debited at the category rate', async () => {
   reset();
   const r = await sendWindowAwareMessage(business, customer({ last_message_at: new Date(Date.now() - 25 * HOUR).toISOString() }), opts());
-  assert.deepEqual(r, { sent: 'template', messageId: 'm1' });
+  assert.deepEqual(r, { sent: 'template', messageId: 'm1', costPaise: 12 });
   assert.equal(r.messageId, messages[0].id); // the chat row for the template
   assert.deepEqual(sent, [{ via: 'template', to: '919800000001', name: 'apnabot_followup', lang: 'en_US', params: ['Asha', 'BK1'] }]);
   assert.deepEqual(wallet, [{ type: 'debit', amt: 12, ref: 'ref-1', notes: 'Follow-up message' }]);
@@ -106,6 +106,7 @@ test('window closed, billing off: template sent with no wallet transaction', asy
   const r = await sendWindowAwareMessage(business, customer({ last_message_at: null }), opts({ template: async () => approved }));
   assert.equal(r.sent, 'template');
   assert.equal(typeof r.messageId, 'string');
+  assert.equal(r.costPaise, 0); // nothing debited
   assert.equal(wallet.length, 0);
 });
 
@@ -171,4 +172,18 @@ test('recordOutbound: bot text message from the customer row', async () => {
   assert.equal(m.customerNumber, '919800000001');
   assert.equal(m.direction, 'outbound');
   assert.equal(m.isRead, true);
+});
+
+test('template without variables: no body component sent', async () => {
+  reset();
+  const r = await sendWindowAwareMessage(business, customer({ last_message_at: null }), opts({ templateParams: [], templateText: 'Hello again!' }));
+  assert.equal(r.sent, 'template');
+  assert.deepEqual(sent[0].params, []);
+});
+
+test('isWindowOpen: open under 24h after the last inbound, closed after or with none', () => {
+  const now = Date.parse('2026-10-03T12:00:00Z');
+  assert.equal(isWindowOpen({ last_message_at: '2026-10-02T12:00:01Z' }, now), true);
+  assert.equal(isWindowOpen({ last_message_at: '2026-10-02T12:00:00Z' }, now), false);
+  assert.equal(isWindowOpen({ last_message_at: null }, now), false);
 });

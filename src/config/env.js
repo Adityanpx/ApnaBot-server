@@ -98,7 +98,8 @@ module.exports = {
   // must stay off everywhere except the one production server: unlike the
   // BullMQ queues (kept apart by QUEUE_NAMESPACE), the sweeper reads the
   // database directly, so a local run pointed at the production Supabase
-  // would message real customers. Not read anywhere yet.
+  // would message real customers. Read by server.js (the 15-min sweep);
+  // scripts/runFollowupSweep.js is a manual run and doesn't need it.
   ENABLE_FOLLOWUP_SWEEPER: process.env.ENABLE_FOLLOWUP_SWEEPER === 'true',
   // (Bot Builder + Courses are switched per category from Super Admin —
   // category_features — not by an environment variable.)

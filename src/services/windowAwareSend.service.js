@@ -22,6 +22,10 @@ const FREE_FORM_WINDOW_MS = 24 * 60 * 60 * 1000; // same as message.controller.j
 
 const isConnected = (business) => !!(business.isWhatsappConnected && business.phoneNumberId);
 
+/** Whether the customer's 24-hour window (free-form text allowed) is open at `nowMs`. */
+const isWindowOpen = (customerRow, nowMs = Date.now()) => !!(customerRow.last_message_at &&
+  nowMs < new Date(customerRow.last_message_at).getTime() + FREE_FORM_WINDOW_MS);
+
 /** Records a bot message in the chat and pushes it to the dashboard. */
 const recordOutbound = async (business, customerRow, text, status) => {
   const { data: messageRow, error } = await supabase.from('messages').insert({
@@ -59,16 +63,13 @@ const recordOutbound = async (business, customerRow, text, status) => {
  * @param {string} opts.templateText         the template as it reads in the chat
  * @param {{ referenceId: string, notes: string, refundNotes: string }} opts.billing  wallet transaction details
  * @param {string} [opts.bookingId]          only for log context (messages has no booking column)
- * @returns {Promise<{ sent: 'text'|'template', messageId: string } | { sent: false, code: 'not_connected'|'blocked'|'no_template'|'low_balance'|'rejected' }>}
+ * @returns {Promise<{ sent: 'text'|'template', messageId: string, costPaise: number } | { sent: false, code: 'not_connected'|'blocked'|'no_template'|'low_balance'|'rejected' }>}
  */
 const sendWindowAwareMessage = async (business, customerRow, { textFor, template, templateParams, templateText, billing, bookingId = null }) => {
   if (!isConnected(business)) return { sent: false, code: 'not_connected' };
   if (customerRow.is_blocked) return { sent: false, code: 'blocked' };
 
-  const windowOpen = customerRow.last_message_at &&
-    Date.now() < new Date(customerRow.last_message_at).getTime() + FREE_FORM_WINDOW_MS;
-
-  if (windowOpen) {
+  if (isWindowOpen(customerRow)) {
     const text = textFor(customerRow.preferred_language || null);
     const message = await recordOutbound(business, customerRow, text, 'sent');
     await addToWhatsappQueue({
@@ -81,7 +82,7 @@ const sendWindowAwareMessage = async (business, customerRow, { textFor, template
       messageId: message.id
     });
     usageService.incrementUsage(business.id, 'outbound').catch(err => logger.error('Error incrementing outbound usage:', err));
-    return { sent: 'text', messageId: message.id };
+    return { sent: 'text', messageId: message.id, costPaise: 0 };
   }
 
   // Loaded only now (when given as a loader) so a window-open send never
@@ -106,7 +107,8 @@ const sendWindowAwareMessage = async (business, customerRow, { textFor, template
   try {
     await whatsappService.sendTemplateMessage(
       business.phoneNumberId, business.accessToken, customerRow.whatsapp_number, templateRow.name, templateRow.language,
-      [{ type: 'body', parameters: templateParams.map(t => ({ type: 'text', text: t })) }]
+      // No body component for a template without variables (as broadcast.worker.js).
+      templateParams.length > 0 ? [{ type: 'body', parameters: templateParams.map(t => ({ type: 'text', text: t })) }] : []
     );
   } catch (sendErr) {
     if (ratePaise > 0) {
@@ -117,12 +119,13 @@ const sendWindowAwareMessage = async (business, customerRow, { textFor, template
   }
   const message = await recordOutbound(business, customerRow, templateText, 'sent');
   usageService.incrementUsage(business.id, 'outbound').catch(err => logger.error('Error incrementing outbound usage:', err));
-  return { sent: 'template', messageId: message.id };
+  return { sent: 'template', messageId: message.id, costPaise: ratePaise };
 };
 
 module.exports = {
   FREE_FORM_WINDOW_MS,
   isConnected,
+  isWindowOpen,
   recordOutbound,
   sendWindowAwareMessage
 };

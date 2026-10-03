@@ -41,6 +41,7 @@ const businessCategoryTemplateRoutes = require('./routes/businessCategoryTemplat
 const nodeLibraryRoutes = require('./routes/nodeLibrary.routes');
 const nodeLibraryPublicRoutes = require('./routes/nodeLibraryPublic.routes');
 const reportsRoutes = require('./routes/reports.routes');
+const followupRoutes = require('./routes/followup.routes');
 
 const app = express();
 
@@ -147,6 +148,10 @@ app.use('/api/flow-graph', flowGraphRoutes);
 app.use('/api/bot-settings', botSettingsRoutes);
 app.use('/api/courses', courseRoutes);
 app.use('/api/reports', reportsRoutes);
+// Follow-up automations. Always mounted; each request is gated by the
+// 'followups' switch (category or per-business, Super Admin → Features),
+// 404 while it's off. Sending is the sweeper (server.js).
+app.use('/api/followups', followupRoutes);
 
 // Error handler middleware
 app.use(errorHandler);

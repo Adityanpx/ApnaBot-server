@@ -190,6 +190,24 @@ const SYSTEM_MESSAGES = {
     mr: 'ठीक आहे — आता तुम्हाला आमच्याकडून ऑफर्स किंवा रिमाइंडर्स मिळणार नाहीत. ते पुन्हा सुरू करण्यासाठी कधीही START पाठवा.'
   },
 
+  // ── Follow-up automation default texts (utils/followup.js PRESETS) ──
+  // Copied into the automation when the owner creates it (and editable
+  // there); {{customerName}} is filled at send time by
+  // utils/messageTemplating.js#applyMessageTemplate, not by getSystemMessage.
+  // 'menu' is the typed keyword, so it stays in English.
+  followupEnquiryNudge: {
+    en: "Hi {{customerName}}, just checking in — did you find what you were looking for? Reply here and we'll help, or type *menu* to see options.",
+    hi: 'नमस्ते {{customerName}}, बस पूछना चाहते थे — क्या आपको वह मिल गया जो आप ढूँढ रहे थे? यहाँ जवाब दें, हम मदद करेंगे, या विकल्प देखने के लिए *menu* लिखें।',
+    mr: 'नमस्कार {{customerName}}, सहज विचारत आहोत — तुम्ही जे शोधत होता ते मिळाले का? इथे उत्तर द्या, आम्ही मदत करू, किंवा पर्याय पाहण्यासाठी *menu* लिहा.'
+  },
+  // win_back sends a template; this text is only used if the customer's
+  // 24-hour window happens to be open.
+  followupWinBack: {
+    en: "Hi {{customerName}}, it's been a while! We'd love to help you again — reply here anytime.",
+    hi: 'नमस्ते {{customerName}}, काफ़ी समय हो गया! हम फिर से आपकी मदद करना चाहेंगे — कभी भी यहाँ जवाब दें।',
+    mr: 'नमस्कार {{customerName}}, बराच काळ झाला! आम्हाला पुन्हा तुमची मदत करायला आवडेल — कधीही इथे उत्तर द्या.'
+  },
+
   // ── Free demo time + reminder (demoReminder.service.js) ──
   demoFixed: {
     en: "✅ {{student}}'s free demo class for {{course}} is fixed for {{time}}. Reply here if you need to change it.",
