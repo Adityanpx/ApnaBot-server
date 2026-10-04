@@ -182,7 +182,10 @@ const sendBroadcast = async (req, res, next) => {
     const ratePerMessage = await rateCardService.getRateForMessage(countryCode, category);
     const estimatedCostPaise = ratePerMessage * customers.length;
 
-    if (config.WALLET_BILLING_ENABLED && estimatedCostPaise > 0) {
+    // Passed to the worker so it refunds failed sends only when this debit
+    // actually happened.
+    const billed = config.WALLET_BILLING_ENABLED && estimatedCostPaise > 0;
+    if (billed) {
       try {
         await walletService.debitWallet(
           businessId,
@@ -226,6 +229,7 @@ const sendBroadcast = async (req, res, next) => {
       components,
       variableMapping: broadcastRow.variable_mapping || null,
       ratePerMessage,
+      billed,
       recipients: batch.map((c) => ({ customerId: c.id, whatsappNumber: c.whatsapp_number, customer: { name: c.name } }))
     })));
 

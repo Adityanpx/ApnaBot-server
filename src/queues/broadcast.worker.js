@@ -33,7 +33,11 @@ const resolveRecipientComponents = (variableMapping, recipient) => {
 };
 
 const worker = new Worker('broadcast-outbound', async (job) => {
-  const { broadcastId, businessId, phoneNumberId, encryptedAccessToken, templateName, language, components, variableMapping, ratePerMessage, recipients } = job.data;
+  const { broadcastId, businessId, phoneNumberId, encryptedAccessToken, templateName, language, components, variableMapping, ratePerMessage, billed, recipients } = job.data;
+  // Refund only what broadcast.controller.js actually debited. Jobs queued
+  // before `billed` existed fall back to the billing switch (same condition
+  // as the debit, since ratePerMessage > 0 is checked below).
+  const debited = billed !== undefined ? billed : config.WALLET_BILLING_ENABLED;
 
   let sent = 0;
   let failed = 0;
@@ -59,7 +63,7 @@ const worker = new Worker('broadcast-outbound', async (job) => {
         error: error.response?.data || error.message
       });
 
-      if (ratePerMessage > 0) {
+      if (debited && ratePerMessage > 0) {
         try {
           await walletService.refundToWallet(businessId, ratePerMessage, broadcastId, `Refund: failed broadcast message to ${recipient.whatsappNumber}`);
         } catch (refundErr) {
