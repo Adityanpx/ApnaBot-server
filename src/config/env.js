@@ -84,8 +84,6 @@ module.exports = {
   // (e.g. two developers, or staging + prod both set to NODE_ENV=production)
   // need to be kept apart too.
   QUEUE_NAMESPACE: process.env.QUEUE_NAMESPACE || process.env.NODE_ENV,
-  SUPABASE_URL: process.env.SUPABASE_URL,
-  SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,
   // Wallet billing is off while Averix is a Meta Tech Provider - clients pay
   // Meta directly for message costs, so debiting an internal wallet nobody
   // can see or top up just breaks broadcasts once balance hits zero. Flip
