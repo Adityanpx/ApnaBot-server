@@ -9,11 +9,6 @@ const config = require('../config/env');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
-// Meta's resumable Upload API (used to get a header_handle for template
-// header images) is a different API family from the Graph API version
-// whatsapp.service.js/META_API_BASE targets - hardcoded separately here.
-const META_UPLOAD_API_BASE = 'https://graph.facebook.com/v20.0';
-
 // Meta requires template names to be lowercase, alphanumeric + underscores only
 const TEMPLATE_NAME_REGEX = /^[a-z0-9_]+$/;
 
@@ -178,14 +173,14 @@ const submitMessageTemplate = async (req, res, next) => {
         const fileType = imageResponse.headers['content-type'];
 
         const sessionResponse = await axios.post(
-          `${META_UPLOAD_API_BASE}/${config.META_APP_ID}/uploads`,
+          `${META_API_BASE}/${config.META_APP_ID}/uploads`,
           null,
           { params: { file_length: fileBuffer.length, file_type: fileType, access_token: appAccessToken } }
         );
         const uploadSessionId = sessionResponse.data.id;
 
         const handleResponse = await axios.post(
-          `${META_UPLOAD_API_BASE}/${uploadSessionId}`,
+          `${META_API_BASE}/${uploadSessionId}`,
           fileBuffer,
           {
             headers: {

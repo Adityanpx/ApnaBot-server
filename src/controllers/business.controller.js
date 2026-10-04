@@ -12,8 +12,7 @@ const r2 = require('../services/r2.service');
 const config = require('../config/env');
 const { isValidLanguageCode, LANGUAGE_CATALOG } = require('../utils/languageCatalog');
 const { validateFlowFields } = require('../utils/flowFieldsValidation');
-
-const META_GRAPH_BASE = 'https://graph.facebook.com/v21.0';
+const { META_API_BASE } = require('../services/whatsapp.service');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -29,7 +28,7 @@ const resolvePhoneNumberIdForWaba = async (wabaId, accessToken) => {
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
     logger.info('resolvePhoneNumberIdForWaba: starting attempt', { wabaId, attempt, maxAttempts });
 
-    const response = await axios.get(`${META_GRAPH_BASE}/${wabaId}/phone_numbers`, {
+    const response = await axios.get(`${META_API_BASE}/${wabaId}/phone_numbers`, {
       headers: { Authorization: `Bearer ${accessToken}` }
     });
     const numbers = response.data.data || [];
@@ -453,7 +452,7 @@ const connectWhatsapp = async (req, res, next) => {
         wabaId
       });
 
-      const tokenResponse = await axios.get(`${META_GRAPH_BASE}/oauth/access_token`, {
+      const tokenResponse = await axios.get(`${META_API_BASE}/oauth/access_token`, {
         params: {
           client_id: config.META_APP_ID,
           client_secret: config.META_APP_SECRET,
@@ -528,7 +527,7 @@ const connectWhatsapp = async (req, res, next) => {
     let whatsappNumber;
     let displayName;
     try {
-      const phoneResponse = await axios.get(`${META_GRAPH_BASE}/${phoneNumberId}`, {
+      const phoneResponse = await axios.get(`${META_API_BASE}/${phoneNumberId}`, {
         params: { fields: 'display_phone_number,verified_name' },
         headers: { Authorization: `Bearer ${accessToken}` }
       });
@@ -578,7 +577,7 @@ const connectWhatsapp = async (req, res, next) => {
         wabaId
       });
 
-      await axios.post(`${META_GRAPH_BASE}/${wabaId}/subscribed_apps`, null, {
+      await axios.post(`${META_API_BASE}/${wabaId}/subscribed_apps`, null, {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
 

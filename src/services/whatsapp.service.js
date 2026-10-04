@@ -1,8 +1,11 @@
 const axios = require('axios');
 const { decrypt } = require('../utils/crypto');
 const logger = require('../utils/logger');
+const config = require('../config/env');
 
-const META_API_BASE = 'https://graph.facebook.com/v18.0';
+// Every Graph API call in the server builds on this (one version, set by
+// GRAPH_API_VERSION — see config/graphApiVersion.js).
+const META_API_BASE = `https://graph.facebook.com/${config.GRAPH_API_VERSION}`;
 
 /**
  * Send a text message via WhatsApp

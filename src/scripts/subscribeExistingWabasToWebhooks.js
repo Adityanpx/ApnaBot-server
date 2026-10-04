@@ -17,8 +17,7 @@ require('dotenv').config();
 const axios = require('axios');
 const supabase = require('../config/supabase');
 const { decrypt } = require('../utils/crypto');
-
-const META_GRAPH_BASE = 'https://graph.facebook.com/v21.0';
+const { META_API_BASE } = require('../services/whatsapp.service');
 
 async function main() {
   const { data: businesses, error } = await supabase
@@ -43,7 +42,7 @@ async function main() {
     try {
       const accessToken = decrypt(business.access_token);
 
-      await axios.post(`${META_GRAPH_BASE}/${business.waba_id}/subscribed_apps`, null, {
+      await axios.post(`${META_API_BASE}/${business.waba_id}/subscribed_apps`, null, {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
 

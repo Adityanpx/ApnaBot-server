@@ -1,4 +1,5 @@
 require('dotenv').config();
+const { resolveGraphApiVersion } = require('./graphApiVersion');
 
 const requiredEnvVars = [
   'PORT',
@@ -50,6 +51,9 @@ module.exports = {
   META_APP_SECRET: process.env.META_APP_SECRET,
   META_APP_ID: process.env.META_APP_ID,
   META_CONFIG_ID: process.env.META_CONFIG_ID,
+  // Meta Graph API version for every server call (default + rollback notes
+  // in graphApiVersion.js). Throws at boot if malformed.
+  GRAPH_API_VERSION: resolveGraphApiVersion(process.env.GRAPH_API_VERSION),
   WEBHOOK_VERIFY_TOKEN: process.env.WEBHOOK_VERIFY_TOKEN,
   RAZORPAY_KEY_ID: process.env.RAZORPAY_KEY_ID,
   RAZORPAY_KEY_SECRET: process.env.RAZORPAY_KEY_SECRET,

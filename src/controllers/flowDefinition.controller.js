@@ -6,11 +6,7 @@ const businessCategoryService = require('../services/businessCategory.service');
 const businessService = require('../services/business.service');
 const { decrypt } = require('../utils/crypto');
 const logger = require('../utils/logger');
-
-// Meta's Flow-management endpoints are a different Graph API version from
-// whatsapp.service.js's META_API_BASE (v18.0) - hardcoded separately here,
-// same as messageTemplate.controller.js's META_UPLOAD_API_BASE.
-const META_FLOWS_API_BASE = 'https://graph.facebook.com/v20.0';
+const { META_API_BASE } = require('../services/whatsapp.service');
 
 /**
  * GET /api/admin/whatsapp-flows
@@ -191,7 +187,7 @@ const publishFlowToBusiness = async (req, res, next) => {
     } else {
       try {
         const createResponse = await axios.post(
-          `${META_FLOWS_API_BASE}/${business.wabaId}/flows`,
+          `${META_API_BASE}/${business.wabaId}/flows`,
           {
             name: definition.name,
             categories: ['OTHER'],
@@ -224,7 +220,7 @@ const publishFlowToBusiness = async (req, res, next) => {
 
     try {
       await axios.post(
-        `${META_FLOWS_API_BASE}/${flowId}/publish`,
+        `${META_API_BASE}/${flowId}/publish`,
         null,
         { headers: { Authorization: `Bearer ${accessToken}` } }
       );
