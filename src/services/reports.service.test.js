@@ -57,3 +57,15 @@ test('month: 23:59 IST on Oct 31 is still October', async (t) => {
   const { starts } = await run(t, '2026-10-31T18:29:00Z');
   assert.deepEqual(starts, ['2026-08-31T18:30:00.000Z', '2026-09-30T18:30:00.000Z']);
 });
+
+test('month: on 31 March the previous period stops at the end of February', async (t) => {
+  const { starts, ends } = await run(t, '2026-03-31T12:00:00Z'); // 17:30 IST Mar 31
+  assert.deepEqual(starts, ['2026-01-31T18:30:00.000Z', '2026-02-28T18:30:00.000Z']);
+  // previous: Feb 1 → Mar 1 00:00 IST (all of February), not into March
+  assert.deepEqual(ends, ['2026-02-28T18:30:00.000Z', '2026-03-31T12:00:00.000Z']);
+});
+
+test('month: early in the month the previous period is still duration-matched', async (t) => {
+  const { ends } = await run(t, '2026-03-10T06:30:00Z'); // 12:00 IST Mar 10
+  assert.deepEqual(ends, ['2026-02-10T06:30:00.000Z', '2026-03-10T06:30:00.000Z']);
+});

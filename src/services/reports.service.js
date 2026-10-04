@@ -18,7 +18,8 @@ const RESPONSE_TIME_MAX_WAIT_MS = 3 * 24 * 60 * 60 * 1000;
  * Returns {currentStart, currentEnd, previousStart, previousEnd} for a
  * reports period. "week" is a rolling last-7-days window vs. the preceding
  * 7 days. "month" is calendar-month-to-date vs. the same elapsed duration
- * into the previous calendar month (not the previous month's full total) —
+ * into the previous calendar month, capped at that month's end (not the
+ * previous month's full total, except late in a longer month) —
  * this keeps the comparison duration-matched rather than penalizing early-
  * month lookups against a full prior month.
  */
@@ -35,7 +36,9 @@ const getPeriodRanges = (period) => {
   const currentStart = istMonthStart(now);
   const elapsedMs = now.getTime() - currentStart.getTime();
   const previousStart = istMonthStart(now, -1);
-  const previousEnd = new Date(previousStart.getTime() + elapsedMs);
+  // Capped at the previous month's end: on 31 March, "the same elapsed time
+  // into February" would otherwise run into March.
+  const previousEnd = new Date(Math.min(previousStart.getTime() + elapsedMs, currentStart.getTime()));
   return { currentStart, currentEnd: now, previousStart, previousEnd };
 };
 
