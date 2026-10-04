@@ -17,6 +17,11 @@ const META_UPLOAD_API_BASE = 'https://graph.facebook.com/v20.0';
 // Meta requires template names to be lowercase, alphanumeric + underscores only
 const TEMPLATE_NAME_REGEX = /^[a-z0-9_]+$/;
 
+// WhatsApp template headers accept JPG and PNG only. The shared uploadSingle
+// middleware also allows WebP (business / vehicle images), so the template
+// endpoint narrows it here.
+const HEADER_IMAGE_TYPES = ['image/jpeg', 'image/png'];
+
 const countTemplateVariables = (bodyText) => {
   const matches = (bodyText || '').match(/\{\{\s*\d+\s*\}\}/g) || [];
   const numbers = new Set(matches.map((m) => m.replace(/\D/g, '')));
@@ -106,6 +111,9 @@ const uploadHeaderImage = async (req, res, next) => {
   try {
     if (!req.file) {
       return errorResponse(res, 400, 'No image provided');
+    }
+    if (!HEADER_IMAGE_TYPES.includes(req.file.mimetype)) {
+      return errorResponse(res, 400, 'Header image must be a JPG or PNG.');
     }
 
     const result = await r2.uploadImage(
