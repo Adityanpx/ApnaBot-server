@@ -73,6 +73,9 @@ test('win_back: approved MARKETING template required, 7–180 days, mapping coun
   assert.match(f.validateAutomation({ ...base, templateId: null }, {}).error, /Pick an approved/);
   assert.match(f.validateAutomation(base, { templateRow: null }).error, /Template not found/);
   assert.match(f.validateAutomation(base, { templateRow: marketingTpl({ status: 'pending' }) }).error, /not approved/);
+  // Meta paused / disabled it (also what re-switching an automation on re-checks)
+  assert.match(f.validateAutomation(base, { templateRow: marketingTpl({ status: 'paused' }) }).error, /not approved by WhatsApp \(status: paused\)/);
+  assert.match(f.validateAutomation(base, { templateRow: marketingTpl({ status: 'disabled' }) }).error, /not approved by WhatsApp \(status: disabled\)/);
   assert.match(f.validateAutomation(base, { templateRow: marketingTpl({ category: 'UTILITY' }) }).error, /needs a MARKETING template/);
   assert.match(f.validateAutomation(base, { templateRow: marketingTpl({ header_type: 'IMAGE' }) }).error, /image header/);
   assert.match(f.validateAutomation({ ...base, templateVariableMapping: [nameMapping[0]] }, { templateRow: marketingTpl() }).error, /exactly 2 entries/);

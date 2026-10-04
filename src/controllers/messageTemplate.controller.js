@@ -249,8 +249,8 @@ const submitMessageTemplate = async (req, res, next) => {
 /**
  * DELETE /api/message-templates/:id
  * Delete a template. Only allowed while draft or rejected (not yet registered
- * with Meta, or Meta already rejected it) - pending/approved templates are
- * registered with Meta and require contacting support to remove.
+ * with Meta, or Meta already rejected it) - pending/approved/paused/disabled
+ * templates are registered with Meta and require contacting support to remove.
  */
 const deleteMessageTemplate = async (req, res, next) => {
   try {
@@ -264,7 +264,7 @@ const deleteMessageTemplate = async (req, res, next) => {
       return errorResponse(res, 404, 'Message template not found');
     }
 
-    if (template.status === 'pending' || template.status === 'approved') {
+    if (['pending', 'approved', 'paused', 'disabled'].includes(template.status)) {
       return errorResponse(res, 400, 'This template is registered with Meta. Please contact support to remove it.');
     }
 

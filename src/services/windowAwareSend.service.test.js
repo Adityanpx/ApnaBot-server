@@ -115,6 +115,8 @@ test('window closed, no approved template: not sent, nothing charged', async () 
   const closed = customer({ last_message_at: new Date(Date.now() - 25 * HOUR).toISOString() });
   assert.deepEqual(await sendWindowAwareMessage(business, closed, opts({ template: null })), { sent: false, code: 'no_template' });
   assert.deepEqual(await sendWindowAwareMessage(business, closed, opts({ template: { ...approved, status: 'pending' } })), { sent: false, code: 'no_template' });
+  assert.deepEqual(await sendWindowAwareMessage(business, closed, opts({ template: { ...approved, status: 'paused' } })), { sent: false, code: 'no_template' });
+  assert.deepEqual(await sendWindowAwareMessage(business, closed, opts({ template: { ...approved, status: 'disabled' } })), { sent: false, code: 'no_template' });
   assert.equal(sent.length + wallet.length + messages.length, 0);
 });
 

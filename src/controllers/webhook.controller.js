@@ -18,6 +18,7 @@ const { getSystemMessage } = require('../utils/systemMessages');
 const { isIndefinitePause } = require('../utils/botPause');
 const { parseJoinCode, isSystemTapId, parseOptInTapId, OPT_IN_YES_PREFIX, OPT_IN_NO_PREFIX } = require('../utils/optInLink');
 const optInLinkService = require('../services/optInLink.service');
+const { templateStatusForEvent } = require('../utils/templateStatus');
 const whatsappService = require('../services/whatsapp.service');
 const r2 = require('../services/r2.service');
 const logger = require('../utils/logger');
@@ -724,16 +725,14 @@ const receiveWebhook = async (req, res) => {
     // template submitted via messageTemplate.controller.js's submit flow) so
     // message_templates.status doesn't stay stuck on 'pending' forever.
     if (changes?.field === 'message_template_status_update') {
-      const templateEvent = value?.event; // Meta's casing: 'APPROVED', 'REJECTED', 'PAUSED', 'DISABLED'
+      const templateEvent = value?.event; // Meta's casing: 'APPROVED', 'REJECTED', 'PAUSED', 'DISABLED', 'REINSTATED'
       const metaTemplateId = value?.message_template_id;
       const templateName = value?.message_template_name;
       const rejectionReason = value?.reason; // present on rejections
 
-      // message_templates.status has a check constraint of
-      // ('draft','pending','approved','rejected') - PAUSED/DISABLED have no
-      // matching value, so they're logged and skipped rather than written.
-      const TEMPLATE_EVENT_TO_STATUS = { APPROVED: 'approved', REJECTED: 'rejected' };
-      const mappedStatus = TEMPLATE_EVENT_TO_STATUS[templateEvent];
+      // utils/templateStatus.js — events with no message_templates.status
+      // value (e.g. FLAGGED, IN_APPEAL) are logged and skipped.
+      const mappedStatus = templateStatusForEvent(templateEvent);
 
       if (!mappedStatus) {
         logger.warn(`Unhandled message_template_status_update event "${templateEvent}" - no matching message_templates.status value, skipping`, {
