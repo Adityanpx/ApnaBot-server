@@ -4,6 +4,7 @@ const { encrypt } = require('../utils/crypto');
 const { toCamelCase } = require('../utils/caseConvert');
 const { computeFeatureFlags, isTravelFeaturedCategory } = require('../config/categoryFeatures');
 const logger = require('../utils/logger');
+const { istDayStart } = require('../utils/ist');
 
 const businessFieldMap = {
   name: 'name', displayName: 'display_name', address: 'address', city: 'city',
@@ -409,8 +410,8 @@ const disconnectWhatsapp = async (businessId) => {
  * @returns {Promise<Object>}
  */
 const getDashboardStats = async (businessId) => {
-  const startOfToday = new Date();
-  startOfToday.setHours(0, 0, 0, 0);
+  // India time — the server runs in UTC, where local midnight is 05:30 IST.
+  const startOfToday = istDayStart(new Date());
 
   const safe = async (fn, label, fallback) => {
     try {

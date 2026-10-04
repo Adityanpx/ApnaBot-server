@@ -1,14 +1,13 @@
 const redis = require('../config/redis');
 const supabase = require('../config/supabase');
 const logger = require('../utils/logger');
+const { istMonthKey, istMonthStart } = require('../utils/ist');
 
 /**
- * Get current month key in YYYY-MM format
+ * Get current month key in YYYY-MM format (India time — the server runs in
+ * UTC, where the month would roll over at 05:30 IST on the 1st)
  */
-const getCurrentMonthKey = () => {
-  const now = new Date();
-  return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
-};
+const getCurrentMonthKey = () => istMonthKey(new Date());
 
 /**
  * Build Redis key for usage
@@ -64,10 +63,9 @@ const incrementUsage = async (businessId, type) => {
     // Check/set TTL (only if key is newly created)
     const ttl = await redis.ttl(usageKey);
     if (ttl === -1) {
-      // Set TTL to end of current month
+      // Set TTL to end of current month (India time, matching the key)
       const now = new Date();
-      const lastDay = new Date(now.getFullYear(), now.getMonth() + 1, 0);
-      const secondsUntilEndOfMonth = Math.floor((lastDay - now) / 1000);
+      const secondsUntilEndOfMonth = Math.ceil((istMonthStart(now, 1) - now) / 1000);
       await redis.expire(usageKey, secondsUntilEndOfMonth);
     }
 

@@ -1,8 +1,8 @@
 // India time (IST, UTC+05:30, no daylight saving) helpers. The product is
 // India-only today (see broadcast.controller.js countryCode) and there is no
 // per-business timezone, so "send hours", "the evening before" and "today"
-// are all India time. Used by Free demo reminders (utils/demoReminder.js)
-// and follow-up automations.
+// are all India time. Used by Free demo reminders (utils/demoReminder.js),
+// follow-up automations, and the owner dashboard / reports / usage month.
 
 const IST_OFFSET_MS = (5 * 60 + 30) * 60 * 1000;
 const MINUTE_MS = 60 * 1000;
@@ -18,6 +18,21 @@ const istMinuteOfDay = (date) => {
 const istDayStart = (date) => {
   const ist = new Date(date).getTime() + IST_OFFSET_MS;
   return new Date(Math.floor(ist / DAY_MS) * DAY_MS - IST_OFFSET_MS);
+};
+
+/**
+ * The instant 00:00 India time began on the 1st of `date`'s India-time
+ * month, shifted by `monthOffset` months (-1 = previous month, 1 = next).
+ */
+const istMonthStart = (date, monthOffset = 0) => {
+  const ist = new Date(new Date(date).getTime() + IST_OFFSET_MS);
+  return new Date(Date.UTC(ist.getUTCFullYear(), ist.getUTCMonth() + monthOffset, 1) - IST_OFFSET_MS);
+};
+
+/** `date`'s India-time month as 'YYYY-MM' (the usage table's month key). */
+const istMonthKey = (date) => {
+  const ist = new Date(new Date(date).getTime() + IST_OFFSET_MS);
+  return `${ist.getUTCFullYear()}-${String(ist.getUTCMonth() + 1).padStart(2, '0')}`;
 };
 
 /**
@@ -43,6 +58,8 @@ module.exports = {
   IST_OFFSET_MS,
   istMinuteOfDay,
   istDayStart,
+  istMonthStart,
+  istMonthKey,
   isWithinSendHours,
   nextSendHoursStart
 };

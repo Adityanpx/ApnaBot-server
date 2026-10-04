@@ -49,3 +49,25 @@ test('new customers today: only customers who have messaged, not today\'s import
   assert.equal(stats.newCustomersToday, 1);
   assert.equal(stats.totalCustomers, 4); // the total still includes imported contacts
 });
+
+test('"today" is the India-time day, even on a UTC server just after midnight IST', async (t) => {
+  const tz = process.env.TZ;
+  process.env.TZ = 'UTC'; // Render runs in UTC
+  t.after(() => { process.env.TZ = tz; if (tz === undefined) delete process.env.TZ; });
+  t.mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-04T18:45:00Z') }); // 00:15 IST Oct 5
+  const saved = { messages: tables.messages, bookings: tables.bookings };
+  t.after(() => Object.assign(tables, saved));
+  tables.messages = [
+    { business_id: 'b', direction: 'inbound', created_at: '2026-10-04T18:35:00.000Z' }, // 00:05 IST Oct 5 → today
+    { business_id: 'b', direction: 'inbound', created_at: '2026-10-04T18:25:00.000Z' }, // 23:55 IST Oct 4 → yesterday
+    { business_id: 'b', direction: 'inbound', created_at: '2026-10-04T06:00:00.000Z' }  // Oct 4 IST → yesterday
+  ];
+  tables.bookings = [
+    { business_id: 'b', created_at: '2026-10-04T18:31:00.000Z' }, // 00:01 IST Oct 5
+    { business_id: 'b', created_at: '2026-10-04T10:00:00.000Z' }  // Oct 4 IST
+  ];
+  const stats = await getDashboardStats('b');
+  assert.equal(stats.todayMessageCount, 1);
+  assert.equal(stats.todayInboundCount, 1);
+  assert.equal(stats.todayBookingCount, 1);
+});

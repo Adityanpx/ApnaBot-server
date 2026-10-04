@@ -1,4 +1,5 @@
 const supabase = require('../config/supabase');
+const { istMonthStart } = require('../utils/ist');
 
 const CONFIRMED_STATUSES = ['confirmed', 'completed'];
 
@@ -30,10 +31,10 @@ const getPeriodRanges = (period) => {
     return { currentStart, currentEnd: now, previousStart, previousEnd: currentStart };
   }
 
-  // month
-  const currentStart = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+  // month (India-time calendar months; the server runs in UTC)
+  const currentStart = istMonthStart(now);
   const elapsedMs = now.getTime() - currentStart.getTime();
-  const previousStart = new Date(now.getFullYear(), now.getMonth() - 1, 1, 0, 0, 0, 0);
+  const previousStart = istMonthStart(now, -1);
   const previousEnd = new Date(previousStart.getTime() + elapsedMs);
   return { currentStart, currentEnd: now, previousStart, previousEnd };
 };

@@ -2,7 +2,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
-  IST_OFFSET_MS, istMinuteOfDay, istDayStart, isWithinSendHours, nextSendHoursStart
+  IST_OFFSET_MS, istMinuteOfDay, istDayStart, istMonthStart, istMonthKey, isWithinSendHours, nextSendHoursStart
 } = require('./ist');
 
 // 2026-10-03 09:00 IST = 03:30 UTC
@@ -55,4 +55,28 @@ test('nextSendHoursStart: later today, else tomorrow; exactly at start returns i
   assert.equal(nextSendHoursStart(at('2026-10-03T16:00:00Z'), 540).toISOString(), '2026-10-04T03:30:00.000Z');
   // 23:30 UTC on Oct 2 is 05:00 IST Oct 3 → 09:00 IST Oct 3
   assert.equal(nextSendHoursStart(at('2026-10-02T23:30:00Z'), 540).toISOString(), '2026-10-03T03:30:00.000Z');
+});
+
+test('istMonthStart: 00:00 IST on the 1st, flips at 18:30 UTC on the last day', () => {
+  // 2026-10-31 23:59 IST is still October; 2026-11-01 00:00 IST is November
+  assert.equal(istMonthStart(at('2026-10-31T18:29:00Z')).toISOString(), '2026-09-30T18:30:00.000Z');
+  assert.equal(istMonthStart(at('2026-10-31T18:30:00Z')).toISOString(), '2026-10-31T18:30:00.000Z');
+  // 02:00 IST Nov 1 = 20:30 UTC Oct 31, a UTC clock still says October
+  assert.equal(istMonthStart(at('2026-10-31T20:30:00Z')).toISOString(), '2026-10-31T18:30:00.000Z');
+  assert.equal(istMonthStart('2026-10-15T12:00:00Z').toISOString(), '2026-09-30T18:30:00.000Z');
+});
+
+test('istMonthStart: month offsets, across a year boundary', () => {
+  const jan1 = at('2026-12-31T19:00:00Z'); // 00:30 IST 2027-01-01
+  assert.equal(istMonthStart(jan1).toISOString(), '2026-12-31T18:30:00.000Z');
+  assert.equal(istMonthStart(jan1, -1).toISOString(), '2026-11-30T18:30:00.000Z');
+  assert.equal(istMonthStart(at('2026-12-15T00:00:00Z'), 1).toISOString(), '2026-12-31T18:30:00.000Z');
+  assert.equal(istMonthStart(at('2026-03-31T10:00:00Z'), -1).toISOString(), '2026-01-31T18:30:00.000Z'); // Feb 1 IST
+});
+
+test('istMonthKey: India-time YYYY-MM', () => {
+  assert.equal(istMonthKey(at('2026-10-31T18:29:59Z')), '2026-10');
+  assert.equal(istMonthKey(at('2026-10-31T18:30:00Z')), '2026-11');
+  assert.equal(istMonthKey(at('2026-12-31T18:30:00Z')), '2027-01');
+  assert.equal(istMonthKey('2026-01-05T00:00:00Z'), '2026-01');
 });
