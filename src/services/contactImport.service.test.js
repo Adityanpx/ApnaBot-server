@@ -21,7 +21,7 @@ const from = (table) => {
   const matching = () => db[table].filter(r => filters.every(f => f(r)));
   const run = () => {
     if (op === 'insert') {
-      const row = { id: `00000000-0000-4000-8000-${String(db[table].length + 1).padStart(12, '0')}`, created_at: NOW.toISOString(), expires_at: new Date(NOW.getTime() + 30 * 60 * 1000).toISOString(), ...payload };
+      const row = { id: `00000000-0000-4000-8000-${String(db[table].length + 1).padStart(12, '0')}`, created_at: NOW.toISOString(), expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(), ...payload };
       db[table].push(row);
       return { data: [row], error: null };
     }
