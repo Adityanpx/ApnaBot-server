@@ -2,6 +2,8 @@ const express = require('express');
 const router = express.Router();
 const config = require('../config/env');
 const publicServiceFormController = require('../controllers/publicServiceForm.controller');
+const helpController = require('../controllers/help.controller');
+const { helpFeedbackLimiter } = require('../middleware/rateLimiter.middleware');
 
 // GET /api/public/whatsapp-embedded-signup-config
 // Returns non-secret Meta app config needed by the client-side Facebook JS SDK
@@ -47,5 +49,15 @@ router.post('/service-form/:token/place-details', publicServiceFormController.pl
 // vehicle-options above (no distance context) — powers the public page's
 // carousel-with-rate once an address_autocomplete pickup/drop is picked.
 router.post('/service-form/:token/vehicle-quote', publicServiceFormController.getVehicleQuote);
+
+// GET /api/public/app-config
+// Non-secret client config: { helpBaseUrl, helpLanguages }.
+// Cache-Control: public, max-age=300.
+router.get('/app-config', helpController.getAppConfig);
+
+// POST /api/public/help-feedback
+// Body: { slug, locale: 'en'|'hi'|'mr', helpful: boolean } → 204.
+// Rate limited per IP (helpFeedbackLimiter) on top of globalLimiter.
+router.post('/help-feedback', helpFeedbackLimiter, helpController.submitHelpFeedback);
 
 module.exports = router;

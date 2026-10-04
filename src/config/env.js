@@ -62,6 +62,9 @@ module.exports = {
   R2_PUBLIC_URL: process.env.R2_PUBLIC_URL,
   FRONTEND_URL: process.env.FRONTEND_URL,
   ADMIN_URL: process.env.ADMIN_URL,
+  // Optional: where the Help Center lives, returned by GET /api/public/app-config.
+  // Defaults to `${FRONTEND_URL}/help` (see help.controller.js).
+  HELP_BASE_URL: process.env.HELP_BASE_URL,
   // Comma-separated list, e.g. "http://localhost:3000,https://apnabot.averixsolutions.co.in"
   WEB_APP_URLS: (process.env.WEB_APP_URLS || '').split(',').map(s => s.trim()).filter(Boolean),
   // Optional: only needed by shops with enableDistanceFares on; read directly

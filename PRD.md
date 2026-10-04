@@ -582,6 +582,13 @@ tracked as a deferred "future initiative" — it's built and live.
    webhook path for a millisecond-wide window.
 
 ## Session log (append here as major milestones land)
+- 2026-10-04: Help Center support endpoints (public, no auth) —
+  `GET /api/public/app-config` (`{ helpBaseUrl, helpLanguages }`, from
+  optional `HELP_BASE_URL`, default `${FRONTEND_URL}/help`, cached 5 min)
+  and `POST /api/public/help-feedback` (`{ slug, locale, helpful }` → 204,
+  10/min/IP `helpFeedbackLimiter` on top of `globalLimiter`) into the new
+  `help_feedback` table (migration `20261004150000_help_feedback.sql`,
+  **must be applied before the server code is deployed**).
 - 2026-09-30: Coaching request tracking — `bookings.form_key/form_title/
   field_labels` (migration `20260930120000_bookings_form_meta.sql`, **must
   be applied before the server code that writes it is deployed**), coaching
