@@ -170,22 +170,29 @@ const createMessageSoft = async (fields, context) => {
 /**
  * Find-or-create the customer row for an inbound message, then bump their
  * lastMessageAt/totalMessages. Supabase has no atomic upsert-with-$inc, so
- * this is a read-then-write — a tiny race window under true concurrent
- * double-taps from the same customer, acceptable at current traffic.
+ * this is a read-then-write. If another writer inserts the same number
+ * between the read and the insert (a contact import, or this customer's own
+ * concurrent message), the insert hits the (business_id, whatsapp_number)
+ * unique key (23505) — the row is re-read and bumped instead, so the message
+ * is still processed. The totalMessages bump itself can still lose a count
+ * under true concurrent double-taps, acceptable at current traffic.
  * @param {string} businessId
  * @param {string} customerNumber
  * @param {string} [profileName] - WhatsApp profile name from the webhook's contacts array
  * @returns {Promise<Object>} camelCase customer row
  */
 const upsertCustomerForInboundMessage = async (businessId, customerNumber, profileName) => {
-  const { data: existing, error: findErr } = await supabase
-    .from('customers').select('*')
-    .eq('business_id', businessId).eq('whatsapp_number', customerNumber).maybeSingle();
-  if (findErr) throw findErr;
+  const findCustomer = async () => {
+    const { data, error } = await supabase
+      .from('customers').select('*')
+      .eq('business_id', businessId).eq('whatsapp_number', customerNumber).maybeSingle();
+    if (error) throw error;
+    return data;
+  };
 
   const nowIso = new Date().toISOString();
 
-  if (existing) {
+  const bumpExisting = async (existing) => {
     const updateFields = {
       last_message_at: nowIso,
       total_messages: (existing.total_messages || 0) + 1
@@ -199,7 +206,10 @@ const upsertCustomerForInboundMessage = async (businessId, customerNumber, profi
     const { data, error } = await supabase.from('customers').update(updateFields).eq('id', existing.id).select().single();
     if (error) throw error;
     return toCamelCase(data);
-  }
+  };
+
+  const existing = await findCustomer();
+  if (existing) return bumpExisting(existing);
 
   const { data, error } = await supabase.from('customers').insert({
     business_id: businessId,
@@ -209,6 +219,14 @@ const upsertCustomerForInboundMessage = async (businessId, customerNumber, profi
     last_message_at: nowIso,
     total_messages: 1
   }).select().single();
+  if (error && error.code === '23505') {
+    // Lost the insert race — someone else just created this customer.
+    const raced = await findCustomer();
+    if (raced) {
+      logger.info(`Customer insert raced for business ${businessId}; continuing with the existing row`);
+      return bumpExisting(raced);
+    }
+  }
   if (error) throw error;
   return toCamelCase(data);
 };
@@ -2222,5 +2240,7 @@ module.exports = {
   receiveWebhook,
   // Exported for flowGraphPreview.controller.js to reuse rather than
   // duplicate the literal set.
-  GREETING_KEYWORDS
+  GREETING_KEYWORDS,
+  // Exported for webhook.controller.test.js.
+  upsertCustomerForInboundMessage
 };
