@@ -5,28 +5,29 @@ const { protect, requireBusiness } = require('../middleware/auth.middleware');
 const { requireRole } = require('../middleware/role.middleware');
 const { uploadSingle } = require('../middleware/upload.middleware');
 
-// All routes require: protect, requireBusiness
+// All routes require: protect, requireBusiness. Create / submit / delete are
+// owner / superadmin only; staff can still list templates.
 
 // GET / - List message templates
 router.get('/', protect, requireBusiness, messageTemplateController.getMessageTemplates);
 
 // POST / - Create message template (draft)
-router.post('/', protect, requireBusiness, messageTemplateController.createMessageTemplate);
+router.post('/', protect, requireBusiness, requireRole('owner', 'superadmin'), messageTemplateController.createMessageTemplate);
 
 // POST /upload-header-image - Upload a template header image to R2
 router.post(
   '/upload-header-image',
   protect,
   requireBusiness,
-  requireRole('owner'),
+  requireRole('owner', 'superadmin'),
   uploadSingle,
   messageTemplateController.uploadHeaderImage
 );
 
 // POST /:id/submit - Submit template to Meta for review
-router.post('/:id/submit', protect, requireBusiness, messageTemplateController.submitMessageTemplate);
+router.post('/:id/submit', protect, requireBusiness, requireRole('owner', 'superadmin'), messageTemplateController.submitMessageTemplate);
 
 // DELETE /:id - Delete a draft/rejected template
-router.delete('/:id', protect, requireBusiness, messageTemplateController.deleteMessageTemplate);
+router.delete('/:id', protect, requireBusiness, requireRole('owner', 'superadmin'), messageTemplateController.deleteMessageTemplate);
 
 module.exports = router;
