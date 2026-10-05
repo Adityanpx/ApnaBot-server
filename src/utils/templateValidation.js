@@ -160,11 +160,16 @@ const validateComponents = (components, { requireExamples = false } = {}) => {
     const phoneCount = buttons.filter((b) => b && b.type === 'PHONE_NUMBER').length;
     if (urlCount > URL_BUTTONS_MAX) errors.push(`A template can have at most ${URL_BUTTONS_MAX} URL buttons.`);
     if (phoneCount > PHONE_BUTTONS_MAX) errors.push(`A template can have at most ${PHONE_BUTTONS_MAX} phone button.`);
+    // Meta: quick replies sit together, before or after the URL / phone buttons.
+    const quickIndexes = buttons.map((b, i) => (b && b.type === 'QUICK_REPLY' ? i : -1)).filter(i => i !== -1);
+    if (quickIndexes.length > 1 && quickIndexes[quickIndexes.length - 1] - quickIndexes[0] + 1 !== quickIndexes.length) {
+      errors.push('Quick-reply buttons must be grouped together - put them all before or all after the URL and phone buttons.');
+    }
     const seenText = new Set();
     buttons.forEach((b, i) => {
       const label = `Button ${i + 1}`;
-      if (!b || !['URL', 'PHONE_NUMBER'].includes(b.type)) {
-        errors.push(`${label}: only URL and PHONE_NUMBER buttons are supported.`);
+      if (!b || !['URL', 'PHONE_NUMBER', 'QUICK_REPLY'].includes(b.type)) {
+        errors.push(`${label}: only URL, PHONE_NUMBER and QUICK_REPLY buttons are supported.`);
         return;
       }
       const text = typeof b.text === 'string' ? b.text.trim() : '';
@@ -184,7 +189,7 @@ const validateComponents = (components, { requireExamples = false } = {}) => {
             errors.push(`${label}: a dynamic URL needs an example - a full link that starts with ${prefix} and fills in {{1}}.`);
           }
         }
-      } else if (typeof b.phone_number !== 'string' || !E164.test(b.phone_number)) {
+      } else if (b.type === 'PHONE_NUMBER' && (typeof b.phone_number !== 'string' || !E164.test(b.phone_number))) {
         errors.push(`${label}: phone must be in international format, e.g. +919876543210.`);
       }
     });

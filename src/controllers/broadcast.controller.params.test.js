@@ -96,8 +96,8 @@ test('send: a media template whose header media is gone is refused even though s
   assert.equal(queued.length + debits.length, 0);
 });
 
-test('send: a template that gained a quick-reply button since the draft is refused, nothing queued or debited', async () => {
-  templateRow = { ...richTpl, meta_components: [...richTpl.meta_components.slice(0, 2), { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Yes' }] }] };
+test('send: a template that gained a copy-code button since the draft is refused, nothing queued or debited', async () => {
+  templateRow = { ...richTpl, meta_components: [...richTpl.meta_components.slice(0, 2), { type: 'BUTTONS', buttons: [{ type: 'COPY_CODE', text: 'Yes' }] }] };
   withDraft({ variable_mapping: richMapping });
   const res = await call(sendBroadcast, { params: { id: 'bc' } });
   assert.equal(res.statusCode, 400);
@@ -179,4 +179,22 @@ test('send: the worker job carries the mapping (header var + button) and no per-
   assert.equal(res.statusCode, 200);
   assert.deepEqual(queued[0].variableMapping, richMapping);
   assert.deepEqual(queued[0].components, []); // TEXT header has no shared media header; body/header/buttons are per recipient
+});
+
+test('send: a quick-reply template - payload components are in the shared components and in the job data for the mapped path', async () => {
+  const qrTpl = { ...base, header_type: 'NONE', body_text: 'Hi', meta_components: [
+    { type: 'BODY', text: 'Hi' },
+    { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Yes' }, { type: 'QUICK_REPLY', text: 'Stop promotions' }] }
+  ] };
+  const qr = (i) => ({ type: 'button', sub_type: 'quick_reply', index: String(i), parameters: [{ type: 'payload', payload: `tpl:t:${i}` }] });
+  templateRow = qrTpl;
+  const res = await call(sendBroadcast, { params: { id: 'bc' } });
+  assert.equal(res.statusCode, 200);
+  assert.deepEqual(queued[0].components, [qr(0), qr(1)]);
+  assert.deepEqual(queued[0].quickReplyComponents, [qr(0), qr(1)]);
+
+  queued.length = 0;
+  templateRow = imageTpl;
+  await call(sendBroadcast, { params: { id: 'bc' } });
+  assert.deepEqual(queued[0].quickReplyComponents, []); // templates without quick replies are untouched
 });

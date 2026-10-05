@@ -60,7 +60,7 @@ test('media-header, header-variable and URL-button templates are offered, with w
 test('a template whose stored components are no longer sendable is left out even if send_support still says ok', async () => {
   rows = [
     row({ id: 'noMedia', header_type: 'VIDEO' }),
-    row({ id: 'qr', meta_components: [{ type: 'BODY', text: 'Hi' }, { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Yes' }] }] }),
+    row({ id: 'cc', meta_components: [{ type: 'BODY', text: 'Hi' }, { type: 'BUTTONS', buttons: [{ type: 'COPY_CODE', text: 'Yes' }] }] }),
     row({ id: 'fine' })
   ];
   assert.deepEqual((await listTemplates('biz')).map(t => t.id), ['fine']);

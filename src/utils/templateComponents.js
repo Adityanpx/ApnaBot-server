@@ -3,9 +3,12 @@
 // Pure: no I/O. Used by the broadcast controller + worker and
 // windowAwareSend.service.js (follow-ups, demo reminders).
 //
-// Order is header, body, buttons (what Meta documents). Quick-reply
-// payload buttons are NOT built here: they unlock with inbound button routing.
+// Order is header, body, buttons (what Meta documents). Quick-reply buttons go
+// out with the payload "tpl:<templateId>:<buttonIndex>" that inbound button
+// routing decodes (utils/templateButtonTap.js).
 const { headerMediaLinkOf } = require('./templateSendSupport');
+const { buttonsOf } = require('./templateMapping');
+const { buildTapPayload } = require('./templateButtonTap');
 
 const MEDIA_HEADER_TYPES = { IMAGE: 'image', VIDEO: 'video', DOCUMENT: 'document' };
 
@@ -45,15 +48,32 @@ const buildButtonComponents = (buttons) => Object.keys(buttons || {})
   }));
 
 /**
- * @param {Object} template  message_templates row (snake_case): header_type,
+ * One quick_reply button component per QUICK_REPLY button of the template, in
+ * index order. [] when the row has no id (nothing to put in the payload) or no
+ * quick-reply buttons.
+ * @param {Object} template  message_templates row (snake_case): id, meta_components
+ */
+const buildQuickReplyComponents = (template) => (template && template.id
+  ? buttonsOf(template).filter(b => b.type === 'QUICK_REPLY').map(b => ({
+    type: 'button',
+    sub_type: 'quick_reply',
+    index: String(b.index),
+    parameters: [{ type: 'payload', payload: buildTapPayload(template.id, b.index) }]
+  }))
+  : []);
+
+/**
+ * @param {Object} template  message_templates row (snake_case): id, header_type,
  *   header_media_url / header_image_url / header_media_filename
  * @param {{ body?: Array<string|number>, header?: Array<string|number>, buttons?: Object<number, string> }} [values]
  *   body: {{1}}..{{n}}; header: the TEXT header's {{1}} (one value);
- *   buttons: { [buttonIndex]: suffix } for dynamic URL buttons
+ *   buttons: { [buttonIndex]: suffix } for dynamic URL buttons;
+ *   quickReplies: ready-made quick_reply components (buildQuickReplyComponents) for
+ *   a caller that has no template row, else they're derived from `template`
  * @param {{ link?: string, filename?: string }} [media]  override for the media header
  * @returns {Array} Meta send `components`
  */
-const buildTemplateComponents = (template, { body, header, buttons } = {}, media = null) => {
+const buildTemplateComponents = (template, { body, header, buttons, quickReplies } = {}, media = null) => {
   const components = [];
   if (template && template.header_type === 'TEXT') {
     if (header && header.length > 0) components.push({ type: 'header', parameters: textParams(header) });
@@ -61,7 +81,9 @@ const buildTemplateComponents = (template, { body, header, buttons } = {}, media
     const mediaHeader = buildMediaHeader(template, media);
     if (mediaHeader) components.push(mediaHeader);
   }
-  components.push(...buildBodyComponents(body), ...buildButtonComponents(buttons));
+  const buttonComponents = [...buildButtonComponents(buttons), ...(quickReplies || buildQuickReplyComponents(template))]
+    .sort((a, b) => Number(a.index) - Number(b.index));
+  components.push(...buildBodyComponents(body), ...buttonComponents);
   return components;
 };
 
@@ -72,4 +94,4 @@ const headerMediaOf = (template) => {
   return kind && link ? { type: kind, link } : null;
 };
 
-module.exports = { buildTemplateComponents, buildBodyComponents, buildButtonComponents, headerMediaOf };
+module.exports = { buildTemplateComponents, buildBodyComponents, buildButtonComponents, buildQuickReplyComponents, headerMediaOf };

@@ -18,7 +18,9 @@ const prefix = `apnabot:${config.QUEUE_NAMESPACE}`;
 // button suffixes (target 'button' + buttonIndex). 'customer.name' pulls from
 // that recipient's own data; 'static' uses the fixed value from the mapping.
 // `mediaHeader` is the shared IMAGE/VIDEO/DOCUMENT header the controller
-// built once (no per-recipient variables); it is passed through unchanged.
+// built once (no per-recipient variables); it is passed through unchanged, and
+// so are `quickReplies` (the template's quick_reply payload components).
+// Jobs queued before quickReplyComponents existed carry none.
 const resolveValue = (entry, recipient) => {
   const text = entry.source === 'customer.name'
     ? recipient.customer?.name
@@ -32,7 +34,7 @@ const resolveValue = (entry, recipient) => {
   return String(text);
 };
 
-const resolveRecipientComponents = (variableMapping, recipient, mediaHeader = null) => {
+const resolveRecipientComponents = (variableMapping, recipient, mediaHeader = null, quickReplies = []) => {
   const parts = splitMapping(variableMapping);
   const body = [...parts.body]
     .sort((a, b) => a.position - b.position)
@@ -41,12 +43,12 @@ const resolveRecipientComponents = (variableMapping, recipient, mediaHeader = nu
   const buttons = {};
   for (const entry of parts.button) buttons[entry.buttonIndex] = resolveValue(entry, recipient);
 
-  const built = buildTemplateComponents({ header_type: header.length > 0 ? 'TEXT' : 'NONE' }, { body, header, buttons });
+  const built = buildTemplateComponents({ header_type: header.length > 0 ? 'TEXT' : 'NONE' }, { body, header, buttons, quickReplies });
   return [...(header.length === 0 && mediaHeader ? [mediaHeader] : []), ...built];
 };
 
 const worker = new Worker('broadcast-outbound', async (job) => {
-  const { broadcastId, businessId, phoneNumberId, encryptedAccessToken, templateName, language, components, variableMapping, ratePerMessage, billed, recipients } = job.data;
+  const { broadcastId, businessId, phoneNumberId, encryptedAccessToken, templateName, language, components, variableMapping, ratePerMessage, billed, recipients, quickReplyComponents } = job.data;
   // Refund only what broadcast.controller.js actually debited. Jobs queued
   // before `billed` existed fall back to the billing switch (same condition
   // as the debit, since ratePerMessage > 0 is checked below).
@@ -66,7 +68,7 @@ const worker = new Worker('broadcast-outbound', async (job) => {
   for (const recipient of recipients) {
     try {
       const recipientComponents = variableMapping
-        ? resolveRecipientComponents(variableMapping, recipient, headerComponent)
+        ? resolveRecipientComponents(variableMapping, recipient, headerComponent, quickReplyComponents || [])
         : components;
       await whatsappService.sendTemplateMessage(phoneNumberId, encryptedAccessToken, recipient.whatsappNumber, templateName, language, recipientComponents);
       sent += 1;

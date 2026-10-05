@@ -96,7 +96,11 @@ test('buttons: limits, text length, phone format, dynamic URL example', () => {
   assert.match(errorsOf(buttons(phone('Call', '+0123456789')))[0], /international format/);
   assert.match(errorsOf(buttons(url('Track', 'https://sg.example/t/{{1}}')))[0], /needs an example/);
   assert.match(errorsOf(buttons(url('Track', 'https://sg.example/t/{{1}}', ['https://other.example/x'])))[0], /needs an example/);
-  assert.match(errorsOf(buttons({ type: 'QUICK_REPLY', text: 'Yes' }))[0], /only URL and PHONE_NUMBER/);
+  assert.match(errorsOf(buttons({ type: 'COPY_CODE', text: 'Yes' }))[0], /only URL, PHONE_NUMBER and QUICK_REPLY/);
+  assert.deepEqual(errorsOf(buttons({ type: 'QUICK_REPLY', text: 'Yes' })), []);
+  assert.match(errorsOf(buttons({ type: 'QUICK_REPLY', text: '' }))[0], /text is required/);
+  assert.match(errorsOf(buttons({ type: 'QUICK_REPLY', text: 'x'.repeat(26) }))[0], /at most 25/);
+  assert.match(errorsOf(buttons({ type: 'QUICK_REPLY', text: 'Yes' }, { type: 'QUICK_REPLY', text: 'yes' }))[0], /different/);
   assert.match(errorsOf([body('Hi.'), { type: 'BUTTONS', buttons: [] }])[0], /at least one button/);
 });
 

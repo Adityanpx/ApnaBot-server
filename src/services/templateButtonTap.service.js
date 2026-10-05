@@ -38,6 +38,26 @@ const loadTapNode = async (businessId, nodeId) => {
 };
 
 /**
+ * Do the node ids in these button actions exist, belong to this business and
+ * can a tap enter them (a reply node or a question node)?
+ * @param {string} businessId
+ * @param {Array<{ index: number, action: Object }>} buttonActions
+ * @returns {Promise<string|null>} owner-readable error, or null
+ */
+const checkActionNodes = async (businessId, buttonActions) => {
+  for (const { index, action } of buttonActions || []) {
+    if (action.type !== 'node') continue;
+    const { data, error } = await supabase
+      .from('flow_nodes').select('id, node_type').eq('id', action.nodeId).eq('business_id', businessId).maybeSingle();
+    if (error) throw error;
+    if (!data || !TAP_NODE_TYPES.includes(data.node_type)) {
+      return 'Button ' + index + ": the chosen flow node was not found - pick a reply node or a question node from this business's flow.";
+    }
+  }
+  return null;
+};
+
+/**
  * @param {string} businessId
  * @param {{ payload?: string, text?: string }} button  Meta's message.button
  * @returns {Promise<{ kind: 'optout' } | { kind: 'action', action: Object } | { kind: 'node', node: Object } | { kind: 'text', text: string } | null>}
@@ -55,4 +75,4 @@ const resolveButtonTap = async (businessId, button) => {
   return decision;
 };
 
-module.exports = { resolveButtonTap };
+module.exports = { resolveButtonTap, checkActionNodes };

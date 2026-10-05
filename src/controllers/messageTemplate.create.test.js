@@ -127,7 +127,7 @@ test('TEXT header with a variable, footer, URL (static + dynamic) and phone butt
 test('validation errors are a 400 with every message in `errors`; nothing is inserted', async () => {
   const res = await call({
     name: 'bad', bodyText: '{{1}} hello {{3}}', footerText: 'x'.repeat(61),
-    buttons: [{ type: 'URL', text: 'Short', url: 'https://bit.ly/x' }, { type: 'QUICK_REPLY', text: 'Yes' }]
+    buttons: [{ type: 'URL', text: 'Short', url: 'https://bit.ly/x' }, { type: 'COPY_CODE', text: 'Yes' }]
   });
   assert.equal(res.statusCode, 400);
   assert.ok(res.body.errors.length >= 4);

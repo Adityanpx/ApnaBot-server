@@ -49,10 +49,10 @@ test('input: samples for a body without variables are dropped (Meta rejects an e
   assert.equal(components[0].example, undefined);
 });
 
-test('input shape errors: quick reply, unknown button, dynamic without {{1}}, variable without dynamic, bad header type', () => {
+test('input shape errors: unknown button, dynamic without {{1}}, variable without dynamic, bad header type', () => {
   const run = (buttons) => buildComponentsFromInput({ bodyText: 'Hi.', buttons }).errors;
-  assert.match(run([{ type: 'QUICK_REPLY', text: 'Yes' }])[0], /quick-reply buttons are not supported yet/);
-  assert.match(run([{ type: 'COPY_CODE', text: 'x' }])[0], /URL or PHONE_NUMBER/);
+  assert.match(run([{ type: 'COPY_CODE', text: 'x' }])[0], /URL, PHONE_NUMBER or QUICK_REPLY/);
+  assert.match(run([null])[0], /URL, PHONE_NUMBER or QUICK_REPLY/);
   assert.match(run([{ type: 'URL', text: 'x', url: 'https://a.example', dynamic: true }])[0], /must end with \{\{1\}\}/);
   assert.match(run([{ type: 'URL', text: 'x', url: 'https://a.example/{{1}}' }])[0], /set dynamic: true/);
   assert.match(buildComponentsFromInput({ header: { type: 'AUDIO' }, bodyText: 'Hi.' }).errors[0], /header.type must be/);

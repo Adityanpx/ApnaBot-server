@@ -146,9 +146,9 @@ test('a template without a media header (NONE / TEXT / LOCATION) is refused; med
   assert.equal((await call('missing', { mediaId: 'm1' })).statusCode, 404);
 });
 
-test('send_support is recomputed over everything else: a synced template that also has a quick-reply stays unsupported_component', async () => {
+test('send_support is recomputed over everything else: a synced template that also has a copy-code button stays unsupported_component', async () => {
   db.message_templates = [template({
-    meta_components: [{ type: 'HEADER', format: 'IMAGE' }, { type: 'BODY', text: 'Hi' }, { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Yes' }] }]
+    meta_components: [{ type: 'HEADER', format: 'IMAGE' }, { type: 'BODY', text: 'Hi' }, { type: 'BUTTONS', buttons: [{ type: 'COPY_CODE', text: 'Yes' }] }]
   })];
   assert.equal((await call('t1', { mediaId: 'm1' })).statusCode, 200);
   assert.equal(db.message_templates[0].send_support, 'unsupported_component');

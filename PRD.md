@@ -512,7 +512,8 @@ tracked as a deferred "future initiative" — it's built and live.
   `meta_sync`), `meta_template_id`, `status` (draft, pending, approved,
   rejected, paused, disabled, deleted), raw `meta_status`, `quality_score`,
   `meta_components` (Meta's components as last synced), `send_support`,
-  `last_synced_at`, `meta_deleted_at`. Unique per business on
+  `last_synced_at`, `meta_deleted_at`, `button_actions` (what a tap on each
+  QUICK_REPLY button does; the sync never writes it). Unique per business on
   `meta_template_id` (when set) and on name + language (while unregistered).
 - `business_type_templates` — still exists; historically the category
   starting point copied at business creation for the old engine and the
@@ -593,7 +594,58 @@ tracked as a deferred "future initiative" — it's built and live.
    trigger a per-business sync (`templateSync.service.js#runSync`) from that
    webhook.
 
+8. **Meta error 131050 (user stopped marketing messages) doesn't set
+   `opted_out_at` (backlog, 2026-10-05).** A broadcast / follow-up send that
+   Meta refuses with 131050 is only counted as failed; the customer stays
+   eligible and is retried next time. Later: set `customers.opted_out_at` from
+   the broadcast worker / follow-up sender on that code. (From memory of Meta's
+   docs, unverified - confirm the code against a real refusal first.)
+
 ## Session log (append here as major milestones land)
+- 2026-10-05: Quick-reply buttons on templates (#6 Phase 4, three commits,
+  not yet deployed). **4a (inbound, a105a61):** a customer tapping a template
+  quick reply arrives as message `type: 'button'` `{ payload, text }` -
+  previously saved as an empty bubble and dropped, now shown as the label and
+  routed (`utils/templateButtonTap.js#decideTap`,
+  `services/templateButtonTap.service.js#resolveButtonTap`, wired into
+  `webhook.controller.js`). Payloads we send are `tpl:<templateId>:<index>`;
+  the action comes from `message_templates.button_actions` (`[{ index, text,
+  action }]`, an entry applies only while index AND text still match) -
+  `{ type: 'keyword', keyword }` (as if typed), `{ type: 'node', nodeId }` (a
+  reply node, incl. booking_trigger, or a question node via the
+  directBookingEntry path), `{ type: 'menu' }` (= "hi"), `{ type: 'optout' }`.
+  An unknown payload (Manager-made template, another business's tpl: id) is
+  treated as typed text of the button's label. Opt-out = an optout action OR
+  payload/text in {stop, unsubscribe, stop promotions, stop promotion, opt out}
+  and reuses the STOP block (opted_out_at + 24 h pause + reply), so it works
+  while paused and mid-booking. Any other tap mid-booking re-sends the pending
+  question (never a booking answer); a customer with no language gets the
+  business's first enabled language (no picker). Migration
+  `20261005120000_message_templates_button_actions.sql` (apply BEFORE
+  deploying; the inbound routing tolerates the column missing, the API that
+  writes it does not). No feature switch: no business had a quick-reply
+  template or an inbound button message in the last 90 days (checked
+  2026-10-05, incl. Search cab AI). **Over-limit fix (c4c8135):** STOP / START
+  and opt-out taps are now processed (and confirmed) even when the business is
+  over its usage limit; every other over-limit message is still saved but gets
+  no reply and isn't counted. **4b (send + create):** QUICK_REPLY is in
+  `SENDABLE_BUTTON_TYPES`; `buildTemplateComponents` adds a `quick_reply`
+  component with the payload per quick-reply button, merged with URL buttons in
+  index order (`index` = position among ALL buttons); the broadcast controller
+  passes `quickReplyComponents` in the job data so the mapped-broadcast worker
+  (which rebuilds components per recipient without a template row) keeps them.
+  `POST /api/message-templates` accepts `{ type: 'QUICK_REPLY', text, action? }`
+  (≤3 buttons in all, text ≤25, quick replies grouped before or after the
+  URL / phone buttons; a node action must be a reply / question node of the
+  business); `PUT /api/message-templates/:id/button-actions { actions: [{
+  index, action }] }` (owner / superadmin) sets or clears actions on any
+  template incl. synced ones (replaces the whole list). A button with no action
+  acts on its label. `src/scripts/recomputeSendSupport.js` (dry run by
+  default, `--confirm` writes, only where the stored value is unchanged)
+  rewrites stored `send_support` after a rule change - a dry run on
+  2026-10-05 found nothing to change (6 templates). Open: Meta's own "Stop
+  promotions" button has not been captured live (detection is by label, see
+  above); localized labels are unknown.
 - 2026-10-05: Create templates with media header, footer, language and
   buttons (#6 Phase 3, built, not yet deployed; no migration). `POST
   /api/message-templates` takes `language` (en_US | hi | mr), `header
@@ -601,7 +653,7 @@ tracked as a deferred "future initiative" — it's built and live.
   (`mediaId` = a `business_media` file, required for media headers),
   `footerText`, `buttons` (≤3: URL `{ text, url, dynamic?, example? }` — dynamic
   = one trailing `{{1}}` + example; PHONE_NUMBER `{ text, phone }` E.164; no
-  QUICK_REPLY until Phase 4). The full components are stored in
+  QUICK_REPLY until Phase 4 - see the Phase 4 entry above). The full components are stored in
   `meta_components` (same shape as synced templates) with `header_media_*` set
   and `send_support` computed, so the template is sendable once approved.
   Validation is shared (`utils/templateValidation.js`, run at create and
@@ -628,7 +680,8 @@ tracked as a deferred "future initiative" — it's built and live.
   (`{{1}}` suffix) are filled from mapping entries with `target: 'header' |
   'button'` (+ `buttonIndex`) — body entries are unchanged
   (`utils/templateMapping.js`). Static / phone buttons need nothing; quick
-  reply, copy code, flow, catalog and OTP buttons stay `unsupported_component`.
+  reply buttons became sendable in Phase 4 (see above); copy code, flow,
+  catalog and OTP stay `unsupported_component`.
   `utils/templateSendSupport.js#computeSendSupport` is the one sendability
   rule (sync, header-media endpoint, and re-run at send time inside
   `isTemplateUsable` / the follow-up sweep, which skips with

@@ -89,12 +89,12 @@ test('send_support: computed from components', () => {
     [[{ type: 'HEADER', format: 'IMAGE' }, body], { headerMediaUrl: 'https://r2/x.jpeg' }, 'ok'],
     [[{ type: 'HEADER', format: 'IMAGE' }, body], { headerMediaUrl: 'https://r2/x.webp' }, 'needs_header_media'],
     [[{ type: 'HEADER', format: 'LOCATION' }, body], {}, 'unsupported_component'],
-    [[body, { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Yes' }] }], {}, 'unsupported_component'],
+    [[body, { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Yes' }] }], {}, 'ok'],
     [[body, { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Go', url: 'https://x.com/a' }] }], {}, 'ok'], // static URL
     [[body, { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Go', url: 'https://x.com/{{1}}' }] }], {}, 'ok'], // dynamic URL
     [[body, { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Go', url: 'https://x.com/{{1}}/{{2}}' }] }], {}, 'unsupported_component'],
     [[body, { type: 'BUTTONS', buttons: [{ type: 'PHONE_NUMBER', text: 'Call', phone_number: '+911234567890' }] }], {}, 'ok'],
-    [[body, { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Go', url: 'https://x.com' }, { type: 'QUICK_REPLY', text: 'Yes' }] }], {}, 'unsupported_component'],
+    [[body, { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Go', url: 'https://x.com' }, { type: 'QUICK_REPLY', text: 'Yes' }] }], {}, 'ok'],
     ...['COPY_CODE', 'FLOW', 'CATALOG', 'OTP', 'MPM', 'SPM'].map(type => [[body, { type: 'BUTTONS', buttons: [{ type, text: 'x' }] }], {}, 'unsupported_component']),
     [[{ type: 'HEADER', format: 'IMAGE' }, body, { type: 'BUTTONS', buttons: [] }], {}, 'needs_header_media'],
     [[{ type: 'CAROUSEL', cards: [] }], {}, 'unsupported_component']
@@ -408,4 +408,25 @@ test('a sync already running for the business is refused, not run twice', async 
   await assert.rejects(svc.runSync('b', { now: NOW, fetchTemplates: async () => [] }), (e) => e.status === 429);
   release();
   await first;
+});
+
+// ── Phase 4b: owner-set quick-reply actions survive a sync ──
+
+test('sync never writes button_actions; a button Meta renamed is just a text mismatch at tap time', () => {
+  const existing = {
+    id: 'r1', business_id: 'b', meta_template_id: '100', name: 'promo', language: 'en_US', status: 'approved', category: 'MARKETING',
+    body_text: 'Hi', header_type: 'NONE', variable_count: 0, send_support: 'unsupported_component',
+    meta_components: [{ type: 'BODY', text: 'Hi' }, { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Yes' }] }],
+    button_actions: [{ index: 0, text: 'Yes', action: { type: 'menu' } }]
+  };
+  const listed = [{
+    id: '100', name: 'promo', language: 'en_US', status: 'APPROVED', category: 'MARKETING',
+    components: [{ type: 'BODY', text: 'Hi' }, { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Yeah' }] }]
+  }];
+  const p = plan([existing], listed);
+  assert.equal(p.updates.length, 1);
+  assert.equal('button_actions' in p.updates[0].fields, false);
+  assert.ok(p.updates[0].changes.includes('meta_components'));
+  assert.ok(p.updates[0].changes.includes('send_support')); // a stored unsupported_component is rewritten to ok
+  assert.equal(p.updates[0].fields.send_support, 'ok');
 });

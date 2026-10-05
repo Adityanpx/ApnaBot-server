@@ -28,6 +28,7 @@ stub('../controllers/messageTemplate.controller', {
   getMessageTemplates: reached('getMessageTemplates'),
   syncMessageTemplates: reached('syncMessageTemplates'),
   setHeaderMedia: reached('setHeaderMedia'),
+  setButtonActions: reached('setButtonActions'),
   createMessageTemplate: reached('createMessageTemplate'),
   uploadHeaderImage: reached('uploadHeaderImage'),
   submitMessageTemplate: reached('submitMessageTemplate'),
@@ -59,6 +60,7 @@ const WRITES = [
   ['POST', '/message-templates'],
   ['POST', '/message-templates/sync'],
   ['PUT', '/message-templates/x/header-media'],
+  ['PUT', '/message-templates/x/button-actions'],
   ['POST', '/message-templates/upload-header-image'],
   ['POST', '/message-templates/x/submit'],
   ['DELETE', '/message-templates/x']

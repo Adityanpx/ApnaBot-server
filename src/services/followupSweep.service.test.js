@@ -684,8 +684,8 @@ test('send-time re-check: header media removed since the automation was saved �
   assert.equal(lastReason(), 'template_needs_header_media');
 });
 
-test('send-time re-check: a quick-reply button added in WhatsApp Manager → skipped (template_unsupported_component)', async () => {
-  resetRich({ meta_components: [...richComponents.slice(0, 2), { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Yes' }] }] });
+test('send-time re-check: a copy-code button added in WhatsApp Manager → skipped (template_unsupported_component)', async () => {
+  resetRich({ meta_components: [...richComponents.slice(0, 2), { type: 'BUTTONS', buttons: [{ type: 'COPY_CODE', text: 'Yes' }] }] });
   await sweep();
   assert.equal(sendCalls.length, 0);
   assert.equal(db.followup_sends[0].status, 'skipped');

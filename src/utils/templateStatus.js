@@ -46,7 +46,7 @@ const templateStatusFromMeta = (metaStatus) =>
 const SEND_SUPPORT_REASON = {
   needs_header_media: 'its header needs an image, video or PDF attached in ApnaBot first',
   unsupported_named_params: "it uses named variables ({{name}}), which ApnaBot can't fill yet",
-  unsupported_component: "it has buttons (quick reply, copy code, ...) or another part ApnaBot can't send yet"
+  unsupported_component: "it has buttons (copy code, flow, ...) or another part ApnaBot can't send yet"
 };
 
 /**

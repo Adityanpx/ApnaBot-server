@@ -10,6 +10,8 @@ const {
   HEADER_TYPES, HEADER_MEDIA_TYPE, checkBodyVariables, validateName, validateCategory, validateLanguage, validateComponents, validateHeaderMedia
 } = require('../utils/templateValidation');
 const { buildComponentsFromInput } = require('../utils/templateBuild');
+const { buildButtonActions } = require('../utils/templateButtonTap');
+const { checkActionNodes } = require('../services/templateButtonTap.service');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
@@ -123,11 +125,54 @@ const setHeaderMedia = async (req, res, next) => {
 };
 
 /**
+ * PUT /api/message-templates/:id/button-actions  { actions: [{ index, action }] }
+ * Set what ApnaBot does when a customer taps each QUICK_REPLY button of this
+ * template (any status, synced templates included). Replaces the template's
+ * whole button_actions list: a button left out, or sent with a null action,
+ * has none (a tap then acts on the button's text). An action is
+ * { type: 'keyword', keyword } | { type: 'node', nodeId } (a reply or question
+ * node of this business's flow) | { type: 'menu' } | { type: 'optout' }.
+ */
+const setButtonActions = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const businessId = req.user.businessId;
+
+    const { data: templateRow, error: templateErr } = await supabase
+      .from('message_templates').select('*').eq('id', id).eq('business_id', businessId).maybeSingle();
+    if (templateErr) throw templateErr;
+    if (!templateRow) {
+      return errorResponse(res, 404, 'Message template not found');
+    }
+
+    const { buttonActions, error: inputError } = buildButtonActions(templateRow, (req.body || {}).actions);
+    if (inputError) {
+      return errorResponse(res, 400, inputError);
+    }
+    const nodeError = await checkActionNodes(businessId, buttonActions);
+    if (nodeError) {
+      return errorResponse(res, 400, nodeError);
+    }
+
+    const { data: updated, error: updateErr } = await supabase.from('message_templates')
+      .update({ button_actions: buttonActions.length > 0 ? buttonActions : null })
+      .eq('id', id).eq('business_id', businessId).select().single();
+    if (updateErr) throw updateErr;
+
+    return successResponse(res, 200, { ...toCamelCase(updated), metaDeleted: !!updated.meta_deleted_at }, 'Button actions saved');
+  } catch (error) {
+    logger.error('Error in setButtonActions:', error);
+    next(error);
+  }
+};
+
+/**
  * POST /api/message-templates
  * Create a message template as draft.
  *   { name, category?, language? (en_US | hi | mr), bodyText, variableSamples?,
  *     header?: { type: NONE|TEXT|IMAGE|VIDEO|DOCUMENT, text?, textSample?, mediaId? },
- *     footerText?, buttons?: [{ type: 'URL', text, url, dynamic?, example? } | { type: 'PHONE_NUMBER', text, phone }] }
+ *     footerText?, buttons?: [{ type: 'URL', text, url, dynamic?, example? } | { type: 'PHONE_NUMBER', text, phone }
+ *       | { type: 'QUICK_REPLY', text, action? }] }  (up to 3 buttons; quick replies grouped together)
  * The full components are stored in the same shape as synced templates; a media
  * header's file comes from the business media library (header.mediaId), so the
  * template is sendable as soon as Meta approves it.
@@ -185,10 +230,14 @@ const createMessageTemplate = async (req, res, next) => {
       media = data;
     }
 
-    const { components, errors: shapeErrors } = buildComponentsFromInput({ header, bodyText, variableSamples, footerText, buttons });
+    const { components, errors: shapeErrors, buttonActions } = buildComponentsFromInput({ header, bodyText, variableSamples, footerText, buttons });
     const errors = [...shapeErrors, ...validateComponents(components)];
     if (errors.length > 0) {
       return errorResponse(res, 400, errors[0], errors);
+    }
+    const nodeError = await checkActionNodes(businessId, buttonActions);
+    if (nodeError) {
+      return errorResponse(res, 400, nodeError);
     }
 
     const row = {
@@ -205,7 +254,8 @@ const createMessageTemplate = async (req, res, next) => {
       header_media_url: media ? media.url : null,
       header_media_id: media ? media.id : null,
       header_media_filename: media && header.type === 'DOCUMENT' ? (media.original_filename || null) : null,
-      meta_components: components
+      meta_components: components,
+      ...(buttonActions.length > 0 ? { button_actions: buttonActions } : {})
     };
     row.send_support = computeSendSupport(row);
 
@@ -371,6 +421,7 @@ module.exports = {
   getMessageTemplates,
   syncMessageTemplates,
   setHeaderMedia,
+  setButtonActions,
   createMessageTemplate,
   uploadHeaderImage,
   submitMessageTemplate,

@@ -7,7 +7,7 @@ const rateCardService = require('../services/rateCard.service');
 const { addToBroadcastQueue } = require('../queues/broadcast.queue');
 const { normalizeAudience, resolveAudience, businessGroupIds } = require('../services/broadcastAudience.service');
 const { isTemplateUsable, sendSupportBlockReason } = require('../utils/templateStatus');
-const { buildTemplateComponents } = require('../utils/templateComponents');
+const { buildTemplateComponents, buildQuickReplyComponents } = require('../utils/templateComponents');
 const { requiredParams, splitMapping, checkParamCounts, targetOf } = require('../utils/templateMapping');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
@@ -269,6 +269,9 @@ const sendBroadcast = async (req, res, next) => {
       templateName: templateRow.name,
       language: templateRow.language,
       components,
+      // The worker rebuilds components per recipient when there is a variable
+      // mapping (no template row there), so the quick-reply payloads ride along.
+      quickReplyComponents: buildQuickReplyComponents(templateRow),
       variableMapping: broadcastRow.variable_mapping || null,
       ratePerMessage,
       billed,

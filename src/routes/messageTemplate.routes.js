@@ -30,6 +30,9 @@ router.post(
 // PUT /:id/header-media - Attach a media-library file as the template's media header
 router.put('/:id/header-media', protect, requireBusiness, requireRole('owner', 'superadmin'), messageTemplateController.setHeaderMedia);
 
+// PUT /:id/button-actions - Set what each quick-reply button does when a customer taps it
+router.put('/:id/button-actions', protect, requireBusiness, requireRole('owner', 'superadmin'), messageTemplateController.setButtonActions);
+
 // POST /:id/submit - Submit template to Meta for review
 router.post('/:id/submit', protect, requireBusiness, requireRole('owner', 'superadmin'), messageTemplateController.submitMessageTemplate);
 

@@ -5,6 +5,8 @@
 // Payloads we send are "tpl:<templateId>:<buttonIndex>". A button whose payload
 // isn't ours (a template made in WhatsApp Manager, Meta's own "Stop promotions"
 // button) carries Meta's default - the button's text.
+const { buttonsOf } = require('./templateMapping');
+
 const TAP_PAYLOAD_PATTERN = /^tpl:([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}):(\d{1,2})$/i;
 
 const ACTION_TYPES = ['keyword', 'node', 'menu', 'optout'];
@@ -43,6 +45,48 @@ const isValidAction = (action) => {
   return true;
 };
 
+const ACTION_HELP = 'action must be { type: "keyword", keyword }, { type: "node", nodeId }, { type: "menu" } or { type: "optout" }';
+
+/** A valid action cut down to its known fields (keyword trimmed), or null. */
+const normalizeAction = (action) => {
+  if (!isValidAction(action)) return null;
+  if (action.type === 'keyword') return { type: 'keyword', keyword: action.keyword.trim() };
+  if (action.type === 'node') return { type: 'node', nodeId: action.nodeId };
+  return { type: action.type };
+};
+
+/**
+ * The button_actions value for a template from owner input
+ * [{ index, action }]: each index must be one of the template's QUICK_REPLY
+ * buttons; the button's current text is stored with it (a tap only uses an
+ * entry whose text still matches). A null / missing action removes that
+ * button's action. Whether a node id belongs to the business is the caller's
+ * check (templateButtonTap.service.js#checkActionNodes).
+ * @param {Object} template  message_templates row (snake_case)
+ * @param {Array<{ index: number, action?: Object|null }>} input
+ * @returns {{ buttonActions?: Array, error?: string }}
+ */
+const buildButtonActions = (template, input) => {
+  if (!Array.isArray(input)) return { error: 'actions must be a list of { index, action }' };
+  const buttons = buttonsOf(template);
+  const seen = new Set();
+  const buttonActions = [];
+  for (const entry of input) {
+    const index = entry && entry.index;
+    const button = Number.isInteger(index) ? buttons.find(b => b.index === index) : null;
+    if (!button || button.type !== 'QUICK_REPLY') {
+      return { error: 'index ' + JSON.stringify(index) + ' is not a quick-reply button of this template' };
+    }
+    if (seen.has(index)) return { error: 'button ' + index + ' has more than one entry' };
+    seen.add(index);
+    if (entry.action === null || entry.action === undefined) continue;
+    const action = normalizeAction(entry.action);
+    if (!action) return { error: 'Button ' + index + ': ' + ACTION_HELP };
+    buttonActions.push({ index, text: button.text, action });
+  }
+  return { buttonActions: buttonActions.sort((a, b) => a.index - b.index) };
+};
+
 /**
  * What a tap means.
  * @param {{ button: { payload?: string, text?: string }, template?: { button_actions?: Array }|null }} input
@@ -70,4 +114,6 @@ const decideTap = ({ button, template = null }) => {
   return typed ? { kind: 'text', text: typed } : null;
 };
 
-module.exports = { ACTION_TYPES, KEYWORD_MAX, buildTapPayload, parseTapPayload, isOptOutText, isValidAction, decideTap };
+module.exports = {
+  ACTION_TYPES, ACTION_HELP, KEYWORD_MAX, buildTapPayload, parseTapPayload, isOptOutText, isValidAction, normalizeAction, buildButtonActions, decideTap
+};

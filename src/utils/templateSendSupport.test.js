@@ -18,12 +18,19 @@ test('buttons: URL (static or one variable) and PHONE_NUMBER are sendable', () =
     { type: 'URL', text: 'Pay', url: 'https://p.example.com/{{1}}' }, { type: 'PHONE_NUMBER', text: 'Call', phone_number: '+91' })])), 'ok');
 });
 
-test('buttons: QUICK_REPLY, COPY_CODE, FLOW, CATALOG, OTP and anything else stay unsupported_component', () => {
-  for (const type of ['QUICK_REPLY', 'COPY_CODE', 'FLOW', 'CATALOG', 'OTP', 'MPM', 'SPM', 'VOICE_CALL', 'SOMETHING_NEW']) {
+test('buttons: COPY_CODE, FLOW, CATALOG, OTP and anything else stay unsupported_component', () => {
+  for (const type of ['COPY_CODE', 'FLOW', 'CATALOG', 'OTP', 'MPM', 'SPM', 'VOICE_CALL', 'SOMETHING_NEW']) {
     assert.equal(computeSendSupport(row([BODY, buttons({ type, text: 'x' })])), 'unsupported_component', type);
   }
   // one unsupported button spoils a mixed set
-  assert.equal(computeSendSupport(row([BODY, buttons({ type: 'URL', text: 'Pay', url: 'https://x.com' }, { type: 'QUICK_REPLY', text: 'Yes' })])), 'unsupported_component');
+  assert.equal(computeSendSupport(row([BODY, buttons({ type: 'URL', text: 'Pay', url: 'https://x.com' }, { type: 'COPY_CODE', text: 'Yes' })])), 'unsupported_component');
+});
+
+test('buttons: QUICK_REPLY is sendable, alone or with URL / phone buttons', () => {
+  const quick = { type: 'QUICK_REPLY', text: 'Yes' };
+  assert.equal(computeSendSupport(row([BODY, buttons(quick)])), 'ok');
+  assert.equal(computeSendSupport(row([BODY, buttons(quick, { type: 'URL', text: 'Pay', url: 'https://x.com' })])), 'ok');
+  assert.equal(computeSendSupport(row([BODY, buttons({ type: 'PHONE_NUMBER', text: 'Call', phone_number: '+911234567890' }, quick, { type: 'QUICK_REPLY', text: 'No' })])), 'ok');
 });
 
 test('buttons: a URL with several variables, or no url at all, is unsupported_component', () => {
@@ -65,6 +72,6 @@ test('effectiveSendSupport: a stale stored ok no longer sends once the row stopp
   assert.equal(isTemplateUsable(stale), false);
   // and the stored value still blocks on its own
   assert.equal(effectiveSendSupport({ send_support: 'unsupported_component', header_type: 'NONE', body_text: 'Hi' }), 'unsupported_component');
-  // quick reply added in WhatsApp Manager and synced into meta_components, column not yet rewritten
-  assert.equal(isTemplateUsable({ status: 'approved', send_support: 'ok', meta_components: [BODY, buttons({ type: 'QUICK_REPLY', text: 'Yes' })], body_text: 'Hi' }), false);
+  // copy-code button added in WhatsApp Manager and synced into meta_components, column not yet rewritten
+  assert.equal(isTemplateUsable({ status: 'approved', send_support: 'ok', meta_components: [BODY, buttons({ type: 'COPY_CODE', text: 'Yes' })], body_text: 'Hi' }), false);
 });

@@ -42,7 +42,7 @@ const headerFormatOf = (template) => {
   return header && typeof header.format === 'string' ? header.format.toUpperCase() : null;
 };
 
-/** Button type → what we call it. Only URL and PHONE_NUMBER can be sent. */
+/** The template's buttons with their position (Meta's index). URL, PHONE_NUMBER and QUICK_REPLY can be sent. */
 const buttonsOf = (template) => {
   const component = componentOfType(template, 'BUTTONS');
   const list = component && Array.isArray(component.buttons) ? component.buttons : [];

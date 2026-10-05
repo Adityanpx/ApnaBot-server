@@ -106,8 +106,8 @@ test('send-time re-check: a media template whose media is gone is not sent and n
   assert.equal(sent.length + wallet.length + messages.length, 0);
 });
 
-test('send-time re-check: a template that gained a quick-reply button is not sent', async () => {
-  const tpl = { ...base, header_type: 'NONE', meta_components: [{ type: 'BODY', text: 'Hi {{1}}' }, { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Yes' }] }] };
+test('send-time re-check: a template that gained a copy-code button is not sent', async () => {
+  const tpl = { ...base, header_type: 'NONE', meta_components: [{ type: 'BODY', text: 'Hi {{1}}' }, { type: 'BUTTONS', buttons: [{ type: 'COPY_CODE', text: 'Yes' }] }] };
   assert.deepEqual(await sendWindowAwareMessage(business, closedCustomer(), opts(tpl)), { sent: false, code: 'no_template' });
   assert.equal(sent.length + wallet.length, 0);
 });

@@ -93,8 +93,8 @@ test('phone and static URL buttons need no mapping entries', () => {
   assert.ok(validate(bodyMap, plain).value);
 });
 
-test('quick reply / copy code / flow / catalog / OTP buttons stay refused (unsupported_component)', () => {
-  for (const type of ['QUICK_REPLY', 'COPY_CODE', 'FLOW', 'CATALOG', 'OTP']) {
+test('copy code / flow / catalog / OTP buttons stay refused (unsupported_component)', () => {
+  for (const type of ['COPY_CODE', 'FLOW', 'CATALOG', 'OTP']) {
     const t = utility({ meta_components: [{ type: 'BODY', text: 'Hi {{1}}, pay for {{2}}' }, { type: 'BUTTONS', buttons: [{ type, text: 'x' }] }] });
     assert.match(validate(bodyMap, t).error, /can't be sent by ApnaBot yet — it has buttons/, type);
   }

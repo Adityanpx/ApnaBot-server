@@ -5,8 +5,8 @@
 // with a reason instead of being sent as something Meta rejects.
 //
 //   unsupported_named_params  parameter_format NAMED ({{name}} variables)
-//   unsupported_component     a button we can't send (QUICK_REPLY, COPY_CODE, FLOW,
-//                             CATALOG, OTP, ...), a URL with several variables, a
+//   unsupported_component     a button we can't send (COPY_CODE, FLOW, CATALOG, OTP,
+//                             ...), a URL with several variables, a
 //                             TEXT header with several variables, a LOCATION /
 //                             unknown header, or any component but header / body /
 //                             footer / buttons
@@ -14,12 +14,14 @@
 //                             right type attached
 //   ok                        everything else: body variables, one TEXT header
 //                             variable, static or dynamic URL buttons, phone
-//                             buttons (FOOTER and a variable-free header are
+//                             buttons, quick-reply buttons (sent with a
+//                             tpl:<id>:<index> payload; see templateButtonTap.js)
+//                             (FOOTER and a variable-free header are
 //                             added by Meta — nothing to send)
 // Checked in that order when several apply. Pure.
 const { componentsOf, componentOfType, headerFormatOf, buttonsOf, countPositional, countNamed } = require('./templateMapping');
 
-const SENDABLE_BUTTON_TYPES = ['URL', 'PHONE_NUMBER'];
+const SENDABLE_BUTTON_TYPES = ['URL', 'PHONE_NUMBER', 'QUICK_REPLY'];
 
 // File extension (as r2.uploadImage writes it: the mimetype's subtype) each
 // header format can be sent from. An unknown / missing extension isn't judged.

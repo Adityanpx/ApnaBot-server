@@ -8,19 +8,25 @@
 //   { type: 'BODY', text, example?: { body_text: [[s, ...]] } }
 //   { type: 'FOOTER', text }
 //   { type: 'BUTTONS', buttons: [{ type: 'URL', text, url, example?: [fullUrl] }
-//                               | { type: 'PHONE_NUMBER', text, phone_number }] }
+//                               | { type: 'PHONE_NUMBER', text, phone_number }
+//                               | { type: 'QUICK_REPLY', text }] }
 // A media header stores no example: its header_handle only exists at submit.
 const { HEADER_TYPES, HEADER_MEDIA_TYPE, checkBodyVariables } = require('./templateValidation');
+const { normalizeAction, ACTION_HELP } = require('./templateButtonTap');
 
 /**
  * Components for the create API's input. Shape problems come back as `errors`
  * (a field of the wrong kind); content rules are templateValidation's job.
  * @param {{ header?: Object, bodyText: string, variableSamples?: string[], footerText?: string, buttons?: Array }} input
- * @returns {{ components: Array, errors: string[] }}
+ * A QUICK_REPLY button may carry `action` (what a tap does, see templateButtonTap.js);
+ * it is not part of the components - it comes back as `buttonActions` for
+ * message_templates.button_actions, indexed by the button's position.
+ * @returns {{ components: Array, errors: string[], buttonActions: Array }}
  */
 const buildComponentsFromInput = ({ header, bodyText, variableSamples, footerText, buttons } = {}) => {
   const errors = [];
   const components = [];
+  const buttonActions = [];
 
   if (header !== undefined && header !== null) {
     const type = header.type;
@@ -50,8 +56,15 @@ const buildComponentsFromInput = ({ header, bodyText, variableSamples, footerTex
       const stored = [];
       buttons.forEach((b, i) => {
         const label = `Button ${i + 1}`;
-        if (!b || b.type === 'QUICK_REPLY') {
-          errors.push(`${label}: quick-reply buttons are not supported yet - use URL or PHONE_NUMBER.`);
+        if (!b) {
+          errors.push(`${label}: type must be URL, PHONE_NUMBER or QUICK_REPLY.`);
+        } else if (b.type === 'QUICK_REPLY') {
+          stored.push({ type: 'QUICK_REPLY', text: b.text });
+          if (b.action !== undefined && b.action !== null) {
+            const action = normalizeAction(b.action);
+            if (action) buttonActions.push({ index: i, text: typeof b.text === 'string' ? b.text.trim() : b.text, action });
+            else errors.push(`${label}: ${ACTION_HELP}.`);
+          }
         } else if (b.type === 'URL') {
           const hasVar = typeof b.url === 'string' && /\{\{/.test(b.url);
           if (b.dynamic && !/\{\{1\}\}$/.test(b.url || '')) {
@@ -65,13 +78,13 @@ const buildComponentsFromInput = ({ header, bodyText, variableSamples, footerTex
         } else if (b.type === 'PHONE_NUMBER') {
           stored.push({ type: 'PHONE_NUMBER', text: b.text, phone_number: b.phone });
         } else {
-          errors.push(`${label}: type must be URL or PHONE_NUMBER.`);
+          errors.push(`${label}: type must be URL, PHONE_NUMBER or QUICK_REPLY.`);
         }
       });
       components.push({ type: 'BUTTONS', buttons: stored });
     }
   }
-  return { components, errors };
+  return { components, errors, buttonActions };
 };
 
 /**
@@ -117,6 +130,7 @@ const componentsForSubmit = (row) => {
             return { type: 'URL', text: b.text, url: b.url, ...(Array.isArray(b.example) ? { example: b.example } : {}) };
           }
           if (b && b.type === 'PHONE_NUMBER') return { type: 'PHONE_NUMBER', text: b.text, phone_number: b.phone_number };
+          if (b && b.type === 'QUICK_REPLY') return { type: 'QUICK_REPLY', text: b.text };
           return b;
         })
       });
