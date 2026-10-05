@@ -19,6 +19,7 @@ const { isIndefinitePause } = require('../utils/botPause');
 const { parseJoinCode, isSystemTapId, parseOptInTapId, OPT_IN_YES_PREFIX, OPT_IN_NO_PREFIX } = require('../utils/optInLink');
 const optInLinkService = require('../services/optInLink.service');
 const { templateStatusForEvent } = require('../utils/templateStatus');
+const { updateTemplateForWebhook, qualityUpdateFields, categoryUpdateFields } = require('../services/templateWebhook.service');
 const whatsappService = require('../services/whatsapp.service');
 const r2 = require('../services/r2.service');
 const logger = require('../utils/logger');
@@ -762,41 +763,23 @@ const receiveWebhook = async (req, res) => {
 
       const updateFields = {
         status: mappedStatus,
+        // Meta's listing never says REINSTATED — it's APPROVED again there.
+        meta_status: templateEvent === 'REINSTATED' ? 'APPROVED' : templateEvent,
+        meta_deleted_at: null,
         reviewed_at: new Date().toISOString(),
         rejection_reason: mappedStatus === 'rejected' ? (rejectionReason || null) : null
       };
 
-      let updatedTemplate = null;
-      if (metaTemplateId) {
-        const { data, error } = await supabase
-          .from('message_templates')
-          .update(updateFields)
-          .eq('meta_template_id', metaTemplateId)
-          .select()
-          .maybeSingle();
-        if (error) {
-          logger.error('Error updating message_templates by meta_template_id:', error);
-          return;
-        }
-        updatedTemplate = data;
-      }
-
-      // Legacy fallback: submitMessageTemplate always sets meta_template_id
-      // together with status 'pending', so this only matters for a row that
-      // predates that flow or otherwise never got meta_template_id persisted.
-      if (!updatedTemplate && templateName) {
-        const { data, error } = await supabase
-          .from('message_templates')
-          .update(updateFields)
-          .eq('name', templateName)
-          .is('meta_template_id', null)
-          .select()
-          .maybeSingle();
-        if (error) {
-          logger.error('Error updating message_templates by name fallback:', error);
-          return;
-        }
-        updatedTemplate = data;
+      // By Meta's template id; the legacy name fallback (a row that never got
+      // meta_template_id persisted) is scoped to the business that owns this
+      // event's WABA (entry.id) — see services/templateWebhook.service.js.
+      const { row: updatedTemplate, error: updateError } = await updateTemplateForWebhook(
+        { metaTemplateId, name: templateName, language: value?.message_template_language, wabaId: entry?.id },
+        updateFields
+      );
+      if (updateError) {
+        logger.error('Error updating message_templates for status update:', updateError);
+        return;
       }
 
       if (!updatedTemplate) {
@@ -818,6 +801,53 @@ const receiveWebhook = async (req, res) => {
         });
       } catch (socketErr) {
         logger.error('Error emitting template_status_update socket event:', socketErr);
+      }
+
+      return;
+    }
+
+    // Quality rating / category changes on a template (Meta moves a template
+    // between MARKETING and UTILITY, or its quality goes GREEN/YELLOW/RED).
+    if (changes?.field === 'message_template_quality_update' || changes?.field === 'template_category_update') {
+      const updateFields = changes.field === 'template_category_update' ? categoryUpdateFields(value) : qualityUpdateFields(value);
+      if (!updateFields) {
+        logger.warn(`Template webhook ${changes.field} carries nothing to store, skipping`, { metaTemplateId: value?.message_template_id });
+        return;
+      }
+
+      const { row: updatedTemplate, error: updateError } = await updateTemplateForWebhook(
+        {
+          metaTemplateId: value?.message_template_id,
+          name: value?.message_template_name,
+          language: value?.message_template_language,
+          wabaId: entry?.id
+        },
+        updateFields
+      );
+      if (updateError) {
+        logger.error(`Error updating message_templates for ${changes.field}:`, updateError);
+        return;
+      }
+      if (!updatedTemplate) {
+        logger.warn(`No message_templates row found for ${changes.field}`, {
+          metaTemplateId: value?.message_template_id,
+          templateName: value?.message_template_name
+        });
+        return;
+      }
+
+      try {
+        socketService.emitToBusiness(updatedTemplate.business_id, 'template_status_update', {
+          templateId: updatedTemplate.id,
+          metaTemplateId: updatedTemplate.meta_template_id,
+          name: updatedTemplate.name,
+          status: updatedTemplate.status,
+          rejectionReason: updatedTemplate.rejection_reason,
+          category: updatedTemplate.category,
+          qualityScore: updatedTemplate.quality_score
+        });
+      } catch (socketErr) {
+        logger.error(`Error emitting template_status_update socket event (${changes.field}):`, socketErr);
       }
 
       return;

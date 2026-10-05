@@ -91,3 +91,37 @@ test('send with billing off: no debit, and the job says it was not billed', asyn
   assert.equal(debits.length, 0);
   assert.equal(queued[0].billed, false);
 });
+
+const BLOCKED = ['needs_header_media', 'unsupported_named_params', 'unsupported_component'];
+
+test('create: an approved template ApnaBot can\'t send yet (send_support not ok) is refused', async () => {
+  for (const send_support of BLOCKED) {
+    templateRow = { ...tpl('approved'), send_support };
+    const res = await call(createBroadcast, { body: { name: 'Diwali', templateId: 't' } });
+    assert.equal(res.statusCode, 400, send_support);
+    assert.match(res.body.message, /can't be used for a broadcast yet/);
+  }
+  assert.equal(inserted.length, 0);
+});
+
+test('send: a draft whose template is not send_support ok is refused, nothing queued or debited', async () => {
+  for (const send_support of BLOCKED) {
+    templateRow = { ...tpl('approved'), send_support };
+    const res = await call(sendBroadcast, { params: { id: 'bc' } });
+    assert.equal(res.statusCode, 400, send_support);
+    assert.match(res.body.message, /can't be sent yet/);
+  }
+  assert.equal(queued.length + debits.length, 0);
+});
+
+test('approved + send_support ok goes through (create and send)', async () => {
+  templateRow = { ...tpl('approved'), send_support: 'ok' };
+  assert.equal((await call(createBroadcast, { body: { name: 'Diwali', templateId: 't' } })).statusCode, 201);
+  assert.equal((await call(sendBroadcast, { params: { id: 'bc' } })).statusCode, 200);
+});
+
+test('a deleted (soft) template is not approved: refused', async () => {
+  templateRow = { ...tpl('deleted'), send_support: 'ok' };
+  assert.equal((await call(createBroadcast, { body: { name: 'Diwali', templateId: 't' } })).statusCode, 400);
+  assert.equal((await call(sendBroadcast, { params: { id: 'bc' } })).statusCode, 400);
+});

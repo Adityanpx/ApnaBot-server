@@ -16,7 +16,7 @@ const { toCamelCase } = require('../utils/caseConvert');
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const SENT_STATUSES = ['sent_text', 'sent_template'];
-const TEMPLATE_COLUMNS = 'id, name, status, category, language, body_text, header_type';
+const TEMPLATE_COLUMNS = 'id, name, status, category, language, body_text, header_type, send_support';
 
 const toApi = (row) => {
   const { template, ...rest } = row;
@@ -169,14 +169,14 @@ const listSends = async (businessId, automationId, { page = 1, limit = 20 } = {}
 const presets = () => presetsForWeb();
 
 /**
- * The business's templates a follow-up can send: approved and body-only (no
- * image header). The web narrows further per preset with its templateFilter
- * (category).
+ * The business's templates a follow-up can send: approved, body-only (no
+ * image header) and send_support 'ok'. The web narrows further per preset
+ * with its templateFilter (category).
  */
 const listTemplates = async (businessId) => {
   const { data, error } = await supabase.from('message_templates')
     .select('id, name, category, language, body_text, header_type')
-    .eq('business_id', businessId).eq('status', 'approved').eq('header_type', 'NONE')
+    .eq('business_id', businessId).eq('status', 'approved').eq('send_support', 'ok').eq('header_type', 'NONE')
     .order('name', { ascending: true });
   if (error) throw error;
   return (data || []).map(t => ({

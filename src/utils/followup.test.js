@@ -317,3 +317,14 @@ test('presets carry the template filter the web dropdown applies', () => {
   assert.deepEqual(byKey.review_request.templateFilter, utility);
   assert.deepEqual(byKey.payment_pending.templateFilter, utility);
 });
+
+test('a template ApnaBot can\'t send yet (send_support not ok) is refused', () => {
+  const base = { preset: 'win_back', name: 'W', templateId: 't1', templateVariableMapping: nameMapping };
+  for (const send_support of ['needs_header_media', 'unsupported_named_params', 'unsupported_component']) {
+    const r = f.validateAutomation(base, { templateRow: marketingTpl({ send_support }) });
+    assert.match(r.error, /can't be sent by ApnaBot yet/, send_support);
+  }
+  assert.ok(f.validateAutomation(base, { templateRow: marketingTpl({ send_support: 'ok' }) }).value);
+  // 'deleted' (soft) is not approved either
+  assert.match(f.validateAutomation(base, { templateRow: marketingTpl({ status: 'deleted' }) }).error, /not approved/);
+});

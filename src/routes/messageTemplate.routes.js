@@ -5,11 +5,14 @@ const { protect, requireBusiness } = require('../middleware/auth.middleware');
 const { requireRole } = require('../middleware/role.middleware');
 const { uploadSingle } = require('../middleware/upload.middleware');
 
-// All routes require: protect, requireBusiness. Create / submit / delete are
+// All routes require: protect, requireBusiness. Sync / create / submit / delete are
 // owner / superadmin only; staff can still list templates.
 
 // GET / - List message templates
 router.get('/', protect, requireBusiness, messageTemplateController.getMessageTemplates);
+
+// POST /sync - Pull this business's templates from WhatsApp (1/min per business)
+router.post('/sync', protect, requireBusiness, requireRole('owner', 'superadmin'), messageTemplateController.syncMessageTemplates);
 
 // POST / - Create message template (draft)
 router.post('/', protect, requireBusiness, requireRole('owner', 'superadmin'), messageTemplateController.createMessageTemplate);

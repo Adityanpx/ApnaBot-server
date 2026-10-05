@@ -6,6 +6,7 @@ const walletService = require('../services/wallet.service');
 const rateCardService = require('../services/rateCard.service');
 const { addToBroadcastQueue } = require('../queues/broadcast.queue');
 const { normalizeAudience, resolveAudience, businessGroupIds } = require('../services/broadcastAudience.service');
+const { isTemplateUsable, sendSupportBlockReason } = require('../utils/templateStatus');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
@@ -77,6 +78,9 @@ const createBroadcast = async (req, res, next) => {
     if (templateRow.status !== 'approved') {
       return errorResponse(res, 400, 'Only approved templates can be used for a broadcast');
     }
+    if (!isTemplateUsable(templateRow)) {
+      return errorResponse(res, 400, `This template can't be used for a broadcast yet: ${sendSupportBlockReason(templateRow)}`);
+    }
 
     const requiredVariableCount = countTemplateVariables(templateRow.body_text);
     if (requiredVariableCount > 0) {
@@ -131,6 +135,9 @@ const sendBroadcast = async (req, res, next) => {
     if (templateErr) throw templateErr;
     if (!templateRow || templateRow.status !== 'approved') {
       return errorResponse(res, 400, 'This broadcast\'s template is no longer approved');
+    }
+    if (!isTemplateUsable(templateRow)) {
+      return errorResponse(res, 400, `This broadcast's template can't be sent yet: ${sendSupportBlockReason(templateRow)}`);
     }
 
     const requiredVariableCount = countTemplateVariables(templateRow.body_text);

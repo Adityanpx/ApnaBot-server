@@ -16,6 +16,7 @@ const rateCardService = require('./rateCard.service');
 const whatsappService = require('./whatsapp.service');
 const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
 const { toCamelCase } = require('../utils/caseConvert');
+const { isTemplateUsable } = require('../utils/templateStatus');
 const logger = require('../utils/logger');
 
 const FREE_FORM_WINDOW_MS = 24 * 60 * 60 * 1000; // same as message.controller.js
@@ -57,7 +58,7 @@ const recordOutbound = async (business, customerRow, text, status) => {
  * @param {Object} opts
  * @param {(languageCode: string|null) => string} opts.textFor  free-form text in the customer's language
  * @param {Object|null|(() => Promise<Object|null>)} opts.template
- *   message_templates row (sent only when status 'approved'), or a loader
+ *   message_templates row (sent only when status 'approved' and send_support 'ok'), or a loader
  *   called only when the window is closed
  * @param {string[]} opts.templateParams     body {{1}}..{{n}} values
  * @param {string} opts.templateText         the template as it reads in the chat
@@ -88,7 +89,7 @@ const sendWindowAwareMessage = async (business, customerRow, { textFor, template
   // Loaded only now (when given as a loader) so a window-open send never
   // depends on the template lookup.
   const templateRow = typeof template === 'function' ? await template() : template;
-  if (!templateRow || templateRow.status !== 'approved') return { sent: false, code: 'no_template' };
+  if (!isTemplateUsable(templateRow)) return { sent: false, code: 'no_template' };
 
   const ratePaise = config.WALLET_BILLING_ENABLED
     ? await rateCardService.getRateForMessage('IN', templateRow.category.toLowerCase())

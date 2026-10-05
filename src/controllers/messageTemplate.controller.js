@@ -5,6 +5,7 @@ const businessService = require('../services/business.service');
 const r2 = require('../services/r2.service');
 const { decrypt } = require('../utils/crypto');
 const { META_API_BASE } = require('../services/whatsapp.service');
+const templateSyncService = require('../services/templateSync.service');
 const config = require('../config/env');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
@@ -35,9 +36,38 @@ const getMessageTemplates = async (req, res, next) => {
       .from('message_templates').select('*').eq('business_id', businessId).order('created_at', { ascending: false });
     if (error) throw error;
 
-    return successResponse(res, 200, { templates: (data || []).map(toCamelCase) });
+    // source / qualityScore / sendSupport / lastSyncedAt come straight from the
+    // columns; metaDeleted says WhatsApp no longer lists the template.
+    const templates = (data || []).map((row) => ({ ...toCamelCase(row), metaDeleted: !!row.meta_deleted_at }));
+    return successResponse(res, 200, { templates });
   } catch (error) {
     logger.error('Error in getMessageTemplates:', error);
+    next(error);
+  }
+};
+
+/**
+ * POST /api/message-templates/sync
+ * Pull the business's templates from WhatsApp (services/templateSync.service.js).
+ * One sync per business per minute.
+ */
+const syncMessageTemplates = async (req, res, next) => {
+  try {
+    const { summary } = await templateSyncService.runSync(req.user.businessId);
+    return successResponse(res, 200, summary, 'Templates synced from WhatsApp');
+  } catch (error) {
+    if (error.name === 'SyncThrottledError') {
+      res.set('Retry-After', String(error.retryAfterSeconds));
+      return errorResponse(res, 429, error.message);
+    }
+    if (error.status === 400) {
+      return errorResponse(res, 400, error.message);
+    }
+    if (error.response) {
+      logger.error('Error syncing templates from Meta:', { businessId: req.user.businessId, error: error.response.data || error.message });
+      return errorResponse(res, 502, 'Could not fetch templates from WhatsApp. Please try again in a few minutes.', error.response.data || error.message);
+    }
+    logger.error('Error in syncMessageTemplates:', error);
     next(error);
   }
 };
@@ -88,7 +118,14 @@ const createMessageTemplate = async (req, res, next) => {
       header_image_url: headerType === 'IMAGE' ? headerImageUrl : null,
       header_image_r2_key: headerType === 'IMAGE' ? headerImageR2Key : null
     }).select().single();
-    if (error) throw error;
+    if (error) {
+      // uq_msg_templates_business_name_lang_unregistered: one not-yet-submitted
+      // template per name + language (the sync adopts by that pair).
+      if (error.code === '23505') {
+        return errorResponse(res, 400, 'You already have a template with this name and language that has not been submitted yet. Submit or delete it first.');
+      }
+      throw error;
+    }
 
     return successResponse(res, 201, toCamelCase(template), 'Message template created successfully');
   } catch (error) {
@@ -295,6 +332,7 @@ const deleteMessageTemplate = async (req, res, next) => {
 
 module.exports = {
   getMessageTemplates,
+  syncMessageTemplates,
   createMessageTemplate,
   uploadHeaderImage,
   submitMessageTemplate,

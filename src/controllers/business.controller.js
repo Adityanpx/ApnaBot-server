@@ -13,6 +13,7 @@ const config = require('../config/env');
 const { isValidLanguageCode, LANGUAGE_CATALOG } = require('../utils/languageCatalog');
 const { validateFlowFields } = require('../utils/flowFieldsValidation');
 const { META_API_BASE } = require('../services/whatsapp.service');
+const templateSyncService = require('../services/templateSync.service');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -596,6 +597,15 @@ const connectWhatsapp = async (req, res, next) => {
     // Invalidate caches after connecting so the new connection takes effect immediately
     await subscriptionService.invalidateSubscriptionCache(req.user.businessId.toString());
     await tenantService.invalidateTenantCache(phoneNumberId);
+
+    // Pull the WABA's existing templates in (fire and forget — the connection
+    // is already saved, so a failure here is only logged).
+    templateSyncService.runSync(req.user.businessId).catch((syncErr) => {
+      logger.error('connectWhatsapp: auto template sync failed', {
+        businessId: req.user.businessId,
+        error: syncErr.response?.data || syncErr.message
+      });
+    });
 
     // Remove accessToken from response (see getBusiness's comment on
     // flattenTravelSettings)

@@ -8,6 +8,7 @@
 const { getSystemMessage } = require('./systemMessages');
 const { getLocalizedText } = require('./localization');
 const { applyMessageTemplate } = require('./messageTemplating');
+const { isSendSupported, sendSupportBlockReason } = require('./templateStatus');
 
 const HOUR = 60;
 const DAY = 24 * HOUR;
@@ -355,6 +356,9 @@ const validateAutomation = (input, { templateRow = null } = {}) => {
     const expected = rule.templateCategory || messageCategory.toUpperCase();
     if (templateRow.category !== expected) {
       return { error: `Template "${templateRow.name}" is a ${templateRow.category} template; this automation needs a ${expected} template` };
+    }
+    if (!isSendSupported(templateRow)) {
+      return { error: `Template "${templateRow.name}" can't be sent by ApnaBot yet — ${sendSupportBlockReason(templateRow)}` };
     }
     if (templateRow.header_type && templateRow.header_type !== 'NONE') {
       return { error: `Template "${templateRow.name}" has an image header, which follow-ups can't send yet — pick a text-only template` };

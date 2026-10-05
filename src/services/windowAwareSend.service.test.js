@@ -189,3 +189,20 @@ test('isWindowOpen: open under 24h after the last inbound, closed after or with 
   assert.equal(isWindowOpen({ last_message_at: '2026-10-02T12:00:00Z' }, now), false);
   assert.equal(isWindowOpen({ last_message_at: null }, now), false);
 });
+
+test('window closed, approved template with send_support not ok: not sent, nothing charged', async () => {
+  reset();
+  const closed = customer({ last_message_at: new Date(Date.now() - 25 * HOUR).toISOString() });
+  for (const send_support of ['needs_header_media', 'unsupported_named_params', 'unsupported_component']) {
+    assert.deepEqual(await sendWindowAwareMessage(business, closed, opts({ template: { ...approved, send_support } })), { sent: false, code: 'no_template' }, send_support);
+  }
+  assert.deepEqual(await sendWindowAwareMessage(business, closed, opts({ template: { ...approved, status: 'deleted' } })), { sent: false, code: 'no_template' });
+  assert.equal(sent.length + wallet.length + messages.length, 0);
+});
+
+test('window closed, approved + send_support ok: sent', async () => {
+  reset();
+  const closed = customer({ last_message_at: new Date(Date.now() - 25 * HOUR).toISOString() });
+  const r = await sendWindowAwareMessage(business, closed, opts({ template: { ...approved, send_support: 'ok' } }));
+  assert.equal(r.sent, 'template');
+});
