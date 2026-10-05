@@ -67,6 +67,10 @@ const flattenTravelSettings = (business) => {
  * @returns {Promise<Object|null>}
  */
 const attachTravelSettings = async (business) => {
+  // Every business getter ends here: the encrypted 2-step-verification PIN is a
+  // secret that must never reach a controller response (read it with
+  // whatsappOnboarding.service#ensureRegisterPin instead).
+  if (business) delete business.whatsappRegisterPin;
   if (!business || !isTravelFeaturedCategory(business.businessCategory, business.subCategories)) {
     return business;
   }
@@ -354,7 +358,7 @@ const getServedCitySuggestions = async (businessId) => {
  */
 const connectWhatsapp = async (businessId, data) => {
   try {
-    const { phoneNumberId, wabaId, whatsappNumber, accessToken, displayName } = data;
+    const { phoneNumberId, wabaId, whatsappNumber, accessToken, displayName, onboardingType, connectedAt, resetCoexSync } = data;
 
     const encryptedAccessToken = encrypt(accessToken);
 
@@ -365,6 +369,14 @@ const connectWhatsapp = async (businessId, data) => {
       access_token: encryptedAccessToken,
       is_whatsapp_connected: true
     };
+
+    if (onboardingType) updateData.whatsapp_onboarding_type = onboardingType;
+    if (connectedAt) updateData.whatsapp_connected_at = connectedAt;
+    // A different number starts its own one-time syncs.
+    if (resetCoexSync) {
+      updateData.coex_contacts_sync_requested_at = null;
+      updateData.coex_history_sync_requested_at = null;
+    }
 
     if (displayName) {
       updateData.display_name = displayName;
@@ -379,6 +391,21 @@ const connectWhatsapp = async (businessId, data) => {
     logger.error('Error in connectWhatsapp:', error);
     throw error;
   }
+};
+
+/**
+ * Record which coexistence syncs Meta accepted (one-time per number).
+ * @param {string} businessId
+ * @param {{contacts:boolean, history:boolean}} accepted
+ */
+const markCoexSyncRequested = async (businessId, accepted) => {
+  const nowIso = new Date().toISOString();
+  const updateData = {};
+  if (accepted.contacts) updateData.coex_contacts_sync_requested_at = nowIso;
+  if (accepted.history) updateData.coex_history_sync_requested_at = nowIso;
+  if (Object.keys(updateData).length === 0) return;
+  const { error } = await supabase.from('businesses').update(updateData).eq('id', businessId);
+  if (error) throw error;
 };
 
 /**
@@ -483,6 +510,7 @@ module.exports = {
   updateFlowFields,
   getServedCitySuggestions,
   connectWhatsapp,
+  markCoexSyncRequested,
   disconnectWhatsapp,
   getDashboardStats
 };

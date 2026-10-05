@@ -94,6 +94,11 @@ module.exports = {
   // WALLET_BILLING_ENABLED=true once we're a Solution Partner and start
   // invoicing clients directly.
   WALLET_BILLING_ENABLED: process.env.WALLET_BILLING_ENABLED === 'true',
+  // Coexistence onboarding data syncs (smb_app_data contacts + history). Meta
+  // allows each ONCE per number, within 24h of onboarding, and the data comes
+  // back by webhook - so leave this off until the smb_app_state_sync / history
+  // webhook handlers are deployed, or the one-time sync is spent and lost.
+  COEXISTENCE_SYNC_ENABLED: process.env.COEXISTENCE_SYNC_ENABLED === 'true',
   // AI flow generation, Phase 1 (questionnaire/FlowSpec -> graph, no LLM).
   // Off by default: /api/flow-graph/ai is only mounted when this is 'true'
   // (see app.js), so the whole feature switches off in one place without

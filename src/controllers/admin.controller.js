@@ -80,7 +80,7 @@ const getBusinesses = async (req, res, next) => {
     }
 
     const businesses = rows.map((b) => {
-      const { access_token, ...safeRow } = b; // never expose encrypted token
+      const { access_token, whatsapp_register_pin, ...safeRow } = b; // never expose encrypted secrets
       const owner = ownersById[b.owner_user_id];
       let camelBusiness = { ...toCamelCase(safeRow), ownerUserId: owner ? toCamelCase(owner) : b.owner_user_id };
       if (isTravelFeaturedCategory(b.business_category, b.sub_categories)) {
@@ -114,7 +114,7 @@ const getBusinessById = async (req, res, next) => {
 
     const businessWithTravelSettings = await businessService.attachTravelSettings(toCamelCase(businessRow));
     const flattenedBusiness = businessService.flattenTravelSettings(businessWithTravelSettings);
-    const { accessToken, ...safeBusinessRow } = flattenedBusiness;
+    const { accessToken, whatsappRegisterPin, ...safeBusinessRow } = flattenedBusiness;
 
     const [ownerRes, staffRes, subRes, customerCountRes, bookingCountRes] = await Promise.all([
       supabase.from('users').select('id, name, email, role, last_login_at, is_active')

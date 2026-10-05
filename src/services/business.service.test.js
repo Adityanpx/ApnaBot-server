@@ -71,3 +71,10 @@ test('"today" is the India-time day, even on a UTC server just after midnight IS
   assert.equal(stats.todayInboundCount, 1);
   assert.equal(stats.todayBookingCount, 1);
 });
+
+test('business getters never expose the encrypted 2-step-verification PIN', async () => {
+  const { attachTravelSettings } = require('./business.service');
+  const out = await attachTravelSettings({ id: 'b', businessCategory: 'general', subCategories: [], whatsappRegisterPin: 'enc(123456)', name: 'Biz' });
+  assert.equal(out.whatsappRegisterPin, undefined);
+  assert.equal(out.name, 'Biz');
+});

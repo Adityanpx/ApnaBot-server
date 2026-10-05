@@ -14,6 +14,7 @@ const { isValidLanguageCode, LANGUAGE_CATALOG } = require('../utils/languageCata
 const { validateFlowFields } = require('../utils/flowFieldsValidation');
 const { META_API_BASE } = require('../services/whatsapp.service');
 const templateSyncService = require('../services/templateSync.service');
+const onboardingService = require('../services/whatsappOnboarding.service');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -82,6 +83,7 @@ const getBusiness = async (req, res, next) => {
     // callers that prefer the nested shape.
     const businessData = { ...businessService.flattenTravelSettings(business), _id: business.id };
     delete businessData.accessToken;
+    delete businessData.whatsappRegisterPin;
 
     const { remaining, resetAt } = bookingService.getPreviewCreditsStatus(business);
     businessData.previewCreditsRemaining = remaining;
@@ -189,6 +191,7 @@ const createBusiness = async (req, res, next) => {
     // onto the top level here)
     const businessData = { ...businessService.flattenTravelSettings(business), _id: business.id };
     delete businessData.accessToken;
+    delete businessData.whatsappRegisterPin;
 
     return successResponse(res, 201, {
       business: businessData,
@@ -305,6 +308,7 @@ const updateBusiness = async (req, res, next) => {
     // flattenTravelSettings)
     const businessData = { ...businessService.flattenTravelSettings(business), _id: business.id };
     delete businessData.accessToken;
+    delete businessData.whatsappRegisterPin;
 
     return successResponse(res, 200, businessData);
   } catch (error) {
@@ -411,35 +415,40 @@ const getServedCitySuggestions = async (req, res, next) => {
 
 /**
  * POST /api/business/connect-whatsapp
- * Connect WhatsApp Business number to business
+ * Connect a WhatsApp number to the business, on one of two paths:
+ *  - cloud_api: a fresh number - register it (/register with a 2-step PIN).
+ *  - coexistence: a number already on the WhatsApp Business app - Meta
+ *    registers it; we never call /register, and (flag permitting) request the
+ *    contacts + history syncs.
+ * The path is derived server-side from Meta's phone-number node; the body's
+ * onboardingType is only a fallback hint. Body (camelCase or snake_case):
+ * { code, wabaId, phoneNumberId?, onboardingType? }
  */
 const connectWhatsapp = async (req, res, next) => {
   try {
-    const { code, wabaId } = req.body;
-    let { phoneNumberId } = req.body;
+    const businessId = req.user.businessId;
+    const parsed = onboardingService.parseConnectBody(req.body || {});
 
     logger.info('connectWhatsapp: endpoint hit', {
-      businessId: req.user.businessId,
-      wabaId,
-      codePrefix: typeof code === 'string' ? code.slice(0, 10) : code,
-      phoneNumberIdPresent: !!phoneNumberId
+      businessId,
+      wabaId: parsed.wabaId || req.body?.wabaId || req.body?.waba_id,
+      codePrefix: typeof parsed.code === 'string' ? parsed.code.slice(0, 10) : undefined,
+      phoneNumberIdPresent: !!parsed.phoneNumberId,
+      onboardingHint: parsed.onboardingHint
     });
 
-    // Validate required fields
-    if (!code) {
-      return errorResponse(res, 400, 'Authorization code is required');
+    if (parsed.error) {
+      return errorResponse(res, 400, parsed.error);
     }
 
-    if (!wabaId) {
-      return errorResponse(res, 400, 'WhatsApp Business Account ID is required');
-    }
+    const { code, wabaId, onboardingHint } = parsed;
+    let { phoneNumberId } = parsed;
 
-    // If the frontend already has phoneNumberId (the normal "production
-    // setup" / fresh-number path), keep the early duplicate check before
-    // hitting Meta at all.
+    // If the client already has phoneNumberId (the normal case), keep the
+    // early duplicate check before hitting Meta at all.
     if (phoneNumberId) {
       const existingBusiness = await businessService.getBusinessByPhoneNumberId(phoneNumberId);
-      if (existingBusiness && existingBusiness.id !== req.user.businessId) {
+      if (existingBusiness && existingBusiness.id !== businessId) {
         return errorResponse(res, 409, 'This WhatsApp number is already connected to another business.');
       }
     }
@@ -448,10 +457,7 @@ const connectWhatsapp = async (req, res, next) => {
     // client-supplied token)
     let accessToken;
     try {
-      logger.info('connectWhatsapp: exchanging code for access token with Meta', {
-        businessId: req.user.businessId,
-        wabaId
-      });
+      logger.info('connectWhatsapp: exchanging code for access token with Meta', { businessId, wabaId });
 
       const tokenResponse = await axios.get(`${META_API_BASE}/oauth/access_token`, {
         params: {
@@ -462,14 +468,10 @@ const connectWhatsapp = async (req, res, next) => {
       });
       accessToken = tokenResponse.data.access_token;
 
-      logger.info('connectWhatsapp: access token received from Meta', {
-        businessId: req.user.businessId,
-        wabaId,
-        tokenReceived: !!accessToken
-      });
+      logger.info('connectWhatsapp: access token received from Meta', { businessId, wabaId, tokenReceived: !!accessToken });
     } catch (error) {
       logger.error('Error exchanging WhatsApp signup code:', {
-        businessId: req.user.businessId,
+        businessId,
         wabaId,
         error: error.response?.data || error.message
       });
@@ -480,90 +482,47 @@ const connectWhatsapp = async (req, res, next) => {
       return errorResponse(res, 400, 'Meta did not return an access token');
     }
 
-    // phoneNumberId is missing: this is the "connect existing WhatsApp
-    // Business app" (QR migration) path, where Meta's FINISH postMessage
-    // often fires before the number migration has finished server-side.
-    // Fetch it from the WABA directly now that we have an access token.
+    // phoneNumberId is missing: Meta's finish event can fire before the number
+    // has finished onboarding server-side. Fetch it from the WABA directly now
+    // that we have an access token.
     if (!phoneNumberId) {
-      logger.info('connectWhatsapp: phoneNumberId missing, resolving via resolvePhoneNumberIdForWaba', {
-        businessId: req.user.businessId,
-        wabaId
-      });
+      logger.info('connectWhatsapp: phoneNumberId missing, resolving via resolvePhoneNumberIdForWaba', { businessId, wabaId });
 
       try {
         phoneNumberId = await resolvePhoneNumberIdForWaba(wabaId, accessToken);
       } catch (error) {
         if (error.message === 'MULTIPLE_PHONE_NUMBERS') {
-          logger.error(`Multiple phone numbers found for WABA ${wabaId} while connecting business ${req.user.businessId}; refusing to auto-select.`, {
-            businessId: req.user.businessId,
+          logger.error(`Multiple phone numbers found for WABA ${wabaId} while connecting business ${businessId}; refusing to auto-select.`, {
+            businessId,
             wabaId
           });
           return errorResponse(res, 400, 'This WhatsApp Business Account has more than one phone number. Please contact support to complete this connection.');
         }
         logger.error('Error fetching phone numbers for WABA:', {
-          businessId: req.user.businessId,
+          businessId,
           wabaId,
           error: error.response?.data || error.message
         });
         return errorResponse(res, 400, 'Failed to fetch WhatsApp phone number details from Meta');
       }
 
-      logger.info('connectWhatsapp: resolvePhoneNumberIdForWaba returned', {
-        businessId: req.user.businessId,
-        wabaId,
-        phoneNumberId
-      });
+      logger.info('connectWhatsapp: resolvePhoneNumberIdForWaba returned', { businessId, wabaId, phoneNumberId });
 
       if (!phoneNumberId) {
         return errorResponse(res, 400, "WhatsApp number registration is still processing on Meta's side - please try reconnecting in a minute.");
       }
 
       const existingBusiness = await businessService.getBusinessByPhoneNumberId(phoneNumberId);
-      if (existingBusiness && existingBusiness.id !== req.user.businessId) {
+      if (existingBusiness && existingBusiness.id !== businessId) {
         return errorResponse(res, 409, 'This WhatsApp number is already connected to another business.');
       }
     }
 
-    // Fetch the phone number's display number and verified business name
-    let whatsappNumber;
-    let displayName;
-    try {
-      const phoneResponse = await axios.get(`${META_API_BASE}/${phoneNumberId}`, {
-        params: { fields: 'display_phone_number,verified_name' },
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      whatsappNumber = (phoneResponse.data.display_phone_number || '').replace(/[^0-9]/g, '');
-      displayName = phoneResponse.data.verified_name;
-    } catch (error) {
-      logger.error('Error fetching WhatsApp phone number details:', {
-        businessId: req.user.businessId,
-        wabaId,
-        phoneNumberId,
-        error: error.response?.data || error.message
-      });
-      return errorResponse(res, 400, 'Failed to fetch WhatsApp phone number details from Meta');
-    }
-
-    // Validate WhatsApp number format (10-15 digits, no + sign)
-    const whatsappRegex = /^[0-9]{10,15}$/;
-    if (!whatsappRegex.test(whatsappNumber)) {
-      return errorResponse(res, 400, 'Could not determine a valid WhatsApp number for this phone number ID');
-    }
-
-    // Connect WhatsApp (service encrypts the access token before saving)
-    logger.info('connectWhatsapp: saving connection via businessService.connectWhatsapp', {
-      businessId: req.user.businessId,
-      wabaId,
-      phoneNumberId
-    });
-
-    const business = await businessService.connectWhatsapp(req.user.businessId, {
-      phoneNumberId,
-      wabaId,
-      whatsappNumber,
-      accessToken,
-      displayName
-    });
+    // The business as it was before this connect: tells a repeat connect of the
+    // same number from a new one, and which tenant cache key is now stale.
+    const previous = await businessService.getBusinessById(businessId);
+    const previousPhoneNumberId = previous?.phoneNumberId || null;
+    const samePhone = previousPhoneNumberId === phoneNumberId;
 
     // Subscribe the app to this WABA's webhook events. This is a separate,
     // per-WABA opt-in Meta requires in addition to the app-level webhook
@@ -573,57 +532,175 @@ const connectWhatsapp = async (req, res, next) => {
     // considered connected even if this call fails, but it must be visible
     // in logs since it silently breaks inbound messaging otherwise.
     try {
-      logger.info('connectWhatsapp: subscribing app to WABA webhook events', {
-        businessId: req.user.businessId,
-        wabaId
-      });
+      logger.info('connectWhatsapp: subscribing app to WABA webhook events', { businessId, wabaId });
 
       await axios.post(`${META_API_BASE}/${wabaId}/subscribed_apps`, null, {
         headers: { Authorization: `Bearer ${accessToken}` }
       });
 
-      logger.info('connectWhatsapp: subscribed app to WABA webhook events', {
-        businessId: req.user.businessId,
-        wabaId
-      });
+      logger.info('connectWhatsapp: subscribed app to WABA webhook events', { businessId, wabaId });
     } catch (error) {
       logger.error('connectWhatsapp: failed to subscribe app to WABA webhook events - inbound messages will not be received until this is fixed', {
-        businessId: req.user.businessId,
+        businessId,
         wabaId,
         error: error.response?.data || error.message
       });
     }
 
-    // Invalidate caches after connecting so the new connection takes effect immediately
-    await subscriptionService.invalidateSubscriptionCache(req.user.businessId.toString());
+    // Fetch the phone number's node (display number, verified name, platform)
+    let phoneNode;
+    try {
+      phoneNode = await onboardingService.fetchPhoneNode(phoneNumberId, accessToken);
+    } catch (error) {
+      logger.error('Error fetching WhatsApp phone number details:', {
+        businessId,
+        wabaId,
+        phoneNumberId,
+        error: error.response?.data || error.message
+      });
+      return errorResponse(res, 400, 'Failed to fetch WhatsApp phone number details from Meta');
+    }
+    logger.info('connectWhatsapp: phone number node (before onboarding steps)', { businessId, phoneNumberId, node: phoneNode });
+
+    const whatsappNumber = (phoneNode.display_phone_number || '').replace(/[^0-9]/g, '');
+    const displayName = phoneNode.verified_name;
+
+    // Validate WhatsApp number format (10-15 digits, no + sign)
+    const whatsappRegex = /^[0-9]{10,15}$/;
+    if (!whatsappRegex.test(whatsappNumber)) {
+      return errorResponse(res, 400, 'Could not determine a valid WhatsApp number for this phone number ID');
+    }
+
+    const { type: onboardingType, source: typeSource } = onboardingService.deriveOnboardingType(phoneNode.is_on_biz_app, onboardingHint);
+    logger.info('connectWhatsapp: onboarding type', {
+      businessId,
+      phoneNumberId,
+      onboardingType,
+      typeSource,
+      isOnBizApp: phoneNode.is_on_biz_app,
+      platformType: phoneNode.platform_type,
+      clientHint: onboardingHint
+    });
+
+    // Path A: a fresh Cloud API number must be registered or it can neither
+    // send nor receive. Never on coexistence (Meta registers those) and never
+    // when Meta already reports CLOUD_API (a repeat connect).
+    if (onboardingService.shouldRegister(onboardingType, phoneNode.platform_type)) {
+      try {
+        const pin = await onboardingService.ensureRegisterPin(businessId);
+        logger.info('connectWhatsapp: registering number', { businessId, phoneNumberId });
+        await onboardingService.registerNumber(phoneNumberId, accessToken, pin);
+        logger.info('connectWhatsapp: number registered', { businessId, phoneNumberId });
+      } catch (error) {
+        const mapped = onboardingService.mapRegisterError(error);
+        // error.config carries the PIN - log only Meta's response.
+        logger.error('connectWhatsapp: /register failed - business NOT marked connected', {
+          businessId,
+          phoneNumberId,
+          metaCode: mapped.metaCode,
+          error: error.response?.data || error.message
+        });
+        return errorResponse(res, mapped.status, mapped.message);
+      }
+
+      try {
+        const nodeAfter = await onboardingService.fetchPhoneNode(phoneNumberId, accessToken);
+        logger.info('connectWhatsapp: phone number node (after /register)', { businessId, phoneNumberId, node: nodeAfter });
+      } catch (error) {
+        logger.warn('connectWhatsapp: could not re-read phone number node after /register', {
+          businessId,
+          phoneNumberId,
+          error: error.response?.data || error.message
+        });
+      }
+    } else {
+      logger.info('connectWhatsapp: /register skipped', {
+        businessId,
+        phoneNumberId,
+        reason: onboardingType === 'coexistence' ? 'coexistence number' : `platform_type already ${phoneNode.platform_type}`
+      });
+    }
+
+    // Connect WhatsApp (service encrypts the access token before saving). A
+    // repeat connect of the same number keeps its original connect time - the
+    // coexistence 24h sync window is measured from it.
+    logger.info('connectWhatsapp: saving connection via businessService.connectWhatsapp', { businessId, wabaId, phoneNumberId });
+
+    const business = await businessService.connectWhatsapp(businessId, {
+      phoneNumberId,
+      wabaId,
+      whatsappNumber,
+      accessToken,
+      displayName,
+      onboardingType,
+      connectedAt: samePhone && previous?.whatsappConnectedAt ? undefined : new Date().toISOString(),
+      resetCoexSync: !samePhone
+    });
+
+    // Invalidate caches after connecting so the new connection takes effect
+    // immediately - both tenant keys if the number changed.
+    await subscriptionService.invalidateSubscriptionCache(businessId.toString());
     await tenantService.invalidateTenantCache(phoneNumberId);
+    if (previousPhoneNumberId && previousPhoneNumberId !== phoneNumberId) {
+      await tenantService.invalidateTenantCache(previousPhoneNumberId);
+    }
+
+    // Path B: the one-time contacts + history syncs (see decideSyncs). After the
+    // connection is saved, so a failed save can never spend them. Never fails
+    // the onboarding.
+    if (onboardingType === 'coexistence') {
+      try {
+        const syncs = onboardingService.decideSyncs({
+          flagOn: config.COEXISTENCE_SYNC_ENABLED,
+          type: onboardingType,
+          existing: samePhone ? previous : null,
+          phoneNumberId,
+          nowMs: Date.now()
+        });
+        if (!syncs.contacts && !syncs.history) {
+          logger.info(`connectWhatsapp: coexistence sync skipped (${syncs.reason || 'already requested'})`, { businessId, phoneNumberId });
+        } else {
+          const accepted = await onboardingService.requestCoexistenceSyncs(phoneNumberId, accessToken, syncs);
+          await businessService.markCoexSyncRequested(businessId, accepted);
+        }
+      } catch (error) {
+        logger.error('connectWhatsapp: coexistence sync step failed (onboarding continues)', {
+          businessId,
+          phoneNumberId,
+          error: error.response?.data || error.message
+        });
+      }
+    }
 
     // Pull the WABA's existing templates in (fire and forget — the connection
     // is already saved, so a failure here is only logged).
-    templateSyncService.runSync(req.user.businessId).catch((syncErr) => {
+    templateSyncService.runSync(businessId).catch((syncErr) => {
       logger.error('connectWhatsapp: auto template sync failed', {
-        businessId: req.user.businessId,
+        businessId,
         error: syncErr.response?.data || syncErr.message
       });
     });
 
-    // Remove accessToken from response (see getBusiness's comment on
+    // Remove secrets from response (see getBusiness's comment on
     // flattenTravelSettings)
     const businessData = { ...businessService.flattenTravelSettings(business), _id: business.id };
     delete businessData.accessToken;
+    delete businessData.whatsappRegisterPin;
 
-    logger.info('connectWhatsapp: connection saved, returning success', {
-      businessId: req.user.businessId,
-      wabaId,
-      phoneNumberId
-    });
+    logger.info('connectWhatsapp: connection saved, returning success', { businessId, wabaId, phoneNumberId, onboardingType });
 
-    return successResponse(res, 200, { business: businessData }, 'WhatsApp connected successfully');
+    return successResponse(res, 200, {
+      business: businessData,
+      onboarding_type: onboardingType,
+      display_phone_number: phoneNode.display_phone_number,
+      verified_name: phoneNode.verified_name,
+      name_status: phoneNode.name_status
+    }, 'WhatsApp connected successfully');
   } catch (error) {
     logger.error('Error in connectWhatsapp:', {
       businessId: req.user.businessId,
-      wabaId: req.body?.wabaId,
-      phoneNumberId: req.body?.phoneNumberId,
+      wabaId: req.body?.wabaId || req.body?.waba_id,
+      phoneNumberId: req.body?.phoneNumberId || req.body?.phone_number_id,
       error: error.response?.data || error.message || error
     });
     next(error);
