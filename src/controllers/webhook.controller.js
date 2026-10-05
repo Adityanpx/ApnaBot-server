@@ -28,6 +28,7 @@ const inboundMessageService = require('../services/inboundMessage.service');
 const { INBOUND_MESSAGE_TYPES, inboundMediaLabel } = require('../utils/inboundMessage');
 const { isBulkSyncBody } = require('../utils/coexistencePayload');
 const coexistenceService = require('../services/coexistence.service');
+const { statusesBefore } = require('../utils/messageStatus');
 const { splitMessages } = require('../utils/webhookBatch');
 
 // Exact-match greeting keywords that trigger the welcome message / menu.
@@ -733,10 +734,20 @@ const processWebhookChange = async (entry, changes) => {
     const statuses = value?.statuses;
     if (statuses) {
       for (const status of statuses) {
+        // Forward only (sent -> delivered -> read): a late event never moves a
+        // message backwards. See utils/messageStatus.js.
+        const allowedFrom = statusesBefore(status.status);
+        if (allowedFrom === null) {
+          logger.info(`Ignoring message status "${status.status}" for ${status.id} (not a stored status)`);
+          continue;
+        }
+        if (allowedFrom.length === 0) continue; // 'sent': rows already start there
+
         const { data: updatedMsg, error } = await supabase
           .from('messages')
           .update({ status: status.status })
           .eq('meta_message_id', status.id)
+          .in('status', allowedFrom)
           .select()
           .maybeSingle();
         if (error) {
