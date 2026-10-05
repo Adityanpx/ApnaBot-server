@@ -24,6 +24,8 @@ const { updateTemplateForWebhook, qualityUpdateFields, categoryUpdateFields } = 
 const whatsappService = require('../services/whatsapp.service');
 const r2 = require('../services/r2.service');
 const logger = require('../utils/logger');
+const inboundMessageService = require('../services/inboundMessage.service');
+const { unsupportedLabel } = require('../utils/inboundMessage');
 
 // Exact-match greeting keywords that trigger the welcome message / menu.
 // Kept as exact matches (not substring) so real rule keywords still win.
@@ -139,6 +141,7 @@ const inboundMediaLabel = (message) => {
     case 'document': return withCaption(`📄 ${message.document?.filename || 'Document'}`, message.document?.caption);
     case 'audio': return message.audio?.voice ? '🎤 Voice message' : '🎵 Audio';
     case 'sticker': return 'Sticker';
+    case 'unsupported': return unsupportedLabel(message);
     case 'location': {
       const loc = message.location || {};
       return ['📍 Location', loc.name, loc.address].filter(Boolean).join(' · ');
@@ -149,7 +152,8 @@ const inboundMediaLabel = (message) => {
     case 'interactive':
       // WhatsApp Flow form submission (nfm_reply) — no title to show.
       return message.interactive?.nfm_reply ? '📝 Form submitted' : null;
-    default: return null;
+    // A type we don't parse is stored as 'unsupported' (see INBOUND_MESSAGE_TYPES).
+    default: return INBOUND_MESSAGE_TYPES.has(message.type) ? null : unsupportedLabel(message);
   }
 };
 
@@ -231,6 +235,22 @@ const upsertCustomerForInboundMessage = async (businessId, customerNumber, profi
       return bumpExisting(raced);
     }
   }
+  if (error) throw error;
+  return toCamelCase(data);
+};
+
+/**
+ * Customer for a message that replaced an earlier 'unsupported' row of the same
+ * WhatsApp id. That row already counted toward total_messages (and usage), so
+ * only last_message_at is refreshed here - no second count.
+ * @param {string} businessId
+ * @param {string} customerId
+ * @returns {Promise<Object>} camelCase customer row
+ */
+const touchCustomerForReplacedMessage = async (businessId, customerId) => {
+  const { data, error } = await supabase
+    .from('customers').update({ last_message_at: new Date().toISOString() })
+    .eq('id', customerId).eq('business_id', businessId).select().single();
   if (error) throw error;
   return toCamelCase(data);
 };
@@ -912,6 +932,24 @@ const receiveWebhook = async (req, res) => {
       return;
     }
 
+    // Step 6.5 - Duplicate delivery gate. Meta can deliver one wamid more than
+    // once (retries, and an 'unsupported' placeholder alongside the real
+    // message, in either order). Decided BEFORE any side effect so a repeat
+    // never bumps the customer, counts usage or reaches the bot:
+    //   real after unsupported -> replace that row, process once
+    //   unsupported after anything, or a repeat of a real one -> ignore
+    // See services/inboundMessage.service.js.
+    const storedType = INBOUND_MESSAGE_TYPES.has(messageType) ? messageType : 'unsupported';
+    const replaceFields = { type: storedType, content: displayContent, status: 'delivered', is_read: false, raw_payload: null };
+    const dupGate = await inboundMessageService.gateInbound(tenant.businessId, metaMessageId, storedType, replaceFields);
+    if (dupGate.action === 'ignore') {
+      logger.info(`Duplicate delivery of ${metaMessageId} ignored (business ${tenant.businessId}, type ${storedType})`);
+      return;
+    }
+    // Set when this delivery replaced an earlier 'unsupported' row (its
+    // customer bump and usage were already counted by that row).
+    let replacedMsg = dupGate.action === 'replace' ? toCamelCase(dupGate.message) : null;
+
     // Step 7 - Check usage limit (used below, AFTER the message is saved —
     // an over-limit business must still receive/store the message; only the
     // reply is blocked. See Step 9.5.)
@@ -919,7 +957,9 @@ const receiveWebhook = async (req, res) => {
     const usageCheck = await usageService.checkUsageLimit(tenant.businessId, msgLimit);
 
     // Step 8 - Upsert customer
-    const customer = await upsertCustomerForInboundMessage(tenant.businessId, customerNumber, profileName);
+    const customer = replacedMsg
+      ? await touchCustomerForReplacedMessage(tenant.businessId, replacedMsg.customerId)
+      : await upsertCustomerForInboundMessage(tenant.businessId, customerNumber, profileName);
 
     if (customer.isBlocked) {
       logger.warn(`Blocked customer ${customerNumber}`);
@@ -936,17 +976,30 @@ const receiveWebhook = async (req, res) => {
     const isBotPaused = !!customer.botPausedUntil && new Date(customer.botPausedUntil).getTime() > Date.now();
 
     // Step 9 - Save inbound message
-    const inboundMsg = await saveMessage({
-      business_id: tenant.businessId,
-      customer_id: customer.id,
-      customer_number: customerNumber,
-      direction: 'inbound',
-      type: INBOUND_MESSAGE_TYPES.has(messageType) ? messageType : 'unsupported',
-      content: displayContent,
-      meta_message_id: metaMessageId,
-      status: 'delivered',
-      is_read: false
-    });
+    let inboundMsg = replacedMsg;
+    if (!inboundMsg) {
+      const saved = await inboundMessageService.insertInbound({
+        business_id: tenant.businessId,
+        customer_id: customer.id,
+        customer_number: customerNumber,
+        direction: 'inbound',
+        type: storedType,
+        content: displayContent,
+        meta_message_id: metaMessageId,
+        status: 'delivered',
+        is_read: false,
+        // Kept for unsupported rows only, so errors / referral / the real type
+        // can be read later without the logs.
+        ...(storedType === 'unsupported' ? { raw_payload: message } : {})
+      }, replaceFields);
+      if (saved.action === 'ignore') {
+        // Lost a race to a concurrent delivery of the same id (unique index).
+        logger.info(`Duplicate delivery of ${metaMessageId} lost the insert race, ignored (business ${tenant.businessId})`);
+        return;
+      }
+      inboundMsg = toCamelCase(saved.message);
+      if (saved.action === 'replace') replacedMsg = inboundMsg;
+    }
 
     // Customer photos (payment screenshots etc.) → R2, in the background.
     if (messageType === 'image' && message.image?.id) {
@@ -960,8 +1013,9 @@ const receiveWebhook = async (req, res) => {
     // even when the business is over its limit.
     const overLimit = !usageCheck.allowed;
 
-    if (!overLimit) {
-      // Step 10 - Increment usage (fire and forget)
+    if (!overLimit && !replacedMsg) {
+      // Step 10 - Increment usage (fire and forget). Skipped for a message that
+      // replaced an 'unsupported' row: that row already counted.
       usageService.incrementUsage(tenant.businessId, 'inbound');
 
       // ADD THIS — Emit usage_update to Flutter dashboard
