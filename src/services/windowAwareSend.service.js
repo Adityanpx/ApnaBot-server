@@ -17,6 +17,7 @@ const whatsappService = require('./whatsapp.service');
 const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
 const { toCamelCase } = require('../utils/caseConvert');
 const { isTemplateUsable } = require('../utils/templateStatus');
+const { buildTemplateComponents } = require('../utils/templateComponents');
 const logger = require('../utils/logger');
 
 const FREE_FORM_WINDOW_MS = 24 * 60 * 60 * 1000; // same as message.controller.js
@@ -108,8 +109,7 @@ const sendWindowAwareMessage = async (business, customerRow, { textFor, template
   try {
     await whatsappService.sendTemplateMessage(
       business.phoneNumberId, business.accessToken, customerRow.whatsapp_number, templateRow.name, templateRow.language,
-      // No body component for a template without variables (as broadcast.worker.js).
-      templateParams.length > 0 ? [{ type: 'body', parameters: templateParams.map(t => ({ type: 'text', text: t })) }] : []
+      buildTemplateComponents(templateRow, { body: templateParams })
     );
   } catch {
     if (ratePaise > 0) {

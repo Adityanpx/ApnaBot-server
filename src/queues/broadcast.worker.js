@@ -5,6 +5,7 @@ const supabase = require('../config/supabase');
 const logger = require('../utils/logger');
 const config = require('../config/env');
 const { workerConnection } = require('../config/queueConnection');
+const { buildBodyComponents } = require('../utils/templateComponents');
 
 // Must match the prefix used by broadcast.queue.js - see comment there.
 const prefix = `apnabot:${config.QUEUE_NAMESPACE}`;
@@ -14,7 +15,7 @@ const prefix = `apnabot:${config.QUEUE_NAMESPACE}`;
 // broadcast-wide components array. 'customer.name' pulls from that
 // recipient's own data; 'static' uses the fixed value from the mapping.
 const resolveRecipientComponents = (variableMapping, recipient) => {
-  const parameters = [...variableMapping]
+  const values = [...variableMapping]
     .sort((a, b) => a.position - b.position)
     .map((entry) => {
       const text = entry.source === 'customer.name'
@@ -26,10 +27,10 @@ const resolveRecipientComponents = (variableMapping, recipient) => {
           ? 'recipient has no name on file'
           : 'variable mapping has an empty static value');
       }
-      return { type: 'text', text: String(text) };
+      return String(text);
     });
 
-  return parameters.length > 0 ? [{ type: 'body', parameters }] : [];
+  return buildBodyComponents(values);
 };
 
 const worker = new Worker('broadcast-outbound', async (job) => {

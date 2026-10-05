@@ -7,6 +7,7 @@ const rateCardService = require('../services/rateCard.service');
 const { addToBroadcastQueue } = require('../queues/broadcast.queue');
 const { normalizeAudience, resolveAudience, businessGroupIds } = require('../services/broadcastAudience.service');
 const { isTemplateUsable, sendSupportBlockReason } = require('../utils/templateStatus');
+const { buildTemplateComponents } = require('../utils/templateComponents');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
@@ -217,13 +218,7 @@ const sendBroadcast = async (req, res, next) => {
     if (updateErr) throw updateErr;
 
     const templateVariables = broadcastRow.template_variables || [];
-    const components = templateVariables.length > 0
-      ? [{ type: 'body', parameters: templateVariables.map((v) => ({ type: 'text', text: String(v) })) }]
-      : [];
-
-    if (templateRow.header_type === 'IMAGE') {
-      components.unshift({ type: 'header', parameters: [{ type: 'image', image: { link: templateRow.header_image_url } }] });
-    }
+    const components = buildTemplateComponents(templateRow, { body: templateVariables });
 
     const batches = chunk(customers, BATCH_SIZE);
     await Promise.all(batches.map((batch) => addToBroadcastQueue({
