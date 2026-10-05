@@ -18,6 +18,7 @@ const { getSystemMessage } = require('../utils/systemMessages');
 const { isIndefinitePause } = require('../utils/botPause');
 const { parseJoinCode, isSystemTapId, parseOptInTapId, OPT_IN_YES_PREFIX, OPT_IN_NO_PREFIX } = require('../utils/optInLink');
 const optInLinkService = require('../services/optInLink.service');
+const templateButtonTapService = require('../services/templateButtonTap.service');
 const { templateStatusForEvent } = require('../utils/templateStatus');
 const { updateTemplateForWebhook, qualityUpdateFields, categoryUpdateFields } = require('../services/templateWebhook.service');
 const whatsappService = require('../services/whatsapp.service');
@@ -143,6 +144,8 @@ const inboundMediaLabel = (message) => {
       return ['📍 Location', loc.name, loc.address].filter(Boolean).join(' · ');
     }
     case 'contacts': return '👤 Contact card';
+    // A template quick-reply tap: show the label the customer tapped.
+    case 'button': return message.button?.text || null;
     case 'interactive':
       // WhatsApp Flow form submission (nfm_reply) — no title to show.
       return message.interactive?.nfm_reply ? '📝 Form submitted' : null;
@@ -977,8 +980,23 @@ const receiveWebhook = async (req, res) => {
     // the isBotPaused check to silently swallow it first. Only plain text is
     // checked (same guard ESCAPE_KEYWORDS uses) so a button/list tap can
     // never coincidentally match.
+    //
+    // A template quick-reply tap (message type 'button') is resolved here, so an
+    // opt-out button (ours, or Meta's "Stop promotions") takes the very same
+    // STOP path below — even while paused or mid-booking. Any other tap is
+    // routed after the pause check (see isRoutedButtonTap).
+    let buttonTap = null;
+    if (messageType === 'button') {
+      try {
+        buttonTap = await templateButtonTapService.resolveButtonTap(tenant.businessId, message.button);
+      } catch (tapErr) {
+        logger.error('Error resolving template button tap, skipping it:', tapErr);
+      }
+    }
     const isPlainTextStopStart = !buttonReplyId && !listReplyId;
-    const normalizedStopStartText = isPlainTextStopStart ? (message.text?.body || '').trim().toLowerCase() : '';
+    const normalizedStopStartText = buttonTap?.kind === 'optout'
+      ? 'stop'
+      : (isPlainTextStopStart ? (message.text?.body || '').trim().toLowerCase() : '');
     if (STOP_KEYWORDS.has(normalizedStopStartText)) {
       const newBotPausedUntil = new Date(Date.now() + CUSTOMER_STOP_PAUSE_DURATION_MS).toISOString();
       // opted_out_at: the lasting part of STOP — broadcasts and follow-ups
@@ -1251,7 +1269,8 @@ const receiveWebhook = async (req, res) => {
     // session's current field is known; it does NOT mean every location
     // message is accepted (see the no-active-session guard right after
     // activeSession is loaded).
-    if (messageType !== 'text' && !buttonReplyId && !listReplyId && !messageLocation) {
+    const isRoutedButtonTap = !!buttonTap && buttonTap.kind !== 'optout'; // an optout tap already returned above
+    if (messageType !== 'text' && !buttonReplyId && !listReplyId && !messageLocation && !isRoutedButtonTap) {
       logger.info('Non-text message received, skipping chatbot');
       return;
     }
@@ -1324,6 +1343,38 @@ const receiveWebhook = async (req, res) => {
       }
     }
 
+    // Template quick-reply tap (Step 11 let it through). Never a booking answer:
+    // mid-booking it just re-shows the pending question. Otherwise it becomes
+    // whatever its action says — typed text for a keyword / the "hi" menu / an
+    // unknown button's label, or a node entered at Step 13 (tapNode).
+    let tapNode = null;
+    if (isRoutedButtonTap) {
+      if (customer.preferredLanguage === null) {
+        // No language picker for a tap: the business's first enabled language.
+        const tapBusinessDoc = await businessService.getBusinessById(tenant.businessId);
+        const tapLanguage = tapBusinessDoc?.enabledLanguages?.[0] || 'en';
+        const { data: tapLangCustomer, error: tapLangErr } = await supabase
+          .from('customers').update({ preferred_language: tapLanguage }).eq('id', customer.id).select().single();
+        if (tapLangErr) throw tapLangErr;
+        customer.preferredLanguage = toCamelCase(tapLangCustomer).preferredLanguage;
+      }
+
+      if (activeSession && await resendCurrentBookingPrompt(ctx, activeSession)) {
+        return; // Back to the pending booking question - session untouched
+      }
+
+      if (buttonTap.kind === 'text') {
+        messageText = buttonTap.text;
+      } else if (buttonTap.kind === 'node') {
+        tapNode = buttonTap.node;
+      } else if (buttonTap.action.type === 'keyword') {
+        messageText = buttonTap.action.keyword;
+      } else {
+        messageText = 'hi'; // { type: 'menu' }
+      }
+      logger.info(`Template button tap from ${customerNumber} for business ${tenant.businessId}: ${buttonTap.kind}${tapNode ? ` node ${tapNode.id}` : ''}`);
+    }
+
     // A language-picker tap (lang_{code}) or opt-in tap (optin_...) must
     // never be treated as a booking-session answer — neither id shape
     // matches the graph engine's "{node_id}:{index}" options scheme, so left
@@ -1332,7 +1383,7 @@ const receiveWebhook = async (req, res) => {
     // lang_ handler further down (Step 12.6-adjacent). This matters now that
     // "language" (above) can fire mid-booking, leaving activeSession
     // untouched on purpose.
-    const isSystemTap = isSystemTapId(buttonReplyId);
+    const isSystemTap = isSystemTapId(buttonReplyId) || isRoutedButtonTap;
 
     // A shared location with no eligible active session to consume it (none
     // at all, or a stale one about to be treated as a system tap) —
@@ -1860,6 +1911,17 @@ const receiveWebhook = async (req, res) => {
         matchedEdges = matchedNode.contentType === 'text' ? [] : await chatbotService.getOutgoingEdges(matchedNode.id);
       } else if (resolvedTap) {
         logger.error(`Tapped flow_edges row ${tappedEdgeId} (business ${tenant.businessId}) targets node type '${resolvedTap.targetNode.nodeType}', which isn't a supported button/list target — falling back to keyword matching`);
+      }
+    }
+
+    // A template button whose action is a node: enter it like a tapped edge
+    // would (no edge, so no preset and no source node).
+    if (tapNode && !directBookingEntry && !matchedNode) {
+      if (tapNode.nodeType === 'question') {
+        directBookingEntry = { nodeId: tapNode.id, ruleId: tapNode.id, edge: null };
+      } else {
+        matchedNode = tapNode;
+        matchedEdges = matchedNode.contentType === 'text' ? [] : await chatbotService.getOutgoingEdges(matchedNode.id);
       }
     }
 
