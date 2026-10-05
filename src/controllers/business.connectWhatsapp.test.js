@@ -117,6 +117,21 @@ test('Path A (fresh number): registers with the stored PIN, saves cloud_api, ret
   assert.deepEqual(invalidated, ['222']);
 });
 
+test('an owner-set display name is not overwritten by Meta\'s verified_name', async () => {
+  route(NODE_A);
+  previous = { ...previous, displayName: 'SG Travels' };
+  const res = await call(NUMERIC);
+  assert.equal(res.code, 200);
+  assert.equal(saved.displayName, undefined); // service skips the display_name write
+});
+
+test('an empty display name is filled from Meta\'s verified_name', async () => {
+  route(NODE_A);
+  previous = { ...previous, displayName: null };
+  await call(NUMERIC);
+  assert.equal(saved.displayName, 'Acme');
+});
+
 test('Path A: /register failing with a PIN mismatch -> clear error, business NOT marked connected', async () => {
   route(NODE_A);
   registerError = { code: 133005, message: 'PIN incorrect' };

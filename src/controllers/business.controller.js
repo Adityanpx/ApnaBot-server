@@ -563,7 +563,9 @@ const connectWhatsapp = async (req, res, next) => {
     logger.info('connectWhatsapp: phone number node (before onboarding steps)', { businessId, phoneNumberId, node: phoneNode });
 
     const whatsappNumber = (phoneNode.display_phone_number || '').replace(/[^0-9]/g, '');
-    const displayName = phoneNode.verified_name;
+    // Meta's verified_name only fills an empty display_name - never overwrites
+    // a name the owner set. (`previous` is the row as it was before this connect.)
+    const displayName = previous?.displayName ? undefined : phoneNode.verified_name;
 
     // Validate WhatsApp number format (10-15 digits, no + sign)
     const whatsappRegex = /^[0-9]{10,15}$/;
@@ -725,6 +727,8 @@ const disconnectWhatsapp = async (req, res, next) => {
 
     // Disconnect WhatsApp
     await businessService.disconnectWhatsapp(businessId);
+
+    logger.info('disconnectWhatsapp: WhatsApp disconnected', { businessId, userId: req.user.userId, phoneNumberId });
 
     // Invalidate tenant cache after disconnecting
     if (phoneNumberId) {
