@@ -1,35 +1,22 @@
-const axios = require('axios');
 const supabase = require('../config/supabase');
 const { toCamelCase } = require('../utils/caseConvert');
 const businessService = require('../services/business.service');
 const r2 = require('../services/r2.service');
 const { decrypt } = require('../utils/crypto');
-const { META_API_BASE } = require('../services/whatsapp.service');
 const templateSyncService = require('../services/templateSync.service');
-const { computeSendSupport, extensionOf, EXTENSIONS_BY_FORMAT } = require('../utils/templateSendSupport');
-const config = require('../config/env');
+const { submitTemplateToMeta, TemplateValidationError } = require('../services/templateSubmit.service');
+const { computeSendSupport } = require('../utils/templateSendSupport');
+const {
+  HEADER_TYPES, HEADER_MEDIA_TYPE, checkBodyVariables, validateName, validateCategory, validateLanguage, validateComponents, validateHeaderMedia
+} = require('../utils/templateValidation');
+const { buildComponentsFromInput } = require('../utils/templateBuild');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
-
-// Meta requires template names to be lowercase, alphanumeric + underscores only
-const TEMPLATE_NAME_REGEX = /^[a-z0-9_]+$/;
 
 // WhatsApp template headers accept JPG and PNG only. The shared uploadSingle
 // middleware also allows WebP (business / vehicle images), so the template
 // endpoint narrows it here.
 const HEADER_IMAGE_TYPES = ['image/jpeg', 'image/png'];
-
-// business_media.media_type each template header format takes, and the size cap
-// WhatsApp (and our plan) puts on it.
-const HEADER_MEDIA_TYPE = { IMAGE: 'image', VIDEO: 'video', DOCUMENT: 'document' };
-const HEADER_MEDIA_MAX_BYTES = { IMAGE: 5 * 1024 * 1024, VIDEO: 16 * 1024 * 1024, DOCUMENT: 10 * 1024 * 1024 };
-const HEADER_MEDIA_LABEL = { IMAGE: 'a JPG or PNG image', VIDEO: 'an MP4 video', DOCUMENT: 'a PDF' };
-
-const countTemplateVariables = (bodyText) => {
-  const matches = (bodyText || '').match(/\{\{\s*\d+\s*\}\}/g) || [];
-  const numbers = new Set(matches.map((m) => m.replace(/\D/g, '')));
-  return numbers.size;
-};
 
 /**
  * GET /api/message-templates
@@ -113,13 +100,9 @@ const setHeaderMedia = async (req, res, next) => {
       return errorResponse(res, 404, 'Media not found');
     }
 
-    // business_media keeps no mimetype; r2.uploadImage names the object by it.
-    const ext = extensionOf(media.r2_key);
-    if (media.media_type !== HEADER_MEDIA_TYPE[format] || (ext && !EXTENSIONS_BY_FORMAT[format].includes(ext))) {
-      return errorResponse(res, 400, `This template's header needs ${HEADER_MEDIA_LABEL[format]}; the file you picked is a different type.`);
-    }
-    if (Number(media.file_size_bytes) > HEADER_MEDIA_MAX_BYTES[format]) {
-      return errorResponse(res, 400, `A ${format.toLowerCase()} header can be at most ${HEADER_MEDIA_MAX_BYTES[format] / (1024 * 1024)} MB.`);
+    const mediaError = validateHeaderMedia(media, format);
+    if (mediaError) {
+      return errorResponse(res, 400, mediaError);
     }
 
     const update = {
@@ -141,50 +124,92 @@ const setHeaderMedia = async (req, res, next) => {
 
 /**
  * POST /api/message-templates
- * Create a message template as draft
+ * Create a message template as draft.
+ *   { name, category?, language? (en_US | hi | mr), bodyText, variableSamples?,
+ *     header?: { type: NONE|TEXT|IMAGE|VIDEO|DOCUMENT, text?, textSample?, mediaId? },
+ *     footerText?, buttons?: [{ type: 'URL', text, url, dynamic?, example? } | { type: 'PHONE_NUMBER', text, phone }] }
+ * The full components are stored in the same shape as synced templates; a media
+ * header's file comes from the business media library (header.mediaId), so the
+ * template is sendable as soon as Meta approves it.
+ * Old clients' headerType / headerImageUrl / headerImageR2Key still work (IMAGE only).
  */
 const createMessageTemplate = async (req, res, next) => {
   try {
     const businessId = req.user.businessId;
-    const { name, category, language, bodyText, variableSamples, headerType, headerImageUrl, headerImageR2Key } = req.body;
+    const { name, category, language, bodyText, variableSamples, footerText, buttons, headerType, headerImageUrl, headerImageR2Key } = req.body;
+    let { header } = req.body;
 
     if (!name || !bodyText) {
       return errorResponse(res, 400, 'name and bodyText are required');
     }
 
-    if (!TEMPLATE_NAME_REGEX.test(name)) {
-      return errorResponse(res, 400, 'name must be lowercase_snake_case, alphanumeric characters and underscores only');
+    const templateCategory = category || 'MARKETING';
+    const templateLanguage = language || 'en_US';
+    const fieldError = validateName(name) || validateCategory(templateCategory) || validateLanguage(templateLanguage);
+    if (fieldError) {
+      return errorResponse(res, 400, fieldError);
     }
 
-    if (headerType !== undefined && headerType !== 'NONE' && headerType !== 'IMAGE') {
-      return errorResponse(res, 400, "headerType must be 'NONE' or 'IMAGE'");
-    }
-
-    if (headerType === 'IMAGE' && !headerImageUrl) {
-      return errorResponse(res, 400, 'headerImageUrl is required when headerType is IMAGE');
-    }
-
-    const variableCount = countTemplateVariables(bodyText);
-
-    if (variableSamples !== undefined && variableCount > 0) {
-      if (!Array.isArray(variableSamples) || variableSamples.length !== variableCount) {
-        const placeholders = Array.from({ length: variableCount }, (_, i) => `{{${i + 1}}}`).join(', ');
-        return errorResponse(res, 400, `This template has ${variableCount} variables (${placeholders}) - provide exactly ${variableCount} sample values.`);
+    // Deprecated header fields (old clients): an IMAGE already uploaded to R2.
+    const legacyImage = header === undefined && headerType === 'IMAGE';
+    if (header === undefined && headerType !== undefined) {
+      if (headerType !== 'NONE' && headerType !== 'IMAGE') {
+        return errorResponse(res, 400, "headerType must be 'NONE' or 'IMAGE'");
       }
+      if (headerType === 'IMAGE' && !headerImageUrl) {
+        return errorResponse(res, 400, 'headerImageUrl is required when headerType is IMAGE');
+      }
+      header = { type: headerType };
+    }
+    if (header !== undefined && header !== null && (typeof header !== 'object' || !HEADER_TYPES.includes(header.type))) {
+      return errorResponse(res, 400, `header.type must be one of: ${HEADER_TYPES.join(', ')}`);
     }
 
-    const { data: template, error } = await supabase.from('message_templates').insert({
+    // A media header takes its file from the business media library.
+    let media = null;
+    if (header && HEADER_MEDIA_TYPE[header.type] && !legacyImage) {
+      if (!header.mediaId || typeof header.mediaId !== 'string') {
+        return errorResponse(res, 400, `header.mediaId is required for a ${header.type} header`);
+      }
+      // Scoped to this business, so another business's media reads as not found.
+      const { data, error: mediaErr } = await supabase
+        .from('business_media').select('*').eq('id', header.mediaId).eq('business_id', businessId).maybeSingle();
+      if (mediaErr) throw mediaErr;
+      if (!data) {
+        return errorResponse(res, 404, 'Media not found');
+      }
+      const mediaError = validateHeaderMedia(data, header.type);
+      if (mediaError) {
+        return errorResponse(res, 400, mediaError);
+      }
+      media = data;
+    }
+
+    const { components, errors: shapeErrors } = buildComponentsFromInput({ header, bodyText, variableSamples, footerText, buttons });
+    const errors = [...shapeErrors, ...validateComponents(components)];
+    if (errors.length > 0) {
+      return errorResponse(res, 400, errors[0], errors);
+    }
+
+    const row = {
       business_id: businessId,
       name,
-      category: category || 'MARKETING',
-      language: language || 'en_US',
+      category: templateCategory,
+      language: templateLanguage,
       body_text: bodyText,
-      variable_count: variableCount,
+      variable_count: checkBodyVariables(bodyText).count,
       variable_samples: variableSamples !== undefined ? variableSamples : null,
-      header_type: headerType || 'NONE',
-      header_image_url: headerType === 'IMAGE' ? headerImageUrl : null,
-      header_image_r2_key: headerType === 'IMAGE' ? headerImageR2Key : null
-    }).select().single();
+      header_type: header && header.type ? header.type : 'NONE',
+      header_image_url: legacyImage ? headerImageUrl : null,
+      header_image_r2_key: legacyImage ? headerImageR2Key : null,
+      header_media_url: media ? media.url : null,
+      header_media_id: media ? media.id : null,
+      header_media_filename: media && header.type === 'DOCUMENT' ? (media.original_filename || null) : null,
+      meta_components: components
+    };
+    row.send_support = computeSendSupport(row);
+
+    const { data: template, error } = await supabase.from('message_templates').insert(row).select().single();
     if (error) {
       // uq_msg_templates_business_name_lang_unregistered: one not-yet-submitted
       // template per name + language (the sync adopts by that pair).
@@ -203,6 +228,8 @@ const createMessageTemplate = async (req, res, next) => {
 
 /**
  * POST /api/message-templates/upload-header-image
+ * DEPRECATED - kept for old clients; new ones pick a file from the media
+ * library and pass header.mediaId to POST /api/message-templates.
  * Upload a template header image to R2. Does not touch a template row -
  * the returned { url, key } are passed into createMessageTemplate.
  */
@@ -250,87 +277,30 @@ const submitMessageTemplate = async (req, res, next) => {
       return errorResponse(res, 400, 'Only draft or rejected templates can be submitted');
     }
 
-    if (template.variableCount > 0 && (!Array.isArray(template.variableSamples) || template.variableSamples.length === 0)) {
-      return errorResponse(res, 400, "Add sample values for this template's variables before submitting");
-    }
-
     const business = await businessService.getBusinessById(businessId);
     if (!business || !business.wabaId || !business.accessToken) {
       return errorResponse(res, 400, 'Business is not connected to WhatsApp. Please connect WhatsApp first.');
     }
 
-    const accessToken = decrypt(business.accessToken);
-
-    const bodyComponent = { type: 'BODY', text: template.bodyText };
-    if (template.variableCount > 0) {
-      bodyComponent.example = { body_text: [template.variableSamples] };
-    }
-
-    const components = [bodyComponent];
-
-    if (template.headerType === 'IMAGE') {
-      try {
-        const appAccessToken = `${config.META_APP_ID}|${config.META_APP_SECRET}`;
-
-        const imageResponse = await axios.get(template.headerImageUrl, { responseType: 'arraybuffer' });
-        const fileBuffer = Buffer.from(imageResponse.data);
-        const fileType = imageResponse.headers['content-type'];
-
-        const sessionResponse = await axios.post(
-          `${META_API_BASE}/${config.META_APP_ID}/uploads`,
-          null,
-          { params: { file_length: fileBuffer.length, file_type: fileType, access_token: appAccessToken } }
-        );
-        const uploadSessionId = sessionResponse.data.id;
-
-        const handleResponse = await axios.post(
-          `${META_API_BASE}/${uploadSessionId}`,
-          fileBuffer,
-          {
-            headers: {
-              Authorization: `OAuth ${appAccessToken}`,
-              file_offset: '0'
-            }
-          }
-        );
-        const headerHandle = handleResponse.data.h;
-
-        components.unshift({ type: 'HEADER', format: 'IMAGE', example: { header_handle: [headerHandle] } });
-      } catch (error) {
-        logger.error('Error uploading header image to Meta:', {
+    let metaResponse;
+    try {
+      metaResponse = await submitTemplateToMeta(business, decrypt(business.accessToken), templateRow);
+    } catch (error) {
+      if (error instanceof TemplateValidationError) {
+        return errorResponse(res, 400, error.errors[0], error.errors);
+      }
+      if (error.templateStage) {
+        const uploading = error.templateStage === 'upload';
+        logger.error(uploading ? 'Error uploading header media to Meta:' : 'Error submitting message template to Meta:', {
           businessId,
           templateId: id,
           error: error.response?.data || error.message
         });
-        return errorResponse(res, 400, 'Failed to upload header image to Meta', error.response?.data || error.message);
+        return errorResponse(res, 400,
+          uploading ? 'Failed to upload header media to Meta' : 'Failed to submit template to Meta',
+          error.response?.data || error.message);
       }
-    }
-
-    let metaResponse;
-    try {
-      const response = await axios.post(
-        `${META_API_BASE}/${business.wabaId}/message_templates`,
-        {
-          name: template.name,
-          category: template.category,
-          language: template.language,
-          components
-        },
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-            'Content-Type': 'application/json'
-          }
-        }
-      );
-      metaResponse = response.data;
-    } catch (error) {
-      logger.error('Error submitting message template to Meta:', {
-        businessId,
-        templateId: id,
-        error: error.response?.data || error.message
-      });
-      return errorResponse(res, 400, 'Failed to submit template to Meta', error.response?.data || error.message);
+      throw error;
     }
 
     const { data: updatedTemplate, error: updateErr } = await supabase.from('message_templates').update({

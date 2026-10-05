@@ -3,10 +3,9 @@
 // created + submitted to Meta by botSettings.service.js on Publish. Kept
 // apart from demoReminder.service.js so Bot Builder code doesn't load the
 // reminder queue (Redis).
-const axios = require('axios');
 const supabase = require('../config/supabase');
 const businessService = require('./business.service');
-const { META_API_BASE } = require('./whatsapp.service');
+const { submitTemplateToMeta } = require('./templateSubmit.service');
 const { REMINDER_TEMPLATE } = require('../utils/demoReminder');
 const { decrypt } = require('../utils/crypto');
 const logger = require('../utils/logger');
@@ -23,8 +22,8 @@ const getReminderTemplate = async (businessId) => {
  * Creates the reminder template for this business and submits it to Meta,
  * unless it was already submitted (a rejected one is left for the owner —
  * Meta keeps a rejected name, so fixing it is a Templates-page job).
- * Same Meta call as messageTemplate.controller.js#submitMessageTemplate,
- * body-only. @returns {Promise<Object>} the template row
+ * Goes through the same submit as messageTemplate.controller.js
+ * (templateSubmit.service.js), body-only. @returns {Promise<Object>} the template row
  */
 const ensureReminderTemplate = async (businessId) => {
   const existing = await getReminderTemplate(businessId);
@@ -51,19 +50,10 @@ const ensureReminderTemplate = async (businessId) => {
     row = data;
   }
 
-  const response = await axios.post(
-    `${META_API_BASE}/${business.wabaId}/message_templates`,
-    {
-      name: row.name,
-      category: row.category,
-      language: row.language,
-      components: [{ type: 'BODY', text: row.body_text, example: { body_text: [row.variable_samples] } }]
-    },
-    { headers: { Authorization: `Bearer ${decrypt(business.accessToken)}`, 'Content-Type': 'application/json' } }
-  );
+  const response = await submitTemplateToMeta(business, decrypt(business.accessToken), row);
 
   const { data: updated, error: updateErr } = await supabase.from('message_templates').update({
-    meta_template_id: response.data.id,
+    meta_template_id: response.id,
     status: 'pending',
     submitted_at: new Date().toISOString()
   }).eq('id', row.id).select().single();

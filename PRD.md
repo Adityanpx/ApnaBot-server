@@ -594,6 +594,28 @@ tracked as a deferred "future initiative" — it's built and live.
    webhook.
 
 ## Session log (append here as major milestones land)
+- 2026-10-05: Create templates with media header, footer, language and
+  buttons (#6 Phase 3, built, not yet deployed; no migration). `POST
+  /api/message-templates` takes `language` (en_US | hi | mr), `header
+  { type: NONE|TEXT|IMAGE|VIDEO|DOCUMENT, text?, textSample?, mediaId? }`
+  (`mediaId` = a `business_media` file, required for media headers),
+  `footerText`, `buttons` (≤3: URL `{ text, url, dynamic?, example? }` — dynamic
+  = one trailing `{{1}}` + example; PHONE_NUMBER `{ text, phone }` E.164; no
+  QUICK_REPLY until Phase 4). The full components are stored in
+  `meta_components` (same shape as synced templates) with `header_media_*` set
+  and `send_support` computed, so the template is sendable once approved.
+  Validation is shared (`utils/templateValidation.js`, run at create and
+  again at submit); `utils/templateBuild.js` builds components / the Meta
+  payload; `services/templateSubmit.service.js#submitTemplateToMeta` is the one
+  submit (used by `submitMessageTemplate` and `demoReminderTemplate.service.js`,
+  demo payload unchanged). Media headers go through Meta's resumable upload
+  authorised with the BUSINESS access token (verified live on SG Travels
+  2026-10-05 with `src/scripts/testTemplateHeaderUpload.js`: handle OK, create
+  PENDING; leftover test template `apnabot_header_test` on that WABA). The
+  upload's mime type comes from the file extension. `upload-header-image` and
+  `headerType`/`headerImageUrl` are deprecated but still work. Not
+  checked here (left to Meta's review): variables separated only by a space,
+  variable-to-text ratio, content policy.
 - 2026-10-05: Send media headers + URL buttons (#6 Phase 2, built, not yet
   deployed). Every template send builds its Meta `components` through
   `utils/templateComponents.js#buildTemplateComponents` (broadcast controller +
