@@ -20,6 +20,7 @@ const { isTemplateUsable } = require('../utils/templateStatus');
 const { buildTemplateComponents, headerMediaOf } = require('../utils/templateComponents');
 const { buttonsOf } = require('../utils/templateMapping');
 const logger = require('../utils/logger');
+const { extractMetaMessageId, attachMetaMessageId } = require('./outboundMessageId.service');
 
 const FREE_FORM_WINDOW_MS = 24 * 60 * 60 * 1000; // same as message.controller.js
 
@@ -114,8 +115,9 @@ const sendWindowAwareMessage = async (business, customerRow, { textFor, template
     }
   }
 
+  let sendResult;
   try {
-    await whatsappService.sendTemplateMessage(
+    sendResult = await whatsappService.sendTemplateMessage(
       business.phoneNumberId, business.accessToken, customerRow.whatsapp_number, templateRow.name, templateRow.language,
       buildTemplateComponents(templateRow, { body: templateParams, header: templateHeader, buttons: templateButtons })
     );
@@ -131,6 +133,8 @@ const sendWindowAwareMessage = async (business, customerRow, { textFor, template
   const labels = buttonsOf(templateRow).filter(b => b.text).map(b => `[${b.text}]`);
   const chatText = labels.length > 0 ? `${templateText}\n\n${labels.join('\n')}` : templateText;
   const message = await recordOutbound(business, customerRow, chatText, 'sent', headerMediaOf(templateRow));
+  // Meta's wamid on the row, so its status webhooks find it (never throws).
+  await attachMetaMessageId(business.id, message.id, extractMetaMessageId(sendResult));
   usageService.incrementUsage(business.id, 'outbound').catch(err => logger.error('Error incrementing outbound usage:', err));
   return { sent: 'template', messageId: message.id, costPaise: ratePaise };
 };
