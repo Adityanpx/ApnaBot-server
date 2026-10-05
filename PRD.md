@@ -508,6 +508,23 @@ tracked as a deferred "future initiative" — it's built and live.
   signup). `disabled_booking_fields`, `served_cities`
   are live per-business config, applied as an OVERLAY at read time by the
   graph engine (never baked into stored flow data).
+- `businesses` WhatsApp connection columns: `phone_number_id` (unique),
+  `waba_id`, `access_token` (encrypted), `is_whatsapp_connected`,
+  `whatsapp_onboarding_type` (`cloud_api` | `coexistence`; NULL for
+  businesses connected before 2026-10-05, no backfill),
+  `whatsapp_register_pin` (encrypted 2-step-verification PIN used by
+  `/register` on the Cloud API path; a secret - never returned to a client),
+  `whatsapp_connected_at`, `coex_contacts_sync_requested_at`,
+  `coex_history_sync_requested_at`. `is_whatsapp_connected=false` makes the
+  tenant resolver treat the number as not live (set by an `account_update`
+  webhook; IDs and token are kept so a reconnect can restore it).
+- `messages` extras: `sender_type` (`bot` | `human` | `phone_app` - sent from
+  the WhatsApp Business app), `is_history_import` (coexistence history rows:
+  excluded from `report_response_time_stats`, read, original timestamps),
+  `raw_payload jsonb` (Meta's raw message, kept ONLY for inbound
+  `unsupported` rows), `meta_message_id` with a **partial unique index on
+  (business_id, meta_message_id)** (migration `20261005140000`). Outbound rows
+  carry their wamid from 2026-10-05 (before that, none of the first 1,368 did).
 - `message_templates` — one row per WhatsApp template. `source` (`app` |
   `meta_sync`), `meta_template_id`, `status` (draft, pending, approved,
   rejected, paused, disabled, deleted), raw `meta_status`, `quality_score`,
@@ -547,6 +564,77 @@ tracked as a deferred "future initiative" — it's built and live.
   `src/config/env.js`), and generally from continuous BullMQ polling +
   heavy manual testing. Consider upgrading the Upstash tier before real
   ad traffic starts.
+
+## WhatsApp connection, coexistence, message ids (built 2026-10-05)
+
+State: commits 7380098 .. 1818344 are on origin/main; **a38b3ed (outbound wamid)
+and 28a6152 (forward-only statuses) are local only** until pushed. Check Render
+for what is actually deployed before assuming.
+
+- **Two onboarding paths, one endpoint.** `POST /api/business/connect-whatsapp`
+  (`business.controller.js`, logic in `services/whatsappOnboarding.service.js`).
+  Body `{ code, wabaId, phoneNumberId?, onboardingType? }`, camelCase or
+  snake_case. The path is derived SERVER-SIDE from the phone-number node's
+  `is_on_biz_app` (undocumented by Meta but returned live: true = coexistence,
+  false = cloud_api); missing -> the client's `onboardingType` hint (from Meta's
+  postMessage event) -> default `coexistence`. **Cloud API path:** `/register`
+  with the stored (or newly generated, stored BEFORE the call) 6-digit PIN, only
+  while `platform_type` is not already `CLOUD_API` (Meta limits `/register` to 10
+  per number per 72h); a register failure returns a clear error (133005 = PIN
+  mismatch -> turn off two-step verification in WhatsApp Manager) and the
+  business is NOT saved. The signup `code` is single-use, so a failed register
+  means re-running Embedded Signup. **Coexistence path:** no `/register`;
+  `smb_app_data` contacts + history syncs (each one-time, within 24h of
+  onboarding) run after the save, non-fatal, ONLY when
+  `COEXISTENCE_SYNC_ENABLED=true` (default off - see below). The old and new
+  `tenant:{phoneNumberId}` cache keys are both invalidated.
+  **Never verified against a real fresh number yet** - the first Path A test
+  (spare SIM) must log the phone node before/after `/register` (the code does).
+- **Connect page** (`public/whatsapp-connect.html`, used by Flutter; apnabot-web
+  has its OWN copy in `use-whatsapp-signup.ts` and still has no guidance screen
+  or `onboardingType`): `featureType: 'whatsapp_business_app_onboarding'` is
+  always on; the three guidance cards are advice only. Sends once, when both the
+  auth code and both IDs are in (30s timeout); strict `facebook.com` origin check;
+  auth `code` redacted from debug payloads.
+- **Webhook dispatch** (`webhook.controller.js`): every entry, change and message of
+  a POST is processed on its own (`splitMessages` fans out batched messages;
+  one failure never drops the rest). History / contact-sync bodies are not
+  logged whole (one summary line each); everything else is.
+- **Inbound dedupe.** Meta can deliver one wamid more than once (retries, and an
+  empty `unsupported` placeholder + the real message, either order, minutes
+  apart - seen live on Search cab AI). `services/inboundMessage.service.js`
+  decides before any side effect: real over unsupported -> replace the row and
+  process once (no second count); unsupported after anything, or a repeat -> ignore;
+  23505 from the unique index is handled the same way. Unsupported rows show a
+  readable label and keep `raw_payload`.
+- **Coexistence handlers** (`services/coexistence.service.js`, shapes in
+  `utils/coexistencePayload.js`): `smb_message_echoes` (owner's phone messages ->
+  outbound `phone_app`, dashboard socket event; revoke/edit skipped),
+  `history` (old chats, `is_history_import`, ERROR -> `failed`, declined = code
+  2593109), `smb_app_state_sync` (contacts -> customers, never overwrites a
+  name, `opted_in` stays false), `account_update` (PARTNER_REMOVED /
+  ACCOUNT_DELETED / ACCOUNT_OFFBOARDED -> `is_whatsapp_connected=false`;
+  ACCOUNT_RECONNECTED -> true while a token is stored; found by WABA id since the
+  events carry no phone number). None reaches the bot, usage, or the outbound
+  queue, and none touches `customers.last_message_at` / `total_messages` - those
+  drive the 24h window, which only a real inbound customer message may open.
+  Echoes do NOT pause the bot (separate decision pending).
+- **Outbound ids + statuses.** Every send that has a `messages` row saves Meta's
+  wamid on it: the BullMQ worker (covers bot replies, dashboard sends, payment
+  QR / confirmations) and the template path of `windowAwareSend` (follow-ups,
+  demo reminders) via `services/outboundMessageId.service.js`, which never throws.
+  If the wamid collides with an echo row (`phone_app`) the echo is deleted and
+  the API row kept. Meta's status webhooks therefore now match outbound rows;
+  statuses only move forward (sent -> delivered -> read, `utils/messageStatus.js`).
+  Sends with no `messages` row (broadcast worker, session-timeout notice, public
+  service-form messages, platform notifications) have nothing to update.
+- **Flags / Meta dashboard.** `COEXISTENCE_SYNC_ENABLED` (env, default off): turn it on
+  only when the history / contact-sync handlers are deployed, or Meta's one-time
+  sync is spent and lost. The webhook fields `history`, `smb_app_state_sync` and
+  `smb_message_echoes` are NOT yet subscribed in the Meta App Dashboard; subscribe
+  them together with the flag, then check the first real echo's stored row.
+  Search cab AI is already a coexistence number, so its owner's phone replies
+  start appearing in the dashboard the moment echoes are subscribed.
 
 ## Known gaps / deferred work
 
@@ -601,7 +689,41 @@ tracked as a deferred "future initiative" — it's built and live.
    the broadcast worker / follow-up sender on that code. (From memory of Meta's
    docs, unverified - confirm the code against a real refusal first.)
 
+9. **BSUID / usernames (backlog, 2026-10-05).** Meta sends a business-scoped
+   `user_id` (contacts[].user_id, `from_user_id`) on messages/status webhooks and
+   omits `wa_id` for a username user with no interaction in 30 days. We key
+   `customers` on `from`. Plan: `customers.user_id`, look up by either, handle
+   `user_id_update`; sending uses `recipient` instead of `to`. Echo / history /
+   state_sync payloads do not document `user_id` - confirm on real ones.
+10. **Centralise accessToken stripping (backlog).** Each controller deletes
+   `accessToken` / `whatsappRegisterPin` from a business before responding
+   (`business.controller.js`, `admin.controller.js`); only the PIN is also stripped
+   centrally (`attachTravelSettings`). One serializer so a future endpoint can't leak.
+11. **verifyBookingGraph.js** crashes on Averix Solutions (PGRST116, a `.single()`
+   matching 8 rows - check the same pattern isn't on a live path) and fails on
+   Internet Cafe Katta (script ignores a flow that is done at start; no live impact).
+12. **Owner-initiated phone chats are not in the inbox.** The inbox lists customers
+   with `last_message_at` set, and echoes deliberately don't set it (24h window).
+   Planned: a separate inbox-only `last_activity_at`.
+13. **Reports.** `report_response_time_stats` counts `phone_app` replies as human
+   (filter is `sender_type <> 'bot'`) and excludes `is_history_import` rows.
+14. **Clients don't listen for `new_message` / `message_status`.** apnabot-web only
+   uses the socket for "who is viewing"; both apps refresh on focus / pull-to-refresh.
+15. **Webhook body logging.** `receiveWebhook` still prints the whole body (phone
+   numbers, message text) to the logs for everything except history / contact sync.
+
 ## Session log (append here as major milestones land)
+- 2026-10-05: WhatsApp onboarding paths + coexistence + message ids (see the
+  section above). In order: migrations (`20261005130000` columns / sender_type /
+  history flag, `20261005135000` raw_payload, `20261005140000` unique index) ->
+  inbound dedupe (8ad67eb, after `dedupeMessages.js` removed 16 duplicate rows)
+  -> connect page (beeb282) -> connect-whatsapp endpoint (7ea5893) -> webhook
+  loop over entries/changes/messages (1739541) -> coexistence handlers (1818344)
+  -> outbound wamid (a38b3ed) -> forward-only statuses (28a6152). Live-path notes:
+  Search cab AI is affected by every webhook change; the tenant resolver now also
+  requires `is_whatsapp_connected=true` (all three live numbers were true when
+  checked). Still open: first real Path A test (spare SIM), subscribing the three
+  Meta webhook fields + `COEXISTENCE_SYNC_ENABLED`, apnabot-web / Flutter changes.
 - 2026-10-05: Quick-reply buttons on templates (#6 Phase 4, three commits,
   not yet deployed). **4a (inbound, a105a61):** a customer tapping a template
   quick reply arrives as message `type: 'button'` `{ payload, text }` -
