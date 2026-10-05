@@ -14,7 +14,7 @@ const NUMBER = '919800000001';
 const SECRET = 'test-secret';
 const HOUR = 3600 * 1000;
 
-let db; let queued; let calls; let session; let enabledLanguages; let tenantOverrides; let nodeLabel;
+let usageAllowed; let db; let queued; let calls; let session; let enabledLanguages; let tenantOverrides; let nodeLabel;
 
 const from = (table) => {
   const filters = []; let op = 'select'; let payload;
@@ -57,8 +57,8 @@ stub('../services/tenant.service', {
   })
 });
 stub('../services/usage.service', {
-  checkUsageLimit: async () => ({ allowed: true, current: 0, limit: 500 }),
-  incrementUsage: async () => {}
+  checkUsageLimit: async () => ({ allowed: usageAllowed, current: 0, limit: 500 }),
+  incrementUsage: async (businessId, direction) => { calls.push(['incrementUsage', direction]); }
 });
 stub('../services/smartFallback.service', { getSmartFallbackReply: async () => null });
 stub('../services/business.service', {
@@ -124,7 +124,7 @@ test.beforeEach(() => {
     ] }],
     flow_nodes: [{ id: NODE, business_id: BIZ, node_type: 'question', is_active: true }]
   };
-  queued = []; calls = []; session = null; enabledLanguages = ['en']; tenantOverrides = {}; nodeLabel = 'Our prices: ...';
+  usageAllowed = true; queued = []; calls = []; session = null; enabledLanguages = ['en']; tenantOverrides = {}; nodeLabel = 'Our prices: ...';
 });
 
 const pay = (i) => `tpl:${TPL}:${i}`;
@@ -248,4 +248,61 @@ test('typed text and interactive taps are untouched: typed STOP still opts out, 
   await send({ type: 'text', text: { body: 'STOP' } });
   assert.ok(customer().opted_out_at);
   assert.equal(queued.length, 1);
+});
+
+// ── Over the usage limit ──
+
+test('over limit + typed STOP: opted out, paused, confirmation sent', async () => {
+  usageAllowed = false;
+  await send({ type: 'text', text: { body: 'STOP' } });
+  assert.ok(customer().opted_out_at);
+  assert.ok(new Date(customer().bot_paused_until).getTime() > Date.now());
+  assert.equal(queued.length, 1);
+  assert.equal(inbound().length, 1);
+});
+
+test('over limit + opt-out tap (ours and Meta\'s): opted out, paused, confirmation sent', async () => {
+  usageAllowed = false;
+  await tap(pay(1), 'No more');
+  assert.ok(customer().opted_out_at);
+  assert.equal(queued.length, 1);
+  queued = [];
+  customer().opted_out_at = null; customer().bot_paused_until = null;
+  await tap('Stop promotions', 'Stop promotions');
+  assert.ok(customer().opted_out_at);
+  assert.equal(queued.length, 1);
+});
+
+test('over limit + START clears a timed pause and the opt-out', async () => {
+  usageAllowed = false;
+  customer().opted_out_at = new Date().toISOString();
+  customer().bot_paused_until = new Date(Date.now() + HOUR).toISOString();
+  await send({ type: 'text', text: { body: 'START' } });
+  assert.equal(customer().opted_out_at, null);
+  assert.equal(customer().bot_paused_until, null);
+});
+
+test('over limit + normal text: saved, still no reply, no rule matching', async () => {
+  usageAllowed = false;
+  await send({ type: 'text', text: { body: 'price' } });
+  assert.equal(inbound().length, 1);
+  assert.equal(queued.length, 0);
+  assert.ok(!calls.some(c => c[0] === 'findMatchingRule'));
+});
+
+test('over limit + normal button tap: saved, still no reply', async () => {
+  usageAllowed = false;
+  await tap(pay(0), 'Prices');
+  assert.equal(inbound().length, 1);
+  assert.equal(queued.length, 0);
+  assert.ok(!calls.some(c => c[0] === 'findMatchingRule'));
+});
+
+test('over limit: inbound usage is still not counted; under limit it is', async () => {
+  usageAllowed = false;
+  await send({ type: 'text', text: { body: 'price' } });
+  assert.ok(!calls.some(c => c[0] === 'incrementUsage' && c[1] === 'inbound'));
+  usageAllowed = true; calls = [];
+  await send({ type: 'text', text: { body: 'price' } });
+  assert.ok(calls.some(c => c[0] === 'incrementUsage' && c[1] === 'inbound'));
 });

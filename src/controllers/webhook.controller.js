@@ -954,24 +954,26 @@ const receiveWebhook = async (req, res) => {
     }
 
     // Step 9.5 - Enforce usage limit (message is already saved above — only
-    // the reply, and the now-meaningless usage increment below, are blocked)
-    if (!usageCheck.allowed) {
-      logger.warn(`Usage limit reached for business ${tenant.businessId} — message saved, reply suppressed`);
-      return;
+    // the reply, and the now-meaningless usage increment below, are blocked).
+    // The return itself is further down, after the STOP/START handling: an
+    // opt-out is compliance-sensitive and must be honoured (and confirmed)
+    // even when the business is over its limit.
+    const overLimit = !usageCheck.allowed;
+
+    if (!overLimit) {
+      // Step 10 - Increment usage (fire and forget)
+      usageService.incrementUsage(tenant.businessId, 'inbound');
+
+      // ADD THIS — Emit usage_update to Flutter dashboard
+      usageService.checkUsageLimit(tenant.businessId, tenant.plan?.msg_limit || 500)
+        .then(usageCheck => {
+          socketService.emitToBusiness(tenant.businessId.toString(), 'usage_update', {
+            msgCount: usageCheck.current,
+            limit: usageCheck.limit
+          });
+        })
+        .catch(err => logger.error('Error emitting usage_update:', err));
     }
-
-    // Step 10 - Increment usage (fire and forget)
-    usageService.incrementUsage(tenant.businessId, 'inbound');
-
-    // ADD THIS — Emit usage_update to Flutter dashboard
-    usageService.checkUsageLimit(tenant.businessId, tenant.plan?.msg_limit || 500)
-      .then(usageCheck => {
-        socketService.emitToBusiness(tenant.businessId.toString(), 'usage_update', {
-          msgCount: usageCheck.current,
-          limit: usageCheck.limit
-        });
-      })
-      .catch(err => logger.error('Error emitting usage_update:', err));
 
     // Customer-controlled pause: checked ahead of both the active-booking-
     // session handling (Step 12) and the isBotPaused early-return below —
@@ -1131,6 +1133,13 @@ const receiveWebhook = async (req, res) => {
         customer.optedOutAt = null;
         logger.info(`Customer ${customerNumber} cleared their opt-out via START keyword for business ${tenant.businessId}`);
       }
+    }
+
+    // Step 9.5 (cont.) - over the usage limit: STOP / START / opt-out taps were
+    // handled above; everything else is saved but gets no reply.
+    if (overLimit) {
+      logger.warn(`Usage limit reached for business ${tenant.businessId} — message saved, reply suppressed`);
+      return;
     }
 
     if (isBotPaused) {
