@@ -116,7 +116,7 @@ stub('./windowAwareSend.service', {
   sendWindowAwareMessage: async (business, customer, opts) => {
     if (sendBehaviour.throwFor && sendBehaviour.throwFor.has(customer.id)) throw new Error('boom');
     const windowOpen = customer.last_message_at && NOW.getTime() < new Date(customer.last_message_at).getTime() + FREE_FORM_WINDOW_MS;
-    sendCalls.push({ customerId: customer.id, text: opts.textFor(customer.preferred_language || null), template: opts.template, params: opts.templateParams, templateText: opts.templateText, billing: opts.billing });
+    sendCalls.push({ customerId: customer.id, text: opts.textFor(customer.preferred_language || null), template: opts.template, params: opts.templateParams, header: opts.templateHeader, buttons: opts.templateButtons, templateText: opts.templateText, billing: opts.billing });
     if (windowOpen) return { sent: 'text', messageId: `msg-${customer.id}`, costPaise: 0 };
     if (!opts.template) return { sent: false, code: 'no_template' };
     return { sent: 'template', messageId: `msg-${customer.id}`, costPaise: 80 };
@@ -635,4 +635,96 @@ test('countDueCustomers counts due bookings for booking triggers', async () => {
     ] });
   const { countDueCustomers } = require('./followupSweep.service');
   assert.deepEqual(await countDueCustomers({ ...review(), business_id: 'b1' }, NOW), { count: 1, capped: false });
+});
+
+// ── #6 Phase 2: media / header-variable / URL-button templates + the send-time re-check ──
+const richComponents = [
+  { type: 'HEADER', format: 'TEXT', text: 'Hello {{1}}' },
+  { type: 'BODY', text: 'Hi {{1}}, about booking {{2}}' },
+  { type: 'BUTTONS', buttons: [{ type: 'PHONE_NUMBER', text: 'Call', phone_number: '+91' }, { type: 'URL', text: 'Pay', url: 'https://x.com/{{1}}' }] }
+];
+const richMapping = [
+  { source: 'customer.name', fallback: '' }, { source: 'booking.code', fallback: '' },
+  { target: 'header', source: 'customer.name', fallback: '' },
+  { target: 'button', buttonIndex: 1, source: 'booking.code', fallback: '' }
+];
+const resetRich = (templateOver = {}, automationOver = {}) => {
+  resetBooking({
+    automations: [review({ template_variable_mapping: richMapping, ...automationOver })],
+    customers: [customer('c01', { last_message_at: ago(5 * DAY), name: 'Asha' })],
+    bookings: [booking('bk01', 'c01', { status: 'completed', completed_at: ago(DAY + MIN) })]
+  });
+  // a copy: utilityTemplate is shared with the other booking tests
+  db.message_templates = db.message_templates.map(t => (t.id === 't2' ? { ...t, header_type: 'TEXT', meta_components: richComponents, ...templateOver } : t));
+};
+const lastReason = () => db.followup_sends[0] && db.followup_sends[0].reason;
+
+test('header variable and URL button values are rendered and handed to the sender', async () => {
+  resetRich();
+  const s = await sweep();
+  assert.equal(s.sent, 1);
+  assert.deepEqual(sendCalls[0].params, ['Asha', 'SG01']);
+  assert.deepEqual(sendCalls[0].header, ['Asha']);
+  assert.deepEqual(sendCalls[0].buttons, { 1: 'SG01' });
+});
+
+test('a media-header template with its media attached is sent', async () => {
+  resetRich({ header_type: 'IMAGE', meta_components: null, header_media_url: 'https://r2/x.jpeg' }, { template_variable_mapping: richMapping.slice(0, 2) });
+  const s = await sweep();
+  assert.equal(s.sent, 1);
+  assert.equal(sendCalls[0].template.header_media_url, 'https://r2/x.jpeg');
+});
+
+test('send-time re-check: header media removed since the automation was saved → skipped with the reason, nothing sent', async () => {
+  resetRich({ header_type: 'IMAGE', meta_components: null, header_media_url: null, header_image_url: null }, { template_variable_mapping: richMapping.slice(0, 2) });
+  const s = await sweep();
+  assert.equal(sendCalls.length, 0);
+  assert.equal(s.sent, 0);
+  assert.equal(db.followup_sends[0].status, 'skipped');
+  assert.equal(lastReason(), 'template_needs_header_media');
+});
+
+test('send-time re-check: a quick-reply button added in WhatsApp Manager → skipped (template_unsupported_component)', async () => {
+  resetRich({ meta_components: [...richComponents.slice(0, 2), { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Yes' }] }] });
+  await sweep();
+  assert.equal(sendCalls.length, 0);
+  assert.equal(db.followup_sends[0].status, 'skipped');
+  assert.equal(lastReason(), 'template_unsupported_component');
+});
+
+test('send-time re-check: the stored column says it cannot be sent → skipped with that reason', async () => {
+  resetRich({ send_support: 'unsupported_named_params' });
+  await sweep();
+  assert.equal(sendCalls.length, 0);
+  assert.equal(lastReason(), 'template_unsupported_named_params');
+});
+
+test('send-time re-check: the template gained a URL variable the saved mapping does not fill → template_mapping_mismatch', async () => {
+  resetRich({}, { template_variable_mapping: richMapping.filter(e => e.target !== 'button') });
+  await sweep();
+  assert.equal(sendCalls.length, 0);
+  assert.equal(lastReason(), 'template_mapping_mismatch');
+});
+
+test('a body-variable count that no longer matches the template is skipped too (was sent and rejected by Meta before)', async () => {
+  resetRich({ meta_components: [richComponents[0], { type: 'BODY', text: 'Hi {{1}}' }, richComponents[2]], body_text: 'Hi {{1}}' });
+  await sweep();
+  assert.equal(sendCalls.length, 0);
+  assert.equal(lastReason(), 'template_mapping_mismatch');
+});
+
+test('an empty header / button value (no name, no fallback, no booking code) is skipped, not sent as an empty parameter', async () => {
+  resetRich({}, { template_variable_mapping: richMapping.map(e => (e.target === 'button' ? { ...e, source: 'static', value: 'x' } : e)) });
+  db.followup_automations[0].template_variable_mapping = richMapping.map(e => (e.target === 'header' ? { ...e, source: 'static', value: '', fallback: '' } : e));
+  await sweep();
+  assert.equal(sendCalls.length, 0);
+  assert.equal(lastReason(), 'template_value_missing');
+});
+
+test('window open: still plain text — the template checks are not consulted', async () => {
+  resetRich({ send_support: 'unsupported_component' });
+  db.customers[0].last_message_at = ago(2 * HOUR);
+  await sweep();
+  assert.equal(sendCalls.length, 1);
+  assert.equal(db.followup_sends[0].status, 'sent_text');
 });

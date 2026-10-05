@@ -11,6 +11,8 @@ const { countDueCustomers } = require('./followupSweep.service');
 const {
   PRESETS, presetsForWeb, validateAutomation, rowToInput, ruleFor, maskNumber, countTemplateVariables
 } = require('../utils/followup');
+const { isTemplateUsable } = require('../utils/templateStatus');
+const { requiredParams, buttonsOf } = require('../utils/templateMapping');
 const { istDayStart } = require('../utils/ist');
 const { toCamelCase } = require('../utils/caseConvert');
 
@@ -169,24 +171,33 @@ const listSends = async (businessId, automationId, { page = 1, limit = 20 } = {}
 const presets = () => presetsForWeb();
 
 /**
- * The business's templates a follow-up can send: approved, body-only (no
- * image header) and send_support 'ok'. The web narrows further per preset
- * with its templateFilter (category).
+ * The business's templates a follow-up can send: approved and sendable
+ * (send_support 'ok', re-checked against the stored components) — body-only,
+ * media header, TEXT header variable, URL / phone buttons. The web narrows
+ * further per preset with its templateFilter (category). `variableCount` is
+ * the body's; `headerType` / `headerVariableCount` / `buttons` tell the
+ * wizard which extra mapping entries (target 'header' / 'button') to ask for.
  */
 const listTemplates = async (businessId) => {
   const { data, error } = await supabase.from('message_templates')
-    .select('id, name, category, language, body_text, header_type')
-    .eq('business_id', businessId).eq('status', 'approved').eq('send_support', 'ok').eq('header_type', 'NONE')
+    .select('id, name, category, language, status, body_text, header_type, send_support, meta_components, header_media_url, header_image_url')
+    .eq('business_id', businessId).eq('status', 'approved').eq('send_support', 'ok')
     .order('name', { ascending: true });
   if (error) throw error;
-  return (data || []).map(t => ({
-    id: t.id,
-    name: t.name,
-    category: t.category,
-    language: t.language,
-    bodyText: t.body_text,
-    variableCount: countTemplateVariables(t.body_text)
-  }));
+  return (data || []).filter(isTemplateUsable).map(t => {
+    const need = requiredParams(t);
+    return {
+      id: t.id,
+      name: t.name,
+      category: t.category,
+      language: t.language,
+      bodyText: t.body_text,
+      variableCount: countTemplateVariables(t.body_text),
+      headerType: t.header_type,
+      headerVariableCount: need.header,
+      buttons: buttonsOf(t).map(b => ({ index: b.index, type: b.type, text: b.text, dynamic: b.dynamic }))
+    };
+  });
 };
 
 /**

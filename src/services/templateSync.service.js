@@ -1,7 +1,7 @@
 // Sync a business's message templates from WhatsApp (GET /{waba}/message_templates)
 // into message_templates. Meta wins on status, category, rejection reason,
 // quality and components for any row that has a meta_template_id; our own
-// header_image_url / header_image_r2_key are never touched.
+// header_image_url / header_image_r2_key / header_media_* are never touched.
 //
 // Matching: meta_template_id first; else (name, language) among this
 // business's rows that have no meta_template_id yet (adopts a draft that was
@@ -20,6 +20,7 @@ const businessService = require('./business.service');
 const { META_API_BASE } = require('./whatsapp.service');
 const { decrypt } = require('../utils/crypto');
 const { templateStatusFromMeta } = require('../utils/templateStatus');
+const { computeSendSupport: sharedSendSupport } = require('../utils/templateSendSupport');
 const logger = require('../utils/logger');
 
 const SYNC_COOLDOWN_MS = 60 * 1000;
@@ -55,43 +56,19 @@ const headerTypeOf = (t) => {
 };
 
 /**
- * Can today's sender send this template? Today's sender fills BODY variables
- * and one IMAGE header from a stored image URL — nothing else.
- *   unsupported_named_params  parameter_format NAMED ({{name}} variables)
- *   unsupported_component     any BUTTONS (or other non header/body/footer)
- *                             component, a header with its own variable, or a
- *                             LOCATION / unknown header format
- *   needs_header_media        IMAGE header with no stored image, or VIDEO / DOCUMENT
- *   ok                        everything else (FOOTER and a variable-free TEXT
- *                             header are added by Meta, nothing to send)
- * Checked in that order when several apply.
+ * Can ApnaBot send this Meta listing entry? The rules live in
+ * utils/templateSendSupport.js (also run at send time); this just shapes the
+ * listing entry + what we already store for the row into a row.
  * @param {Object} t  Meta listing entry ({ components, parameter_format })
- * @param {{ headerImageUrl?: string|null }} [own]  what we already store for the row
+ * @param {{ headerImageUrl?: string|null, headerMediaUrl?: string|null }} [own]  what we already store for the row
  */
-const computeSendSupport = (t, { headerImageUrl = null } = {}) => {
-  const body = componentOfType(t, 'BODY');
-  const named = String(t.parameter_format || '').toUpperCase() === 'NAMED'
-    || countNamedVariables(body && body.text) > 0;
-  if (named) return 'unsupported_named_params';
-
-  const components = componentsOf(t);
-  if (components.some(c => c && !['HEADER', 'BODY', 'FOOTER'].includes(c.type))) return 'unsupported_component';
-
-  const header = componentOfType(t, 'HEADER');
-  if (header) {
-    const format = headerFormat(t);
-    if (format === 'TEXT') {
-      if (countPositionalVariables(header.text) > 0 || countNamedVariables(header.text) > 0) return 'unsupported_component';
-    } else if (format === 'IMAGE') {
-      if (!headerImageUrl) return 'needs_header_media';
-    } else if (format === 'VIDEO' || format === 'DOCUMENT') {
-      return 'needs_header_media';
-    } else {
-      return 'unsupported_component';
-    }
-  }
-  return 'ok';
-};
+const computeSendSupport = (t, { headerImageUrl = null, headerMediaUrl = null } = {}) => sharedSendSupport({
+  meta_components: componentsOf(t),
+  parameter_format: t.parameter_format,
+  header_type: headerTypeOf(t),
+  header_image_url: headerImageUrl,
+  header_media_url: headerMediaUrl
+});
 
 const qualityOf = (t) => {
   const score = t.quality_score && typeof t.quality_score === 'object' ? t.quality_score.score : t.quality_score;
@@ -128,7 +105,10 @@ const metaFields = (t, existing, nowIso) => {
     body_text: bodyText,
     variable_count: countPositionalVariables(bodyText) || countNamedVariables(bodyText),
     header_type: headerTypeOf(t),
-    send_support: computeSendSupport(t, { headerImageUrl: existing ? existing.header_image_url : null }),
+    send_support: computeSendSupport(t, {
+      headerImageUrl: existing ? existing.header_image_url : null,
+      headerMediaUrl: existing ? existing.header_media_url : null
+    }),
     meta_deleted_at: status === 'deleted' ? ((existing && existing.meta_deleted_at) || nowIso) : null
   };
   const samples = samplesOf(t);

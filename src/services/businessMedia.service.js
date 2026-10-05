@@ -187,6 +187,17 @@ const deleteBusinessMedia = async (businessId, mediaId) => {
     throw err;
   }
 
+  // A template header sends this file's public link, so deleting it would
+  // leave the template pointing at a dead URL.
+  const { data: referencingTemplates, error: tplRefErr } = await supabase
+    .from('message_templates').select('name').eq('header_media_id', mediaId);
+  if (tplRefErr) throw tplRefErr;
+  if ((referencingTemplates || []).length > 0) {
+    const err = new Error(`Used as the header of template: ${referencingTemplates.map(t => t.name).join(', ')} — attach other media to it first.`);
+    err.statusCode = 400;
+    throw err;
+  }
+
   await r2.deleteImage(media.r2_key);
 
   const { error: deleteErr } = await supabase.from('business_media').delete().eq('id', mediaId);

@@ -8,6 +8,7 @@ const { addToBroadcastQueue } = require('../queues/broadcast.queue');
 const { normalizeAudience, resolveAudience, businessGroupIds } = require('../services/broadcastAudience.service');
 const { isTemplateUsable, sendSupportBlockReason } = require('../utils/templateStatus');
 const { buildTemplateComponents } = require('../utils/templateComponents');
+const { requiredParams, splitMapping, checkParamCounts, targetOf } = require('../utils/templateMapping');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
@@ -28,6 +29,38 @@ const countTemplateVariables = (bodyText) => {
   const matches = (bodyText || '').match(/\{\{\s*\d+\s*\}\}/g) || [];
   const numbers = new Set(matches.map((m) => m.replace(/\D/g, '')));
   return numbers.size;
+};
+
+// Sources a broadcast can fill: a recipient's name or a fixed value. Button
+// suffixes are fixed values only (booking.code exists for booking follow-ups).
+const HEADER_SOURCES = ['customer.name', 'static'];
+const BROADCAST_BUTTON_SOURCES = ['static'];
+
+/**
+ * Header / button parameter check for a broadcast's variable_mapping. Null =
+ * fine, including every template with only body variables and a mapping with
+ * only body entries (their count is checked by the older rule in the callers).
+ * A template with a TEXT-header variable or a dynamic URL button needs a
+ * mapping that fills them — the shared templateVariables list can't.
+ */
+const headerButtonMappingError = (templateRow, variableMapping) => {
+  const need = requiredParams(templateRow);
+  const needsExtras = need.header > 0 || need.buttons.length > 0;
+  const parts = splitMapping(variableMapping);
+  if (!needsExtras && parts.header.length === 0 && parts.button.length === 0 && parts.unknown.length === 0) return null;
+  if (needsExtras && !Array.isArray(variableMapping)) {
+    return 'This template has a header variable or a button link variable, so variableMapping is required';
+  }
+  const countError = checkParamCounts(variableMapping, templateRow);
+  if (countError) return countError;
+  for (const entry of [...parts.header, ...parts.button]) {
+    const allowed = targetOf(entry) === 'header' ? HEADER_SOURCES : BROADCAST_BUTTON_SOURCES;
+    if (!allowed.includes(entry.source)) return `A ${targetOf(entry)} variable's source must be one of: ${allowed.join(', ')}`;
+    if (entry.source === 'static' && (typeof entry.value !== 'string' || !entry.value.trim())) {
+      return `A ${targetOf(entry)} variable with a fixed value needs that value`;
+    }
+  }
+  return null;
 };
 
 /**
@@ -86,11 +119,13 @@ const createBroadcast = async (req, res, next) => {
     const requiredVariableCount = countTemplateVariables(templateRow.body_text);
     if (requiredVariableCount > 0) {
       const providedCount = (templateVariables || []).length;
-      const mappingCount = (variableMapping || []).length;
+      const mappingCount = splitMapping(variableMapping).body.length;
       if (providedCount !== requiredVariableCount && mappingCount !== requiredVariableCount) {
         return errorResponse(res, 400, `This template requires ${requiredVariableCount} variable(s); provide templateVariables or variableMapping with exactly ${requiredVariableCount} entr${requiredVariableCount === 1 ? 'y' : 'ies'}`);
       }
     }
+    const paramError = headerButtonMappingError(templateRow, variableMapping);
+    if (paramError) return errorResponse(res, 400, paramError);
 
     const { data: broadcast, error } = await supabase.from('broadcasts').insert({
       business_id: businessId,
@@ -144,10 +179,15 @@ const sendBroadcast = async (req, res, next) => {
     const requiredVariableCount = countTemplateVariables(templateRow.body_text);
     if (requiredVariableCount > 0) {
       const providedCount = (broadcastRow.template_variables || []).length;
-      const mappingCount = (broadcastRow.variable_mapping || []).length;
+      const mappingCount = splitMapping(broadcastRow.variable_mapping).body.length;
       if (providedCount !== requiredVariableCount && mappingCount !== requiredVariableCount) {
         return errorResponse(res, 400, `This template requires ${requiredVariableCount} variable(s), but this broadcast has ${providedCount || mappingCount} set. Recreate the broadcast with the correct variables.`);
       }
+    }
+    // Send-time re-check: the template may have changed (sync) since the draft was made.
+    const paramError = headerButtonMappingError(templateRow, broadcastRow.variable_mapping);
+    if (paramError) {
+      return errorResponse(res, 400, `This broadcast's template has changed since the draft was made: ${paramError}. Recreate the broadcast.`);
     }
 
     const business = await businessService.getBusinessById(businessId);

@@ -17,7 +17,8 @@ const whatsappService = require('./whatsapp.service');
 const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
 const { toCamelCase } = require('../utils/caseConvert');
 const { isTemplateUsable } = require('../utils/templateStatus');
-const { buildTemplateComponents } = require('../utils/templateComponents');
+const { buildTemplateComponents, headerMediaOf } = require('../utils/templateComponents');
+const { buttonsOf } = require('../utils/templateMapping');
 const logger = require('../utils/logger');
 
 const FREE_FORM_WINDOW_MS = 24 * 60 * 60 * 1000; // same as message.controller.js
@@ -28,15 +29,20 @@ const isConnected = (business) => !!(business.isWhatsappConnected && business.ph
 const isWindowOpen = (customerRow, nowMs = Date.now()) => !!(customerRow.last_message_at &&
   nowMs < new Date(customerRow.last_message_at).getTime() + FREE_FORM_WINDOW_MS);
 
-/** Records a bot message in the chat and pushes it to the dashboard. */
-const recordOutbound = async (business, customerRow, text, status) => {
+/**
+ * Records a bot message in the chat and pushes it to the dashboard.
+ * `media` ({ type: 'image'|'video'|'document', link }) makes it a media
+ * message (type + media_url) with `text` as the caption.
+ */
+const recordOutbound = async (business, customerRow, text, status, media = null) => {
   const { data: messageRow, error } = await supabase.from('messages').insert({
     business_id: business.id,
     customer_id: customerRow.id,
     customer_number: customerRow.whatsapp_number,
     direction: 'outbound',
-    type: 'text',
+    type: media ? media.type : 'text',
     content: text,
+    ...(media ? { media_url: media.link } : {}),
     status,
     sender_type: 'bot',
     is_read: true
@@ -62,12 +68,14 @@ const recordOutbound = async (business, customerRow, text, status) => {
  *   message_templates row (sent only when status 'approved' and send_support 'ok'), or a loader
  *   called only when the window is closed
  * @param {string[]} opts.templateParams     body {{1}}..{{n}} values
+ * @param {string[]} [opts.templateHeader]   the TEXT header's {{1}} (when it has one)
+ * @param {Object<number, string>} [opts.templateButtons]  dynamic URL button suffixes by buttonIndex
  * @param {string} opts.templateText         the template as it reads in the chat
  * @param {{ referenceId: string, notes: string, refundNotes: string }} opts.billing  wallet transaction details
  * @param {string} [opts.bookingId]          only for log context (messages has no booking column)
  * @returns {Promise<{ sent: 'text'|'template', messageId: string, costPaise: number } | { sent: false, code: 'not_connected'|'blocked'|'no_template'|'low_balance'|'rejected' }>}
  */
-const sendWindowAwareMessage = async (business, customerRow, { textFor, template, templateParams, templateText, billing, bookingId = null }) => {
+const sendWindowAwareMessage = async (business, customerRow, { textFor, template, templateParams, templateHeader = [], templateButtons = {}, templateText, billing, bookingId = null }) => {
   if (!isConnected(business)) return { sent: false, code: 'not_connected' };
   if (customerRow.is_blocked) return { sent: false, code: 'blocked' };
 
@@ -109,7 +117,7 @@ const sendWindowAwareMessage = async (business, customerRow, { textFor, template
   try {
     await whatsappService.sendTemplateMessage(
       business.phoneNumberId, business.accessToken, customerRow.whatsapp_number, templateRow.name, templateRow.language,
-      buildTemplateComponents(templateRow, { body: templateParams })
+      buildTemplateComponents(templateRow, { body: templateParams, header: templateHeader, buttons: templateButtons })
     );
   } catch {
     if (ratePaise > 0) {
@@ -118,7 +126,11 @@ const sendWindowAwareMessage = async (business, customerRow, { textFor, template
     }
     return { sent: false, code: 'rejected' };
   }
-  const message = await recordOutbound(business, customerRow, templateText, 'sent');
+  // In the chat: a media header shows as the message's media, and the buttons
+  // as their labels under the text (WhatsApp shows them as tappable buttons).
+  const labels = buttonsOf(templateRow).filter(b => b.text).map(b => `[${b.text}]`);
+  const chatText = labels.length > 0 ? `${templateText}\n\n${labels.join('\n')}` : templateText;
+  const message = await recordOutbound(business, customerRow, chatText, 'sent', headerMediaOf(templateRow));
   usageService.incrementUsage(business.id, 'outbound').catch(err => logger.error('Error incrementing outbound usage:', err));
   return { sent: 'template', messageId: message.id, costPaise: ratePaise };
 };

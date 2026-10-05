@@ -4,6 +4,7 @@
 // 20261005100000_message_templates_sync.sql). Only 'approved' (and
 // send_support 'ok') is sendable; 'paused' / 'disabled' are registered with
 // Meta but blocked, 'deleted' is gone from WhatsApp.
+const { computeSendSupport } = require('./templateSendSupport');
 
 // message_template_status_update webhook events. REINSTATED is Meta
 // un-pausing / re-enabling a template.
@@ -40,33 +41,47 @@ const META_LISTING_STATUS_TO_STATUS = {
 const templateStatusFromMeta = (metaStatus) =>
   (Object.hasOwn(META_LISTING_STATUS_TO_STATUS, metaStatus) ? META_LISTING_STATUS_TO_STATUS[metaStatus] : null);
 
-// send_support: can today's sender send this template? Anything but 'ok' is
+// send_support: can ApnaBot's sender send this template? Anything but 'ok' is
 // blocked from broadcasts and follow-ups.
 const SEND_SUPPORT_REASON = {
-  needs_header_media: "it has a header image/video/document that ApnaBot can't attach yet",
+  needs_header_media: 'its header needs an image, video or PDF attached in ApnaBot first',
   unsupported_named_params: "it uses named variables ({{name}}), which ApnaBot can't fill yet",
-  unsupported_component: "it has buttons or another part ApnaBot can't send yet"
+  unsupported_component: "it has buttons (quick reply, copy code, ...) or another part ApnaBot can't send yet"
 };
 
 /**
- * Usable = the template's own send_support is 'ok'. A row fetched without the
- * column (undefined) is treated as 'ok' — the DB default — so callers' narrow
- * selects and older fixtures keep working; a real non-'ok' value always blocks.
+ * The template's current send_support: the stored column AND a fresh
+ * computeSendSupport of the stored row, whichever blocks. The stored column
+ * alone can be stale (header media removed, components changed by a sync
+ * after the column was last written). A row fetched without the column
+ * (undefined) counts as 'ok' for the stored half — the DB default — so narrow
+ * selects and older fixtures keep working. Callers must select the columns
+ * computeSendSupport reads (meta_components, header_type, body_text,
+ * header_media_url, header_image_url) or the recomputed half can't see them.
  */
-const isSendSupported = (row) => (row.send_support === undefined ? true : row.send_support === 'ok');
+const effectiveSendSupport = (row) => {
+  if (row.send_support !== undefined && row.send_support !== 'ok') return row.send_support;
+  return computeSendSupport(row);
+};
+
+/** Sendable as far as the template itself goes (see effectiveSendSupport). */
+const isSendSupported = (row) => effectiveSendSupport(row) === 'ok';
 
 /** approved on WhatsApp AND something ApnaBot's sender can send. */
 const isTemplateUsable = (row) => !!row && row.status === 'approved' && isSendSupported(row);
 
 /** Why an approved template can't be sent (for error messages), or null when it can. */
-const sendSupportBlockReason = (row) =>
-  (isSendSupported(row) ? null : (SEND_SUPPORT_REASON[row.send_support] || 'ApnaBot can\'t send it yet'));
+const sendSupportBlockReason = (row) => {
+  const support = effectiveSendSupport(row);
+  return support === 'ok' ? null : (SEND_SUPPORT_REASON[support] || "ApnaBot can't send it yet");
+};
 
 module.exports = {
   TEMPLATE_EVENT_TO_STATUS,
   templateStatusForEvent,
   META_LISTING_STATUS_TO_STATUS,
   templateStatusFromMeta,
+  effectiveSendSupport,
   isSendSupported,
   isTemplateUsable,
   sendSupportBlockReason

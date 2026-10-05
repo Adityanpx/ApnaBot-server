@@ -5,32 +5,44 @@ const supabase = require('../config/supabase');
 const logger = require('../utils/logger');
 const config = require('../config/env');
 const { workerConnection } = require('../config/queueConnection');
-const { buildBodyComponents } = require('../utils/templateComponents');
+const { buildTemplateComponents } = require('../utils/templateComponents');
+const { splitMapping } = require('../utils/templateMapping');
 
 // Must match the prefix used by broadcast.queue.js - see comment there.
 const prefix = `apnabot:${config.QUEUE_NAMESPACE}`;
 
-// Resolves a recipient's own {{1}}, {{2}}... values from variableMapping
-// (see broadcast.controller.js createBroadcast) instead of the shared,
-// broadcast-wide components array. 'customer.name' pulls from that
-// recipient's own data; 'static' uses the fixed value from the mapping.
-const resolveRecipientComponents = (variableMapping, recipient) => {
-  const values = [...variableMapping]
-    .sort((a, b) => a.position - b.position)
-    .map((entry) => {
-      const text = entry.source === 'customer.name'
-        ? recipient.customer?.name
-        : entry.value;
-      const trimmed = text === null || text === undefined ? '' : String(text).trim();
-      if (!trimmed) {
-        throw new Error(entry.source === 'customer.name'
-          ? 'recipient has no name on file'
-          : 'variable mapping has an empty static value');
-      }
-      return String(text);
-    });
+// Resolves a recipient's own values from variableMapping (see
+// broadcast.controller.js createBroadcast) instead of the shared,
+// broadcast-wide components array: body {{1}}, {{2}}... ordered by position,
+// plus an optional TEXT-header variable (target 'header') and dynamic URL
+// button suffixes (target 'button' + buttonIndex). 'customer.name' pulls from
+// that recipient's own data; 'static' uses the fixed value from the mapping.
+// `mediaHeader` is the shared IMAGE/VIDEO/DOCUMENT header the controller
+// built once (no per-recipient variables); it is passed through unchanged.
+const resolveValue = (entry, recipient) => {
+  const text = entry.source === 'customer.name'
+    ? recipient.customer?.name
+    : entry.value;
+  const trimmed = text === null || text === undefined ? '' : String(text).trim();
+  if (!trimmed) {
+    throw new Error(entry.source === 'customer.name'
+      ? 'recipient has no name on file'
+      : 'variable mapping has an empty static value');
+  }
+  return String(text);
+};
 
-  return buildBodyComponents(values);
+const resolveRecipientComponents = (variableMapping, recipient, mediaHeader = null) => {
+  const parts = splitMapping(variableMapping);
+  const body = [...parts.body]
+    .sort((a, b) => a.position - b.position)
+    .map((entry) => resolveValue(entry, recipient));
+  const header = parts.header.map((entry) => resolveValue(entry, recipient));
+  const buttons = {};
+  for (const entry of parts.button) buttons[entry.buttonIndex] = resolveValue(entry, recipient);
+
+  const built = buildTemplateComponents({ header_type: header.length > 0 ? 'TEXT' : 'NONE' }, { body, header, buttons });
+  return [...(header.length === 0 && mediaHeader ? [mediaHeader] : []), ...built];
 };
 
 const worker = new Worker('broadcast-outbound', async (job) => {
@@ -46,15 +58,15 @@ const worker = new Worker('broadcast-outbound', async (job) => {
   // Per-recipient failures (e.g. a single bad number) must not fail the
   // whole job - attempts:1 on this queue means a thrown job error loses
   // progress tracking for the batch, not just a retry.
-  // The header component (if any) has no per-recipient variables - it's built
-  // once in broadcast.controller.js and passed through unchanged, same as the
+  // A media header (if any) has no per-recipient variables - it's built once in
+  // broadcast.controller.js and passed through unchanged, same as the
   // non-mapped `components` path below.
   const headerComponent = (components || []).find((c) => c.type === 'header');
 
   for (const recipient of recipients) {
     try {
       const recipientComponents = variableMapping
-        ? [...(headerComponent ? [headerComponent] : []), ...resolveRecipientComponents(variableMapping, recipient)]
+        ? resolveRecipientComponents(variableMapping, recipient, headerComponent)
         : components;
       await whatsappService.sendTemplateMessage(phoneNumberId, encryptedAccessToken, recipient.whatsappNumber, templateName, language, recipientComponents);
       sent += 1;

@@ -27,6 +27,9 @@ router.post(
   messageTemplateController.uploadHeaderImage
 );
 
+// PUT /:id/header-media - Attach a media-library file as the template's media header
+router.put('/:id/header-media', protect, requireBusiness, requireRole('owner', 'superadmin'), messageTemplateController.setHeaderMedia);
+
 // POST /:id/submit - Submit template to Meta for review
 router.post('/:id/submit', protect, requireBusiness, requireRole('owner', 'superadmin'), messageTemplateController.submitMessageTemplate);
 

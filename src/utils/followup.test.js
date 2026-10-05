@@ -77,7 +77,9 @@ test('win_back: approved MARKETING template required, 7–180 days, mapping coun
   assert.match(f.validateAutomation(base, { templateRow: marketingTpl({ status: 'paused' }) }).error, /not approved by WhatsApp \(status: paused\)/);
   assert.match(f.validateAutomation(base, { templateRow: marketingTpl({ status: 'disabled' }) }).error, /not approved by WhatsApp \(status: disabled\)/);
   assert.match(f.validateAutomation(base, { templateRow: marketingTpl({ category: 'UTILITY' }) }).error, /needs a MARKETING template/);
-  assert.match(f.validateAutomation(base, { templateRow: marketingTpl({ header_type: 'IMAGE' }) }).error, /image header/);
+  // media headers are sendable now — but only once media is attached
+  assert.match(f.validateAutomation(base, { templateRow: marketingTpl({ header_type: 'IMAGE' }) }).error, /can't be sent by ApnaBot yet.*header/);
+  assert.ok(f.validateAutomation(base, { templateRow: marketingTpl({ header_type: 'IMAGE', header_media_url: 'https://r2/x.jpg' }) }).value);
   assert.match(f.validateAutomation({ ...base, templateVariableMapping: [nameMapping[0]] }, { templateRow: marketingTpl() }).error, /exactly 2 entries/);
   assert.match(f.validateAutomation({ ...base, delayMinutes: 6 * DAY }, { templateRow: marketingTpl() }).error, /between 10080 and 259200/);
   assert.match(f.validateAutomation({ ...base, delayMinutes: 181 * DAY }, { templateRow: marketingTpl() }).error, /between/);
@@ -307,13 +309,13 @@ test("template customer.name: the owner's fallback wins; with none, the template
 test('presets carry the template filter the web dropdown applies', () => {
   const byKey = Object.fromEntries(f.presetsForWeb().map(p => [p.key, p]));
   assert.equal(byKey.enquiry_nudge.templateFilter, null);
-  assert.deepEqual(byKey.win_back.templateFilter, { status: 'approved', headerType: 'NONE', category: 'MARKETING', categoryMatchesMessageCategory: false });
+  assert.deepEqual(byKey.win_back.templateFilter, { status: 'approved', category: 'MARKETING', categoryMatchesMessageCategory: false });
   assert.equal(byKey.custom.templateFilter, null);
   assert.deepEqual(byKey.custom.templateFilterByTrigger, {
     after_last_inbound: null,
-    inactive_for: { status: 'approved', headerType: 'NONE', category: null, categoryMatchesMessageCategory: true }
+    inactive_for: { status: 'approved', category: null, categoryMatchesMessageCategory: true }
   });
-  const utility = { status: 'approved', headerType: 'NONE', category: 'UTILITY', categoryMatchesMessageCategory: false };
+  const utility = { status: 'approved', category: 'UTILITY', categoryMatchesMessageCategory: false };
   assert.deepEqual(byKey.review_request.templateFilter, utility);
   assert.deepEqual(byKey.payment_pending.templateFilter, utility);
 });

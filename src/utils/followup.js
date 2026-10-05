@@ -9,6 +9,7 @@ const { getSystemMessage } = require('./systemMessages');
 const { getLocalizedText } = require('./localization');
 const { applyMessageTemplate } = require('./messageTemplating');
 const { isSendSupported, sendSupportBlockReason } = require('./templateStatus');
+const { requiredParams, splitMapping, checkParamCounts, BUTTON_SOURCES } = require('./templateMapping');
 
 const HOUR = 60;
 const DAY = 24 * HOUR;
@@ -165,7 +166,6 @@ const defaultText = (preset) => {
 const templateFilterFor = (rule) => (rule && rule.template === 'required'
   ? {
     status: 'approved',
-    headerType: 'NONE',
     category: rule.templateCategory || null,
     categoryMatchesMessageCategory: !rule.templateCategory
   }
@@ -234,32 +234,63 @@ const checkTranslations = (translations) => {
   return { value: Object.keys(out).length ? out : null };
 };
 
-const checkMapping = (mapping, variableCount, triggerType) => {
-  const list = mapping === undefined || mapping === null ? [] : mapping;
-  if (!Array.isArray(list)) return { error: 'templateVariableMapping must be a list' };
-  if (list.length !== variableCount) {
-    return { error: `This template has ${variableCount} variable(s); templateVariableMapping must have exactly ${variableCount} entr${variableCount === 1 ? 'y' : 'ies'}` };
+// One mapping entry (any target) → the entry to store, or an error. `sources`
+// is what that target may use; the optional fallback applies to every target.
+const checkMappingEntry = (entry, at, triggerType, sources) => {
+  if (!entry || typeof entry !== 'object') return { error: `${at} must be an object` };
+  if (!sources.includes(entry.source)) return { error: `${at}.source must be one of: ${sources.join(', ')}` };
+  if (BOOKING_MAPPING_SOURCES.includes(entry.source) && !BOOKING_TRIGGERS.includes(triggerType)) {
+    return { error: `${at}.source ${entry.source} is only available for booking follow-ups (review request, payment reminder)` };
   }
-  const out = [];
-  for (const [i, entry] of list.entries()) {
-    const at = `templateVariableMapping[${i}] ({{${i + 1}}})`;
-    if (!entry || typeof entry !== 'object') return { error: `${at} must be an object` };
-    if (!MAPPING_SOURCES.includes(entry.source)) return { error: `${at}.source must be one of: ${MAPPING_SOURCES.join(', ')}` };
-    if (BOOKING_MAPPING_SOURCES.includes(entry.source) && !BOOKING_TRIGGERS.includes(triggerType)) {
-      return { error: `${at}.source ${entry.source} is only available for booking follow-ups (review request, payment reminder)` };
-    }
-    if (entry.source === 'static' && isBlank(entry.value)) return { error: `${at}.value is required for a fixed value` };
-    // Optional: an empty customer name / amount with no fallback reads in the
-    // template's language (renderTemplateParams); the business always has a
-    // name, every booking has a code, and a fixed value is never empty.
-    if (entry.fallback !== undefined && entry.fallback !== null && typeof entry.fallback !== 'string') {
-      return { error: `${at}.fallback must be text` };
-    }
-    out.push({
+  if (entry.source === 'static' && isBlank(entry.value)) return { error: `${at}.value is required for a fixed value` };
+  // Optional: an empty customer name / amount with no fallback reads in the
+  // template's language (renderTemplateParams); the business always has a
+  // name, every booking has a code, and a fixed value is never empty.
+  if (entry.fallback !== undefined && entry.fallback !== null && typeof entry.fallback !== 'string') {
+    return { error: `${at}.fallback must be text` };
+  }
+  return {
+    value: {
       source: entry.source,
       ...(entry.source === 'static' ? { value: entry.value.trim() } : {}),
       fallback: typeof entry.fallback === 'string' ? entry.fallback.trim() : ''
-    });
+    }
+  };
+};
+
+/**
+ * templateVariableMapping for `template` (a message_templates row): body
+ * entries (positional, as always) plus, when the template needs them, one
+ * entry with target 'header' and one per dynamic URL button (target 'button' +
+ * buttonIndex; source static, or booking.code for booking follow-ups). Stored
+ * body entries first, then header, then buttons by index.
+ */
+const checkMapping = (mapping, template, triggerType) => {
+  const list = mapping === undefined || mapping === null ? [] : mapping;
+  if (!Array.isArray(list)) return { error: 'templateVariableMapping must be a list' };
+  const variableCount = requiredParams(template).body;
+  const parts = splitMapping(list);
+  if (parts.unknown.length === 0 && parts.body.length !== variableCount) {
+    return { error: `This template has ${variableCount} variable(s); templateVariableMapping must have exactly ${variableCount} entr${variableCount === 1 ? 'y' : 'ies'}` };
+  }
+  const countError = checkParamCounts(list, template, { checkBody: false });
+  if (countError) return { error: countError };
+
+  const out = [];
+  for (const [i, entry] of parts.body.entries()) {
+    const checked = checkMappingEntry(entry, `templateVariableMapping[${i}] ({{${i + 1}}})`, triggerType, MAPPING_SOURCES);
+    if (checked.error) return checked;
+    out.push(checked.value);
+  }
+  for (const entry of parts.header) {
+    const checked = checkMappingEntry(entry, 'templateVariableMapping (header)', triggerType, MAPPING_SOURCES);
+    if (checked.error) return checked;
+    out.push({ target: 'header', ...checked.value });
+  }
+  for (const entry of [...parts.button].sort((x, y) => x.buttonIndex - y.buttonIndex)) {
+    const checked = checkMappingEntry(entry, `templateVariableMapping (button ${entry.buttonIndex})`, triggerType, BUTTON_SOURCES);
+    if (checked.error) return checked;
+    out.push({ target: 'button', buttonIndex: entry.buttonIndex, ...checked.value });
   }
   return { value: out.length ? out : null };
 };
@@ -360,10 +391,7 @@ const validateAutomation = (input, { templateRow = null } = {}) => {
     if (!isSendSupported(templateRow)) {
       return { error: `Template "${templateRow.name}" can't be sent by ApnaBot yet — ${sendSupportBlockReason(templateRow)}` };
     }
-    if (templateRow.header_type && templateRow.header_type !== 'NONE') {
-      return { error: `Template "${templateRow.name}" has an image header, which follow-ups can't send yet — pick a text-only template` };
-    }
-    const m = checkMapping(input.templateVariableMapping, countTemplateVariables(templateRow.body_text), triggerType);
+    const m = checkMapping(input.templateVariableMapping, templateRow, triggerType);
     if (m.error) return m;
     mapping = m.value;
   }
@@ -493,12 +521,11 @@ const renderText = (automation, business, customer, languageCode, booking = null
 };
 
 /**
- * {{1}}..{{n}} values from template_variable_mapping, each falling back when
- * empty to the owner's mapping fallback. An empty customer name / amount with
- * no fallback reads in the template's language ('जी' / 'आपका भुगतान' for hi,
- * etc., else English).
+ * One mapping entry's value, falling back when empty to the owner's mapping
+ * fallback. An empty customer name / amount with no fallback reads in the
+ * template's language ('जी' / 'आपका भुगतान' for hi, etc., else English).
  */
-const renderTemplateParams = (mapping, business, customer, templateLanguage = null, booking = null) => (mapping || []).map((entry) => {
+const resolveMappingEntry = (entry, business, customer, templateLanguage, booking) => {
   const fallback = typeof entry.fallback === 'string' ? entry.fallback.trim() : '';
   const lang = baseLanguage(templateLanguage);
   let v;
@@ -512,7 +539,25 @@ const renderTemplateParams = (mapping, business, customer, templateLanguage = nu
     if (!v && !fallback) return EMPTY_AMOUNT[lang] || EMPTY_AMOUNT.en;
   } else v = entry.value;
   return typeof v === 'string' && v.trim() ? v.trim() : fallback;
-});
+};
+
+/** {{1}}..{{n}} body values from template_variable_mapping (header / button entries are renderTemplateValues'). */
+const renderTemplateParams = (mapping, business, customer, templateLanguage = null, booking = null) =>
+  splitMapping(mapping).body.map((entry) => resolveMappingEntry(entry, business, customer, templateLanguage, booking));
+
+/**
+ * Every value a send fills: { body: [...], header: [...], buttons: { [buttonIndex]: suffix } }.
+ * header is empty / buttons has no keys when the template has none.
+ */
+const renderTemplateValues = (mapping, business, customer, templateLanguage = null, booking = null) => {
+  const parts = splitMapping(mapping);
+  const resolve = (entry) => resolveMappingEntry(entry, business, customer, templateLanguage, booking);
+  return {
+    body: parts.body.map(resolve),
+    header: parts.header.map(resolve),
+    buttons: Object.fromEntries(parts.button.map((entry) => [entry.buttonIndex, resolve(entry)]))
+  };
+};
 
 /** The template body as it reads in the chat. */
 const renderTemplateText = (bodyText, params) => params
@@ -547,6 +592,7 @@ module.exports = {
   formatAmount,
   renderText,
   renderTemplateParams,
+  renderTemplateValues,
   renderTemplateText,
   maskNumber
 };

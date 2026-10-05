@@ -24,8 +24,10 @@ const businessService = require('./business.service');
 const categoryFeatureService = require('./categoryFeature.service');
 const { isConnected, isWindowOpen, sendWindowAwareMessage } = require('./windowAwareSend.service');
 const {
-  dueRange, triggerKeyFor, isBookingTrigger, renderText, renderTemplateParams, renderTemplateText, WINDOW_MARGIN_MINUTES
+  dueRange, triggerKeyFor, isBookingTrigger, renderText, renderTemplateValues, renderTemplateText, WINDOW_MARGIN_MINUTES
 } = require('../utils/followup');
+const { effectiveSendSupport } = require('../utils/templateStatus');
+const { requiredParams, splitMapping, checkParamCounts } = require('../utils/templateMapping');
 const { isWithinSendHours, istDayStart } = require('../utils/ist');
 const { toCamelCase } = require('../utils/caseConvert');
 const logger = require('../utils/logger');
@@ -363,6 +365,7 @@ const sendClaimed = async (automation, business, sendRow, now) => {
   const customer = toCamelCase(fresh);
   let templateRow = null;
   let templateParams = [];
+  let templateValues = { body: [], header: [], buttons: {} };
   let templateText = '';
   if (!isWindowOpen(fresh, new Date(now).getTime())) {
     templateRow = await loadTemplate(automation);
@@ -370,7 +373,22 @@ const sendClaimed = async (automation, business, sendRow, now) => {
       await updateSend(sendRow.id, { status: 'skipped', reason: 'no_template' });
       return 'skipped';
     }
-    templateParams = renderTemplateParams(automation.template_variable_mapping, business, customer, templateRow.language, booking);
+    // The template may have changed in WhatsApp Manager (and been synced) since
+    // this automation was saved: skip with the reason instead of sending
+    // something Meta rejects.
+    const blocked = templateSendBlock(templateRow, automation.template_variable_mapping);
+    if (blocked) {
+      await updateSend(sendRow.id, { status: 'skipped', reason: blocked });
+      return 'skipped';
+    }
+    templateValues = renderTemplateValues(automation.template_variable_mapping, business, customer, templateRow.language, booking);
+    templateParams = templateValues.body;
+    // A header / button value that came out empty (e.g. a customer with no name
+    // and no fallback) can't be sent: Meta rejects an empty parameter.
+    if (templateValues.header.some(v => !v) || Object.values(templateValues.buttons).some(v => !v)) {
+      await updateSend(sendRow.id, { status: 'skipped', reason: 'template_value_missing' });
+      return 'skipped';
+    }
     templateText = renderTemplateText(templateRow.body_text, templateParams);
   }
 
@@ -378,6 +396,8 @@ const sendClaimed = async (automation, business, sendRow, now) => {
     textFor: (lang) => renderText(automation, business, customer, lang, booking),
     template: templateRow,
     templateParams,
+    templateHeader: templateValues.header,
+    templateButtons: templateValues.buttons,
     templateText,
     billing: {
       referenceId: sendRow.id,
@@ -397,6 +417,18 @@ const sendClaimed = async (automation, business, sendRow, now) => {
   const failed = !SKIP_CODES.includes(result.code);
   await updateSend(sendRow.id, { status: failed ? 'failed' : 'skipped', reason: result.code });
   return failed ? 'failed' : 'skipped';
+};
+
+// Why a template can't be sent by this automation now (null = fine): its
+// current send_support, or a saved mapping that no longer fills what the
+// template needs (a sync changed its header / buttons).
+const templateSendBlock = (templateRow, mapping) => {
+  const support = effectiveSendSupport(templateRow);
+  if (support !== 'ok') return `template_${support}`;
+  const need = requiredParams(templateRow);
+  if (checkParamCounts(mapping, templateRow, { checkBody: false })
+    || splitMapping(mapping).body.length !== need.body) return 'template_mapping_mismatch';
+  return null;
 };
 
 // ── One automation ──

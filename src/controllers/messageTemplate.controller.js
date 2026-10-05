@@ -6,6 +6,7 @@ const r2 = require('../services/r2.service');
 const { decrypt } = require('../utils/crypto');
 const { META_API_BASE } = require('../services/whatsapp.service');
 const templateSyncService = require('../services/templateSync.service');
+const { computeSendSupport, extensionOf, EXTENSIONS_BY_FORMAT } = require('../utils/templateSendSupport');
 const config = require('../config/env');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
@@ -17,6 +18,12 @@ const TEMPLATE_NAME_REGEX = /^[a-z0-9_]+$/;
 // middleware also allows WebP (business / vehicle images), so the template
 // endpoint narrows it here.
 const HEADER_IMAGE_TYPES = ['image/jpeg', 'image/png'];
+
+// business_media.media_type each template header format takes, and the size cap
+// WhatsApp (and our plan) puts on it.
+const HEADER_MEDIA_TYPE = { IMAGE: 'image', VIDEO: 'video', DOCUMENT: 'document' };
+const HEADER_MEDIA_MAX_BYTES = { IMAGE: 5 * 1024 * 1024, VIDEO: 16 * 1024 * 1024, DOCUMENT: 10 * 1024 * 1024 };
+const HEADER_MEDIA_LABEL = { IMAGE: 'a JPG or PNG image', VIDEO: 'an MP4 video', DOCUMENT: 'a PDF' };
 
 const countTemplateVariables = (bodyText) => {
   const matches = (bodyText || '').match(/\{\{\s*\d+\s*\}\}/g) || [];
@@ -68,6 +75,66 @@ const syncMessageTemplates = async (req, res, next) => {
       return errorResponse(res, 502, 'Could not fetch templates from WhatsApp. Please try again in a few minutes.', error.response.data || error.message);
     }
     logger.error('Error in syncMessageTemplates:', error);
+    next(error);
+  }
+};
+
+/**
+ * PUT /api/message-templates/:id/header-media  { mediaId }
+ * Attach a media-library file (business_media) as the template's IMAGE / VIDEO /
+ * DOCUMENT header, and recompute send_support. This is how a synced template
+ * with a media header becomes sendable.
+ */
+const setHeaderMedia = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const businessId = req.user.businessId;
+    const { mediaId } = req.body || {};
+    if (!mediaId || typeof mediaId !== 'string') {
+      return errorResponse(res, 400, 'mediaId is required');
+    }
+
+    const { data: templateRow, error: templateErr } = await supabase
+      .from('message_templates').select('*').eq('id', id).eq('business_id', businessId).maybeSingle();
+    if (templateErr) throw templateErr;
+    if (!templateRow) {
+      return errorResponse(res, 404, 'Message template not found');
+    }
+    const format = HEADER_MEDIA_TYPE[templateRow.header_type] ? templateRow.header_type : null;
+    if (!format) {
+      return errorResponse(res, 400, 'This template does not have an image, video or document header');
+    }
+
+    // Scoped to this business, so another business's media reads as not found.
+    const { data: media, error: mediaErr } = await supabase
+      .from('business_media').select('*').eq('id', mediaId).eq('business_id', businessId).maybeSingle();
+    if (mediaErr) throw mediaErr;
+    if (!media) {
+      return errorResponse(res, 404, 'Media not found');
+    }
+
+    // business_media keeps no mimetype; r2.uploadImage names the object by it.
+    const ext = extensionOf(media.r2_key);
+    if (media.media_type !== HEADER_MEDIA_TYPE[format] || (ext && !EXTENSIONS_BY_FORMAT[format].includes(ext))) {
+      return errorResponse(res, 400, `This template's header needs ${HEADER_MEDIA_LABEL[format]}; the file you picked is a different type.`);
+    }
+    if (Number(media.file_size_bytes) > HEADER_MEDIA_MAX_BYTES[format]) {
+      return errorResponse(res, 400, `A ${format.toLowerCase()} header can be at most ${HEADER_MEDIA_MAX_BYTES[format] / (1024 * 1024)} MB.`);
+    }
+
+    const update = {
+      header_media_url: media.url,
+      header_media_id: media.id,
+      header_media_filename: format === 'DOCUMENT' ? (media.original_filename || null) : null
+    };
+    const { data: updated, error: updateErr } = await supabase.from('message_templates')
+      .update({ ...update, send_support: computeSendSupport({ ...templateRow, ...update }) })
+      .eq('id', id).eq('business_id', businessId).select().single();
+    if (updateErr) throw updateErr;
+
+    return successResponse(res, 200, { ...toCamelCase(updated), metaDeleted: !!updated.meta_deleted_at }, 'Header media attached');
+  } catch (error) {
+    logger.error('Error in setHeaderMedia:', error);
     next(error);
   }
 };
@@ -333,6 +400,7 @@ const deleteMessageTemplate = async (req, res, next) => {
 module.exports = {
   getMessageTemplates,
   syncMessageTemplates,
+  setHeaderMedia,
   createMessageTemplate,
   uploadHeaderImage,
   submitMessageTemplate,

@@ -77,15 +77,26 @@ test('send_support: computed from components', () => {
     [[body], {}, 'ok'],
     [[body, { type: 'FOOTER', text: 'bye' }], {}, 'ok'],
     [[{ type: 'HEADER', format: 'TEXT', text: 'Sale' }, body], {}, 'ok'],
-    [[{ type: 'HEADER', format: 'TEXT', text: 'Hi {{1}}' }, body], {}, 'unsupported_component'],
+    [[{ type: 'HEADER', format: 'TEXT', text: 'Hi {{1}}' }, body], {}, 'ok'], // one header variable is sendable (mapping target 'header')
+    [[{ type: 'HEADER', format: 'TEXT', text: '{{1}} {{2}}' }, body], {}, 'unsupported_component'],
     [[{ type: 'HEADER', format: 'IMAGE' }, body], {}, 'needs_header_media'],
     [[{ type: 'HEADER', format: 'IMAGE' }, body], { headerImageUrl: 'https://r2/x.jpg' }, 'ok'],
     [[{ type: 'HEADER', format: 'VIDEO' }, body], { headerImageUrl: 'https://r2/x.jpg' }, 'needs_header_media'],
+    [[{ type: 'HEADER', format: 'VIDEO' }, body], { headerMediaUrl: 'https://r2/x.mp4' }, 'ok'],
+    [[{ type: 'HEADER', format: 'VIDEO' }, body], { headerMediaUrl: 'https://r2/x.jpeg' }, 'needs_header_media'], // wrong type attached
     [[{ type: 'HEADER', format: 'DOCUMENT' }, body], {}, 'needs_header_media'],
+    [[{ type: 'HEADER', format: 'DOCUMENT' }, body], { headerMediaUrl: 'https://r2/x.pdf' }, 'ok'],
+    [[{ type: 'HEADER', format: 'IMAGE' }, body], { headerMediaUrl: 'https://r2/x.jpeg' }, 'ok'],
+    [[{ type: 'HEADER', format: 'IMAGE' }, body], { headerMediaUrl: 'https://r2/x.webp' }, 'needs_header_media'],
     [[{ type: 'HEADER', format: 'LOCATION' }, body], {}, 'unsupported_component'],
     [[body, { type: 'BUTTONS', buttons: [{ type: 'QUICK_REPLY', text: 'Yes' }] }], {}, 'unsupported_component'],
-    [[body, { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Go', url: 'https://x' }] }], {}, 'unsupported_component'],
-    [[{ type: 'HEADER', format: 'IMAGE' }, body, { type: 'BUTTONS', buttons: [] }], {}, 'unsupported_component'],
+    [[body, { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Go', url: 'https://x.com/a' }] }], {}, 'ok'], // static URL
+    [[body, { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Go', url: 'https://x.com/{{1}}' }] }], {}, 'ok'], // dynamic URL
+    [[body, { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Go', url: 'https://x.com/{{1}}/{{2}}' }] }], {}, 'unsupported_component'],
+    [[body, { type: 'BUTTONS', buttons: [{ type: 'PHONE_NUMBER', text: 'Call', phone_number: '+911234567890' }] }], {}, 'ok'],
+    [[body, { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Go', url: 'https://x.com' }, { type: 'QUICK_REPLY', text: 'Yes' }] }], {}, 'unsupported_component'],
+    ...['COPY_CODE', 'FLOW', 'CATALOG', 'OTP', 'MPM', 'SPM'].map(type => [[body, { type: 'BUTTONS', buttons: [{ type, text: 'x' }] }], {}, 'unsupported_component']),
+    [[{ type: 'HEADER', format: 'IMAGE' }, body, { type: 'BUTTONS', buttons: [] }], {}, 'needs_header_media'],
     [[{ type: 'CAROUSEL', cards: [] }], {}, 'unsupported_component']
   ];
   for (const [components, own, expected] of cases) {

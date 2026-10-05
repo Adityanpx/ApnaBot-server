@@ -587,7 +587,36 @@ tracked as a deferred "future initiative" — it's built and live.
    catch 23505 there and re-select; deferred because it touches the live
    webhook path for a millisecond-wide window.
 
+7. **Template edits in WhatsApp Manager aren't picked up until a manual sync
+   (backlog, 2026-10-05).** The send-time re-check only sees the stored row.
+   Later: subscribe the Meta app to `message_template_components_update` and
+   trigger a per-business sync (`templateSync.service.js#runSync`) from that
+   webhook.
+
 ## Session log (append here as major milestones land)
+- 2026-10-05: Send media headers + URL buttons (#6 Phase 2, built, not yet
+  deployed). Every template send builds its Meta `components` through
+  `utils/templateComponents.js#buildTemplateComponents` (broadcast controller +
+  worker, `windowAwareSend` → follow-ups / demo reminder). Header media
+  (IMAGE jpg/png, VIDEO mp4, DOCUMENT pdf + filename) is sent as a public R2
+  link from `message_templates.header_media_url` (fallback `header_image_url`
+  for IMAGE); attach it with `PUT /api/message-templates/:id/header-media
+  { mediaId }` (a `business_media` file; size caps image 5 MB / video 16 MB /
+  pdf 10 MB). A TEXT header with one variable and dynamic URL buttons
+  (`{{1}}` suffix) are filled from mapping entries with `target: 'header' |
+  'button'` (+ `buttonIndex`) — body entries are unchanged
+  (`utils/templateMapping.js`). Static / phone buttons need nothing; quick
+  reply, copy code, flow, catalog and OTP buttons stay `unsupported_component`.
+  `utils/templateSendSupport.js#computeSendSupport` is the one sendability
+  rule (sync, header-media endpoint, and re-run at send time inside
+  `isTemplateUsable` / the follow-up sweep, which skips with
+  `template_<send_support>`, `template_mapping_mismatch` or
+  `template_value_missing`). Follow-ups no longer filter to body-only
+  templates. Chat record of a template send: media header → message
+  `type` image/video/document + `media_url`; buttons → `[label]` lines under
+  the text. Migration `20261005110000_message_templates_header_media.sql`
+  (**must be applied before the server code is deployed**). The business-media
+  delete endpoint now refuses a file used as a template header.
 - 2026-10-05: Template sync from WhatsApp (#6 Phase 1) —
   `POST /api/message-templates/sync` (owner/superadmin, 1 per business per
   60 s, in memory) pulls the WABA's templates into `message_templates`
