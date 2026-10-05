@@ -24,6 +24,8 @@ const resolveBusinessByPhoneNumberId = async (phoneNumberId) => {
       .select('*, owner:users!owner_user_id(name, email)')
       .eq('phone_number_id', phoneNumberId)
       .eq('is_active', true)
+      // account_update (PARTNER_REMOVED etc.) switches this off without clearing the IDs.
+      .eq('is_whatsapp_connected', true)
       .maybeSingle();
     if (bizErr) throw bizErr;
 

@@ -25,7 +25,9 @@ const whatsappService = require('../services/whatsapp.service');
 const r2 = require('../services/r2.service');
 const logger = require('../utils/logger');
 const inboundMessageService = require('../services/inboundMessage.service');
-const { unsupportedLabel } = require('../utils/inboundMessage');
+const { INBOUND_MESSAGE_TYPES, inboundMediaLabel } = require('../utils/inboundMessage');
+const { isBulkSyncBody } = require('../utils/coexistencePayload');
+const coexistenceService = require('../services/coexistence.service');
 const { splitMessages } = require('../utils/webhookBatch');
 
 // Exact-match greeting keywords that trigger the welcome message / menu.
@@ -75,14 +77,6 @@ const saveMessage = async (fields) => {
   return toCamelCase(data);
 };
 
-// Mirrors messages_type_check (migration 20260928120000). Anything Meta adds
-// later is stored as 'unsupported' rather than failing the insert — which
-// used to drop the whole inbound message (e.g. a shared location).
-const INBOUND_MESSAGE_TYPES = new Set([
-  'text', 'image', 'document', 'audio', 'interactive', 'video', 'sticker',
-  'location', 'contacts', 'button', 'reaction', 'order', 'system', 'unsupported'
-]);
-
 // Types the inbox can display from R2 — WhatsApp photos arrive as JPEG/PNG
 // (WebP is stickers, not stored).
 const STORABLE_IMAGE_TYPES = ['image/jpeg', 'image/png'];
@@ -123,38 +117,6 @@ const storeInboundImage = async (tenant, inboundMsg, mediaId) => {
       messageId: inboundMsg.id,
       message: error.response?.data || error.message
     });
-  }
-};
-
-/**
- * Inbox text for an inbound message that has no text body — without it,
- * photos (e.g. a customer's payment screenshot), documents and voice notes
- * were stored with empty content and showed as blank bubbles. Photos are
- * additionally copied to R2 (storeInboundImage); other media isn't stored.
- * @param {Object} message - Meta webhook message object
- * @returns {string|null}
- */
-const inboundMediaLabel = (message) => {
-  const withCaption = (label, caption) => (caption ? `${label}: ${caption}` : label);
-  switch (message.type) {
-    case 'image': return withCaption('📷 Photo', message.image?.caption);
-    case 'video': return withCaption('🎥 Video', message.video?.caption);
-    case 'document': return withCaption(`📄 ${message.document?.filename || 'Document'}`, message.document?.caption);
-    case 'audio': return message.audio?.voice ? '🎤 Voice message' : '🎵 Audio';
-    case 'sticker': return 'Sticker';
-    case 'unsupported': return unsupportedLabel(message);
-    case 'location': {
-      const loc = message.location || {};
-      return ['📍 Location', loc.name, loc.address].filter(Boolean).join(' · ');
-    }
-    case 'contacts': return '👤 Contact card';
-    // A template quick-reply tap: show the label the customer tapped.
-    case 'button': return message.button?.text || null;
-    case 'interactive':
-      // WhatsApp Flow form submission (nfm_reply) — no title to show.
-      return message.interactive?.nfm_reply ? '📝 Form submitted' : null;
-    // A type we don't parse is stored as 'unsupported' (see INBOUND_MESSAGE_TYPES).
-    default: return INBOUND_MESSAGE_TYPES.has(message.type) ? null : unsupportedLabel(message);
   }
 };
 
@@ -702,7 +664,14 @@ const verifyWebhook = async (req, res) => {
  * Main webhook handler for WhatsApp events
  */
 const receiveWebhook = async (req, res) => {
-  console.log('WEBHOOK POST received:', JSON.stringify(req.body, null, 2));
+  // History chunks and contact syncs can hold thousands of messages / contacts
+  // (with their text): those log a one-line summary from their handler instead
+  // of the whole body. Everything else is logged in full, as before.
+  if (isBulkSyncBody(req.body)) {
+    console.log('WEBHOOK POST received (history / contact sync - body not logged, see the handler summary)');
+  } else {
+    console.log('WEBHOOK POST received:', JSON.stringify(req.body, null, 2));
+  }
   // Step 1 - Return 200 immediately
   res.status(200).json({ status: 'ok' });
 
@@ -899,6 +868,14 @@ const processWebhookChange = async (entry, changes) => {
         logger.error(`Error emitting template_status_update socket event (${changes.field}):`, socketErr);
       }
 
+      return;
+    }
+
+    // WhatsApp Business app coexistence (echoes of the owner's phone messages,
+    // history / contact sync, connection changes). These are never customer
+    // messages: handled and stored by the coexistence service, never the bot.
+    if (coexistenceService.COEXISTENCE_FIELDS.has(changes?.field)) {
+      await coexistenceService.handleChange(entry, changes);
       return;
     }
 
