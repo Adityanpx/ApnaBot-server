@@ -8,12 +8,15 @@
   html, body {
     margin: 0;
     padding: 0;
-    height: 100%;
+    min-height: 100%;
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     background: #ffffff;
   }
+  [hidden] {
+    display: none !important;
+  }
   .wrap {
-    height: 100%;
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
     align-items: center;
@@ -21,6 +24,47 @@
     padding: 24px;
     box-sizing: border-box;
     text-align: center;
+  }
+  .question {
+    font-size: 17px;
+    font-weight: 600;
+    color: #222;
+    margin: 0 0 14px;
+  }
+  .choices {
+    width: 100%;
+    max-width: 420px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .choice {
+    background: #fff;
+    border: 2px solid #d5d9dd;
+    border-radius: 10px;
+    padding: 12px 14px;
+    font-size: 15px;
+    color: #222;
+    text-align: left;
+    cursor: pointer;
+  }
+  .choice[aria-pressed="true"] {
+    border-color: #25D366;
+    background: #f1fbf5;
+  }
+  .info {
+    width: 100%;
+    max-width: 420px;
+    box-sizing: border-box;
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    background: #f6f7f8;
+    border-radius: 10px;
+    color: #444;
+    font-size: 14px;
+    text-align: left;
+    white-space: pre-line;
   }
   .btn {
     background: #25D366;
@@ -35,6 +79,9 @@
   .btn:disabled {
     opacity: 0.6;
   }
+  .btn.secondary {
+    background: #555;
+  }
   .status {
     margin-top: 16px;
     color: #555;
@@ -45,18 +92,75 @@
 <body>
 <div id="fb-root"></div>
 <div class="wrap">
-  <button id="connectBtn" class="btn" disabled>Connect WhatsApp</button>
+  <div id="chooser">
+    <p class="question">Is this number already on the WhatsApp Business app?</p>
+    <div class="choices">
+      <button type="button" id="choiceYes" class="choice" aria-pressed="false">Yes, I use WhatsApp Business app on this number</button>
+      <button type="button" id="choiceNo" class="choice" aria-pressed="false">No, it's a new number / not on WhatsApp</button>
+      <button type="button" id="choicePersonal" class="choice" aria-pressed="false">It's on normal (personal) WhatsApp</button>
+    </div>
+    <div id="info" class="info" hidden></div>
+  </div>
+  <button id="connectBtn" class="btn" disabled hidden>Connect WhatsApp</button>
+  <button id="retryBtn" class="btn secondary" hidden>Retry</button>
   <div id="status" class="status">Loading...</div>
 </div>
 
 <script>
 (function () {
+  var TIMEOUT_MS = 30000;
+
   var connectBtn = document.getElementById('connectBtn');
+  var retryBtn = document.getElementById('retryBtn');
   var statusEl = document.getElementById('status');
+  var infoEl = document.getElementById('info');
+  var cards = {
+    coexistence: document.getElementById('choiceYes'),
+    cloud_api: document.getElementById('choiceNo'),
+    personal: document.getElementById('choicePersonal')
+  };
+
+  var INFO_TEXT = {
+    coexistence:
+      'Before you start:\n' +
+      '• Update the WhatsApp Business app to the latest version (at least 2.24.17).\n' +
+      '• Keep your phone nearby and the app open while your chats sync.\n\n' +
+      'In the Meta window, choose the option to connect your existing WhatsApp Business app number.',
+    cloud_api:
+      'In the Meta window, choose the option to add a new phone number. ' +
+      'The number must not be registered on WhatsApp.',
+    personal:
+      'Coexistence only works with the WhatsApp Business app. Either switch this number to the ' +
+      'WhatsApp Business app first (then choose "Yes"), or delete the WhatsApp account on that ' +
+      'number and choose "No".'
+  };
+
   var META_CONFIG_ID = null;
+  var sdkReady = false;
+  var chosen = null; // 'coexistence' | 'cloud_api' | 'personal' - guidance only, never changes FB.login
+
+  // One signup attempt. Meta gives us the auth code (FB.login callback) and the
+  // account IDs (postMessage event) separately, in no guaranteed order.
+  function newSession() {
+    return { active: false, code: null, wabaId: null, phoneNumberId: null, hint: null, done: false, failed: false, timer: null };
+  }
+  var session = newSession();
 
   function setStatus(text) {
     statusEl.textContent = text;
+  }
+
+  // The auth code is single-use and secret: never forward it in debug payloads.
+  function redactCode(value) {
+    if (value === undefined) return value;
+    try {
+      var v = typeof value === 'string' ? JSON.parse(value) : value;
+      return JSON.parse(JSON.stringify(v, function (key, val) {
+        return key === 'code' ? '[redacted]' : val;
+      }));
+    } catch (e) {
+      return value;
+    }
   }
 
   function sendToApp(payload) {
@@ -70,15 +174,97 @@
     sendToApp({ error: message });
   }
 
-  // Session info from Meta's Embedded Signup flow (wabaId / phoneNumberId),
-  // captured before the FB.login callback fires with the auth code.
-  var signupSessionData = null;
+  function isFacebookOrigin(origin) {
+    var host;
+    try {
+      host = new URL(origin).hostname;
+    } catch (e) {
+      return false;
+    }
+    return host === 'facebook.com' || /\.facebook\.com$/.test(host);
+  }
+
+  function canConnect() {
+    return sdkReady && (chosen === 'coexistence' || chosen === 'cloud_api');
+  }
+
+  function refreshControls() {
+    connectBtn.hidden = !(chosen === 'coexistence' || chosen === 'cloud_api');
+    connectBtn.disabled = !canConnect() || session.active;
+  }
+
+  function choose(kind) {
+    if (session.active) return;
+    chosen = kind;
+    Object.keys(cards).forEach(function (k) {
+      cards[k].setAttribute('aria-pressed', k === kind ? 'true' : 'false');
+    });
+    infoEl.textContent = INFO_TEXT[kind];
+    infoEl.hidden = false;
+    retryBtn.hidden = true;
+    if (kind === 'personal') {
+      setStatus('');
+    } else {
+      setStatus(sdkReady ? 'Tap the button below to connect your WhatsApp Business number.' : 'Loading...');
+    }
+    refreshControls();
+  }
+
+  function clearTimer() {
+    if (session.timer) {
+      clearTimeout(session.timer);
+      session.timer = null;
+    }
+  }
+
+  // Ends the attempt with an error and offers Retry. First failure wins, so a
+  // specific message (CANCEL step, ERROR text) is never overwritten by a
+  // generic one.
+  function fail(message) {
+    if (!session.active || session.done || session.failed) return;
+    session.failed = true;
+    clearTimer();
+    sendError(message);
+    retryBtn.hidden = false;
+  }
+
+  // Sends to the app once, when BOTH the auth code and the account IDs are in.
+  function maybeComplete() {
+    if (!session.active || session.done || session.failed) return;
+    var haveIds = !!(session.wabaId && session.phoneNumberId);
+
+    if (session.code && haveIds) {
+      session.done = true;
+      clearTimer();
+      if ((chosen === 'coexistence' || chosen === 'cloud_api') && chosen !== session.hint) {
+        console.warn('[whatsapp-connect] user chose ' + chosen + ' but Meta reported ' + session.hint + '; sending ' + session.hint);
+      }
+      setStatus('Connecting...');
+      sendToApp({
+        code: session.code,
+        wabaId: session.wabaId,
+        phoneNumberId: session.phoneNumberId,
+        onboardingType: session.hint
+      });
+      return;
+    }
+
+    // One half has arrived; don't wait forever for the other.
+    if ((session.code || haveIds) && !session.timer) {
+      setStatus('Finishing...');
+      session.timer = setTimeout(function () {
+        session.timer = null;
+        fail("WhatsApp didn't finish sending your account details. Please retry.");
+      }, TIMEOUT_MS);
+    }
+  }
 
   window.addEventListener('message', function (event) {
-    console.log('[DEBUG raw message]', event.origin, event.data);
-    sendToApp({ debug: true, origin: event.origin, data: event.data });
+    var debugData = redactCode(event.data);
+    console.log('[DEBUG raw message]', event.origin, debugData);
+    sendToApp({ debug: true, origin: event.origin, data: debugData });
 
-    if (!event.origin || event.origin.indexOf('facebook.com') === -1) {
+    if (!event.origin || !isFacebookOrigin(event.origin)) {
       return;
     }
 
@@ -89,21 +275,31 @@
       return;
     }
 
-    if (!data || data.type !== 'WA_EMBEDDED_SIGNUP') {
+    if (!data || data.type !== 'WA_EMBEDDED_SIGNUP' || !session.active) {
       return;
     }
 
-    // Coexistence onboarding (featureType whatsapp_business_app_onboarding)
-    // reports FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING instead of FINISH.
+    var info = data.data || {};
+
     if (data.event === 'FINISH' || data.event === 'FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING') {
-      signupSessionData = {
-        wabaId: data.data && data.data.waba_id,
-        phoneNumberId: data.data && data.data.phone_number_id
-      };
+      // Plain FINISH = Cloud API signup; the WhatsApp Business app onboarding
+      // event = coexistence. Meta's event, not the guidance choice, is the truth.
+      session.hint = data.event === 'FINISH' ? 'cloud_api' : 'coexistence';
+      session.wabaId = info.waba_id || null;
+      session.phoneNumberId = info.phone_number_id || null;
+      maybeComplete();
+    } else if (data.event === 'FINISH_ONLY_WABA') {
+      fail('WhatsApp Business Account created, but no phone number was added. Please retry and add a number.');
     } else if (data.event === 'CANCEL') {
-      sendError('WhatsApp signup was cancelled.');
+      if (info.error_message) {
+        fail('WhatsApp signup failed: ' + info.error_message);
+      } else if (info.current_step) {
+        fail('WhatsApp signup was cancelled at step: ' + info.current_step + '.');
+      } else {
+        fail('WhatsApp signup was cancelled.');
+      }
     } else if (data.event === 'ERROR') {
-      sendError((data.data && data.data.error_message) || 'WhatsApp signup failed.');
+      fail(info.error_message || 'WhatsApp signup failed.');
     }
   });
 
@@ -112,32 +308,28 @@
       sendError('Facebook SDK failed to load.');
       return;
     }
+    if (!canConnect()) return;
 
-    connectBtn.disabled = true;
+    session = newSession();
+    session.active = true;
+    retryBtn.hidden = true;
+    refreshControls();
     setStatus('Opening WhatsApp signup...');
 
     window.FB.login(function (response) {
-      console.log('[DEBUG FB.login response]', JSON.stringify(response));
-      sendToApp({ debug: true, fbLoginResponse: response });
+      var debugResponse = redactCode(response);
+      console.log('[DEBUG FB.login response]', JSON.stringify(debugResponse));
+      sendToApp({ debug: true, fbLoginResponse: debugResponse });
 
-      if (response.authResponse && response.authResponse.code) {
-        var code = response.authResponse.code;
-
-        if (!signupSessionData || !signupSessionData.wabaId || !signupSessionData.phoneNumberId) {
-          sendError('Signup completed but WhatsApp account details were not received.');
-          connectBtn.disabled = false;
-          return;
-        }
-
-        setStatus('Connecting...');
-        sendToApp({
-          code: code,
-          wabaId: signupSessionData.wabaId,
-          phoneNumberId: signupSessionData.phoneNumberId
-        });
+      if (response && response.authResponse && response.authResponse.code) {
+        session.code = response.authResponse.code;
+        maybeComplete();
       } else {
-        sendError('WhatsApp signup was not completed.');
-        connectBtn.disabled = false;
+        // A CANCEL / ERROR message usually arrives right around this callback
+        // and says why; give it a moment so its message wins over this generic one.
+        setTimeout(function () {
+          fail('WhatsApp signup was not completed.');
+        }, 1500);
       }
     }, {
       config_id: META_CONFIG_ID,
@@ -152,7 +344,21 @@
     });
   }
 
+  function retry() {
+    clearTimer();
+    session = newSession();
+    retryBtn.hidden = true;
+    setStatus('Tap the button below to try again.');
+    refreshControls();
+  }
+
+  cards.coexistence.addEventListener('click', function () { choose('coexistence'); });
+  cards.cloud_api.addEventListener('click', function () { choose('cloud_api'); });
+  cards.personal.addEventListener('click', function () { choose('personal'); });
   connectBtn.addEventListener('click', launchSignup);
+  retryBtn.addEventListener('click', retry);
+
+  setStatus('Choose the option that matches your number.');
 
   fetch('/api/public/whatsapp-embedded-signup-config')
     .then(function (res) { return res.json(); })
@@ -169,8 +375,11 @@
           xfbml: true,
           version: 'v25.0'
         });
-        connectBtn.disabled = false;
-        setStatus('Tap the button below to connect your WhatsApp Business number.');
+        sdkReady = true;
+        refreshControls();
+        if (chosen === 'coexistence' || chosen === 'cloud_api') {
+          setStatus('Tap the button below to connect your WhatsApp Business number.');
+        }
       };
 
       (function (d, s, id) {
