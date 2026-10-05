@@ -501,7 +501,7 @@ const renderText = (automation, business, customer, languageCode, booking = null
 const renderTemplateParams = (mapping, business, customer, templateLanguage = null, booking = null) => (mapping || []).map((entry) => {
   const fallback = typeof entry.fallback === 'string' ? entry.fallback.trim() : '';
   const lang = baseLanguage(templateLanguage);
-  let v = '';
+  let v;
   if (entry.source === 'customer.name') {
     v = customer && customer.name;
     if (!(typeof v === 'string' && v.trim()) && !fallback) return customerNameOr(null, lang);

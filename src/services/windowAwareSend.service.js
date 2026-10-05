@@ -111,7 +111,7 @@ const sendWindowAwareMessage = async (business, customerRow, { textFor, template
       // No body component for a template without variables (as broadcast.worker.js).
       templateParams.length > 0 ? [{ type: 'body', parameters: templateParams.map(t => ({ type: 'text', text: t })) }] : []
     );
-  } catch (sendErr) {
+  } catch {
     if (ratePaise > 0) {
       await walletService.refundToWallet(business.id, ratePaise, billing.referenceId, billing.refundNotes)
         .catch(err => logger.error('Window-aware send: refund failed', { businessId: business.id, bookingId, error: err.message }));

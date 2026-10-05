@@ -508,6 +508,12 @@ tracked as a deferred "future initiative" — it's built and live.
   signup). `disabled_booking_fields`, `served_cities`
   are live per-business config, applied as an OVERLAY at read time by the
   graph engine (never baked into stored flow data).
+- `message_templates` — one row per WhatsApp template. `source` (`app` |
+  `meta_sync`), `meta_template_id`, `status` (draft, pending, approved,
+  rejected, paused, disabled, deleted), raw `meta_status`, `quality_score`,
+  `meta_components` (Meta's components as last synced), `send_support`,
+  `last_synced_at`, `meta_deleted_at`. Unique per business on
+  `meta_template_id` (when set) and on name + language (while unregistered).
 - `business_type_templates` — still exists; historically the category
   starting point copied at business creation for the old engine and the
   one-time graph migration. Not read by `createBusiness` anymore now that
@@ -582,6 +588,33 @@ tracked as a deferred "future initiative" — it's built and live.
    webhook path for a millisecond-wide window.
 
 ## Session log (append here as major milestones land)
+- 2026-10-05: Template sync from WhatsApp (#6 Phase 1) —
+  `POST /api/message-templates/sync` (owner/superadmin, 1 per business per
+  60 s, in memory) pulls the WABA's templates into `message_templates`
+  (`services/templateSync.service.js`; also auto-runs once after
+  `connectWhatsapp`; `src/scripts/syncTemplates.js --business <id>` is the
+  dry-run / `--confirm` script). Meta wins on status, category, rejection
+  reason, quality and components for any row with a `meta_template_id`; our
+  own `header_image_url` is never overwritten. AUTHENTICATION templates are
+  skipped. A stored template missing from a COMPLETE listing is soft-deleted
+  (`status='deleted'`, `meta_deleted_at`; un-deleted if it returns) — never
+  on a partial/failed listing, and never when Meta returns an empty listing
+  for a business that has registered templates (`emptyListingSkipped`).
+  New `message_templates.send_support` (`ok | needs_header_media |
+  unsupported_named_params | unsupported_component`): broadcasts,
+  follow-ups and `sendWindowAwareMessage` use only `status='approved'` AND
+  `send_support='ok'` (`utils/templateStatus.js#isTemplateUsable`). Webhook:
+  `message_template_quality_update` and `template_category_update` handled
+  (subscribe both fields in the Meta app dashboard), and the name-fallback
+  status update is now scoped by the event's WABA (`entry.id`)
+  (`services/templateWebhook.service.js`). Migration
+  `20261005100000_message_templates_sync.sql` (**must be applied before the
+  server code is deployed**; aborts safely if its unique indexes would
+  fail). Phase 0, same push window: one Graph API version via
+  `GRAPH_API_VERSION` (default v25.0, `config/graphApiVersion.js`).
+  Live-path note: the webhook change affects every business including
+  Search cab AI. Phases 2-4 (send media headers / URL buttons, create with
+  media / buttons, inbound button routing) are not built.
 - 2026-10-04: Help Center support endpoints (public, no auth) —
   `GET /api/public/app-config` (`{ helpBaseUrl, helpLanguages }`, from
   optional `HELP_BASE_URL`, default `${FRONTEND_URL}/help`, cached 5 min)
