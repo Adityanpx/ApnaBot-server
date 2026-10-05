@@ -26,6 +26,7 @@ const r2 = require('../services/r2.service');
 const logger = require('../utils/logger');
 const inboundMessageService = require('../services/inboundMessage.service');
 const { unsupportedLabel } = require('../utils/inboundMessage');
+const { splitMessages } = require('../utils/webhookBatch');
 
 // Exact-match greeting keywords that trigger the welcome message / menu.
 // Kept as exact matches (not substring) so real rule keywords still win.
@@ -729,9 +730,34 @@ const receiveWebhook = async (req, res) => {
       return;
     }
 
-    // Step 3 - Parse payload
-    const entry = req.body.entry?.[0];
-    const changes = entry?.changes?.[0];
+    // Step 3 - Process every change of every entry (and every message of a
+    // batched change). Meta can batch them into one POST; each is handled on its
+    // own, and a failure in one is logged by processWebhookChange without
+    // dropping the rest.
+    const entries = Array.isArray(req.body?.entry) ? req.body.entry : [];
+    for (const entry of entries) {
+      const entryChanges = Array.isArray(entry?.changes) ? entry.changes : [];
+      for (const change of entryChanges) {
+        for (const single of splitMessages(change)) {
+          await processWebhookChange(entry, single);
+        }
+      }
+    }
+  } catch (error) {
+    logger.error('Error processing webhook:', error);
+    // Already sent 200, so we just log the error
+  }
+};
+
+/**
+ * One change of one webhook entry (one message, for a message change). Never
+ * throws - a failure is logged, so the caller's loop carries on with the next
+ * change. A `return` anywhere below only ends this change.
+ * @param {Object} entry - webhook entry (id = the WABA id)
+ * @param {Object} changes - one entry of entry.changes[]
+ */
+const processWebhookChange = async (entry, changes) => {
+  try {
     const value = changes?.value;
 
     // Handle status updates
