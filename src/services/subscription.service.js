@@ -62,6 +62,20 @@ const invalidateSubscriptionCache = async (businessId) => {
  */
 const createSubscription = async (businessId, planId, options = {}) => {
   try {
+    // Renewing the same plan before expiry: stack the new period on top of
+    // the remaining time instead of discarding it.
+    const { data: existing } = await supabase
+      .from('subscriptions')
+      .select('plan_id, end_date')
+      .eq('business_id', businessId)
+      .eq('status', 'active')
+      .order('end_date', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const renewFrom = existing && existing.plan_id === planId && new Date(existing.end_date) > new Date()
+      ? new Date(existing.end_date)
+      : null;
+
     // Cancel existing active subscriptions
     const { error: cancelErr } = await supabase
       .from('subscriptions')
@@ -72,7 +86,7 @@ const createSubscription = async (businessId, planId, options = {}) => {
 
     const durationMonths = options.durationMonths || 1;
     const startDate = new Date();
-    const endDate = new Date();
+    const endDate = renewFrom ? new Date(renewFrom) : new Date();
     endDate.setMonth(endDate.getMonth() + durationMonths);
 
     const { data: sub, error } = await supabase
