@@ -100,6 +100,7 @@ const createSubscriptionOrder = async (req, res, next) => {
     logger.info(`Razorpay order created: ${order.id} for business ${businessId}, ${durationMonths} months`);
     return successResponse(res, 200, {
       orderId: order.id,
+      keyId: config.RAZORPAY_KEY_ID,
       amount: order.amount,
       currency: order.currency,
       plan: {
