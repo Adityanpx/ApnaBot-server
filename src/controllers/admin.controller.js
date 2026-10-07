@@ -440,6 +440,16 @@ const grantSubscription = async (req, res, next) => {
       .single();
     if (error) throw error;
 
+    // The daily expiry cron sets businesses.is_active=false; the webhook's
+    // tenant lookup requires it true, so a grant that makes the business
+    // live again must reactivate it (extendSubscription / createSubscription
+    // do the same). expired/cancelled grants leave the flag alone.
+    if (status === 'active' || status === 'trial') {
+      const { error: activateErr } = await supabase
+        .from('businesses').update({ is_active: true }).eq('id', id);
+      if (activateErr) throw activateErr;
+    }
+
     // Clear cached subscription status so the grant takes effect immediately
     await subscriptionService.invalidateSubscriptionCache(id);
     if (business.phone_number_id) {

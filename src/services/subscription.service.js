@@ -1,6 +1,7 @@
 const supabase = require('../config/supabase');
 const redis = require('../config/redis');
 const subscriptionNotifications = require('./subscriptionNotifications.service');
+const tenantService = require('./tenant.service');
 const logger = require('../utils/logger');
 
 const CACHE_KEY = (businessId) => `subscription:${businessId}`;
@@ -106,11 +107,21 @@ const createSubscription = async (businessId, planId, options = {}) => {
     if (error) throw error;
 
     // Activate business on subscription creation
-    const { error: bizErr } = await supabase
-      .from('businesses').update({ is_active: true }).eq('id', businessId);
+    const { data: business, error: bizErr } = await supabase
+      .from('businesses').update({ is_active: true }).eq('id', businessId)
+      .select('phone_number_id').maybeSingle();
     if (bizErr) throw bizErr;
 
     await invalidateSubscriptionCache(businessId);
+    // The webhook's tenant cache holds its own subscription/plan snapshot
+    // (1h TTL) — without this a renewal or plan change isn't seen until it expires.
+    if (business?.phone_number_id) {
+      try {
+        await tenantService.invalidateTenantCache(business.phone_number_id);
+      } catch (cacheErr) {
+        logger.error(`Error invalidating tenant cache for business ${businessId}:`, cacheErr);
+      }
+    }
 
     logger.info(`Subscription created for business ${businessId}, plan ${planId}`);
     return sub;
