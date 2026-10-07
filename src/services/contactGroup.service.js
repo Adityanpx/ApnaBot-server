@@ -9,7 +9,11 @@ const supabase = require('../config/supabase');
 
 const NAME_MAX_LENGTH = 60;
 const MAX_MEMBERS_PER_CALL = 500;
-const ID_CHUNK = 500; // keeps each `in (...)` filter a sensible URL length
+// Ids per `in (...)` filter. The URL has a hard ceiling — measured on the
+// hosted project 2026-10-07: 350 UUIDs work, 400 fail ("fetch failed") — so
+// this stays well under it (200 ≈ 7.5 KB). A request may carry up to
+// MAX_MEMBERS_PER_CALL ids, so its lookups go out in chunks of this size.
+const ID_CHUNK = 200;
 const PAGE = 1000;    // PostgREST max_rows on the hosted project
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -109,10 +113,14 @@ const remove = async (businessId, groupId) => {
 
 /** The subset of these ids that are customers of this business. */
 const businessCustomerIds = async (businessId, ids) => {
-  const { data, error } = await supabase
-    .from('customers').select('id').eq('business_id', businessId).in('id', ids);
-  if (error) throw error;
-  return (data || []).map(r => r.id);
+  const found = [];
+  for (let i = 0; i < ids.length; i += ID_CHUNK) {
+    const { data, error } = await supabase
+      .from('customers').select('id').eq('business_id', businessId).in('id', ids.slice(i, i + ID_CHUNK));
+    if (error) throw error;
+    found.push(...(data || []).map(r => r.id));
+  }
+  return found;
 };
 
 /** POST /:id/members — Body { customerIds }. Already-members are skipped. */
@@ -134,10 +142,16 @@ const removeMembers = async (businessId, groupId, body = {}) => {
   if (!(await findGroup(businessId, groupId))) return { status: 404, error: 'Group not found' };
   const check = validateCustomerIds(body.customerIds);
   if (check.error) return check;
-  const { data, error } = await supabase.from('contact_group_members')
-    .delete().eq('group_id', groupId).in('customer_id', check.ids).select('customer_id');
-  if (error) throw error;
-  return { removed: (data || []).length, group: await getWithCount(businessId, groupId) };
+  // One delete per chunk of ids (the id list is in the URL). Each chunk is
+  // idempotent, so a failure part-way can simply be retried.
+  let removed = 0;
+  for (let i = 0; i < check.ids.length; i += ID_CHUNK) {
+    const { data, error } = await supabase.from('contact_group_members')
+      .delete().eq('group_id', groupId).in('customer_id', check.ids.slice(i, i + ID_CHUNK)).select('customer_id');
+    if (error) throw error;
+    removed += (data || []).length;
+  }
+  return { removed, group: await getWithCount(businessId, groupId) };
 };
 
 /**
