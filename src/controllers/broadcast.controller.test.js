@@ -10,16 +10,29 @@ const assert = require('node:assert/strict');
 
 let templateRow;
 const draft = { id: 'bc', business_id: 'b', template_id: 't', status: 'draft', template_variables: [] };
+// The broadcasts row, stateful so the atomic claim in sendBroadcast is real:
+// an update with .eq('status', 'draft') only matches while the row is a draft,
+// and matching + changing happen in one step, like the single UPDATE in Postgres.
+let broadcastState = { ...draft };
 const inserted = [];
 const supabase = {
   from: (table) => {
+    const filters = [];
+    let patch = null;
+    const run = () => {
+      if (table !== 'broadcasts') return { data: templateRow, error: null };
+      if (!filters.every(([c, v]) => broadcastState[c] === v)) return { data: null, error: null };
+      if (patch) { Object.assign(broadcastState, patch); patch = null; }
+      return { data: { ...broadcastState }, error: null };
+    };
     const q = {
       select: () => q,
-      eq: () => q,
+      eq: (c, v) => { filters.push([c, v]); return q; },
       insert: (row) => { inserted.push(row); return q; },
-      update: () => q,
-      single: async () => ({ data: { id: 'new', ...inserted[inserted.length - 1] }, error: null }),
-      maybeSingle: async () => ({ data: table === 'broadcasts' ? draft : templateRow, error: null })
+      update: (p) => { patch = p; return q; },
+      single: async () => (inserted.length && !patch ? { data: { id: 'new', ...inserted[inserted.length - 1] }, error: null } : run()),
+      maybeSingle: async () => run(),
+      then: (resolve) => resolve(run())
     };
     return q;
   }
@@ -30,17 +43,32 @@ const stub = (rel, exports) => {
 };
 const queued = [];
 const debits = [];
+const refunds = [];
+let audience = [{ id: 'c1', whatsapp_number: '911', name: 'A' }];
+let failQueue = () => false; // (job, callNumber) => true makes that addToBroadcastQueue reject
+let debitError = null;
+let queueCalls = 0;
 stub('../config/supabase', supabase);
 let billing = true;
 stub('../config/env', { get WALLET_BILLING_ENABLED() { return billing; }, MAX_BROADCAST_RECIPIENTS: 1000 });
 stub('../utils/logger', { info: () => {}, warn: () => {}, error: () => {} });
 stub('../services/business.service', { getBusinessById: async () => ({ isWhatsappConnected: true, phoneNumberId: 'p', accessToken: 'x' }) });
-stub('../services/wallet.service', { debitWallet: async (...a) => { debits.push(a); } });
+stub('../services/wallet.service', {
+  debitWallet: async (...a) => { if (debitError) throw debitError; debits.push(a); },
+  refundToWallet: async (...a) => { refunds.push(a); },
+  getOrCreateWallet: async () => ({ balance_paise: 5 })
+});
 stub('../services/rateCard.service', { getRateForMessage: async () => 80 });
-stub('../queues/broadcast.queue', { addToBroadcastQueue: async (job) => { queued.push(job); } });
+stub('../queues/broadcast.queue', {
+  addToBroadcastQueue: async (job) => {
+    const n = queueCalls++;
+    if (failQueue(job, n)) throw new Error('redis down');
+    queued.push(job);
+  }
+});
 stub('../services/broadcastAudience.service', {
   normalizeAudience: () => ({ filter: 'all_customers', params: {} }),
-  resolveAudience: async () => [{ id: 'c1', whatsapp_number: '911', name: 'A' }],
+  resolveAudience: async () => audience,
   businessGroupIds: async () => []
 });
 const { createBroadcast, sendBroadcast } = require('./broadcast.controller');
@@ -52,7 +80,11 @@ const call = async (handler, req) => {
 };
 const tpl = (status) => ({ id: 't', business_id: 'b', name: 'promo', status, category: 'MARKETING', language: 'en_US', body_text: 'Hi', header_type: 'NONE' });
 
-test.beforeEach(() => { inserted.length = 0; queued.length = 0; debits.length = 0; billing = true; });
+test.beforeEach(() => {
+  inserted.length = 0; queued.length = 0; debits.length = 0; refunds.length = 0; billing = true;
+  broadcastState = { ...draft }; audience = [{ id: 'c1', whatsapp_number: '911', name: 'A' }];
+  failQueue = () => false; debitError = null; queueCalls = 0;
+});
 
 test('create: paused / disabled templates are refused', async () => {
   for (const status of ['paused', 'disabled']) {
@@ -124,4 +156,92 @@ test('a deleted (soft) template is not approved: refused', async () => {
   templateRow = { ...tpl('deleted'), send_support: 'ok' };
   assert.equal((await call(createBroadcast, { body: { name: 'Diwali', templateId: 't' } })).statusCode, 400);
   assert.equal((await call(sendBroadcast, { params: { id: 'bc' } })).statusCode, 400);
+});
+
+// ── Atomic claim (a draft can only be sent once) ──
+
+test('send: two concurrent sends → exactly one debit and one enqueue; the other gets 409', async () => {
+  templateRow = tpl('approved');
+  const [a, b] = await Promise.all([
+    call(sendBroadcast, { params: { id: 'bc' } }),
+    call(sendBroadcast, { params: { id: 'bc' } })
+  ]);
+  assert.deepEqual([a.statusCode, b.statusCode].sort(), [200, 409]);
+  assert.match([a, b].find(r => r.statusCode === 409).body.message, /already being sent/);
+  assert.equal(debits.length, 1);
+  assert.equal(queued.length, 1);
+  assert.equal(refunds.length, 0);
+  assert.equal(broadcastState.status, 'sending');
+});
+
+test('send: a broadcast no longer a draft is not claimed, debited or queued', async () => {
+  templateRow = tpl('approved');
+  broadcastState.status = 'sending';
+  const res = await call(sendBroadcast, { params: { id: 'bc' } });
+  assert.equal(res.statusCode, 400);
+  assert.equal(debits.length + queued.length, 0);
+});
+
+test('send: the claim is scoped to this business', async () => {
+  templateRow = tpl('approved');
+  const res = await call(sendBroadcast, { params: { id: 'bc' }, user: { businessId: 'other' } });
+  assert.equal(res.statusCode, 404);
+  assert.equal(broadcastState.status, 'draft');
+});
+
+test('send: insufficient wallet balance → claim released, nothing queued, no refund', async () => {
+  templateRow = tpl('approved');
+  debitError = new Error('Insufficient wallet balance');
+  const res = await call(sendBroadcast, { params: { id: 'bc' } });
+  assert.equal(res.statusCode, 400);
+  assert.match(res.body.message, /Insufficient wallet balance/);
+  assert.equal(broadcastState.status, 'draft');
+  assert.equal(queued.length + refunds.length, 0);
+  // and the owner can send again once topped up
+  debitError = null;
+  assert.equal((await call(sendBroadcast, { params: { id: 'bc' } })).statusCode, 200);
+});
+
+test('send: an unexpected debit error → claim released (draft again), error passed on, nothing to refund', async () => {
+  templateRow = tpl('approved');
+  debitError = new Error('db down');
+  await assert.rejects(call(sendBroadcast, { params: { id: 'bc' } }), /db down/);
+  assert.equal(broadcastState.status, 'draft');
+  assert.equal(queued.length + refunds.length, 0);
+});
+
+test('send: nothing could be queued → full refund, back to draft, 500', async () => {
+  templateRow = tpl('approved');
+  failQueue = () => true;
+  const res = await call(sendBroadcast, { params: { id: 'bc' } });
+  assert.equal(res.statusCode, 500);
+  assert.equal(debits.length, 1);
+  assert.equal(refunds.length, 1);
+  assert.equal(refunds[0][1], 80); // 1 recipient × 80 paise, the amount debited
+  assert.equal(broadcastState.status, 'draft');
+  assert.equal(broadcastState.total_recipients, 0);
+});
+
+test('send: some batches queued, some not → not released (no double send); refund and total cover only the lost ones', async () => {
+  templateRow = tpl('approved');
+  audience = Array.from({ length: 120 }, (_, i) => ({ id: `c${i}`, whatsapp_number: `91${i}`, name: 'A' })); // 50 + 50 + 20
+  failQueue = (job, n) => n === 2; // the 20-recipient batch
+  const res = await call(sendBroadcast, { params: { id: 'bc' } });
+  assert.equal(res.statusCode, 200);
+  assert.equal(queued.length, 2);
+  assert.equal(debits[0][1], 120 * 80);
+  assert.equal(refunds.length, 1);
+  assert.equal(refunds[0][1], 20 * 80);
+  assert.equal(broadcastState.status, 'sending');
+  assert.equal(broadcastState.total_recipients, 100);
+});
+
+test('send with billing off: a queue failure releases the claim and refunds nothing', async () => {
+  billing = false;
+  templateRow = tpl('approved');
+  failQueue = () => true;
+  const res = await call(sendBroadcast, { params: { id: 'bc' } });
+  assert.equal(res.statusCode, 500);
+  assert.equal(refunds.length, 0);
+  assert.equal(broadcastState.status, 'draft');
 });

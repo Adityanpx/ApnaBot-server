@@ -230,53 +230,110 @@ const sendBroadcast = async (req, res, next) => {
     const ratePerMessage = await rateCardService.getRateForMessage(countryCode, category);
     const estimatedCostPaise = ratePerMessage * customers.length;
 
-    // Passed to the worker so it refunds failed sends only when this debit
-    // actually happened.
-    const billed = config.WALLET_BILLING_ENABLED && estimatedCostPaise > 0;
-    if (billed) {
-      try {
-        await walletService.debitWallet(
-          businessId,
-          estimatedCostPaise,
-          id,
-          `Broadcast ${id}: ${customers.length} × ${category} message(s) @ ₹${(ratePerMessage / 100).toFixed(2)}`
-        );
-      } catch (debitErr) {
-        if (debitErr.message && debitErr.message.includes('Insufficient wallet balance')) {
-          const wallet = await walletService.getOrCreateWallet(businessId);
-          return errorResponse(res, 400, `Insufficient wallet balance: need ₹${(estimatedCostPaise / 100).toFixed(2)}, have ₹${(wallet.balance_paise / 100).toFixed(2)}`);
-        }
-        throw debitErr;
-      }
-    }
-
-    const { data: updatedBroadcast, error: updateErr } = await supabase.from('broadcasts').update({
+    // Claim the draft atomically BEFORE any money moves: only one of several
+    // concurrent sends (double click, two tabs) gets the row back; the rest
+    // are told it's already going out, with nothing debited or queued.
+    const { data: updatedBroadcast, error: claimErr } = await supabase.from('broadcasts').update({
       total_recipients: customers.length,
       status: 'sending',
       started_at: new Date().toISOString()
-    }).eq('id', id).select().single();
-    if (updateErr) throw updateErr;
+    }).eq('id', id).eq('business_id', businessId).eq('status', 'draft').select().maybeSingle();
+    if (claimErr) throw claimErr;
+    if (!updatedBroadcast) {
+      return errorResponse(res, 409, 'This broadcast is already being sent');
+    }
 
-    const templateVariables = broadcastRow.template_variables || [];
-    const components = buildTemplateComponents(templateRow, { body: templateVariables });
+    // Passed to the worker so it refunds failed sends only when this debit
+    // actually happened.
+    const billed = config.WALLET_BILLING_ENABLED && estimatedCostPaise > 0;
+    let debited = false;
+    const refund = async (amountPaise, notes) => {
+      if (!debited || amountPaise <= 0) return;
+      try {
+        await walletService.refundToWallet(businessId, amountPaise, id, notes);
+      } catch (refundErr) {
+        logger.error(`Broadcast ${id}: failed to refund ${amountPaise} paise`, refundErr);
+      }
+    };
+    // Back to a draft the owner can send again. Only a claim that never
+    // reached the queue is released (see below for a partly queued one).
+    const releaseClaim = async () => {
+      const { error: releaseErr } = await supabase.from('broadcasts')
+        .update({ status: 'draft', started_at: null, total_recipients: 0 })
+        .eq('id', id).eq('business_id', businessId).eq('status', 'sending');
+      if (releaseErr) logger.error(`Broadcast ${id}: failed to put it back to draft`, releaseErr);
+    };
 
-    const batches = chunk(customers, BATCH_SIZE);
-    await Promise.all(batches.map((batch) => addToBroadcastQueue({
-      broadcastId: id,
-      businessId: businessId.toString(),
-      phoneNumberId: business.phoneNumberId,
-      encryptedAccessToken: business.accessToken,
-      templateName: templateRow.name,
-      language: templateRow.language,
-      components,
-      // The worker rebuilds components per recipient when there is a variable
-      // mapping (no template row there), so the quick-reply payloads ride along.
-      quickReplyComponents: buildQuickReplyComponents(templateRow),
-      variableMapping: broadcastRow.variable_mapping || null,
-      ratePerMessage,
-      billed,
-      recipients: batch.map((c) => ({ customerId: c.id, whatsappNumber: c.whatsapp_number, customer: { name: c.name } }))
-    })));
+    let batches;
+    try {
+      if (billed) {
+        try {
+          await walletService.debitWallet(
+            businessId,
+            estimatedCostPaise,
+            id,
+            `Broadcast ${id}: ${customers.length} × ${category} message(s) @ ₹${(ratePerMessage / 100).toFixed(2)}`
+          );
+          debited = true;
+        } catch (debitErr) {
+          if (debitErr.message && debitErr.message.includes('Insufficient wallet balance')) {
+            const wallet = await walletService.getOrCreateWallet(businessId);
+            await releaseClaim();
+            return errorResponse(res, 400, `Insufficient wallet balance: need ₹${(estimatedCostPaise / 100).toFixed(2)}, have ₹${(wallet.balance_paise / 100).toFixed(2)}`);
+          }
+          throw debitErr;
+        }
+      }
+
+      const templateVariables = broadcastRow.template_variables || [];
+      const components = buildTemplateComponents(templateRow, { body: templateVariables });
+      batches = chunk(customers, BATCH_SIZE).map((batch) => ({
+        recipients: batch,
+        job: {
+          broadcastId: id,
+          businessId: businessId.toString(),
+          phoneNumberId: business.phoneNumberId,
+          encryptedAccessToken: business.accessToken,
+          templateName: templateRow.name,
+          language: templateRow.language,
+          components,
+          // The worker rebuilds components per recipient when there is a variable
+          // mapping (no template row there), so the quick-reply payloads ride along.
+          quickReplyComponents: buildQuickReplyComponents(templateRow),
+          variableMapping: broadcastRow.variable_mapping || null,
+          ratePerMessage,
+          billed,
+          recipients: batch.map((c) => ({ customerId: c.id, whatsappNumber: c.whatsapp_number, customer: { name: c.name } }))
+        }
+      }));
+    } catch (setupErr) {
+      // Failed after the claim, before anything was queued.
+      await refund(estimatedCostPaise, `Refund: broadcast ${id} could not be started`);
+      await releaseClaim();
+      throw setupErr;
+    }
+
+    const results = await Promise.allSettled(batches.map((b) => addToBroadcastQueue(b.job)));
+    const failedBatches = batches.filter((_, i) => results[i].status === 'rejected');
+    if (failedBatches.length === batches.length) {
+      // Nothing reached the queue: undo the debit and the claim.
+      logger.error(`Broadcast ${id}: could not be queued`, results[0].reason);
+      await refund(estimatedCostPaise, `Refund: broadcast ${id} could not be queued`);
+      await releaseClaim();
+      return errorResponse(res, 500, 'Could not start this broadcast. Nothing was sent or charged. Try again.');
+    }
+    if (failedBatches.length > 0) {
+      // Some batches are already with the worker and will send, so the draft
+      // can't be released (a retry would message them twice). Count only what
+      // was queued and refund the rest.
+      const lost = failedBatches.reduce((n, b) => n + b.recipients.length, 0);
+      logger.error(`Broadcast ${id}: ${failedBatches.length} of ${batches.length} batches could not be queued (${lost} recipients)`);
+      await refund(ratePerMessage * lost, `Refund: ${lost} broadcast ${id} message(s) could not be queued`);
+      const { error: totalErr } = await supabase.from('broadcasts')
+        .update({ total_recipients: customers.length - lost }).eq('id', id).eq('business_id', businessId);
+      if (totalErr) logger.error(`Broadcast ${id}: failed to lower total_recipients by ${lost}`, totalErr);
+      updatedBroadcast.total_recipients = customers.length - lost;
+    }
 
     logger.info(`Broadcast ${id} queued: ${customers.length} recipients across ${batches.length} batches`);
     return successResponse(res, 200, toCamelCase(updatedBroadcast), 'Broadcast is sending');
