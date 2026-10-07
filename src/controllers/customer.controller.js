@@ -5,6 +5,7 @@ const { toCamelCase } = require('../utils/caseConvert');
 const businessService = require('../services/business.service');
 const optInLinkService = require('../services/optInLink.service');
 const contactGroupService = require('../services/contactGroup.service');
+const { PIPELINE_STAGES, applyTagsAny, parseTagsParam } = require('../utils/customerFilters');
 const logger = require('../utils/logger');
 
 const WINDOW_DURATION_MS = 24 * 60 * 60 * 1000;
@@ -18,11 +19,10 @@ const PAGE = 1000;
 // customer. Confirmed with the user rather than guessed.
 const BOOKING_STATUSES_FOR_VIP = ['confirmed', 'completed'];
 
-// Manual-override values for updateCustomer's pipelineStage — always allowed
-// regardless of the current stage. This is the explicit human action that
-// customerPipeline.service.js's rank guard exists to defer to, so no
-// forward-only check applies here.
-const PIPELINE_STAGES = ['new', 'contacted', 'converted', 'lost'];
+// PIPELINE_STAGES (utils/customerFilters.js): manual-override values for
+// updateCustomer's pipelineStage — always allowed regardless of the current
+// stage. This is the explicit human action that customerPipeline.service.js's
+// rank guard exists to defer to, so no forward-only check applies here.
 
 // windowExpiresAt is derived, not stored — recomputed at read time from last_message_at
 const withWindowExpiresAt = (customer) => ({
@@ -85,18 +85,86 @@ const computeIsVip = (business, stat) => {
 };
 
 /**
+ * Filters of GET /api/customers and GET /api/customers/ids from a request's
+ * query string → { filters } or { error } (a message for a 400).
+ */
+const parseCustomerFilters = (query) => {
+  const { search, isBlocked, optedIn, broadcastEligible, isVip, pipelineStage, neverMessaged, groupId } = query;
+  if (pipelineStage !== undefined && !PIPELINE_STAGES.includes(pipelineStage)) {
+    return { error: `pipelineStage must be one of: ${PIPELINE_STAGES.join(', ')}` };
+  }
+  if (groupId !== undefined && !contactGroupService.isUuid(groupId)) {
+    return { error: 'groupId must be a group id' };
+  }
+  const parsedTags = parseTagsParam(query.tags);
+  if (parsedTags.error) return { error: parsedTags.error };
+  return { filters: { search, isBlocked, optedIn, broadcastEligible, isVip, pipelineStage, neverMessaged, groupId, tags: parsedTags.tags } };
+};
+
+/**
+ * A fresh customers query for these filters (parseCustomerFilters), newest
+ * inbound first. `columns` is what to select; `options` go to select() (an
+ * exact count by default). Everything but isVip is applied here — isVip
+ * depends on aggregated booking data, so callers handle it.
+ */
+const buildCustomerQuery = (businessId, filters, columns = '*', options = { count: 'exact' }) => {
+  const { search, isBlocked, optedIn, broadcastEligible, pipelineStage, neverMessaged, groupId, tags } = filters;
+  // groupId: an inner embed keeps only customers with a membership in
+  // that group (customers are already this business's, so a foreign
+  // group id simply matches nobody). The embed is dropped from the rows by the caller.
+  let query = supabase.from('customers')
+    .select(groupId !== undefined ? `${columns}, contact_group_members!inner(group_id)` : columns, options)
+    .eq('business_id', businessId);
+  if (groupId !== undefined) {
+    query = query.eq('contact_group_members.group_id', groupId);
+  }
+
+  if (search) {
+    // PostgREST's .or() parses commas/parens as filter syntax — strip them
+    // so the search term can't break out of these two conditions.
+    const safeSearch = search.replace(/[,()%*]/g, '');
+    query = query.or(`name.ilike.%${safeSearch}%,whatsapp_number.ilike.%${safeSearch}%`);
+  }
+  if (isBlocked !== undefined) {
+    query = query.eq('is_blocked', isBlocked === 'true');
+  }
+  if (optedIn !== undefined) {
+    query = query.eq('opted_in', optedIn === 'true');
+  }
+  if (broadcastEligible === 'true') {
+    // Mirrors isBroadcastEligible() above — opted_in, is_blocked and
+    // opted_out_at are all real columns, so this filters at the query level
+    // like isBlocked.
+    query = query.eq('opted_in', true).eq('is_blocked', false).is('opted_out_at', null);
+  }
+  if (pipelineStage !== undefined) {
+    query = query.eq('pipeline_stage', pipelineStage);
+  }
+  if (neverMessaged === 'true') {
+    query = query.is('last_message_at', null);
+  }
+  // Customers with ANY of these tags (exact match); a no-op for none.
+  query = applyTagsAny(query, tags);
+
+  // nullsFirst: false — imported contacts who never messaged go last,
+  // not first (Postgres puts NULLs first in a descending sort).
+  return query.order('last_message_at', { ascending: false, nullsFirst: false });
+};
+
+/**
  * GET /api/customers
  * List all customers for business — paginated + searchable by name or number.
  * Optional filters: isBlocked ('true'/'false'), optedIn ('true'/'false'),
  * broadcastEligible ('true'), isVip ('true'), pipelineStage
  * ('new'/'contacted'/'converted'/'lost'), neverMessaged ('true' — imported
  * contacts who haven't messaged yet, last_message_at null), groupId (members
- * of one customer group). Each row carries groups: [{ id, name }].
+ * of one customer group), tags (customers with ANY of these exact tags:
+ * ?tags=a&tags=b or ?tags=a,b). Each row carries groups: [{ id, name }].
  * Customers who never messaged sort last.
  */
 const getCustomers = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, search, isBlocked, optedIn, broadcastEligible, isVip, pipelineStage, neverMessaged, groupId } = req.query;
+    const { page = 1, limit = 20 } = req.query;
     const businessId = req.user.businessId;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
@@ -105,56 +173,13 @@ const getCustomers = async (req, res, next) => {
     // status before we can correctly slice a page. When it's requested we
     // fetch the full filtered set (no .range()) and paginate in memory
     // instead of at the query level.
-    const filterVip = isVip === 'true';
+    const filterVip = req.query.isVip === 'true';
 
-    if (pipelineStage !== undefined && !PIPELINE_STAGES.includes(pipelineStage)) {
-      return errorResponse(res, 400, `pipelineStage must be one of: ${PIPELINE_STAGES.join(', ')}`);
-    }
-    if (groupId !== undefined && !contactGroupService.isUuid(groupId)) {
-      return errorResponse(res, 400, 'groupId must be a group id');
-    }
+    const parsed = parseCustomerFilters(req.query);
+    if (parsed.error) return errorResponse(res, 400, parsed.error);
 
     // A fresh query per call — the VIP path below reads it page by page.
-    const buildQuery = () => {
-      // groupId: an inner embed keeps only customers with a membership in
-      // that group (customers are already this business's, so a foreign
-      // group id simply matches nobody). The embed is dropped from the rows below.
-      let query = supabase.from('customers')
-        .select(groupId !== undefined ? '*, contact_group_members!inner(group_id)' : '*', { count: 'exact' })
-        .eq('business_id', businessId);
-      if (groupId !== undefined) {
-        query = query.eq('contact_group_members.group_id', groupId);
-      }
-
-      if (search) {
-        // PostgREST's .or() parses commas/parens as filter syntax — strip them
-        // so the search term can't break out of these two conditions.
-        const safeSearch = search.replace(/[,()%*]/g, '');
-        query = query.or(`name.ilike.%${safeSearch}%,whatsapp_number.ilike.%${safeSearch}%`);
-      }
-      if (isBlocked !== undefined) {
-        query = query.eq('is_blocked', isBlocked === 'true');
-      }
-      if (optedIn !== undefined) {
-        query = query.eq('opted_in', optedIn === 'true');
-      }
-      if (broadcastEligible === 'true') {
-        // Mirrors isBroadcastEligible() above — opted_in, is_blocked and
-        // opted_out_at are all real columns, so this filters at the query level
-        // like isBlocked.
-        query = query.eq('opted_in', true).eq('is_blocked', false).is('opted_out_at', null);
-      }
-      if (pipelineStage !== undefined) {
-        query = query.eq('pipeline_stage', pipelineStage);
-      }
-      if (neverMessaged === 'true') {
-        query = query.is('last_message_at', null);
-      }
-
-      // nullsFirst: false — imported contacts who never messaged go last,
-      // not first (Postgres puts NULLs first in a descending sort).
-      return query.order('last_message_at', { ascending: false, nullsFirst: false });
-    };
+    const buildQuery = () => buildCustomerQuery(businessId, parsed.filters);
 
     let data;
     let count;
@@ -209,6 +234,94 @@ const getCustomers = async (req, res, next) => {
     return successResponse(res, 200, { customers, pagination });
   } catch (error) {
     logger.error('Error in getCustomers:', error);
+    next(error);
+  }
+};
+
+// Most customer ids GET /api/customers/ids returns (the broadcast picker's
+// 'customers' audience takes at most this many).
+const MAX_CUSTOMER_IDS = 2000;
+
+/**
+ * GET /api/customers/ids?<same filters as the list>
+ * The ids of every customer matching the filters, in the list's order, for
+ * "select all N matching" in the broadcast picker. At most MAX_CUSTOMER_IDS
+ * ids come back: { ids, total, truncated } where total is how many match and
+ * truncated says ids is only the first MAX_CUSTOMER_IDS of them.
+ */
+const getCustomerIds = async (req, res, next) => {
+  try {
+    const businessId = req.user.businessId;
+    const parsed = parseCustomerFilters(req.query);
+    if (parsed.error) return errorResponse(res, 400, parsed.error);
+
+    let ids;
+    let total;
+    if (req.query.isVip === 'true') {
+      // VIP depends on bookings, so — like the list — read every matching
+      // customer (paged past the 1000-row cap), then keep the VIPs.
+      const business = await businessService.getBusinessById(businessId);
+      const all = [];
+      if (business?.vipEnabled) {
+        for (let from = 0; ; from += PAGE) {
+          const { data: rows, error } = await buildCustomerQuery(businessId, parsed.filters, 'id', {})
+            .order('id', { ascending: true }).range(from, from + PAGE - 1);
+          if (error) throw error;
+          all.push(...(rows || []).map((r) => r.id));
+          if (!rows || rows.length < PAGE) break;
+        }
+      }
+      const stats = all.length > 0 ? await fetchBookingStatsByCustomer(businessId, all) : {};
+      const vipIds = all.filter((id) => computeIsVip(business, stats[id] || { count: 0, spend: 0 }));
+      total = vipIds.length;
+      ids = vipIds.slice(0, MAX_CUSTOMER_IDS);
+    } else {
+      // Read in pages of PAGE (PostgREST caps one response at 1000 rows and
+      // silently drops the rest). id breaks last_message_at ties so pages
+      // never overlap and the same filters always give the same ids.
+      ids = [];
+      total = 0;
+      for (let from = 0; from < MAX_CUSTOMER_IDS; from += PAGE) {
+        const to = Math.min(from + PAGE, MAX_CUSTOMER_IDS) - 1;
+        const { data: rows, count, error } = await buildCustomerQuery(businessId, parsed.filters, 'id')
+          .order('id', { ascending: true }).range(from, to);
+        if (error) throw error;
+        if (from === 0) total = count || 0;
+        ids.push(...(rows || []).map((r) => r.id));
+        if (!rows || rows.length < to - from + 1) break;
+      }
+    }
+
+    return successResponse(res, 200, { ids, total, truncated: total > ids.length });
+  } catch (error) {
+    logger.error('Error in getCustomerIds:', error);
+    next(error);
+  }
+};
+
+/**
+ * GET /api/customers/tags
+ * Every distinct tag on this business's customers, A→Z — for the tag picker.
+ */
+const getCustomerTags = async (req, res, next) => {
+  try {
+    const businessId = req.user.businessId;
+    const tags = new Set();
+    for (let from = 0; ; from += PAGE) {
+      const { data: rows, error } = await supabase.from('customers').select('id, tags')
+        .eq('business_id', businessId).not('tags', 'eq', '[]')
+        .order('id', { ascending: true }).range(from, from + PAGE - 1);
+      if (error) throw error;
+      for (const row of rows || []) {
+        for (const tag of Array.isArray(row.tags) ? row.tags : []) {
+          if (typeof tag === 'string' && tag.trim()) tags.add(tag);
+        }
+      }
+      if (!rows || rows.length < PAGE) break;
+    }
+    return successResponse(res, 200, { tags: [...tags].sort((a, b) => a.localeCompare(b)) });
+  } catch (error) {
+    logger.error('Error in getCustomerTags:', error);
     next(error);
   }
 };
@@ -457,6 +570,9 @@ const toggleCustomerOptIn = async (req, res, next) => {
 
 module.exports = {
   getCustomers,
+  getCustomerIds,
+  getCustomerTags,
+  MAX_CUSTOMER_IDS,
   getCustomerSummary,
   getCustomerById,
   updateCustomer,

@@ -394,16 +394,59 @@ question nodes) plus web-form links for Free demo / Admission.
   confirmed". **Bot Builder forms never use the business-wide advance
   payment** (a free demo never asks for money); every other web form and
   chat booking keeps it unchanged (no `formMeta.advance` key).
-- **Broadcasts to parents (`broadcasts.audience_filter = 'coaching_requests'`
-  + `audience_params { form: demo|admission|any, course, skipClosed }`):**
-  besides all opted-in customers, a coaching business (Courses switch on)
-  can broadcast to parents with a matching Free demo / Admission request
-  (`bookings.form_key`, optionally `fields.course`, by default skipping
-  cancelled = "Not interested" / "Not joining"). Still opted-in, non-blocked
-  customers only and still an approved template; one parent counts once.
-  `services/broadcastAudience.service.js#resolveAudience` is used by the
-  preview, the send and `POST /api/broadcasts/audience-count` (live count
-  in the composer), so the count shown is who gets it.
+- **Broadcast audiences (`broadcasts.audience_filter` + `audience_params`,
+  `services/broadcastAudience.service.js`).** Five types, all sending an
+  approved template to opted-in, non-blocked, not-opted-out (`opted_out_at`
+  null) customers **whose `whatsapp_number` is 8-15 digits** (the number rule
+  applies to every type, added 2026-10-07; a malformed number is no longer
+  attempted):
+  - `all_customers` (default; nothing stored).
+  - `coaching_requests` `{ form: demo|admission|any, course, skipClosed }` —
+    parents with a matching Free demo / Admission request (`bookings.form_key`,
+    optionally `fields.course`, by default skipping cancelled = "Not
+    interested" / "Not joining"); a coaching business (Courses switch on); one
+    parent counts once.
+  - `groups` `{ groupIds[≤20] }` — members of customer groups
+    (`contact_groups`; only this business's groups count).
+  - `customers` `{ customerIds[≤2000] }` — picked customers, de-duplicated; the
+    ids must be this business's (404 at create otherwise).
+  - `segment` `{ tags?, pipelineStages?, activeWithinDays?, neverMessaged? }`
+    — every key given must hold; tags match ANY, exactly (case-sensitive,
+    `customers.tags` jsonb); `activeWithinDays` is `last_message_at` within N
+    days; `neverMessaged` is `last_message_at` null. No VIP. At least one
+    filter; unknown keys, and `activeWithinDays` + `neverMessaged` together,
+    are a 400.
+
+  `resolveAudience` is the send path and is also used by the preview and
+  `POST /api/broadcasts/audience-count`, so the count shown is who gets it.
+  **Summary / skipped list (owner + superadmin only):** `POST
+  /api/broadcasts/audience-summary` → `{ selected, willReceive, skipped:
+  { no_number, blocked, opted_out, not_opted_in }, overCap, cap }` (`cap` =
+  `MAX_BROADCAST_RECIPIENTS`, default 2000; `overCap` = willReceive above it,
+  which the send would refuse); `POST /api/broadcasts/audience-skipped`
+  `{ …audience, reason?, page?, limit?≤100 }` → `{ items: [{ customerId, name,
+  number (masked), reason }], pagination }`. Both read the SQL functions
+  `broadcast_audience` / `broadcast_audience_summary` (migration
+  `20261007120000_broadcast_audience_builder.sql`, service_role only), which
+  select by the same rules and give each skipped customer ONE reason (order
+  no_number > blocked > opted_out > not_opted_in). The send does not use them:
+  `node src/scripts/checkAudienceParity.js --business <id>` (read-only, no
+  `--confirm`) compares the SQL's willReceive ids with `resolveAudience` for
+  every type on a real business — run it after the migration and whenever
+  either side changes. `GET /api/customers/ids?<list filters>` →
+  `{ ids, total, truncated }` (≤2000, for "select all matching") and `GET
+  /api/customers/tags` → `{ tags }` back the picker; the customer list gained
+  `?tags=` (ANY; `tags=a&tags=b` or `tags=a,b`). `/api/broadcasts` accepts JSON
+  bodies up to 1 MB (2000 ids is ~80 KB); every other route keeps 100 KB.
+  **Send is claimed atomically:** `sendBroadcast` flips `draft → sending` with
+  one conditional UPDATE before the wallet debit; a concurrent send gets 409
+  "already being sent". A failure before anything is queued refunds and puts it
+  back to draft; if only some batches queue, the rest are refunded,
+  `total_recipients` is lowered and the draft is NOT released (a retry would
+  double-message). **PostgREST limits that shape this code (measured on the
+  hosted project):** a response is capped at 1000 rows (`max_rows`) and an
+  `in(...)` filter of ~400 UUIDs fails (350 works), so id lookups go in chunks
+  of 200 (`ID_CHUNK`) and unbounded reads are paged.
 - **Demo time + reminders (`bookings.scheduled_for / reminder_status /
   reminder_note`, `settings.demoForm.reminder` off|2h|evening):** on a Free
   demo request the owner fixes the time (`PUT /api/bookings/:id/demo-time`)
@@ -713,6 +756,18 @@ for what is actually deployed before assuming.
    numbers, message text) to the logs for everything except history / contact sync.
 
 ## Session log (append here as major milestones land)
+- 2026-10-07: Broadcast audience builder, phase 1 (server only; web, test send,
+  paste-numbers and scheduling are later phases). In order: atomic claim in
+  `sendBroadcast` (fixes a double-send/double-debit race) -> id lookups chunked
+  at 200 (the old 500 failed on the hosted project, so groups / coaching
+  audiences above ~380 customers threw) -> `customers` + `segment` audiences,
+  invalid-number filter, audience summary / skipped endpoints, SQL functions,
+  customer `ids` / `tags` / `?tags=` -> contact-group id lookups chunked the
+  same way. **Deploy: apply migration `20261007120000` first**, then run
+  `checkAudienceParity.js` on a real business, then deploy the server. Live-path
+  note: the claim, the number filter and the chunk size apply to EVERY business
+  (Search cab AI included) the moment the server deploys — no flag; the new
+  audience types and endpoints stay unused until the web ships.
 - 2026-10-05: WhatsApp onboarding paths + coexistence + message ids (see the
   section above). In order: migrations (`20261005130000` columns / sender_type /
   history flag, `20261005135000` raw_payload, `20261005140000` unique index) ->

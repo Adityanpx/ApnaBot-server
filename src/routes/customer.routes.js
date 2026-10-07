@@ -7,6 +7,8 @@ const { requireRole } = require('../middleware/role.middleware');
 const { requireBusiness } = require('../middleware/business.middleware');
 const {
   getCustomers,
+  getCustomerIds,
+  getCustomerTags,
   getCustomerSummary,
   getCustomerById,
   updateCustomer,
@@ -19,6 +21,8 @@ router.use(protect, requireBusiness);
 
 router.get('/',             requireRole('owner', 'staff', 'superadmin'), getCustomers);
 router.get('/summary',      requireRole('owner', 'staff', 'superadmin'), getCustomerSummary);
+router.get('/ids',          requireRole('owner', 'staff', 'superadmin'), getCustomerIds);
+router.get('/tags',         requireRole('owner', 'staff', 'superadmin'), getCustomerTags);
 router.get('/:id',          requireRole('owner', 'staff', 'superadmin'), getCustomerById);
 router.put('/:id',          requireRole('owner', 'superadmin'),          updateCustomer);
 router.post('/:id/block',   requireRole('owner', 'superadmin'),          blockCustomer);

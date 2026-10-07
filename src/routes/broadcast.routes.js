@@ -16,6 +16,12 @@ router.post('/', protect, requireBusiness, requireRole('owner', 'superadmin'), b
 // POST /audience-count - { audienceFilter?, audienceParams? } → { count }, before a draft exists
 router.post('/audience-count', protect, requireBusiness, broadcastController.getAudienceCount);
 
+// POST /audience-summary - { audienceFilter?, audienceParams? } → { selected, willReceive, skipped, overCap, cap }
+// POST /audience-skipped - { audienceFilter?, audienceParams?, reason?, page?, limit? } → { items, pagination }
+// Owner / superadmin only: the skipped list names customers (numbers masked).
+router.post('/audience-summary', protect, requireBusiness, requireRole('owner', 'superadmin'), broadcastController.getAudienceSummary);
+router.post('/audience-skipped', protect, requireBusiness, requireRole('owner', 'superadmin'), broadcastController.getAudienceSkipped);
+
 // GET /:id/recipients-preview - Preview the opted-in audience before sending
 router.get('/:id/recipients-preview', protect, requireBusiness, broadcastController.getBroadcastRecipientsPreview);
 

@@ -1,5 +1,6 @@
 // Who a broadcast goes to (broadcasts.audience_filter / audience_params,
-// 20261002140000_broadcast_audiences.sql). One function used by both the
+// 20261002140000_broadcast_audiences.sql, 20261004120000_contact_import_groups.sql,
+// 20261007120000_broadcast_audience_builder.sql). One function used by both the
 // recipients preview and the send (broadcast.controller.js), so the count an
 // owner sees is exactly who gets the message.
 //
@@ -14,12 +15,34 @@
 //                      (contact_groups, 20261004120000_contact_import_groups.sql);
 //                      only this business's groups count. A customer in
 //                      several of the groups counts once.
+//   customers          those of them among the chosen customers (up to
+//                      MAX_CUSTOMER_IDS ids; only this business's customers count).
+//   segment            those of them matching ALL the filters given: any of
+//                      the tags (exact), any of the pipeline stages, a
+//                      last_message_at within N days, never messaged.
+//
+// Every audience, whatever its type, also drops customers whose
+// whatsapp_number isn't 8-15 digits (hasValidNumber) — Meta would refuse them.
+//
+// The same rules exist in SQL (broadcast_audience, 20261007120000) for the
+// summary / skipped list: that function says WHY a selected customer is
+// skipped. resolveAudience stays the send path; scripts/checkAudienceParity.js
+// compares the two against a real business.
 const supabase = require('../config/supabase');
+const { PIPELINE_STAGES, normalizeTags, applyTagsAny } = require('../utils/customerFilters');
 
-const AUDIENCE_FILTERS = ['all_customers', 'coaching_requests', 'groups'];
+const AUDIENCE_FILTERS = ['all_customers', 'coaching_requests', 'groups', 'customers', 'segment'];
 const MAX_GROUPS = 20;
+const MAX_CUSTOMER_IDS = 2000;
+const MAX_ACTIVE_WITHIN_DAYS = 3650;
+const SEGMENT_KEYS = ['tags', 'pipelineStages', 'activeWithinDays', 'neverMessaged'];
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FORM_CHOICES = ['demo', 'admission', 'any'];
+const DAY_MS = 24 * 60 * 60 * 1000;
+// Why a selected customer is skipped, in the order they are checked
+// (broadcast_audience in SQL uses the same order).
+const SKIP_REASONS = ['no_number', 'blocked', 'opted_out', 'not_opted_in'];
+const VALID_NUMBER = /^[0-9]{8,15}$/;
 // Ids per `in (...)` filter. The URL has a hard ceiling — measured on the
 // hosted project 2026-10-07: 350 UUIDs work, 400 fail ("fetch failed") — so
 // this stays well under it (200 ≈ 7.5 KB).
@@ -28,6 +51,8 @@ const ID_CHUNK = 200;
 // project, measured 2026-10-04) and silently drops the rest, so every
 // unbounded select here is read in pages of this size.
 const PAGE = 1000;
+
+const hasValidNumber = (number) => typeof number === 'string' && VALID_NUMBER.test(number);
 
 /**
  * Every row of a query, paged past the max_rows cap. `build` returns a fresh
@@ -44,6 +69,48 @@ const fetchAllPages = async (build) => {
   return rows;
 };
 
+/** Validated, de-duplicated uuid list (1..max) or { error }. */
+const normalizeIdList = (input, { field, noun, max }) => {
+  if (!Array.isArray(input) || input.length === 0) return { error: `audienceParams.${field} must list at least one ${noun}` };
+  const ids = [...new Set(input)];
+  if (!ids.every(id => typeof id === 'string' && UUID_PATTERN.test(id))) return { error: `audienceParams.${field} must be ${noun} ids` };
+  if (ids.length > max) return { error: `audienceParams.${field} can list at most ${max} ${noun}s` };
+  return { ids };
+};
+
+/** The segment part of normalizeAudience → { params } or { error }. */
+const normalizeSegment = (p) => {
+  const unknown = Object.keys(p).filter(k => !SEGMENT_KEYS.includes(k));
+  if (unknown.length > 0) return { error: `audienceParams.${unknown[0]} isn't a segment filter (use: ${SEGMENT_KEYS.join(', ')})` };
+  const params = {};
+  if (p.tags !== undefined && p.tags !== null) {
+    const t = normalizeTags(p.tags, 'audienceParams.tags');
+    if (t.error) return t;
+    if (t.tags.length > 0) params.tags = t.tags;
+  }
+  if (p.pipelineStages !== undefined && p.pipelineStages !== null) {
+    if (!Array.isArray(p.pipelineStages) || !p.pipelineStages.every(s => PIPELINE_STAGES.includes(s))) {
+      return { error: `audienceParams.pipelineStages must be a list of: ${PIPELINE_STAGES.join(', ')}` };
+    }
+    if (p.pipelineStages.length > 0) params.pipelineStages = [...new Set(p.pipelineStages)];
+  }
+  if (p.activeWithinDays !== undefined && p.activeWithinDays !== null) {
+    if (!Number.isInteger(p.activeWithinDays) || p.activeWithinDays < 1 || p.activeWithinDays > MAX_ACTIVE_WITHIN_DAYS) {
+      return { error: `audienceParams.activeWithinDays must be a whole number of days from 1 to ${MAX_ACTIVE_WITHIN_DAYS}` };
+    }
+    params.activeWithinDays = p.activeWithinDays;
+  }
+  if (p.neverMessaged !== undefined && p.neverMessaged !== null) {
+    if (typeof p.neverMessaged !== 'boolean') return { error: 'audienceParams.neverMessaged must be true or false' };
+    if (p.neverMessaged) params.neverMessaged = true;
+  }
+  if (Object.keys(params).length === 0) return { error: 'A segment needs at least one filter (tags, pipelineStages, activeWithinDays or neverMessaged)' };
+  if (params.activeWithinDays !== undefined && params.neverMessaged) {
+    return { error: 'activeWithinDays and neverMessaged can\'t be combined — nobody has messaged recently and never messaged' };
+  }
+  return { params };
+};
+
 /**
  * Checks and normalizes an audience from a request body.
  * @returns {{ filter: string, params: Object|null }|{ error: string }}
@@ -55,11 +122,16 @@ const normalizeAudience = (audienceFilter, audienceParams) => {
   const p = audienceParams || {};
   if (typeof p !== 'object' || Array.isArray(p)) return { error: 'audienceParams must be an object' };
   if (filter === 'groups') {
-    if (!Array.isArray(p.groupIds) || p.groupIds.length === 0) return { error: 'audienceParams.groupIds must list at least one group' };
-    const groupIds = [...new Set(p.groupIds)];
-    if (!groupIds.every(id => typeof id === 'string' && UUID_PATTERN.test(id))) return { error: 'audienceParams.groupIds must be group ids' };
-    if (groupIds.length > MAX_GROUPS) return { error: `audienceParams.groupIds can list at most ${MAX_GROUPS} groups` };
-    return { filter, params: { groupIds } };
+    const r = normalizeIdList(p.groupIds, { field: 'groupIds', noun: 'group', max: MAX_GROUPS });
+    return r.error ? r : { filter, params: { groupIds: r.ids } };
+  }
+  if (filter === 'customers') {
+    const r = normalizeIdList(p.customerIds, { field: 'customerIds', noun: 'customer', max: MAX_CUSTOMER_IDS });
+    return r.error ? r : { filter, params: { customerIds: r.ids } };
+  }
+  if (filter === 'segment') {
+    const r = normalizeSegment(p);
+    return r.error ? r : { filter, params: r.params };
   }
   const form = p.form === undefined ? 'any' : p.form;
   if (!FORM_CHOICES.includes(form)) return { error: `audienceParams.form must be one of: ${FORM_CHOICES.join(', ')}` };
@@ -96,6 +168,18 @@ const businessGroupIds = async (businessId, groupIds) => {
   return (data || []).map(r => r.id);
 };
 
+/** Which of these customer ids are customers of this business. */
+const businessCustomerIds = async (businessId, customerIds) => {
+  const found = [];
+  for (let i = 0; i < (customerIds || []).length; i += ID_CHUNK) {
+    const { data, error } = await supabase
+      .from('customers').select('id').eq('business_id', businessId).in('id', customerIds.slice(i, i + ID_CHUNK));
+    if (error) throw error;
+    found.push(...(data || []).map(r => r.id));
+  }
+  return found;
+};
+
 /** Ids of customers in any of these groups (of this business only). */
 const groupCustomerIds = async (businessId, params) => {
   const groupIds = await businessGroupIds(businessId, (params && params.groupIds) || []);
@@ -106,28 +190,99 @@ const groupCustomerIds = async (businessId, params) => {
   return [...new Set(rows.map(r => r.customer_id))];
 };
 
+/** `query` (customers) narrowed by a segment's filters — all of them must hold. */
+const applySegment = (query, params, now = Date.now()) => {
+  let q = applyTagsAny(query, params.tags);
+  if (params.pipelineStages && params.pipelineStages.length > 0) q = q.in('pipeline_stage', params.pipelineStages);
+  if (params.activeWithinDays) q = q.gte('last_message_at', new Date(now - params.activeWithinDays * DAY_MS).toISOString());
+  if (params.neverMessaged) q = q.is('last_message_at', null);
+  return q;
+};
+
 /**
- * The opted-in, non-blocked, not-opted-out customers a broadcast with this
- * audience reaches.
+ * The opted-in, non-blocked, not-opted-out customers with a valid number that
+ * a broadcast with this audience reaches.
  * @returns {Promise<{ id, whatsapp_number, name }[]>}
  */
 const resolveAudience = async (businessId, filter, params) => {
   const base = () => supabase.from('customers').select('id, whatsapp_number, name')
     .eq('business_id', businessId).eq('opted_in', true).eq('is_blocked', false).is('opted_out_at', null);
-  if (filter !== 'coaching_requests' && filter !== 'groups') {
-    return fetchAllPages(() => base().order('id', { ascending: true }));
+  let customers = [];
+  if (filter === 'segment') {
+    customers = await fetchAllPages(() => applySegment(base(), params || {}).order('id', { ascending: true }));
+  } else if (filter !== 'coaching_requests' && filter !== 'groups' && filter !== 'customers') {
+    customers = await fetchAllPages(() => base().order('id', { ascending: true }));
+  } else {
+    let ids;
+    if (filter === 'groups') ids = await groupCustomerIds(businessId, params);
+    else if (filter === 'customers') ids = [...new Set((params && params.customerIds) || [])];
+    else ids = await requestCustomerIds(businessId, params || { form: 'any', course: null, skipClosed: true });
+    // ID_CHUNK ids per request — under the 1000-row cap, so no paging here.
+    for (let i = 0; i < ids.length; i += ID_CHUNK) {
+      const { data, error } = await base().in('id', ids.slice(i, i + ID_CHUNK));
+      if (error) throw error;
+      customers.push(...(data || []));
+    }
   }
-  const ids = filter === 'groups'
-    ? await groupCustomerIds(businessId, params)
-    : await requestCustomerIds(businessId, params || { form: 'any', course: null, skipClosed: true });
-  const customers = [];
-  // ID_CHUNK (200) ids per request — under the 1000-row cap, so no paging here.
-  for (let i = 0; i < ids.length; i += ID_CHUNK) {
-    const { data, error } = await base().in('id', ids.slice(i, i + ID_CHUNK));
-    if (error) throw error;
-    customers.push(...(data || []));
-  }
-  return customers;
+  return customers.filter(c => hasValidNumber(c.whatsapp_number));
 };
 
-module.exports = { AUDIENCE_FILTERS, normalizeAudience, resolveAudience, businessGroupIds };
+// ── Summary + skipped list (SQL: broadcast_audience / broadcast_audience_summary) ──
+
+/** 919876543210 → 91******3210 — enough to recognise a number, not to copy it. */
+const maskNumber = (number) => {
+  const s = String(number === null || number === undefined ? '' : number);
+  return s.length <= 6 ? '*'.repeat(s.length) : `${s.slice(0, 2)}${'*'.repeat(s.length - 6)}${s.slice(-4)}`;
+};
+
+/**
+ * How many customers an audience selects, how many of them will receive the
+ * broadcast and how many are skipped, by reason.
+ * @returns {Promise<{ selected: number, willReceive: number, skipped: Object<string, number> }>}
+ */
+const audienceSummary = async (businessId, filter, params) => {
+  const { data, error } = await supabase.rpc('broadcast_audience_summary', {
+    p_business_id: businessId, p_filter: filter, p_params: params || {}
+  });
+  if (error) throw error;
+  const skipped = {};
+  for (const reason of SKIP_REASONS) skipped[reason] = Number((data && data.skipped && data.skipped[reason]) || 0);
+  return { selected: Number((data && data.selected) || 0), willReceive: Number((data && data.willReceive) || 0), skipped };
+};
+
+/**
+ * One page of the selected-but-skipped customers (name A→Z, then id), optionally
+ * for one reason. Numbers are masked.
+ * @returns {Promise<{ items: { customerId, name, number, reason }[], total: number }>}
+ */
+const audienceSkipped = async (businessId, filter, params, { reason = null, page = 1, limit = 50 } = {}) => {
+  let query = supabase.rpc('broadcast_audience', {
+    p_business_id: businessId, p_filter: filter, p_params: params || {}
+  }, { count: 'exact' });
+  query = reason ? query.eq('skip_reason', reason) : query.not('skip_reason', 'is', null);
+  const from = (page - 1) * limit;
+  const { data, count, error } = await query
+    .order('name', { ascending: true, nullsFirst: false })
+    .order('customer_id', { ascending: true })
+    .range(from, from + limit - 1);
+  if (error) throw error;
+  return {
+    items: (data || []).map(r => ({ customerId: r.customer_id, name: r.name, number: maskNumber(r.whatsapp_number), reason: r.skip_reason })),
+    total: count || 0
+  };
+};
+
+module.exports = {
+  AUDIENCE_FILTERS,
+  SKIP_REASONS,
+  MAX_CUSTOMER_IDS,
+  ID_CHUNK,
+  hasValidNumber,
+  normalizeAudience,
+  resolveAudience,
+  businessGroupIds,
+  businessCustomerIds,
+  maskNumber,
+  audienceSummary,
+  audienceSkipped
+};

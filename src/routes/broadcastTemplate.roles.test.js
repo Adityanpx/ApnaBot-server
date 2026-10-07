@@ -20,6 +20,8 @@ stub('../controllers/broadcast.controller', {
   getBroadcasts: reached('getBroadcasts'),
   createBroadcast: reached('createBroadcast'),
   getAudienceCount: reached('getAudienceCount'),
+  getAudienceSummary: reached('getAudienceSummary'),
+  getAudienceSkipped: reached('getAudienceSkipped'),
   getBroadcastRecipientsPreview: reached('getBroadcastRecipientsPreview'),
   sendBroadcast: reached('sendBroadcast'),
   getBroadcast: reached('getBroadcast')
@@ -56,6 +58,9 @@ const call = (method, path, role) => fetch(`${base}${path}`, {
 
 const WRITES = [
   ['POST', '/broadcasts'],
+  // not writes, but owner / superadmin only all the same: the skipped list names customers
+  ['POST', '/broadcasts/audience-summary'],
+  ['POST', '/broadcasts/audience-skipped'],
   ['POST', '/broadcasts/x/send'],
   ['POST', '/message-templates'],
   ['POST', '/message-templates/sync'],

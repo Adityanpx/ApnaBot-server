@@ -67,6 +67,11 @@ app.use(helmet({
 app.use(cors({
   origin: [config.FRONTEND_URL, config.ADMIN_URL, ...config.WEB_APP_URLS].filter(Boolean)
 }));
+// Broadcast bodies can carry up to 2,000 customer ids (~80 KB with the rest of
+// the form), more than the 100 KB default. Mounted BEFORE the global parser,
+// which skips a request this one already read; every other route keeps the
+// default limit.
+app.use('/api/broadcasts', express.json({ limit: '1mb' }));
 app.use(express.json({
   verify: (req, res, buf) => {
     req.rawBody = buf;

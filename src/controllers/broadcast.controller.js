@@ -5,7 +5,10 @@ const businessService = require('../services/business.service');
 const walletService = require('../services/wallet.service');
 const rateCardService = require('../services/rateCard.service');
 const { addToBroadcastQueue } = require('../queues/broadcast.queue');
-const { normalizeAudience, resolveAudience, businessGroupIds } = require('../services/broadcastAudience.service');
+const {
+  normalizeAudience, resolveAudience, businessGroupIds, businessCustomerIds, audienceSummary, audienceSkipped, SKIP_REASONS
+} = require('../services/broadcastAudience.service');
+const { getPagination } = require('../utils/pagination');
 const { isTemplateUsable, sendSupportBlockReason } = require('../utils/templateStatus');
 const { buildTemplateComponents, buildQuickReplyComponents } = require('../utils/templateComponents');
 const { requiredParams, splitMapping, checkParamCounts, targetOf } = require('../utils/templateMapping');
@@ -100,6 +103,12 @@ const createBroadcast = async (req, res, next) => {
       const found = await businessGroupIds(businessId, audience.params.groupIds);
       if (found.length !== audience.params.groupIds.length) {
         return errorResponse(res, 404, 'One or more of the chosen groups were not found');
+      }
+    }
+    if (audience.filter === 'customers') {
+      const found = await businessCustomerIds(businessId, audience.params.customerIds);
+      if (found.length !== audience.params.customerIds.length) {
+        return errorResponse(res, 404, 'One or more of the chosen customers were not found');
       }
     }
 
@@ -201,7 +210,9 @@ const sendBroadcast = async (req, res, next) => {
     if (!customers || customers.length === 0) {
       const noRecipients = {
         coaching_requests: 'No opted-in parents match this audience',
-        groups: 'No opted-in customers in the chosen groups (or the groups were deleted)'
+        groups: 'No opted-in customers in the chosen groups (or the groups were deleted)',
+        customers: 'None of the chosen customers can receive this broadcast (not opted in, opted out, blocked, or no valid WhatsApp number)',
+        segment: 'No opted-in customers match these filters'
       };
       return errorResponse(res, 400, noRecipients[broadcastRow.audience_filter] || 'No opted-in customers to send this broadcast to');
     }
@@ -428,11 +439,63 @@ const getAudienceCount = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/broadcasts/audience-summary
+ * Body: { audienceFilter?, audienceParams? } → { selected, willReceive,
+ * skipped: { no_number, blocked, opted_out, not_opted_in }, overCap, cap }.
+ * selected = who the audience picks; willReceive = those a send reaches;
+ * overCap = willReceive is above MAX_BROADCAST_RECIPIENTS (a send would be refused).
+ */
+const getAudienceSummary = async (req, res, next) => {
+  try {
+    const { audienceFilter, audienceParams } = req.body || {};
+    const audience = normalizeAudience(audienceFilter, audienceParams);
+    if (audience.error) return errorResponse(res, 400, audience.error);
+    const summary = await audienceSummary(req.user.businessId, audience.filter, audience.params);
+    const cap = config.MAX_BROADCAST_RECIPIENTS;
+    return successResponse(res, 200, { ...summary, overCap: summary.willReceive > cap, cap });
+  } catch (error) {
+    logger.error('Error in getAudienceSummary:', error);
+    next(error);
+  }
+};
+
+const SKIPPED_MAX_LIMIT = 100;
+
+/**
+ * POST /api/broadcasts/audience-skipped
+ * Body: { audienceFilter?, audienceParams?, reason?, page? (1), limit? (50, max 100) }
+ * → { items: [{ customerId, name, number (masked), reason }], pagination }:
+ * the customers the audience selects but a send would skip, A→Z, optionally
+ * only for one reason (no_number | blocked | opted_out | not_opted_in).
+ */
+const getAudienceSkipped = async (req, res, next) => {
+  try {
+    const { audienceFilter, audienceParams, reason, page = 1, limit = 50 } = req.body || {};
+    const audience = normalizeAudience(audienceFilter, audienceParams);
+    if (audience.error) return errorResponse(res, 400, audience.error);
+    if (reason !== undefined && reason !== null && !SKIP_REASONS.includes(reason)) {
+      return errorResponse(res, 400, `reason must be one of: ${SKIP_REASONS.join(', ')}`);
+    }
+    if (!Number.isInteger(page) || page < 1) return errorResponse(res, 400, 'page must be a whole number from 1');
+    if (!Number.isInteger(limit) || limit < 1 || limit > SKIPPED_MAX_LIMIT) {
+      return errorResponse(res, 400, `limit must be a whole number from 1 to ${SKIPPED_MAX_LIMIT}`);
+    }
+    const { items, total } = await audienceSkipped(req.user.businessId, audience.filter, audience.params, { reason: reason || null, page, limit });
+    return successResponse(res, 200, { items, pagination: getPagination(total, page, limit) });
+  } catch (error) {
+    logger.error('Error in getAudienceSkipped:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getBroadcasts,
   createBroadcast,
   sendBroadcast,
   getBroadcastRecipientsPreview,
   getBroadcast,
-  getAudienceCount
+  getAudienceCount,
+  getAudienceSummary,
+  getAudienceSkipped
 };
