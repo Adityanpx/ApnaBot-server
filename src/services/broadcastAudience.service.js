@@ -20,7 +20,10 @@ const AUDIENCE_FILTERS = ['all_customers', 'coaching_requests', 'groups'];
 const MAX_GROUPS = 20;
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const FORM_CHOICES = ['demo', 'admission', 'any'];
-const ID_CHUNK = 500; // keeps each `in (...)` filter a sensible URL length
+// Ids per `in (...)` filter. The URL has a hard ceiling — measured on the
+// hosted project 2026-10-07: 350 UUIDs work, 400 fail ("fetch failed") — so
+// this stays well under it (200 ≈ 7.5 KB).
+const ID_CHUNK = 200;
 // PostgREST returns at most max_rows rows per request (1000 on the hosted
 // project, measured 2026-10-04) and silently drops the rest, so every
 // unbounded select here is read in pages of this size.
@@ -118,7 +121,7 @@ const resolveAudience = async (businessId, filter, params) => {
     ? await groupCustomerIds(businessId, params)
     : await requestCustomerIds(businessId, params || { form: 'any', course: null, skipClosed: true });
   const customers = [];
-  // ID_CHUNK (500) ids per request — under the 1000-row cap, so no paging here.
+  // ID_CHUNK (200) ids per request — under the 1000-row cap, so no paging here.
   for (let i = 0; i < ids.length; i += ID_CHUNK) {
     const { data, error } = await base().in('id', ids.slice(i, i + ID_CHUNK));
     if (error) throw error;
