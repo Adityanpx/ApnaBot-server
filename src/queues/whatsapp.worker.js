@@ -5,6 +5,7 @@ const logger = require('../utils/logger');
 const config = require('../config/env');
 const { workerConnection } = require('../config/queueConnection');
 const { extractMetaMessageId, attachMetaMessageId } = require('../services/outboundMessageId.service');
+const { fromSendError } = require('../utils/whatsappErrors');
 
 // Must match the prefix used by whatsapp.queue.js - see comment there.
 const prefix = `apnabot:${config.QUEUE_NAMESPACE}`;
@@ -69,7 +70,15 @@ const worker = new Worker('whatsapp-outbound', async (job) => {
     });
 
     if (messageId && job.attemptsMade >= 2) {
-      const { error: updateErr } = await supabase.from('messages').update({ status: 'failed' }).eq('id', messageId);
+      // Keep Meta's reason (code + title) so the chat can say why it failed.
+      const { errorCode, errorTitle, errorDetails } = fromSendError(error);
+      const { error: updateErr } = await supabase.from('messages').update({
+        status: 'failed',
+        failed_at: new Date().toISOString(),
+        error_code: errorCode,
+        error_title: errorTitle,
+        error_details: errorDetails
+      }).eq('id', messageId);
       if (updateErr) logger.error('Error marking message failed:', updateErr);
     }
 

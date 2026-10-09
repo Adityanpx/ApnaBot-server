@@ -721,6 +721,21 @@ for what is actually deployed before assuming.
   statuses only move forward (sent -> delivered -> read, `utils/messageStatus.js`).
   Sends with no `messages` row (broadcast worker, session-timeout notice, public
   service-form messages, platform notifications) have nothing to update.
+- **Delivery tracking, chat messages (2026-10-13).** `messages` has `delivered_at`, `read_at`,
+  `failed_at` (Meta's own event time) and `error_code` / `error_title` / `error_details` (Meta's raw
+  failure; mapped to plain English on read by `utils/whatsappErrors.js`, whose wording was checked
+  against Meta's error-code page - 131030 is not on it, so it is left to the unknown-code default).
+  The status webhook builds events (`utils/statusPayload.js`) and applies a whole change in ONE call to
+  the RPC `apply_message_statuses(jsonb)`: forward only, `COALESCE` timestamps, `read` also fills
+  `delivered_at`, `failed` only for a message never delivered. It returns `{ changed, unmatched }`;
+  an `unmatched` wamid (no row at all) gets ONE retry after 2s (`STATUS_RETRY_DELAY_MS`, default
+  2000), for the race with the queue worker saving the wamid. The socket `message_status` event now
+  carries `customerId`, `deliveredAt`, `readAt`, `failedAt` and `failure` (still no client listens, gap
+  14). `GET /api/messages/:customerId` adds `failure` (`{ code, title, reason, kind, details }` or null)
+  to each message; the queue worker records Meta's reason when it finally gives up on a send. A body
+  of only statuses logs one summary line. Broadcast messages are NOT tracked yet (no per-recipient rows
+  - next commit); until then their status webhooks match nothing, so each costs one RPC and one
+  retry. SQL check: `supabase/verification/verify_apply_message_statuses.sql` (rolls back, see its header).
 - **Flags / Meta dashboard.** `COEXISTENCE_SYNC_ENABLED` (env, default off): turn it on
   only when the history / contact-sync handlers are deployed, or Meta's one-time
   sync is spent and lost. The webhook fields `history`, `smb_app_state_sync` and
@@ -942,6 +957,12 @@ does not need `opted_in` at all - see "Broadcast audiences"; follow-ups have the
    in the MongoDB cleanup; no replacement exists yet.
 
 ## Session log (append here as major milestones land)
+- 2026-10-13: Delivery tracking, commit A (chat messages only; see "Delivery tracking, chat
+  messages"). **Deploy: apply migration `20261013120000` first, then run
+  `supabase/verification/verify_apply_message_statuses.sql` in the SQL editor, then deploy the server.**
+  One-time cutover with no flag: the status webhook moves from a per-status UPDATE to the RPC for every
+  business the moment the server deploys, so if the migration is missing every status update fails
+  (logged, nothing thrown; messages stay at 'sent'). Search cab AI takes the same path.
 - 2026-10-12: Broadcast audiences: UTILITY templates no longer need marketing opt-in (`opted_out_at`,
   blocked and number checks still apply; MARKETING / AUTHENTICATION / unknown stay strict). Optional
   `templateId` on audience-count / summary / skipped; category-aware empty-audience message.

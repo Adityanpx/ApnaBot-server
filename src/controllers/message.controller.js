@@ -4,6 +4,7 @@ const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
 const { successResponse, errorResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
 const { toCamelCase } = require('../utils/caseConvert');
+const { withFailure } = require('../utils/whatsappErrors');
 const { withWindowExpiresAt } = require('./customer.controller');
 const { INDEFINITE_PAUSE_SENTINEL, BOT_PAUSE_DURATION_MS, isIndefinitePause } = require('../utils/botPause');
 const customerPipelineService = require('../services/customerPipeline.service');
@@ -99,7 +100,8 @@ const getChatHistory = async (req, res, next) => {
     const pagination = getPagination(count, pageNum, limitNum);
     return successResponse(res, 200, {
       customer: withWindowExpiresAt(toCamelCase(customerRow)),
-      messages: (messages || []).map(toCamelCase).reverse(), // return in chronological order
+      // chronological order; each message carries `failure` (null unless it failed)
+      messages: (messages || []).map((m) => withFailure(toCamelCase(m))).reverse(),
       pagination
     });
   } catch (error) {

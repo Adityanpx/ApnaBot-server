@@ -29,7 +29,8 @@ const inboundMessageService = require('../services/inboundMessage.service');
 const { INBOUND_MESSAGE_TYPES, inboundMediaLabel } = require('../utils/inboundMessage');
 const { isBulkSyncBody } = require('../utils/coexistencePayload');
 const coexistenceService = require('../services/coexistence.service');
-const { statusesBefore } = require('../utils/messageStatus');
+const { buildStatusEvents, statusOnlySummary } = require('../utils/statusPayload');
+const { withFailure } = require('../utils/whatsappErrors');
 const { splitMessages } = require('../utils/webhookBatch');
 
 // Exact-match greeting keywords that trigger the welcome message / menu.
@@ -687,6 +688,47 @@ const verifyWebhook = async (req, res) => {
   return res.status(403).send('Forbidden');
 };
 
+// How long to wait before the one retry for a status whose wamid matched no row.
+const STATUS_RETRY_DELAY_MS = 2000;
+
+/**
+ * Apply status events through apply_message_statuses (forward only, Meta's
+ * timestamps - see that migration) and tell the dashboard about each row that
+ * moved. Never throws.
+ * @param {Object[]} events - from buildStatusEvents
+ * @returns {Promise<string[]>} wamids that match no message row at all
+ */
+const applyStatusEvents = async (events) => {
+  if (!events || events.length === 0) return [];
+  try {
+    const { data, error } = await supabase.rpc('apply_message_statuses', { p_events: events });
+    if (error) {
+      logger.error('Error updating message statuses:', error);
+      return [];
+    }
+    for (const row of (data && data.changed) || []) {
+      try {
+        socketService.emitToBusiness(row.business_id, 'message_status', {
+          messageId: row.id,
+          customerId: row.customer_id,
+          metaMessageId: row.meta_message_id,
+          status: row.status,
+          deliveredAt: row.delivered_at || null,
+          readAt: row.read_at || null,
+          failedAt: row.failed_at || null,
+          failure: withFailure(toCamelCase(row)).failure
+        });
+      } catch (socketErr) {
+        logger.error('Error emitting message_status socket event:', socketErr);
+      }
+    }
+    return (data && data.unmatched) || [];
+  } catch (err) {
+    logger.error('Error updating message statuses:', err);
+    return [];
+  }
+};
+
 /**
  * POST /api/webhook/receive
  * Main webhook handler for WhatsApp events
@@ -694,8 +736,13 @@ const verifyWebhook = async (req, res) => {
 const receiveWebhook = async (req, res) => {
   // History chunks and contact syncs can hold thousands of messages / contacts
   // (with their text): those log a one-line summary from their handler instead
-  // of the whole body. Everything else is logged in full, as before.
-  if (isBulkSyncBody(req.body)) {
+  // of the whole body. A body of only message statuses (3 per message, so a
+  // broadcast sends thousands) logs one line too. Everything else is logged in
+  // full, as before.
+  const statusSummary = statusOnlySummary(req.body);
+  if (statusSummary) {
+    console.log(statusSummary);
+  } else if (isBulkSyncBody(req.body)) {
     console.log('WEBHOOK POST received (history / contact sync - body not logged, see the handler summary)');
   } else {
     console.log('WEBHOOK POST received:', JSON.stringify(req.body, null, 2));
@@ -760,38 +807,20 @@ const processWebhookChange = async (entry, changes) => {
     // Handle status updates
     const statuses = value?.statuses;
     if (statuses) {
-      for (const status of statuses) {
-        // Forward only (sent -> delivered -> read): a late event never moves a
-        // message backwards. See utils/messageStatus.js.
-        const allowedFrom = statusesBefore(status.status);
-        if (allowedFrom === null) {
-          logger.info(`Ignoring message status "${status.status}" for ${status.id} (not a stored status)`);
-          continue;
-        }
-        if (allowedFrom.length === 0) continue; // 'sent': rows already start there
-
-        const { data: updatedMsg, error } = await supabase
-          .from('messages')
-          .update({ status: status.status })
-          .eq('meta_message_id', status.id)
-          .in('status', allowedFrom)
-          .select()
-          .maybeSingle();
-        if (error) {
-          logger.error('Error updating message status:', error);
-          continue;
-        }
-        if (updatedMsg) {
-          try {
-            socketService.emitToBusiness(updatedMsg.business_id, 'message_status', {
-              messageId: updatedMsg.id,
-              metaMessageId: status.id,
-              status: status.status
-            });
-          } catch (socketErr) {
-            logger.error('Error emitting message_status socket event:', socketErr);
-          }
-        }
+      const { events, ignored } = buildStatusEvents(statuses);
+      for (const s of ignored) {
+        logger.info(`Ignoring message status "${s.status}" for ${s.id} (not a stored status)`);
+      }
+      const unmatched = await applyStatusEvents(events);
+      if (unmatched.length > 0) {
+        // The queue worker may not have saved the wamid yet: try once more shortly.
+        const retryEvents = events.filter((e) => unmatched.includes(e.wamid));
+        const timer = setTimeout(() => {
+          applyStatusEvents(retryEvents).then((still) => {
+            if (still.length > 0) logger.info(`Status webhook: ${still.length} wamid(s) still match no message after a retry`);
+          }).catch((err) => logger.error('Error retrying message status update:', err));
+        }, config.STATUS_RETRY_DELAY_MS ?? STATUS_RETRY_DELAY_MS);
+        if (typeof timer.unref === 'function') timer.unref();
       }
       return;
     }

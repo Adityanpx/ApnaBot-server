@@ -41,7 +41,16 @@ const from = (table) => {
 
 const stub = (rel, exports) => { const p = require.resolve(rel); require.cache[p] = { id: p, filename: p, loaded: true, exports }; };
 stub('../config/env', { META_APP_SECRET: SECRET, FRONTEND_URL: 'https://app.test' });
-stub('../config/supabase', { from });
+// apply_message_statuses (the status webhook's RPC), reduced to what this file needs: read.
+const rpc = async (name, args) => {
+  const changed = [];
+  for (const ev of args.p_events) {
+    const r = (db.messages || []).find((x) => x.meta_message_id === ev.wamid);
+    if (r && ev.status === 'read' && ['sent', 'delivered'].includes(r.status)) { r.status = 'read'; changed.push({ ...r }); }
+  }
+  return { data: { changed, unmatched: [] }, error: null };
+};
+stub('../config/supabase', { from, rpc });
 stub('../utils/logger', { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} });
 stub('../config/redis', {});
 stub('../config/queueConnection', { queueConnection: {}, workerConnection: {} });
