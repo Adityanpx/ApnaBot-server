@@ -25,10 +25,14 @@ router.post('/audience-skipped', protect, requireBusiness, requireRole('owner', 
 // GET /:id/recipients-preview - Preview the opted-in audience before sending
 router.get('/:id/recipients-preview', protect, requireBusiness, broadcastController.getBroadcastRecipientsPreview);
 
+// GET /:id/recipients?status=&page=&limit= - who got it, and who failed and why.
+// Owner / superadmin only: it lists customers' names and numbers; staff still see the counts on GET /:id.
+router.get('/:id/recipients', protect, requireBusiness, requireRole('owner', 'superadmin'), broadcastController.getBroadcastRecipients);
+
 // POST /:id/send - Send a draft broadcast
 router.post('/:id/send', protect, requireBusiness, requireRole('owner', 'superadmin'), broadcastController.sendBroadcast);
 
-// GET /:id - Broadcast status + counts, for polling
+// GET /:id - Broadcast status + counts + delivery stats (queued / sent / delivered / read / failed), for polling
 router.get('/:id', protect, requireBusiness, broadcastController.getBroadcast);
 
 module.exports = router;

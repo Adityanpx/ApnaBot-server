@@ -82,6 +82,7 @@ stub('../services/business.service', { getBusinessById: async () => ({}) });
 stub('../services/wallet.service', {});
 stub('../services/rateCard.service', {});
 stub('../queues/broadcast.queue', { addToBroadcastQueue: async () => {} });
+stub('../services/broadcastProgress.service', { getBroadcastStats: async (b, i, row) => ({ tracked: false, total: row.total_recipients || 0, queued: null, sent: row.sent_count || 0, delivered: null, read: null, failed: row.failed_count || 0 }), notifyBroadcastProgress: () => {} });
 const { createBroadcast, getAudienceCount, getAudienceSummary, getAudienceSkipped } = require('./broadcast.controller');
 
 const call = async (handler, body, businessId = 'b') => {

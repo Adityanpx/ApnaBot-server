@@ -19,6 +19,7 @@ stub('../config/supabase', { rpc: async () => ({ error: null }) });
 const sent = [];
 stub('../services/whatsapp.service', { sendTemplateMessage: async (pn, token, to, name, lang, components) => { sent.push({ to, components }); } });
 stub('../services/wallet.service', { refundToWallet: async () => {} });
+stub('../services/broadcastProgress.service', { notifyBroadcastProgress: () => {} });
 require('./broadcast.worker');
 
 const run = (data) => processor({

@@ -15,6 +15,10 @@
 -- results. From real data it only reads the catalog (to copy the table's shape) and one
 -- count proving no fixture wamid exists in public.messages. It never writes to
 -- public.messages, and the temp table is dropped when the block ends.
+-- (Once migration 20261013130000 is applied the function also looks in the real
+-- broadcast_recipients for a wamid that is not in the temp table; the fixture wamids
+-- match nothing there, so nothing changes. verify_broadcast_recipients.sql uses temp
+-- copies of both tables.)
 
 do $verify$
 declare
@@ -87,7 +91,7 @@ begin
   res := apply_message_statuses(jsonb_build_array(jsonb_build_object('wamid','wamid.VERIFY.A','status','deleted','ts',t0)));
   checks := checks + 1; if jsonb_array_length(res->'changed') <> 0 or jsonb_array_length(res->'unmatched') <> 0 then fails := fails || '12 a status that is not stored is ignored'; end if;
 
-  checks := checks + 1; if apply_message_statuses(null) <> '{"changed":[],"unmatched":[]}'::jsonb or apply_message_statuses('{}'::jsonb) <> '{"changed":[],"unmatched":[]}'::jsonb then fails := fails || '13 null / non-array input returns empty'; end if;
+  checks := checks + 1; if apply_message_statuses(null)->'changed' <> '[]'::jsonb or apply_message_statuses(null)->'unmatched' <> '[]'::jsonb or apply_message_statuses('{}'::jsonb)->'unmatched' <> '[]'::jsonb then fails := fails || '13 null / non-array input returns empty'; end if;
 
   -- a missing ts is fine (falls back to now()), and a failed message stays failed
   perform apply_message_statuses(jsonb_build_array(jsonb_build_object('wamid','wamid.VERIFY.C','status','delivered')));

@@ -79,7 +79,7 @@ const fromSendError = (err) => {
   if (meta && typeof meta === 'object') {
     return {
       errorCode: intOrNull(meta.code),
-      errorTitle: clip(meta.error_user_title || meta.type || meta.message),
+      errorTitle: clip(meta.error_user_title || meta.message || meta.type),
       errorDetails: clip((meta.error_data && meta.error_data.details) || meta.error_user_msg || meta.message)
     };
   }
@@ -100,4 +100,21 @@ const withFailure = (message) => {
   return { ...message, failure: { ...d, details: message.errorDetails || null } };
 };
 
-module.exports = { describeFailure, fromStatusErrors, fromSendError, withFailure, REASONS };
+/**
+ * A camelCased broadcast_recipients row with `failure` added: null unless it
+ * failed. A failure with no Meta code never reached WhatsApp (our own check,
+ * e.g. "recipient has no name on file", or a network error), so it reads
+ * "Not sent: ..." with kind 'local' instead of the generic Meta wording.
+ */
+const withRecipientFailure = (recipient) => {
+  if (!recipient) return recipient;
+  const hasCode = recipient.errorCode !== undefined && recipient.errorCode !== null;
+  if (recipient.status !== 'failed' && !hasCode) return { ...recipient, failure: null };
+  if (hasCode) {
+    return { ...recipient, failure: { ...describeFailure(recipient.errorCode, recipient.errorTitle || null), details: recipient.errorDetails || null } };
+  }
+  const title = recipient.errorTitle || null;
+  return { ...recipient, failure: { code: null, title, reason: title ? `Not sent: ${title}` : 'Not sent.', kind: 'local', details: recipient.errorDetails || null } };
+};
+
+module.exports = { describeFailure, fromStatusErrors, fromSendError, withFailure, withRecipientFailure, REASONS };

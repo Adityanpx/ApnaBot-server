@@ -7,6 +7,9 @@ const config = require('../config/env');
 const { workerConnection } = require('../config/queueConnection');
 const { buildTemplateComponents } = require('../utils/templateComponents');
 const { splitMapping } = require('../utils/templateMapping');
+const { extractMetaMessageId } = require('../services/outboundMessageId.service');
+const { fromSendError } = require('../utils/whatsappErrors');
+const { notifyBroadcastProgress } = require('../services/broadcastProgress.service');
 
 // Must match the prefix used by broadcast.queue.js - see comment there.
 const prefix = `apnabot:${config.QUEUE_NAMESPACE}`;
@@ -47,6 +50,20 @@ const resolveRecipientComponents = (variableMapping, recipient, mediaHeader = nu
   return [...(header.length === 0 && mediaHeader ? [mediaHeader] : []), ...built];
 };
 
+// Record one recipient's outcome on its broadcast_recipients row (made 'queued' by
+// sendBroadcast). The wamid is saved here, at once, so Meta's status webhooks find
+// the row. A broadcast sent before delivery tracking has no rows: the update matches
+// nothing and the old counters carry on. Never throws - tracking must not fail a send.
+const recordRecipient = async (broadcastId, whatsappNumber, fields) => {
+  try {
+    const { error } = await supabase.from('broadcast_recipients').update(fields)
+      .eq('broadcast_id', broadcastId).eq('whatsapp_number', whatsappNumber).eq('status', 'queued');
+    if (error) logger.error(`Broadcast ${broadcastId}: could not record the result for ${whatsappNumber}`, error);
+  } catch (err) {
+    logger.error(`Broadcast ${broadcastId}: could not record the result for ${whatsappNumber}`, err);
+  }
+};
+
 const worker = new Worker('broadcast-outbound', async (job) => {
   const { broadcastId, businessId, phoneNumberId, encryptedAccessToken, templateName, language, components, variableMapping, ratePerMessage, billed, recipients, quickReplyComponents } = job.data;
   // Refund only what broadcast.controller.js actually debited. Jobs queued
@@ -70,10 +87,23 @@ const worker = new Worker('broadcast-outbound', async (job) => {
       const recipientComponents = variableMapping
         ? resolveRecipientComponents(variableMapping, recipient, headerComponent, quickReplyComponents || [])
         : components;
-      await whatsappService.sendTemplateMessage(phoneNumberId, encryptedAccessToken, recipient.whatsappNumber, templateName, language, recipientComponents);
+      const sendResult = await whatsappService.sendTemplateMessage(phoneNumberId, encryptedAccessToken, recipient.whatsappNumber, templateName, language, recipientComponents);
       sent += 1;
+      await recordRecipient(broadcastId, recipient.whatsappNumber, {
+        status: 'sent',
+        meta_message_id: extractMetaMessageId(sendResult),
+        sent_at: new Date().toISOString()
+      });
     } catch (error) {
       failed += 1;
+      const { errorCode, errorTitle, errorDetails } = fromSendError(error);
+      await recordRecipient(broadcastId, recipient.whatsappNumber, {
+        status: 'failed',
+        failed_at: new Date().toISOString(),
+        error_code: errorCode,
+        error_title: errorTitle,
+        error_details: errorDetails
+      });
       logger.error(`Broadcast ${broadcastId}: failed to send to ${recipient.whatsappNumber}`, {
         error: error.response?.data || error.message
       });
@@ -94,6 +124,7 @@ const worker = new Worker('broadcast-outbound', async (job) => {
     p_failed_delta: failed
   });
   if (rpcErr) logger.error(`Broadcast ${broadcastId}: failed to update progress`, rpcErr);
+  notifyBroadcastProgress(businessId, broadcastId);
 
   logger.info(`Broadcast batch processed for business ${businessId}: ${sent} sent, ${failed} failed`, { broadcastId });
   return { sent, failed };

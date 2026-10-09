@@ -49,18 +49,20 @@ const iso = (ts) => (ts ? new Date(ts * 1000).toISOString() : 'now');
 const rpc = async (name, args) => {
   rpcCalls.push([name, args]);
   if (rpcError) return { data: null, error: rpcError };
-  const changed = []; const unmatched = [];
+  const changed = []; const unmatched = []; const changedRecipients = [];
   for (const ev of args.p_events) {
-    const r = (db.messages || []).find((x) => x.meta_message_id === ev.wamid);
+    let r = (db.messages || []).find((x) => x.meta_message_id === ev.wamid);
+    const isRecipient = !r;
+    if (isRecipient) r = (db.broadcast_recipients || []).find((x) => x.meta_message_id === ev.wamid);
     const when = iso(ev.ts);
     if (!r) { if (!unmatched.includes(ev.wamid)) unmatched.push(ev.wamid); continue; }
     if (ev.status === 'delivered' && r.status === 'sent') Object.assign(r, { status: 'delivered', delivered_at: r.delivered_at || when });
     else if (ev.status === 'read' && ['sent', 'delivered'].includes(r.status)) Object.assign(r, { status: 'read', read_at: r.read_at || when, delivered_at: r.delivered_at || when });
     else if (ev.status === 'failed' && r.status === 'sent') Object.assign(r, { status: 'failed', failed_at: r.failed_at || when, error_code: ev.error_code, error_title: ev.error_title, error_details: ev.error_details });
     else continue;
-    changed.push({ ...r });
+    (isRecipient ? changedRecipients : changed).push({ ...r });
   }
-  return { data: { changed, unmatched }, error: null };
+  return { data: { changed, changed_recipients: changedRecipients, unmatched }, error: null };
 };
 
 stub('../config/env', { META_APP_SECRET: SECRET, FRONTEND_URL: 'https://app.test', STATUS_RETRY_DELAY_MS: 30 });
@@ -74,6 +76,8 @@ stub('../queues/whatsapp.queue', {
 });
 stub('../queues/sessionTimeout.queue', { scheduleSessionTimeout: async () => {}, cancelSessionTimeout: async () => {} });
 stub('../services/socket.service', { emitToBusiness: () => {} });
+let progressCalls;
+stub('../services/broadcastProgress.service', { notifyBroadcastProgress: (...a) => { progressCalls.push(a); } });
 stub('../services/tenant.service', {
   invalidateTenantCache: async (id) => { invalidated.push(id); },
   resolveBusinessByPhoneNumberId: async () => ({
@@ -154,7 +158,7 @@ test.after(() => { require('../services/socket.service').emitToBusiness = realEm
 test.beforeEach(() => {
   db = { customers: [], messages: [{ id: 'row1', business_id: BIZ, direction: 'outbound', sender_type: 'bot', status: 'sent', meta_message_id: 'wamid.OUT1' }], message_templates: [], flow_nodes: [] };
   usageAllowed = true; queued = []; calls = []; session = null; enabledLanguages = ['en']; tenantOverrides = {}; nodeLabel = 'x';
-  socketEvents = []; rpcError = null; rpcCalls = [];
+  socketEvents = []; rpcError = null; rpcCalls = []; progressCalls = [];
 });
 // An unmatched status schedules one retry (30ms here): let it fire before the next test.
 test.afterEach(() => sleep(80));
@@ -286,4 +290,30 @@ test('a status-only POST logs one summary line, not the whole body', async () =>
   assert.equal(lines.length, 1);
   assert.match(lines[0], /statuses only\): 2 - delivered x1, failed x1 \[131026\]/);
   assert.ok(!lines[0].includes('9198000'));
+});
+
+test('a broadcast recipient\'s delivered / read moves its row and tells the broadcast screen (not the chat)', async () => {
+  db.broadcast_recipients = [{ id: 'rec1', broadcast_id: 'bc1', business_id: BIZ, status: 'sent', meta_message_id: 'wamid.BC1', sent_at: 't' }];
+  await status('wamid.BC1', 'delivered', { timestamp: '1767261600' });
+  await status('wamid.BC1', 'read', { timestamp: '1767261700' });
+  const rec = db.broadcast_recipients[0];
+  assert.deepEqual([rec.status, rec.delivered_at, rec.read_at], ['read', '2026-01-01T10:00:00.000Z', '2026-01-01T10:01:40.000Z']);
+  assert.deepEqual(progressCalls, [[BIZ, 'bc1'], [BIZ, 'bc1']]); // the service throttles to one event per window
+  assert.equal(socketEvents.length, 0); // no chat message_status for a broadcast message
+});
+
+test('a recipient\'s asynchronous failure keeps Meta\'s reason and is announced; a repeat is not', async () => {
+  db.broadcast_recipients = [{ id: 'rec1', broadcast_id: 'bc1', business_id: BIZ, status: 'sent', meta_message_id: 'wamid.BC1' }];
+  const failed = { timestamp: '1767261600', errors: [{ code: 131049, title: 'Healthy ecosystem engagement' }] };
+  await status('wamid.BC1', 'failed', failed);
+  await status('wamid.BC1', 'failed', failed);
+  assert.deepEqual([db.broadcast_recipients[0].status, db.broadcast_recipients[0].error_code], ['failed', 131049]);
+  assert.equal(progressCalls.length, 1);
+});
+
+test('a wamid that is a broadcast recipient is matched: no retry', async () => {
+  db.broadcast_recipients = [{ id: 'rec1', broadcast_id: 'bc1', business_id: BIZ, status: 'sent', meta_message_id: 'wamid.BC1' }];
+  await status('wamid.BC1', 'delivered');
+  await sleep(80);
+  assert.equal(rpcCalls.length, 1);
 });

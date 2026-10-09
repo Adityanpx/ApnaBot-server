@@ -30,6 +30,7 @@ stub('../services/wallet.service', {
   refundToWallet: async (businessId, paise) => { refunds.push(paise); }
 });
 
+stub('../services/broadcastProgress.service', { notifyBroadcastProgress: () => {} });
 require('./broadcast.worker');
 
 const run = (data) => processor({

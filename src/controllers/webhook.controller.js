@@ -31,6 +31,7 @@ const { isBulkSyncBody } = require('../utils/coexistencePayload');
 const coexistenceService = require('../services/coexistence.service');
 const { buildStatusEvents, statusOnlySummary } = require('../utils/statusPayload');
 const { withFailure } = require('../utils/whatsappErrors');
+const { notifyBroadcastProgress } = require('../services/broadcastProgress.service');
 const { splitMessages } = require('../utils/webhookBatch');
 
 // Exact-match greeting keywords that trigger the welcome message / menu.
@@ -721,6 +722,10 @@ const applyStatusEvents = async (events) => {
       } catch (socketErr) {
         logger.error('Error emitting message_status socket event:', socketErr);
       }
+    }
+    // Broadcast recipients that moved: the broadcast's numbers changed (throttled, one event per window).
+    for (const rec of (data && data.changed_recipients) || []) {
+      notifyBroadcastProgress(rec.business_id, rec.broadcast_id);
     }
     return (data && data.unmatched) || [];
   } catch (err) {

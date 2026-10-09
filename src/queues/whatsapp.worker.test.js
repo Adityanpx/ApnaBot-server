@@ -115,7 +115,7 @@ test('a failed send is unchanged: row failed after the last attempt, error rethr
 test("the final failure keeps Meta's reason: code, title, details and failed_at", async () => {
   sendImpl = () => { throw Object.assign(new Error('Request failed with status code 400'), { response: { data: { error: { code: 131047, type: 'OAuthException', message: 'Re-engagement message', error_data: { details: 'More than 24 hours' } } } } }); };
   await assert.rejects(() => processor(job({}, 2)), /400/);
-  assert.deepEqual([rows[0].status, rows[0].error_code, rows[0].error_title, rows[0].error_details], ['failed', 131047, 'OAuthException', 'More than 24 hours']);
+  assert.deepEqual([rows[0].status, rows[0].error_code, rows[0].error_title, rows[0].error_details], ['failed', 131047, 'Re-engagement message', 'More than 24 hours']);
   assert.ok(!Number.isNaN(Date.parse(rows[0].failed_at)));
 });
 

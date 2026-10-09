@@ -719,8 +719,9 @@ for what is actually deployed before assuming.
   If the wamid collides with an echo row (`phone_app`) the echo is deleted and
   the API row kept. Meta's status webhooks therefore now match outbound rows;
   statuses only move forward (sent -> delivered -> read, `utils/messageStatus.js`).
-  Sends with no `messages` row (broadcast worker, session-timeout notice, public
-  service-form messages, platform notifications) have nothing to update.
+  Sends with no `messages` row (session-timeout notice, public service-form messages,
+  platform notifications) have nothing to update; the broadcast worker's are tracked in
+  `broadcast_recipients` (see "Delivery tracking, broadcasts").
 - **Delivery tracking, chat messages (2026-10-13).** `messages` has `delivered_at`, `read_at`,
   `failed_at` (Meta's own event time) and `error_code` / `error_title` / `error_details` (Meta's raw
   failure; mapped to plain English on read by `utils/whatsappErrors.js`, whose wording was checked
@@ -733,9 +734,32 @@ for what is actually deployed before assuming.
   carries `customerId`, `deliveredAt`, `readAt`, `failedAt` and `failure` (still no client listens, gap
   14). `GET /api/messages/:customerId` adds `failure` (`{ code, title, reason, kind, details }` or null)
   to each message; the queue worker records Meta's reason when it finally gives up on a send. A body
-  of only statuses logs one summary line. Broadcast messages are NOT tracked yet (no per-recipient rows
-  - next commit); until then their status webhooks match nothing, so each costs one RPC and one
-  retry. SQL check: `supabase/verification/verify_apply_message_statuses.sql` (rolls back, see its header).
+  of only statuses logs one summary line. SQL check:
+  `supabase/verification/verify_apply_message_statuses.sql` (rolls back, see its header).
+- **Delivery tracking, broadcasts (2026-10-13).** `broadcast_recipients` (migration
+  `20261013130000`; RLS on, no policies): one row per recipient with `status`
+  (queued | sent | delivered | read | failed), `meta_message_id`, `sent_at` / `delivered_at` /
+  `read_at` / `failed_at` and `error_code` / `error_title` / `error_details`; unique on
+  `(broadcast_id, whatsapp_number)` and on the wamid. `sendBroadcast` makes the `queued` rows (chunks
+  of 500, before any job is queued; a failure there is logged and the send carries on) and removes them
+  again when the claim is released or a job could not be queued. The worker writes each result at once
+  (wamid + `sent_at`, or Meta's rejection; our own failures such as "no name on file" have no code),
+  only onto a still-`queued` row, so a broadcast sent BEFORE this has no rows and works as before.
+  `apply_message_statuses` was replaced: a wamid not found in `messages` is looked up in
+  `broadcast_recipients` (same forward-only rules); result keys `changed`, `changed_recipients`,
+  `unmatched` (unmatched = in neither table, so only that gets the one 2s retry).
+  **`broadcasts.sent_count` / `failed_count` are untouched** (sent = Meta accepted the request).
+  `GET /api/broadcasts/:id` adds `stats` `{ tracked, total, queued, sent, delivered, read, failed }`
+  from `broadcast_recipient_stats()`: counts overlap on purpose (sent = accepted, even if it failed
+  later; delivered includes read; failed = send-time OR later); `tracked:false` (old broadcasts) gives
+  the old counters and `null` for what is unknown. `GET /api/broadcasts/:id/recipients?status=&page=&limit=`
+  (**owner / superadmin only**; limit max 100) lists name, full number, times and `failure`
+  (`{ code, title, reason, kind, details }`; no code -> "Not sent: ...", kind `local`); its `status`
+  filter uses the same meanings as the stats. Staff still see the counts on `GET /:id`.
+  Socket `broadcast_progress` `{ broadcastId, status, totalRecipients, sentCount, failedCount, stats }`
+  (`services/broadcastProgress.service.js`): at most one per broadcast per 2s, sent after a worker
+  batch and after recipient status changes. SQL check: `supabase/verification/verify_broadcast_recipients.sql`.
+  Not done: wallet refund for a message Meta accepts and fails later (separate task).
 - **Flags / Meta dashboard.** `COEXISTENCE_SYNC_ENABLED` (env, default off): turn it on
   only when the history / contact-sync handlers are deployed, or Meta's one-time
   sync is spent and lost. The webhook fields `history`, `smb_app_state_sync` and
@@ -957,6 +981,14 @@ does not need `opted_in` at all - see "Broadcast audiences"; follow-ups have the
    in the MongoDB cleanup; no replacement exists yet.
 
 ## Session log (append here as major milestones land)
+- 2026-10-13: Delivery tracking, commit B (broadcasts; see "Delivery tracking, broadcasts").
+  **Deploy: apply `20261013120000` (commit A) first if not yet applied, then `20261013130000`, run
+  `supabase/verification/verify_broadcast_recipients.sql`, then deploy the server.** One-time cutover,
+  no flag: from the deploy on, every broadcast (Search cab AI's included) gets recipient rows and its
+  status webhooks are applied to them. If the migration is missing, `sendBroadcast` still sends (row
+  creation only logs an error) and statuses are logged as failing. A broadcast already mid-send at the
+  deploy has no rows and finishes with the old counters. Also: `fromSendError` now stores Meta's
+  `message` as the title (it stored the exception type, e.g. "OAuthException").
 - 2026-10-13: Delivery tracking, commit A (chat messages only; see "Delivery tracking, chat
   messages"). **Deploy: apply migration `20261013120000` first, then run
   `supabase/verification/verify_apply_message_statuses.sql` in the SQL editor, then deploy the server.**

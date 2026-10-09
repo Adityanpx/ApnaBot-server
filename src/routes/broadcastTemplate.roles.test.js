@@ -24,7 +24,8 @@ stub('../controllers/broadcast.controller', {
   getAudienceSkipped: reached('getAudienceSkipped'),
   getBroadcastRecipientsPreview: reached('getBroadcastRecipientsPreview'),
   sendBroadcast: reached('sendBroadcast'),
-  getBroadcast: reached('getBroadcast')
+  getBroadcast: reached('getBroadcast'),
+  getBroadcastRecipients: reached('getBroadcastRecipients')
 });
 stub('../controllers/messageTemplate.controller', {
   getMessageTemplates: reached('getMessageTemplates'),
@@ -61,6 +62,8 @@ const WRITES = [
   // not writes, but owner / superadmin only all the same: the skipped list names customers
   ['POST', '/broadcasts/audience-summary'],
   ['POST', '/broadcasts/audience-skipped'],
+  // the per-recipient delivery list names customers and why each failed
+  ['GET', '/broadcasts/x/recipients'],
   ['POST', '/broadcasts/x/send'],
   ['POST', '/message-templates'],
   ['POST', '/message-templates/sync'],

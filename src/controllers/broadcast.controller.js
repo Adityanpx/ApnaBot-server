@@ -15,6 +15,8 @@ const { buildTemplateComponents, buildQuickReplyComponents } = require('../utils
 const { requiredParams, splitMapping, checkParamCounts, targetOf } = require('../utils/templateMapping');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
+const { getBroadcastStats } = require('../services/broadcastProgress.service');
+const { withRecipientFailure } = require('../utils/whatsappErrors');
 
 // One BullMQ job per this many recipients (whatsapp.queue.js has no
 // existing batching precedent to follow, so this is a new, conservative
@@ -27,6 +29,39 @@ const chunk = (arr, size) => {
     batches.push(arr.slice(i, i + size));
   }
   return batches;
+};
+
+// broadcast_recipients rows: one 'queued' row per recipient, made BEFORE the jobs are
+// queued so the worker always finds its row. Delivery tracking is secondary to the
+// send itself, so a failure here is logged and the send carries on; the worker then
+// just skips the per-recipient write for the missing rows. Never throws.
+const RECIPIENT_ROW_CHUNK = 500;
+
+const createRecipientRows = async (broadcastId, businessId, customers) => {
+  for (const part of chunk(customers, RECIPIENT_ROW_CHUNK)) {
+    try {
+      const { error } = await supabase.from('broadcast_recipients').upsert(
+        part.map((c) => ({ broadcast_id: broadcastId, business_id: businessId, customer_id: c.id, whatsapp_number: c.whatsapp_number })),
+        { onConflict: 'broadcast_id,whatsapp_number', ignoreDuplicates: true }
+      );
+      if (error) logger.error(`Broadcast ${broadcastId}: could not create recipient rows`, error);
+    } catch (err) {
+      logger.error(`Broadcast ${broadcastId}: could not create recipient rows`, err);
+    }
+  }
+};
+
+// Remove rows of recipients that will never be sent (all of them when the claim is
+// released back to a draft, so a re-send doesn't meet stale 'queued' rows).
+const removeRecipientRows = async (broadcastId, numbers = null) => {
+  try {
+    let q = supabase.from('broadcast_recipients').delete().eq('broadcast_id', broadcastId);
+    if (numbers) q = q.in('whatsapp_number', numbers);
+    const { error } = await q;
+    if (error) logger.error(`Broadcast ${broadcastId}: could not remove recipient rows`, error);
+  } catch (err) {
+    logger.error(`Broadcast ${broadcastId}: could not remove recipient rows`, err);
+  }
 };
 
 const countTemplateVariables = (bodyText) => {
@@ -282,6 +317,7 @@ const sendBroadcast = async (req, res, next) => {
     // Back to a draft the owner can send again. Only a claim that never
     // reached the queue is released (see below for a partly queued one).
     const releaseClaim = async () => {
+      await removeRecipientRows(id);
       const { error: releaseErr } = await supabase.from('broadcasts')
         .update({ status: 'draft', started_at: null, total_recipients: 0 })
         .eq('id', id).eq('business_id', businessId).eq('status', 'sending');
@@ -337,6 +373,8 @@ const sendBroadcast = async (req, res, next) => {
       throw setupErr;
     }
 
+    await createRecipientRows(id, businessId, customers);
+
     const results = await Promise.allSettled(batches.map((b) => addToBroadcastQueue(b.job)));
     const failedBatches = batches.filter((_, i) => results[i].status === 'rejected');
     if (failedBatches.length === batches.length) {
@@ -353,6 +391,7 @@ const sendBroadcast = async (req, res, next) => {
       const lost = failedBatches.reduce((n, b) => n + b.recipients.length, 0);
       logger.error(`Broadcast ${id}: ${failedBatches.length} of ${batches.length} batches could not be queued (${lost} recipients)`);
       await refund(ratePerMessage * lost, `Refund: ${lost} broadcast ${id} message(s) could not be queued`);
+      await removeRecipientRows(id, failedBatches.flatMap((b) => b.recipients.map((c) => c.whatsapp_number)));
       const { error: totalErr } = await supabase.from('broadcasts')
         .update({ total_recipients: customers.length - lost }).eq('id', id).eq('business_id', businessId);
       if (totalErr) logger.error(`Broadcast ${id}: failed to lower total_recipients by ${lost}`, totalErr);
@@ -428,9 +467,66 @@ const getBroadcast = async (req, res, next) => {
       return errorResponse(res, 404, 'Broadcast not found');
     }
 
-    return successResponse(res, 200, toCamelCase(broadcast));
+    // `stats` is the delivery picture (queued / sent / delivered / read / failed);
+    // sentCount / failedCount stay exactly as the worker counted them.
+    const stats = await getBroadcastStats(businessId, id, broadcast);
+    return successResponse(res, 200, { ...toCamelCase(broadcast), stats });
   } catch (error) {
     logger.error('Error in getBroadcast:', error);
+    next(error);
+  }
+};
+
+const RECIPIENT_STATUS_FILTERS = ['queued', 'sent', 'delivered', 'read', 'failed'];
+const RECIPIENTS_MAX_LIMIT = 100;
+
+/**
+ * GET /api/broadcasts/:id/recipients?status=&page=1&limit=50 (owner / superadmin)
+ * → { recipients: [{ id, customerId, name, whatsappNumber, status, sentAt, deliveredAt,
+ * readAt, failedAt, failure }], pagination }. `status` uses the same meaning as the
+ * stats: sent = accepted by Meta (even if it failed later), delivered includes read,
+ * failed = rejected at send time or failed afterwards, queued = not handled yet.
+ * `failure` is null unless the recipient failed. A broadcast sent before delivery
+ * tracking has no rows, so the list is empty.
+ */
+const getBroadcastRecipients = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const businessId = req.user.businessId;
+    const { status } = req.query;
+    const page = req.query.page === undefined ? 1 : Number(req.query.page);
+    const limit = req.query.limit === undefined ? 50 : Number(req.query.limit);
+
+    if (status !== undefined && !RECIPIENT_STATUS_FILTERS.includes(status)) {
+      return errorResponse(res, 400, `status must be one of: ${RECIPIENT_STATUS_FILTERS.join(', ')}`);
+    }
+    if (!Number.isInteger(page) || page < 1) return errorResponse(res, 400, 'page must be a whole number from 1');
+    if (!Number.isInteger(limit) || limit < 1 || limit > RECIPIENTS_MAX_LIMIT) {
+      return errorResponse(res, 400, `limit must be a whole number from 1 to ${RECIPIENTS_MAX_LIMIT}`);
+    }
+
+    const { data: broadcast, error: broadcastErr } = await supabase
+      .from('broadcasts').select('id').eq('id', id).eq('business_id', businessId).maybeSingle();
+    if (broadcastErr) throw broadcastErr;
+    if (!broadcast) return errorResponse(res, 404, 'Broadcast not found');
+
+    let query = supabase.from('broadcast_recipients')
+      .select('id, customer_id, whatsapp_number, status, sent_at, delivered_at, read_at, failed_at, error_code, error_title, error_details, customers(name)', { count: 'exact' })
+      .eq('broadcast_id', id).eq('business_id', businessId);
+    if (status === 'queued' || status === 'failed') query = query.eq('status', status);
+    else if (status === 'sent') query = query.not('sent_at', 'is', null);
+    else if (status === 'delivered') query = query.not('delivered_at', 'is', null);
+    else if (status === 'read') query = query.not('read_at', 'is', null);
+
+    const { data, error, count } = await query
+      .order('created_at', { ascending: true }).order('id', { ascending: true })
+      .range((page - 1) * limit, page * limit - 1);
+    if (error) throw error;
+
+    const recipients = (data || []).map(({ customers, ...row }) => withRecipientFailure({ ...toCamelCase(row), name: (customers && customers.name) || null }));
+    return successResponse(res, 200, { recipients, pagination: getPagination(count || 0, page, limit) });
+  } catch (error) {
+    logger.error('Error in getBroadcastRecipients:', error);
     next(error);
   }
 };
@@ -516,6 +612,7 @@ module.exports = {
   sendBroadcast,
   getBroadcastRecipientsPreview,
   getBroadcast,
+  getBroadcastRecipients,
   getAudienceCount,
   getAudienceSummary,
   getAudienceSkipped

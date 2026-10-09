@@ -1,7 +1,19 @@
 // Run: node --test src/utils/whatsappErrors.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { describeFailure, fromStatusErrors, fromSendError, withFailure, REASONS } = require('./whatsappErrors');
+const { describeFailure, fromStatusErrors, fromSendError, withFailure, withRecipientFailure, REASONS } = require('./whatsappErrors');
+
+test('recipient failures: Meta code -> plain wording; no code -> "Not sent: ..." (kind local); healthy -> null', () => {
+  assert.equal(withRecipientFailure({ id: 1, status: 'read' }).failure, null);
+  assert.equal(withRecipientFailure({ id: 1, status: 'queued', errorCode: null }).failure, null);
+  const meta = withRecipientFailure({ status: 'failed', errorCode: 131050, errorTitle: 't', errorDetails: 'd' }).failure;
+  assert.deepEqual([meta.code, meta.kind, meta.details], [131050, 'recipient', 'd']);
+  assert.match(meta.reason, /opted out of marketing/);
+  assert.deepEqual(withRecipientFailure({ status: 'failed', errorCode: null, errorTitle: 'recipient has no name on file' }).failure,
+    { code: null, title: 'recipient has no name on file', reason: 'Not sent: recipient has no name on file', kind: 'local', details: null });
+  assert.equal(withRecipientFailure({ status: 'failed' }).failure.reason, 'Not sent.');
+  assert.equal(withRecipientFailure(null), null);
+});
 
 test('known codes map to plain wording and a kind; the raw code is kept', () => {
   const d = describeFailure(131050, 'x');
@@ -39,7 +51,7 @@ test('status webhook errors: first entry, details preferred, long text clipped',
 
 test('a thrown Meta send error keeps its code; any other error keeps just its message', () => {
   const metaErr = { response: { data: { error: { code: 131047, type: 'OAuthException', message: 'Re-engagement message', error_data: { details: 'More than 24 hours' } } } } };
-  assert.deepEqual(fromSendError(metaErr), { errorCode: 131047, errorTitle: 'OAuthException', errorDetails: 'More than 24 hours' });
+  assert.deepEqual(fromSendError(metaErr), { errorCode: 131047, errorTitle: 'Re-engagement message', errorDetails: 'More than 24 hours' });
   assert.deepEqual(fromSendError(new Error('socket hang up')), { errorCode: null, errorTitle: 'socket hang up', errorDetails: null });
   assert.deepEqual(fromSendError(null), { errorCode: null, errorTitle: null, errorDetails: null });
 });

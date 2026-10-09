@@ -23,6 +23,7 @@ stub('../services/whatsapp.service', {
 });
 stub('../services/wallet.service', { refundToWallet: async () => {} });
 
+stub('../services/broadcastProgress.service', { notifyBroadcastProgress: () => {} });
 require('./broadcast.worker');
 
 const run = (data) => processor({

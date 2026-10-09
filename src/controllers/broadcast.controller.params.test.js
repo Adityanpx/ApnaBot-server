@@ -39,6 +39,7 @@ stub('../services/broadcastAudience.service', {
   resolveAudience: async () => [{ id: 'c1', whatsapp_number: '911', name: 'A' }],
   businessGroupIds: async () => []
 });
+stub('../services/broadcastProgress.service', { getBroadcastStats: async (b, i, row) => ({ tracked: false, total: row.total_recipients || 0, queued: null, sent: row.sent_count || 0, delivered: null, read: null, failed: row.failed_count || 0 }), notifyBroadcastProgress: () => {} });
 const { createBroadcast, sendBroadcast } = require('./broadcast.controller');
 
 const call = async (handler, req) => {
