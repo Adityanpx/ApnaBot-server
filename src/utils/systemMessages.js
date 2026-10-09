@@ -211,6 +211,19 @@ const SYSTEM_MESSAGES = {
     hi: 'नहीं, धन्यवाद',
     mr: 'नको, धन्यवाद'
   },
+  // ── Marketing consent asked once after a booking confirmation
+  // (services/bookingConsent.service.js). Yes → optInConfirmed below. Same
+  // rules as the opt-in link question: names the business, mentions STOP.
+  bookingConsentQuestion: {
+    en: '{{business}} would like to send you offers and updates on WhatsApp. You can stop anytime by replying STOP.',
+    hi: '{{business}} आपको WhatsApp पर ऑफ़र और अपडेट भेजना चाहता है। आप कभी भी STOP लिखकर इन्हें बंद कर सकते हैं।',
+    mr: '{{business}} तुम्हाला WhatsApp वर ऑफर्स आणि अपडेट्स पाठवू इच्छिते. तुम्ही कधीही STOP पाठवून ते थांबवू शकता.'
+  },
+  bookingConsentDeclined: {
+    en: "No problem 👍 You'll only get messages about your bookings.",
+    hi: 'कोई बात नहीं 👍 आपको सिर्फ़ आपकी बुकिंग से जुड़े मैसेज मिलेंगे।',
+    mr: 'ठीक आहे 👍 तुम्हाला फक्त तुमच्या बुकिंगशी संबंधित मेसेज मिळतील.'
+  },
   optInConfirmed: {
     en: "Thanks! You'll now get offers and updates from {{business}}. Reply STOP anytime to stop.",
     hi: 'धन्यवाद! अब आपको {{business}} से ऑफ़र और अपडेट मिलेंगे। बंद करने के लिए कभी भी STOP लिखकर भेजें।',

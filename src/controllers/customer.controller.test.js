@@ -28,8 +28,13 @@ const query = (table) => {
     },
     in: (c, vs) => { filters.push(r => vs.includes(r[c])); return q; },
     is: (c, v) => { filters.push(r => (r[c] ?? null) === v); return q; },
-    // .not(col, 'eq', '<json>') on a jsonb column
+    // .not(col, 'eq', '<json>') on a jsonb column; .not(col, 'is', null) = "is not null"
     not: (c, op, v) => {
+      if (op === 'is') {
+        assert.equal(v, null);
+        filters.push(r => (r[c] ?? null) !== null);
+        return q;
+      }
       assert.equal(op, 'eq');
       filters.push(r => JSON.stringify(r[c] ?? null) !== JSON.stringify(JSON.parse(v)));
       return q;
@@ -132,6 +137,27 @@ test('summary: VIPs counted over every confirmed booking (4,000 rows), not the f
   const body = await call(getCustomerSummary, {});
   assert.equal(body.data.total, 2500);
   assert.equal(body.data.vip, 1500);
+});
+
+// ── Post-booking consent stats (business 'cons'): 4 asked (2 yes, 1 no, 1 unanswered), 1 never asked, 1 other business ──
+const cons = (id, over = {}) => ({ id, business_id: 'cons', whatsapp_number: id, name: id, opted_in: false, is_blocked: false, opted_out_at: null, last_message_at: '2026-10-01T00:00:00Z', consent_prompted_at: null, consent_prompt_result: null, ...over });
+tables.customers.push(
+  cons('k1', { consent_prompted_at: '2026-10-02T00:00:00Z', consent_prompt_result: 'yes', opted_in: true }),
+  cons('k2', { consent_prompted_at: '2026-10-02T00:00:00Z', consent_prompt_result: 'yes', opted_in: true }),
+  cons('k3', { consent_prompted_at: '2026-10-02T00:00:00Z', consent_prompt_result: 'no' }),
+  cons('k4', { consent_prompted_at: '2026-10-02T00:00:00Z' }),
+  cons('k5'),
+  { ...cons('k6'), business_id: 'other', consent_prompted_at: '2026-10-02T00:00:00Z', consent_prompt_result: 'yes' }
+);
+
+test('summary: consentAsked / consentYes / consentNo count this business only', async () => {
+  let body;
+  const res = { status: () => res, json: (b) => { body = b; return res; } };
+  await getCustomerSummary({ query: {}, user: { businessId: 'cons' } }, res, (err) => { throw err; });
+  assert.equal(body.data.total, 5);
+  assert.equal(body.data.consentAsked, 4);
+  assert.equal(body.data.consentYes, 2);
+  assert.equal(body.data.consentNo, 1);
 });
 
 test('list ?isVip=true: VIPs found among all 2,500 customers, each once, paginated in memory', async () => {

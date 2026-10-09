@@ -35,3 +35,21 @@ test('opt-in confirmation names the business and mentions STOP in every language
     assert.ok(text.includes('STOP'), `${lang}: STOP missing`);
   }
 });
+
+test('post-booking consent question names the business and mentions STOP in every language', () => {
+  for (const lang of LANGUAGES) {
+    assert.ok(SYSTEM_MESSAGES.bookingConsentQuestion[lang], `bookingConsentQuestion.${lang} missing`);
+    const text = getSystemMessage('bookingConsentQuestion', lang, { business: 'SG Travels' });
+    assert.ok(text.includes('SG Travels'), `${lang}: business name missing`);
+    assert.ok(text.includes('STOP'), `${lang}: STOP missing`);
+    assert.ok(!text.includes('{{'), `${lang}: unfilled placeholder`);
+    assert.ok(text.length <= 1024, `${lang}: longer than a button message body`);
+  }
+});
+
+test('post-booking consent "declined" line exists in every language', () => {
+  for (const lang of LANGUAGES) {
+    const text = getSystemMessage('bookingConsentDeclined', lang);
+    assert.ok(text && text.trim(), `bookingConsentDeclined.${lang} missing`);
+  }
+});

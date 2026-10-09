@@ -87,3 +87,14 @@ test('parseOptInTapId', () => {
   assert.equal(parseOptInTapId(id), null);
   assert.equal(parseOptInTapId(null), null);
 });
+
+test('parseOptInTapId: the post-booking question ids carry no link and flag bookingPrompt', () => {
+  assert.deepEqual(parseOptInTapId('optin_yes:booking'), { answer: 'yes', linkId: null, bookingPrompt: true });
+  assert.deepEqual(parseOptInTapId('optin_no:booking'), { answer: 'no', linkId: null, bookingPrompt: true });
+  assert.equal(isSystemTapId('optin_yes:booking'), true);
+  assert.equal(isSystemTapId('optin_no:booking'), true);
+  // A link-style id never takes the booking path, and "booking" is not a UUID.
+  const id = '0b3f6c1e-1111-4222-8333-944455556666';
+  assert.equal(parseOptInTapId(`optin_yes:${id}`).bookingPrompt, undefined);
+  assert.equal(parseOptInTapId('optin_yes:bookings').bookingPrompt, undefined);
+});

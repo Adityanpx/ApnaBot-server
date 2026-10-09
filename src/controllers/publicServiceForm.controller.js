@@ -8,6 +8,8 @@ const supabase = require('../config/supabase');
 const businessService = require('../services/business.service');
 const bookingService = require('../services/booking.service');
 const whatsappService = require('../services/whatsapp.service');
+const bookingConsentService = require('../services/bookingConsent.service');
+const { isWindowOpen } = require('../services/windowAwareSend.service');
 const placesService = require('../services/places.service');
 const { toCamelCase } = require('../utils/caseConvert');
 const { BUSINESS_COURSES_SOURCE, COURSE_BATCHES_SOURCE } = require('../utils/flowFieldsValidation');
@@ -487,6 +489,27 @@ const submitServiceForm = async (req, res, next) => {
           formToken.customerNumber,
           confirmation.text
         );
+      }
+
+      // One-time marketing-consent question after the confirmation (setting
+      // off / not eligible / advance-payment QR / 24h window closed → null).
+      // The confirmation above is awaited, so the question can't overtake it.
+      if (!confirmation.imageUrl) {
+        const consentCustomer = await bookingConsentService.claimAfterBooking({
+          businessId: formToken.businessId,
+          customerNumber: formToken.customerNumber,
+          windowCheck: isWindowOpen
+        });
+        if (consentCustomer) {
+          await bookingConsentService.sendQuestion({
+            businessId: formToken.businessId,
+            phoneNumberId: business.phoneNumberId,
+            encryptedAccessToken: business.accessToken,
+            businessName: business.displayName || business.name,
+            customer: consentCustomer,
+            customerNumber: formToken.customerNumber
+          });
+        }
       }
     } catch (postBookingError) {
       logger.error('Error marking booking form token used / sending WhatsApp confirmation:', {

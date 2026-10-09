@@ -28,6 +28,12 @@ const GREETING_MAX_LENGTH = 200;
 const OPT_IN_YES_PREFIX = 'optin_yes:';
 const OPT_IN_NO_PREFIX = 'optin_no:';
 const SYSTEM_TAP_PREFIXES = ['lang_', 'optin_'];
+// The post-booking consent question (services/bookingConsent.service.js) has
+// no link, so its ids end in this word instead of a link UUID. Not a UUID, so
+// it can never be mistaken for a link id.
+const BOOKING_PROMPT_ID = 'booking';
+const BOOKING_CONSENT_YES_ID = `${OPT_IN_YES_PREFIX}${BOOKING_PROMPT_ID}`;
+const BOOKING_CONSENT_NO_ID = `${OPT_IN_NO_PREFIX}${BOOKING_PROMPT_ID}`;
 
 /** Random code from CODE_ALPHABET. */
 const generateCode = () => {
@@ -84,11 +90,14 @@ const buildWaMeUrl = (whatsappNumber, prefillText) => {
 const isSystemTapId = (id) => !!id && SYSTEM_TAP_PREFIXES.some(prefix => id.startsWith(prefix));
 
 /**
- * { answer: 'yes'|'no', linkId } for an opt-in button id, else null.
+ * { answer: 'yes'|'no', linkId } for an opt-in button id, else null. The
+ * post-booking question's ids give { answer, linkId: null, bookingPrompt: true }.
  * @param {string} id
  */
 const parseOptInTapId = (id) => {
   if (!id) return null;
+  if (id === BOOKING_CONSENT_YES_ID) return { answer: 'yes', linkId: null, bookingPrompt: true };
+  if (id === BOOKING_CONSENT_NO_ID) return { answer: 'no', linkId: null, bookingPrompt: true };
   if (id.startsWith(OPT_IN_YES_PREFIX)) return { answer: 'yes', linkId: id.slice(OPT_IN_YES_PREFIX.length) || null };
   if (id.startsWith(OPT_IN_NO_PREFIX)) return { answer: 'no', linkId: id.slice(OPT_IN_NO_PREFIX.length) || null };
   return null;
@@ -101,6 +110,8 @@ module.exports = {
   GREETING_MAX_LENGTH,
   OPT_IN_YES_PREFIX,
   OPT_IN_NO_PREFIX,
+  BOOKING_CONSENT_YES_ID,
+  BOOKING_CONSENT_NO_ID,
   generateCode,
   parseJoinCode,
   normalizeGreeting,

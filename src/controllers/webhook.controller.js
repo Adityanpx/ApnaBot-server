@@ -18,6 +18,7 @@ const { getSystemMessage } = require('../utils/systemMessages');
 const { isIndefinitePause } = require('../utils/botPause');
 const { parseJoinCode, isSystemTapId, parseOptInTapId, OPT_IN_YES_PREFIX, OPT_IN_NO_PREFIX } = require('../utils/optInLink');
 const optInLinkService = require('../services/optInLink.service');
+const bookingConsentService = require('../services/bookingConsent.service');
 const templateButtonTapService = require('../services/templateButtonTap.service');
 const { templateStatusForEvent } = require('../utils/templateStatus');
 const { updateTemplateForWebhook, qualityUpdateFields, categoryUpdateFields } = require('../services/templateWebhook.service');
@@ -585,6 +586,29 @@ const sendOptInConsentQuestion = async (ctx, link) => {
     });
   } catch (socketError) {
     logger.error('Error emitting socket event:', socketError);
+  }
+};
+
+/**
+ * Send the one-time marketing-consent question after a booking confirmation
+ * (already claimed via bookingConsentService.claimAfterBooking). Never throws:
+ * a failure here must not turn a sent confirmation into an error path.
+ * @param {Object} ctx - { tenant, customer, customerNumber }
+ * @param {Object} consentCustomer - the claimed camelCase customer row
+ */
+const sendBookingConsentQuestion = async (ctx, consentCustomer) => {
+  const { tenant, customerNumber } = ctx;
+  try {
+    await bookingConsentService.sendQuestion({
+      businessId: tenant.businessId,
+      phoneNumberId: tenant.phoneNumberId,
+      encryptedAccessToken: tenant.accessToken,
+      businessName: tenant.displayName || tenant.businessName,
+      customer: consentCustomer,
+      customerNumber
+    });
+  } catch (err) {
+    logger.error('Error sending post-booking consent question:', err);
   }
 };
 
@@ -1370,6 +1394,31 @@ const processWebhookChange = async (entry, changes) => {
     // 'message' event).
     let pendingOptInLink = null;
     const optInTap = parseOptInTapId(buttonReplyId);
+    if (optInTap && optInTap.bookingPrompt) {
+      // Answer to the one-time consent question sent after a booking
+      // confirmation (services/bookingConsent.service.js). Honoured even if
+      // the setting was switched off since. Always returns here: there is no
+      // greeting to continue to (the booking it followed is long finished).
+      try {
+        const { answered, newlyOptedIn, customer: updatedCustomer } =
+          await bookingConsentService.handleBookingConsentTap(customer, optInTap);
+        Object.assign(customer, updatedCustomer);
+        logger.info(`Booking consent tap '${optInTap.answer}' from ${customerNumber} for business ${tenant.businessId} (answered: ${answered}, newly opted in: ${newlyOptedIn})`);
+        if (answered && optInTap.answer === 'no') {
+          await sendFallbackTextMessage(
+            { ...ctx, triggeredRuleId: null },
+            getSystemMessage('bookingConsentDeclined', customer.preferredLanguage)
+          );
+        } else if (newlyOptedIn) {
+          await sendOptInConfirmation(ctx);
+        }
+      } catch (consentErr) {
+        logger.error('Error handling booking consent tap:', consentErr);
+      }
+      // A new booking may already be in progress: show its question again.
+      if (activeSession) await resendCurrentBookingPrompt(ctx, activeSession);
+      return;
+    }
     if (optInTap) {
       // Honoured even if the link (or the feature) was switched off since the
       // question went out — see handleConsentTap. Not gated on the feature
@@ -1634,6 +1683,11 @@ const processWebhookChange = async (entry, changes) => {
           return; // Do not run rule matching
         }
 
+        // One-time marketing-consent question after the confirmation (setting
+        // off / not eligible / advance-payment QR → null, nothing changes).
+        const consentCustomer = confirmation.imageUrl ? null
+          : await bookingConsentService.claimAfterBooking({ businessId: tenant.businessId, customerNumber });
+
         // imageUrl = payment QR when an advance is requested (text is its caption)
         const outboundMsg = await saveMessage({
           business_id: tenant.businessId,
@@ -1648,7 +1702,10 @@ const processWebhookChange = async (entry, changes) => {
           sender_type: 'bot',
           is_read: true
         });
-        await addToWhatsappQueue({
+        // Waits for the send only when the question follows, so it can't
+        // overtake the confirmation; otherwise exactly the queue call as before.
+        const sendConfirmation = consentCustomer ? addToWhatsappQueueAndWait : addToWhatsappQueue;
+        await sendConfirmation({
           businessId: tenant.businessId,
           phoneNumberId: tenant.phoneNumberId,
           encryptedAccessToken: tenant.accessToken,
@@ -1670,6 +1727,8 @@ const processWebhookChange = async (entry, changes) => {
         } catch (socketError) {
           logger.error('Error emitting socket event:', socketError);
         }
+
+        if (consentCustomer) await sendBookingConsentQuestion(ctx, consentCustomer);
 
         return; // Do not run rule matching
       } else {
@@ -2108,6 +2167,11 @@ const processWebhookChange = async (entry, changes) => {
               return; // Do not run rule matching
             }
 
+            // One-time marketing-consent question after the confirmation (see
+            // the mid-session finalize above).
+            const consentCustomer = confirmation.imageUrl ? null
+              : await bookingConsentService.claimAfterBooking({ businessId: tenant.businessId, customerNumber });
+
             // imageUrl = payment QR when an advance is requested (text is its caption)
             const outboundMsg = await saveMessage({
               business_id: tenant.businessId,
@@ -2122,7 +2186,8 @@ const processWebhookChange = async (entry, changes) => {
               sender_type: 'bot',
               is_read: true
             });
-            await addToWhatsappQueue({
+            const sendConfirmation = consentCustomer ? addToWhatsappQueueAndWait : addToWhatsappQueue;
+            await sendConfirmation({
               businessId: tenant.businessId,
               phoneNumberId: tenant.phoneNumberId,
               encryptedAccessToken: tenant.accessToken,
@@ -2144,6 +2209,8 @@ const processWebhookChange = async (entry, changes) => {
             } catch (socketError) {
               logger.error('Error emitting socket event:', socketError);
             }
+
+            if (consentCustomer) await sendBookingConsentQuestion(ctx, consentCustomer);
 
             return; // Do not run rule matching
           }

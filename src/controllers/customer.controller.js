@@ -336,14 +336,21 @@ const getCustomerSummary = async (req, res, next) => {
   try {
     const businessId = req.user.businessId;
 
-    const [totalRes, optedInRes, broadcastEligibleRes] = await Promise.all([
+    const [totalRes, optedInRes, broadcastEligibleRes, consentAskedRes, consentYesRes, consentNoRes] = await Promise.all([
       supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId),
       supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).eq('opted_in', true),
-      supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).eq('opted_in', true).eq('is_blocked', false).is('opted_out_at', null)
+      supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).eq('opted_in', true).eq('is_blocked', false).is('opted_out_at', null),
+      // Post-booking consent question (services/bookingConsent.service.js), all time.
+      supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).not('consent_prompted_at', 'is', null),
+      supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).eq('consent_prompt_result', 'yes'),
+      supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).eq('consent_prompt_result', 'no')
     ]);
     if (totalRes.error) throw totalRes.error;
     if (optedInRes.error) throw optedInRes.error;
     if (broadcastEligibleRes.error) throw broadcastEligibleRes.error;
+    if (consentAskedRes.error) throw consentAskedRes.error;
+    if (consentYesRes.error) throw consentYesRes.error;
+    if (consentNoRes.error) throw consentNoRes.error;
 
     const business = await businessService.getBusinessById(businessId);
 
@@ -369,7 +376,10 @@ const getCustomerSummary = async (req, res, next) => {
       total: totalRes.count || 0,
       vip,
       optedIn: optedInRes.count || 0,
-      broadcastEligible: broadcastEligibleRes.count || 0
+      broadcastEligible: broadcastEligibleRes.count || 0,
+      consentAsked: consentAskedRes.count || 0,
+      consentYes: consentYesRes.count || 0,
+      consentNo: consentNoRes.count || 0
     });
   } catch (error) {
     logger.error('Error in getCustomerSummary:', error);

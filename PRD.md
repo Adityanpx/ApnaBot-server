@@ -797,6 +797,42 @@ test on the modules' `require`s and a runtime trap test; keep it that way).
   backfill panel) - server only so far. The claim SQL and migration were exercised only through an
   in-memory model in tests, not against a real Postgres / R2: dry-run on a test database first.
 
+## Marketing consent: opt-in links and the post-booking question
+
+Customers opt in to marketing in three ways besides the owner's manual toggle and contact import.
+(`customers.opted_in` / `opted_in_at` / `opt_in_source`; STOP sets `opted_out_at` and pauses the bot
+24h, START clears it; broadcasts and follow-ups skip `opted_out_at`.)
+
+- **Opt-in links** (`opt_in_links`, `opt_in_link_events`, feature `opt_in_links`, migration
+  `20261003180000`): a wa.me link / QR whose message carries `JOIN-<code>`; Step 11.7 of the webhook asks
+  Yes/No (`optin_yes:<linkId>` / `optin_no:<linkId>`, `optInLink.service.js#handleConsentTap`), and a
+  Yes sets `opt_in_source = 'opt_in_link'` (and clears `opted_out_at`). *Added to the PRD late, on
+  2026-10-11; it was built 2026-10-03/04.*
+- **Post-booking question** (built 2026-10-11, migration `20261011120000`): after a booking
+  confirmation is sent, ONE Yes/No question per customer, ever - `bookingConsent.service.js`.
+  Gate: `businesses.ask_consent_after_booking` (default off; read uncached with `getBusinessById`;
+  settable via `PUT /api/business` as `askConsentAfterBooking`). Three send sites: the graph
+  booking's last answer and the immediate-confirm booking (`webhook.controller.js`), and the web
+  form submit (`publicServiceForm.controller.js`, which also requires the 24h window to be open).
+  Skipped for: already opted in, `opted_out_at` set (we never ask after a STOP), blocked, bot paused,
+  already asked, and an advance-payment confirmation (the payment-QR image). **Ordering:** the
+  customer is claimed atomically first (`customers.consent_prompted_at`, update ... where it is
+  null); only a claimed booking sends its confirmation with `addToWhatsappQueueAndWait`, then the
+  question; every other booking runs exactly the old `addToWhatsappQueue` call. A claim error is
+  caught and logged - the confirmation always goes out. **Taps:** `optin_yes:booking` /
+  `optin_no:booking` (`parseOptInTapId` returns `bookingPrompt: true`), handled at Step 11.7 by
+  `handleBookingConsentTap` and always returned from (no greeting menu). The result is stored once
+  in `customers.consent_prompt_result` ('yes'/'no'; a repeat tap is ignored). Yes sets
+  `opt_in_source = 'booking_prompt'` only `where opted_out_at is null and opted_in = false` - it
+  never clears `opted_out_at`; then `optInConfirmed`. No sends `bookingConsentDeclined`. Texts:
+  `bookingConsentQuestion`, `bookingConsentDeclined` (en/hi/mr). Stats: `GET /api/customers/summary`
+  gains `consentAsked`, `consentYes`, `consentNo` (all time). **Not built:** the web / Flutter
+  Settings toggle, the stats cards, and the "Opted in (booking prompt)" label in the web
+  `optInLinks.ts` - until then the setting can only be switched via the API.
+  **Live-path note:** with the setting off (default) the confirmation path sends exactly what it
+  sent before (one extra uncached business read per booking); the behaviour change happens when an
+  owner switches it on for a business. Search cab AI uses these paths.
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism
@@ -880,6 +916,9 @@ test on the modules' `require`s and a runtime trap test; keep it that way).
    the Features screen has no backfill panel yet.
 
 ## Session log (append here as major milestones land)
+- 2026-10-11: Post-booking marketing-consent question (server only; see "Marketing consent").
+  **Deploy: apply migration `20261011120000` first.** Default off per business, so deploying
+  changes nothing customer-facing until a business's `ask_consent_after_booking` is switched on.
 - 2026-10-09: Owner phone-app media switch (`owner_phone_media`, default off - echo media
   stopped downloading until switched on; `wa_media_id` always stored; 7-day superadmin backfill)
   and storage cleanup (manual / orphan / automatic chat-media retention runs, 24h pending,
