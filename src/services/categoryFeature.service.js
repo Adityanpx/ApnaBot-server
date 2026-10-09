@@ -31,6 +31,11 @@ const FEATURES = {
     label: 'Contact import & groups',
     description: 'Lets these businesses import contacts from a CSV / Excel file or Google Sheet, group their customers, and broadcast to a group.',
     categories: ALL_CATEGORIES
+  },
+  owner_phone_media: {
+    label: "Save owner's phone-app media",
+    description: "Saves the photos, videos and PDFs the owner sends from the WhatsApp Business app, so they show in the dashboard chat. Uses storage; off by default (the message keeps its 'Photo' / 'Video' label).",
+    categories: ALL_CATEGORIES
   }
 };
 

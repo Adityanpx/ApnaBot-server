@@ -9,6 +9,7 @@ const { successResponse, errorResponse } = require('../utils/response');
 const { generateTokens, saveTokenToRedis } = require('../services/auth.service');
 const logger = require('../utils/logger');
 const r2 = require('../services/r2.service');
+const { r2KeyFromUrl } = require('../utils/r2Key');
 const config = require('../config/env');
 const { isValidLanguageCode, LANGUAGE_CATALOG } = require('../utils/languageCatalog');
 const { validateFlowFields } = require('../utils/flowFieldsValidation');
@@ -795,10 +796,6 @@ const uploadProfileImage = async (req, res, next) => {
     next(error);
   }
 };
-
-// R2 key of a URL uploadImage returned, for deleting the previous object.
-const r2KeyFromUrl = (url) =>
-  url && url.startsWith(`${config.R2_PUBLIC_URL}/`) ? url.slice(config.R2_PUBLIC_URL.length + 1) : null;
 
 /**
  * POST /api/business/payment-qr

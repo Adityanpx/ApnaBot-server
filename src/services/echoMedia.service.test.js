@@ -1,7 +1,8 @@
 // Run: node --test src/services/echoMedia.service.test.js
 // Media of phone-app echoes: image / video / document echoes get a media_url in R2
 // and a message_media socket event; a failed download, a wrong type or an oversize
-// file leaves the row with its label. Supabase, Meta download, R2 and socket stubbed.
+// file leaves the row with its label. With the owner_phone_media switch off nothing
+// is downloaded but the Meta media id is kept. Supabase, Meta download, R2 and socket stubbed.
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
@@ -53,7 +54,7 @@ const { echoMediaOf, storeEchoMedia } = require('./echoMedia.service');
 
 const MB = 1024 * 1024;
 const BIZ = 'b1';
-const tenant = { businessId: BIZ, accessToken: 'enc-token' };
+const tenant = { businessId: BIZ, accessToken: 'enc-token', businessCategory: 'travels' };
 const meta = { display_phone_number: '+91 96070 24225', phone_number_id: 'pn1' };
 const mediaEcho = (id, type, payload) => ({ from: '919607024225', to: '919800000001', id, timestamp: '1760000000', type, [type]: payload });
 
@@ -61,7 +62,8 @@ const mediaEcho = (id, type, payload) => ({ from: '919607024225', to: '919800000
 const settle = async () => { for (let i = 0; i < 20; i += 1) await new Promise((r) => setImmediate(r)); };
 
 test.beforeEach(() => {
-  db = { customers: [], messages: [] };
+  // The owner_phone_media switch is on for the category unless a test turns it off.
+  db = { customers: [], messages: [], category_features: [{ category: 'travels', feature: 'owner_phone_media', is_enabled: true }], business_features: [] };
   emitted = []; logs = []; nextId = 1; downloads = []; uploads = [];
   downloadImpl = async () => ({ buffer: Buffer.from('x'), mimeType: 'image/jpeg' });
   uploadImpl = async (_buf, folder, id, mime) => ({ url: `https://r2.test/${folder}/${id}.${mime.split('/')[1]}` });
@@ -165,7 +167,8 @@ test('audio, sticker and text echoes never trigger a download; a duplicate echo 
 });
 
 test('echoMediaOf: only image / video / document with an id', () => {
-  assert.deepEqual(echoMediaOf(mediaEcho('a', 'image', { id: 'm', mime_type: 'image/png' })), { type: 'image', id: 'm', mimeType: 'image/png' });
+  assert.deepEqual(echoMediaOf(mediaEcho('a', 'image', { id: 'm', mime_type: 'image/png' })), { type: 'image', id: 'm', mimeType: 'image/png', filename: null });
+  assert.equal(echoMediaOf(mediaEcho('a', 'document', { id: 'm', filename: 'Fees.pdf' })).filename, 'Fees.pdf');
   assert.equal(echoMediaOf(mediaEcho('a', 'image', { caption: 'no id' })), null);
   assert.equal(echoMediaOf(mediaEcho('a', 'audio', { id: 'm' })), null);
   assert.equal(echoMediaOf({ type: 'text', text: { body: 'x' } }), null);
@@ -179,5 +182,52 @@ test('storeEchoMedia never throws, even when the database update fails', async (
   try {
     const url = await storeEchoMedia(tenant, { id: 'm1', customer_id: 'c1' }, { type: 'image', id: 'x', mimeType: null });
     assert.equal(url, null);
+  } finally { supabase.from = realFrom; }
+});
+
+test('switch off: nothing is downloaded or uploaded, but the WhatsApp media id, mime and filename are stored', async () => {
+  db.category_features = [];
+  const m = await run(mediaEcho('wamid.O1', 'document', { id: 'media-off', mime_type: 'application/pdf', filename: 'Fees.pdf' }));
+  assert.equal(downloads.length, 0);
+  assert.equal(uploads.length, 0);
+  assert.equal(m.media_url, undefined);
+  assert.equal(m.content, '📄 Fees.pdf');
+  assert.equal(m.wa_media_id, 'media-off');
+  assert.equal(m.wa_media_mime, 'application/pdf');
+  assert.equal(m.wa_media_filename, 'Fees.pdf');
+  assert.equal(emitted.some(e => e[1] === 'message_media'), false);
+});
+
+test('switch off for the category but on for this business (override): downloads', async () => {
+  db.category_features = [];
+  db.business_features = [{ business_id: BIZ, feature: 'owner_phone_media', is_enabled: true }];
+  const m = await run(mediaEcho('wamid.O2', 'image', { id: 'media-ov', mime_type: 'image/jpeg' }));
+  assert.equal(downloads.length, 1);
+  assert.match(m.media_url, /.jpeg$/);
+});
+
+test('switch on for the category but overridden off for this business: media id stored, no download', async () => {
+  db.business_features = [{ business_id: BIZ, feature: 'owner_phone_media', is_enabled: false }];
+  const m = await run(mediaEcho('wamid.O3', 'image', { id: 'media-no', mime_type: 'image/jpeg' }));
+  assert.equal(downloads.length, 0);
+  assert.equal(m.wa_media_id, 'media-no');
+});
+
+test('switch on: the media id is stored too; text and audio echoes never get media columns', async () => {
+  const m = await run(mediaEcho('wamid.O4', 'image', { id: 'media-on', mime_type: 'image/jpeg' }));
+  assert.equal(m.wa_media_id, 'media-on');
+  await run(mediaEcho('wamid.O5', 'audio', { id: 'media-aud', voice: true }));
+  const audio = db.messages.find(x => x.meta_message_id === 'wamid.O5');
+  assert.equal(audio.wa_media_id, undefined);
+});
+
+test('a failing switch lookup counts as off (the echo is still stored with its media id)', async () => {
+  const supabase = require('../config/supabase');
+  const realFrom = supabase.from;
+  supabase.from = (table) => (table === 'category_features' ? (() => { throw new Error('db down'); })() : realFrom(table));
+  try {
+    const m = await run(mediaEcho('wamid.O6', 'image', { id: 'media-err', mime_type: 'image/jpeg' }));
+    assert.equal(downloads.length, 0);
+    assert.equal(m.wa_media_id, 'media-err');
   } finally { supabase.from = realFrom; }
 });

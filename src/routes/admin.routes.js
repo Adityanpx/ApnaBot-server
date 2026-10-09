@@ -23,6 +23,7 @@ const {
   deletePlan
 } = require('../controllers/admin.controller');
 const categoryFeatureController = require('../controllers/categoryFeature.controller');
+const ownerMediaController = require('../controllers/ownerMedia.controller');
 
 // All admin routes — superadmin only
 router.use(protect, requireRole('superadmin'));
@@ -47,6 +48,12 @@ router.put('/businesses/:id/preview-credits',          grantPreviewCredits);
 // category switch; { override: true | false | null }
 router.get('/businesses/:id/features',                 categoryFeatureController.getBusinessFeatures);
 router.put('/businesses/:id/features/:feature',        categoryFeatureController.setBusinessFeature);
+
+// Owner phone-app media: download the last <=7 days of phone-app photos/videos/PDFs
+// after the 'owner_phone_media' switch is turned on
+router.post('/businesses/:id/owner-media/backfill/preview', ownerMediaController.previewBackfill);
+router.post('/businesses/:id/owner-media/backfill',         ownerMediaController.startBackfill);
+router.get('/businesses/:id/owner-media/backfill/status',   ownerMediaController.getBackfillStatus);
 
 // Stats & Revenue
 router.get('/stats',                getPlatformStats);

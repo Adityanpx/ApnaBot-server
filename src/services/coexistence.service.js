@@ -18,7 +18,7 @@ const logger = require('../utils/logger');
 const socketService = require('./socket.service');
 const tenantService = require('./tenant.service');
 const customerPipelineService = require('./customerPipeline.service');
-const { echoMediaOf, storeEchoMedia } = require('./echoMedia.service');
+const { echoMediaOf, isOwnerMediaEnabled, storeEchoMedia } = require('./echoMedia.service');
 const { toCamelCase } = require('../utils/caseConvert');
 const { isIndefinitePause, BOT_PAUSE_DURATION_MS } = require('../utils/botPause');
 const { digits, parseEcho, parseHistoryEntry, parseStateSync, accountUpdateAction } = require('../utils/coexistencePayload');
@@ -267,6 +267,8 @@ const handleEchoes = async (tenant, value) => {
         continue;
       }
       const { row } = parsed;
+      // A photo / video / PDF: Meta's media id is kept on the row whether or not the file is downloaded.
+      const media = echoMediaOf(echo);
       const { customer } = await findOrCreateCustomer(tenant.businessId, row.customerNumber, null);
       const res = await insertOne({
         business_id: tenant.businessId,
@@ -279,6 +281,7 @@ const handleEchoes = async (tenant, value) => {
         status: 'sent',
         sender_type: 'phone_app',
         is_read: true,
+        ...(media ? { wa_media_id: media.id, wa_media_mime: media.mimeType, wa_media_filename: media.filename } : {}),
         ...(row.createdAt ? { created_at: row.createdAt } : {})
       });
       if (res.duplicate) {
@@ -302,9 +305,9 @@ const handleEchoes = async (tenant, value) => {
         logger.error('Error emitting new_message socket event for an echo:', socketError);
       }
 
-      // Photo / video / PDF sent from the phone → R2, in the background (the row keeps its label until then).
-      const media = echoMediaOf(echo);
-      if (media) storeEchoMedia(tenant, res.row, media);
+      // Photo / video / PDF sent from the phone → R2, in the background (the row keeps its label until then),
+      // only when the business has the owner_phone_media switch on; otherwise just the media id above is kept.
+      if (media && await isOwnerMediaEnabled(tenant)) storeEchoMedia(tenant, res.row, media);
     } catch (err) {
       stats.failed += 1;
       logger.error('smb_message_echoes: failed to store an echo', { businessId: tenant.businessId, error: err.message });
