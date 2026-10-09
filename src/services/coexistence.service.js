@@ -18,6 +18,7 @@ const logger = require('../utils/logger');
 const socketService = require('./socket.service');
 const tenantService = require('./tenant.service');
 const customerPipelineService = require('./customerPipeline.service');
+const { echoMediaOf, storeEchoMedia } = require('./echoMedia.service');
 const { toCamelCase } = require('../utils/caseConvert');
 const { isIndefinitePause, BOT_PAUSE_DURATION_MS } = require('../utils/botPause');
 const { digits, parseEcho, parseHistoryEntry, parseStateSync, accountUpdateAction } = require('../utils/coexistencePayload');
@@ -300,6 +301,10 @@ const handleEchoes = async (tenant, value) => {
       } catch (socketError) {
         logger.error('Error emitting new_message socket event for an echo:', socketError);
       }
+
+      // Photo / video / PDF sent from the phone → R2, in the background (the row keeps its label until then).
+      const media = echoMediaOf(echo);
+      if (media) storeEchoMedia(tenant, res.row, media);
     } catch (err) {
       stats.failed += 1;
       logger.error('smb_message_echoes: failed to store an echo', { businessId: tenant.businessId, error: err.message });

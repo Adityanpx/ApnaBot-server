@@ -59,6 +59,8 @@ stub('../utils/logger', {
 });
 stub('./socket.service', { emitToBusiness: (id, event, data) => { emitted.push([id, event, data]); } });
 stub('./tenant.service', { resolveBusinessByPhoneNumberId: async () => null, invalidateTenantCache: async () => {} });
+stub('./whatsapp.service', {});
+stub('./r2.service', {});
 const svc = require('./coexistence.service');
 const { INDEFINITE_PAUSE_SENTINEL } = require('../utils/botPause');
 

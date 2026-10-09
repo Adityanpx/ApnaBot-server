@@ -68,6 +68,8 @@ stub('./tenant.service', {
   resolveBusinessByPhoneNumberId: async (id) => resolveTenant(id),
   invalidateTenantCache: async (id) => { invalidated.push(id); }
 });
+stub('./whatsapp.service', {});
+stub('./r2.service', {});
 const svc = require('./coexistence.service');
 
 const BIZ = 'b1';
