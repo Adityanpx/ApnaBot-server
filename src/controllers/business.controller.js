@@ -89,6 +89,8 @@ const getBusiness = async (req, res, next) => {
     const { remaining, resetAt } = bookingService.getPreviewCreditsStatus(business);
     businessData.previewCreditsRemaining = remaining;
     businessData.previewCreditsResetAt = resetAt;
+    // Lets the apps hide wallet UI while billing is off (the /api/wallet routes 404).
+    businessData.walletEnabled = config.WALLET_BILLING_ENABLED === true;
 
     return successResponse(res, 200, businessData);
   } catch (error) {

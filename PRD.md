@@ -460,7 +460,9 @@ question nodes) plus web-form links for Free demo / Admission.
   `?tags=` (ANY; `tags=a&tags=b` or `tags=a,b`). `/api/broadcasts` accepts JSON
   bodies up to 1 MB (2000 ids is ~80 KB); every other route keeps 100 KB.
   **Send is claimed atomically:** `sendBroadcast` flips `draft → sending` with
-  one conditional UPDATE before the wallet debit; a concurrent send gets 409
+  one conditional UPDATE before the wallet debit (the debit and rate-card lookup
+  happen only when `WALLET_BILLING_ENABLED=true`; it is off by default, so
+  broadcasts are currently unbilled); a concurrent send gets 409
   "already being sent". A failure before anything is queued refunds and puts it
   back to draft; if only some batches queue, the rest are refunded,
   `total_recipients` is lowered and the draft is NOT released (a retry would
@@ -468,6 +470,13 @@ question nodes) plus web-form links for Free demo / Admission.
   hosted project):** a response is capped at 1000 rows (`max_rows`) and an
   `in(...)` filter of ~400 UUIDs fails (350 works), so id lookups go in chunks
   of 200 (`ID_CHUNK`) and unbounded reads are paged.
+- **Wallet is dormant by default (`WALLET_BILLING_ENABLED`, off unless `=true`):**
+  all four `/api/wallet/*` routes return 404 `{ message: "Wallet is not enabled" }`
+  (`requireWalletEnabled`, `wallet.middleware.js`) — no wallet row is created and
+  no Razorpay order is made. `GET /api/business` exposes `walletEnabled`
+  (boolean) so the apps can hide wallet UI. Send paths (broadcast, demo
+  reminder, follow-up sweep) already skip the debit when the flag is off; rate-card
+  routes are unchanged.
 - **Demo time + reminders (`bookings.scheduled_for / reminder_status /
   reminder_note`, `settings.demoForm.reminder` off|2h|evening):** on a Free
   demo request the owner fixes the time (`PUT /api/bookings/:id/demo-time`)
@@ -475,7 +484,8 @@ question nodes) plus web-form links for Free demo / Admission.
   BullMQ delayed job (`demo-reminder` queue, one job per booking) reminds
   them 2 hours before / 7 PM India time the evening before. Both messages go
   as free text inside the parent's 24-hour window, else as the business's
-  `apnabot_demo_class` UTILITY template (wallet-charged like a broadcast),
+  `apnabot_demo_class` UTILITY template (wallet-charged like a broadcast, when
+  `WALLET_BILLING_ENABLED=true`; otherwise free),
   else not at all (`reminder_note` says why). The template is created and
   submitted to Meta on Publish when a reminder is on; Bot Builder shows its
   approval. The worker re-checks the booking (time, status, reminder still
@@ -626,7 +636,7 @@ tracked as a deferred "future initiative" — it's built and live.
   booking paid also confirms it and WhatsApps the customer. No automatic
   detection: payments go straight to the owner's personal UPI, by design
   (no gateway for ApnaBot to support). Razorpay remains ONLY for
-  ApnaBot's own subscriptions/wallet; the Razorpay/UPI payment-link
+  ApnaBot's own subscriptions (and wallet top-ups when billing is on); the Razorpay/UPI payment-link
   endpoints and `payment_link.*` webhook handlers were removed.
   `bookings.payment_link`/`upi_link`/`payment_id`/`razorpay_order_id` are
   left in place, unused.

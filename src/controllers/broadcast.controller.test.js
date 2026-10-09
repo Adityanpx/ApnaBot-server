@@ -58,7 +58,8 @@ stub('../services/wallet.service', {
   refundToWallet: async (...a) => { refunds.push(a); },
   getOrCreateWallet: async () => ({ balance_paise: 5 })
 });
-stub('../services/rateCard.service', { getRateForMessage: async () => 80 });
+let rateLookups = 0;
+stub('../services/rateCard.service', { getRateForMessage: async () => { rateLookups += 1; return 80; } });
 stub('../queues/broadcast.queue', {
   addToBroadcastQueue: async (job) => {
     const n = queueCalls++;
@@ -89,7 +90,7 @@ const tpl = (status) => ({ id: 't', business_id: 'b', name: 'promo', status, cat
 
 test.beforeEach(() => {
   inserted.length = 0; queued.length = 0; debits.length = 0; refunds.length = 0; billing = true;
-  resolveCalls.length = 0; categoryLookups.length = 0;
+  resolveCalls.length = 0; categoryLookups.length = 0; rateLookups = 0;
   broadcastState = { ...draft }; audience = [{ id: 'c1', whatsapp_number: '911', name: 'A' }];
   failQueue = () => false; debitError = null; queueCalls = 0;
 });
@@ -301,4 +302,20 @@ test('preview: the audience is resolved with the stored template category; no us
   resolveCalls.length = 0;
   await call(getBroadcastRecipientsPreview, { params: { id: 'bc' } });
   assert.deepEqual(resolveCalls[0].options, { category: null });
+});
+
+test('send: the rate card is read only when wallet billing is on', async () => {
+  templateRow = tpl('approved');
+  billing = false;
+  let res = await call(sendBroadcast, { params: { id: 'bc' } });
+  assert.equal(res.statusCode, 200);
+  assert.equal(rateLookups, 0);
+  assert.equal(debits.length, 0);
+  assert.equal(queued[0].ratePerMessage, 0);
+
+  queued.length = 0; broadcastState = { ...draft }; billing = true;
+  res = await call(sendBroadcast, { params: { id: 'bc' } });
+  assert.equal(res.statusCode, 200);
+  assert.equal(rateLookups, 1);
+  assert.equal(queued[0].ratePerMessage, 80);
 });

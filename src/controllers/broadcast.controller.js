@@ -286,7 +286,11 @@ const sendBroadcast = async (req, res, next) => {
     // this hardcode goes away once other countries are seeded.
     const countryCode = 'IN';
     const category = templateRow.category.toLowerCase();
-    const ratePerMessage = await rateCardService.getRateForMessage(countryCode, category);
+    // Nothing is charged while wallet billing is off, so skip the rate lookup
+    // (a missing rate-card row must not block an unbilled broadcast).
+    const ratePerMessage = config.WALLET_BILLING_ENABLED
+      ? await rateCardService.getRateForMessage(countryCode, category)
+      : 0;
     const estimatedCostPaise = ratePerMessage * customers.length;
 
     // Claim the draft atomically BEFORE any money moves: only one of several

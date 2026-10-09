@@ -43,7 +43,7 @@ const handleRazorpayWebhook = async (event, eventId) => {
   try {
     const { event: eventType, payload } = event;
 
-    // Razorpay is used only for ApnaBot's own subscriptions/wallet now —
+    // Razorpay is used only for ApnaBot's own subscriptions (and wallet top-ups, when WALLET_BILLING_ENABLED) now —
     // businesses' customers pay by QR (see setBookingPaymentStatus below), so
     // no payment_link.* events are expected.
     switch (eventType) {
