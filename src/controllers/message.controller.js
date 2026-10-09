@@ -9,6 +9,7 @@ const { INDEFINITE_PAUSE_SENTINEL, BOT_PAUSE_DURATION_MS, isIndefinitePause } = 
 const customerPipelineService = require('../services/customerPipeline.service');
 const paymentService = require('../services/payment.service');
 const logger = require('../utils/logger');
+const { displayContent } = require('../utils/inboundMessage');
 
 /**
  * GET /api/messages
@@ -44,7 +45,7 @@ const getConversations = async (req, res, next) => {
       const customer = toCamelCase(customerRow);
 
       const [{ data: lastMsg }, { count: unreadCount }] = await Promise.all([
-        supabase.from('messages').select('content, direction, created_at')
+        supabase.from('messages').select('content, direction, created_at, type')
           .eq('customer_id', customer.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
         supabase.from('messages').select('*', { count: 'exact', head: true })
           .eq('customer_id', customer.id).eq('direction', 'inbound').eq('is_read', false)
@@ -53,7 +54,7 @@ const getConversations = async (req, res, next) => {
       return {
         _id: customer.id,
         customerNumber: customer.whatsappNumber,
-        lastMessage: lastMsg?.content ?? null,
+        lastMessage: displayContent(lastMsg), // unsupported rows: the friendly label, whatever was stored
         lastMessageAt: lastMsg?.created_at ?? customer.lastMessageAt,
         lastDirection: lastMsg?.direction ?? null,
         unreadCount: unreadCount || 0,

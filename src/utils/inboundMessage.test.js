@@ -1,7 +1,7 @@
 // Run: node --test src/utils/inboundMessage.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { decideDuplicate, unsupportedLabel } = require('./inboundMessage');
+const { decideDuplicate, unsupportedLabel, displayContent } = require('./inboundMessage');
 
 test('decideDuplicate: no stored row -> insert, whatever the type', () => {
   assert.equal(decideDuplicate(null, 'text'), 'insert');
@@ -28,4 +28,27 @@ test('unsupportedLabel: one friendly label whatever the type or error code (the 
   assert.equal(unsupportedLabel({ type: 'poll' }), label);
   assert.equal(unsupportedLabel({}), label);
   assert.equal(unsupportedLabel({ type: 'x'.repeat(500) }), label);
+});
+
+test('displayContent: an unsupported row shows the friendly label, old stored text or not', () => {
+  const label = unsupportedLabel();
+  const old = "⚠️ Message couldn't be displayed (type: unsupported, error 131051) - ask the customer to resend";
+  assert.equal(displayContent({ type: 'unsupported', content: old }), label);
+  assert.equal(displayContent({ type: 'unsupported', content: label }), label);
+  assert.equal(displayContent({ type: 'unsupported', content: '' }), label);
+  assert.equal(displayContent({ type: 'unsupported' }), label);
+});
+
+test('displayContent: any other row shows its content unchanged', () => {
+  assert.equal(displayContent({ type: 'text', content: 'Hello' }), 'Hello');
+  assert.equal(displayContent({ type: 'image', content: '📷 Photo' }), '📷 Photo');
+  assert.equal(displayContent({ type: 'text', content: '' }), '');
+});
+
+test('displayContent: no type -> content unchanged; no row or no content -> null', () => {
+  assert.equal(displayContent({ content: 'Hi' }), 'Hi');
+  assert.equal(displayContent({ type: null, content: 'Hi' }), 'Hi');
+  assert.equal(displayContent({ type: 'text', content: null }), null);
+  assert.equal(displayContent(null), null);
+  assert.equal(displayContent(undefined), null);
 });

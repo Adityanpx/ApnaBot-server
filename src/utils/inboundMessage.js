@@ -39,6 +39,19 @@ const UNSUPPORTED_LABEL = "WhatsApp couldn't show this message here — open it 
 const unsupportedLabel = (_message) => UNSUPPORTED_LABEL;
 
 /**
+ * The text the inbox shows for a stored message row. Rows of type 'unsupported'
+ * saved before the friendly label existed hold "⚠️ Message couldn't be
+ * displayed (type: unsupported, error 131051)…" in content, so the label is
+ * chosen by type on read — no data rewrite. Every other row shows its content.
+ * @param {{type?: string|null, content?: string|null}|null|undefined} row - a messages row
+ * @returns {string|null}
+ */
+const displayContent = (row) => {
+  if (row?.type === WEAK_TYPE) return unsupportedLabel(row);
+  return row?.content ?? null;
+};
+
+/**
  * Inbox text for an inbound message that has no text body — without it,
  * photos (e.g. a customer's payment screenshot), documents and voice notes
  * were stored with empty content and showed as blank bubbles. Photos are
@@ -70,4 +83,4 @@ const inboundMediaLabel = (message) => {
   }
 };
 
-module.exports = { WEAK_TYPE, INBOUND_MESSAGE_TYPES, decideDuplicate, unsupportedLabel, inboundMediaLabel };
+module.exports = { WEAK_TYPE, INBOUND_MESSAGE_TYPES, decideDuplicate, unsupportedLabel, displayContent, inboundMediaLabel };
