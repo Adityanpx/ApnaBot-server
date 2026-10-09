@@ -574,6 +574,12 @@ tracked as a deferred "future initiative" — it's built and live.
   `unsupported` rows), `meta_message_id` with a **partial unique index on
   (business_id, meta_message_id)** (migration `20261005140000`). Outbound rows
   carry their wamid from 2026-10-05 (before that, none of the first 1,368 did).
+- `messages` media columns (2026-10-09): `wa_media_id`, `wa_media_mime`,
+  `wa_media_filename` (Meta's media id of a phone-app echo's photo / video /
+  PDF - always stored, whether or not the file is downloaded) and
+  `media_removed_at` (set when storage cleanup removed the file; `media_url`
+  is NULL then and the message keeps its label). See "Owner phone-app media &
+  storage cleanup".
 - `message_templates` — one row per WhatsApp template. `source` (`app` |
   `meta_sync`), `meta_template_id`, `status` (draft, pending, approved,
   rejected, paused, disabled, deleted), raw `meta_status`, `quality_score`,
@@ -705,6 +711,92 @@ for what is actually deployed before assuming.
   subscribe `smb_message_echoes`, check the first real echoes in the logs, then
   turn it on. Search cab AI (live) is affected by both the moment they are on.
 
+## Owner phone-app media & storage cleanup (built 2026-10-09)
+
+Commits a506c5b (owner media switch) and 1bc9a8f (storage cleanup). Migrations
+`20261009130000_owner_phone_media.sql` then `20261009140000_storage_cleanup.sql` -
+apply BEFORE deploying the server.
+
+**Owner phone-app media switch.** Feature key `owner_phone_media` (label
+"Save owner's phone-app media") in the normal `category_features` /
+`business_features` mechanism: every category, default OFF, per-business
+override as usual. Photos / videos / PDFs the owner sends from the WhatsApp
+Business app (`smb_message_echoes`) are downloaded to R2 (`echo-media/{businessId}/
+{messageId}.ext`, `message_media` socket event, caps 10 / 16 / 10 MB) ONLY while
+the switch is on for that business (`echoMedia.service.js`; a failed switch lookup
+counts as off). The echo row always stores `wa_media_id` / `wa_media_mime` /
+`wa_media_filename`, so with the switch off nothing is downloaded and the row keeps
+its label ("Photo"). Customer (inbound) media is unchanged - always downloaded
+(`inbound-media/`). **Going live changed behaviour:** owner phone-app media stopped
+downloading for every coexistence business (incl. Search cab AI) until its switch is
+turned on. (The earlier echo-media commit eddc414 was not in this file before; this
+section is its first mention.)
+Backfill, superadmin only (`ownerMedia.controller.js`, `ownerMediaBackfill.service.js`):
+`POST /api/admin/businesses/:id/owner-media/backfill/preview {days}` ->
+`{count, estimatedBytes: null, days}` (reads our database only - no Meta call, so no
+size estimate); `POST .../backfill {days}` starts a background job (202; needs the switch
+on and a connected number; one job per business; 409 otherwise); `GET .../backfill/status`.
+`days` 1-7 (default 7). Rows with `media_removed_at` are never fetched back. Job state is
+in memory (a restart drops a running job; rerun it). Expired Meta ids (400 / 404) are
+counted `expired` and skipped.
+
+**Storage cleanup (Super Admin).** Removes old R2 files, by hand or by rule.
+**Touches R2 and ApnaBot's database only - never Meta / WhatsApp** (enforced by a static
+test on the modules' `require`s and a runtime trap test; keep it that way).
+- **Files known to R2** (folders `utils/storageKinds.js`): `inbound-media/`, `echo-media/`,
+  `business-media/` (library), `template-headers/`, `payment-qr/`, `business-profiles/`,
+  `vehicle-photos/`, `vehicle-catalog/`. Anything else in the bucket is ignored.
+- **Kinds:** chat_inbound, chat_echo, library, template_header, bot_node_image, payment_qr,
+  logo, vehicle_photo, course_image, orphan. A library file's kind comes from what uses it
+  (bot node / snapshot > template header > course image > plain library).
+- **Classification** (`storageInventory.service.js`): *safe* = a chat file whose message still
+  points at it, or an unused library file; *in use* = referenced by `flow_nodes`
+  (`image_url` / `media_id`), `flow_snapshots`, a template header, a course
+  (`image_media_id`), the payment QR, the profile image or a vehicle photo; *orphan* =
+  nothing references it. **Protected - never purged, even with include-in-use:** an image-only
+  reply (node or snapshot node with an empty base label: with the image gone it would send an
+  empty message, which Meta rejects), a payment QR while `require_advance_payment` is on, a
+  shared `vehicle_type_catalog` photo, and anything a category template snapshot
+  (`flow_snapshots.is_category_template`) uses ("used by category template").
+- **Flow:** preview (writes nothing) -> `POST /runs` marks the selection (`storage_cleanup_runs` +
+  `storage_cleanup_items`, status `pending`, `pending_delete_at` = now + 24h) -> cancel until
+  then -> the sweeper purges. Files already in an open run are not marked twice. Typed
+  confirmations, checked server-side: in-use files need the business's exact name (one business,
+  never with "all"); "all businesses" needs `DELETE ALL BUSINESSES MEDIA`. Filters: kinds, IST
+  from / to (inclusive), business or all, minBytes, includeInUse. Max 50,000 files per run.
+  `storage_cleanup_items` is also the audit trail / CSV (`GET /runs/:id/export.csv`).
+- **Sweeper** (`storageCleanupSweeper.service.js`; `server.js`, in-process timer every 15 min,
+  first run 2 min after start; **env `ENABLE_STORAGE_SWEEPER`, default off** - keep it off
+  everywhere but the production server, it deletes files): claims due items atomically
+  (`claim_storage_cleanup_items`, `FOR UPDATE SKIP LOCKED` + `claimed_at`); re-checks every item
+  against the database as it is NOW (something safe at marking may be in use today -> status
+  `skipped_in_use`); clears DB references FIRST, then deletes from R2 (batches <= 1000 keys);
+  a failed item keeps its `error` and is retried (<= 5 attempts, >= 15 min apart); the run ends
+  `done` or `failed`. Purge effects: `messages.media_url` -> NULL + `media_removed_at` (message,
+  label and row kept); library row deleted + `storage_used_bytes` decremented (once); bot node
+  `image_url` / `media_id` nulled (the reply goes out as text only) and the business's cached
+  reply nodes (`flow:{businessId}`, 1h TTL) invalidated; template `header_media_*` /
+  `header_image_*` cleared and `send_support` recomputed locally (template rows are never
+  deleted); stored copies in personal flow snapshots stripped of the image (so a restore can't
+  bring back a dead URL); course image, payment QR, profile image, vehicle photo fields nulled.
+  Never deleted: messages, templates, flow nodes, snapshots.
+- **Automatic retention.** `platform_settings` row `chat_media_retention_days` (NULL = off, min 7) +
+  `businesses.chat_media_retention` (NULL = follow the platform, `'never'`, or days). Applies ONLY
+  to chat_inbound / chat_echo. Once per IST day (unique `automatic_day`) a tick creates a normal run
+  (`is_automatic`, same 24h pending window, visible and cancellable in Runs). Age = R2 last-modified.
+- **Orphan scan** (background job, in memory): unreferenced objects older than 48h in the known
+  folders -> a normal `pending` run of kind `orphan`; needs the all-businesses phrase; items are
+  re-verified as still unreferenced at purge time.
+- **Endpoints**, all superadmin, `/api/admin/storage-cleanup/*`: `GET /summary`, `POST /preview`,
+  `POST /runs`, `GET /runs`, `GET /runs/:id`, `POST /runs/:id/cancel`, `GET /runs/:id/export.csv`,
+  `POST /orphan-scan`, `GET /orphan-scan` (status), `GET|PUT /settings`, `PUT /businesses/:id/retention`.
+  Manual script: `src/scripts/storageCleanup.js` (dry run by default; `--confirm` needs `--run <id>`).
+  **Never `--confirm` against Search cab AI**; an all-businesses run can include its files - check
+  the run's CSV before the 24h window ends.
+- **Not built yet:** the Super Admin UI (storage page, runs list, retention settings, the owner-media
+  backfill panel) - server only so far. The claim SQL and migration were exercised only through an
+  in-memory model in tests, not against a real Postgres / R2: dry-run on a test database first.
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism
@@ -781,7 +873,18 @@ for what is actually deployed before assuming.
 15. **Webhook body logging.** `receiveWebhook` still prints the whole body (phone
    numbers, message text) to the logs for everything except history / contact sync.
 
+16. **Storage cleanup UI + real-database check (2026-10-09).** Server side is built; the Super
+   Admin screens are not, and the migration / `claim_storage_cleanup_items` have not run against
+   a real database. A summary / preview scans R2 in the request (capped at 200k objects).
+17. **Owner-media backfill panel + job persistence (2026-10-09).** Backfill job state is in memory;
+   the Features screen has no backfill panel yet.
+
 ## Session log (append here as major milestones land)
+- 2026-10-09: Owner phone-app media switch (`owner_phone_media`, default off - echo media
+  stopped downloading until switched on; `wa_media_id` always stored; 7-day superadmin backfill)
+  and storage cleanup (manual / orphan / automatic chat-media retention runs, 24h pending,
+  sweeper behind `ENABLE_STORAGE_SWEEPER`, protected image-only / advance-payment QR / category
+  template files). Commits a506c5b, 1bc9a8f. Details: "Owner phone-app media & storage cleanup".
 - 2026-10-07: Broadcast audience builder, phase 1 (server only; web, test send,
   paste-numbers and scheduling are later phases). In order: atomic claim in
   `sendBroadcast` (fixes a double-send/double-debit race) -> id lookups chunked
