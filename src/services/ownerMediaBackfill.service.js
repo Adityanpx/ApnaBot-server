@@ -26,7 +26,11 @@ const parseDays = (value) => {
   return Number.isInteger(n) && n >= 1 && n <= MAX_DAYS ? n : null;
 };
 
-/** Echo rows still waiting for their file: phone_app, media id kept, no media_url, created within `days`. */
+/**
+ * Echo rows still waiting for their file: phone_app, media id kept, no media_url,
+ * created within `days`. A file that storage cleanup removed (media_removed_at)
+ * is never fetched back.
+ */
 const listCandidates = async (businessId, days, now = new Date()) => {
   const since = new Date(now.getTime() - days * DAY_MS).toISOString();
   const out = [];
@@ -34,7 +38,7 @@ const listCandidates = async (businessId, days, now = new Date()) => {
     const { data, error } = await supabase.from('messages')
       .select('id, customer_id, type, wa_media_id, wa_media_mime, created_at')
       .eq('business_id', businessId).eq('sender_type', 'phone_app')
-      .not('wa_media_id', 'is', null).is('media_url', null)
+      .not('wa_media_id', 'is', null).is('media_url', null).is('media_removed_at', null)
       .gte('created_at', since)
       .order('created_at', { ascending: false }).order('id', { ascending: true })
       .range(from, from + PAGE - 1);

@@ -1,4 +1,4 @@
-const { S3Client, PutObjectCommand, DeleteObjectCommand } = require('@aws-sdk/client-s3');
+const { S3Client, PutObjectCommand, DeleteObjectCommand, DeleteObjectsCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
 const config = require('../config/env');
 
 const r2 = new S3Client({
@@ -46,4 +46,49 @@ const deleteImage = async (key) => {
   }));
 };
 
-module.exports = { uploadImage, deleteImage };
+const DELETE_BATCH_MAX = 1000; // S3 DeleteObjects limit
+
+/**
+ * List the objects under a prefix (storage cleanup). Stops after maxObjects.
+ * @returns {Promise<{ objects: {key:string,size:number,lastModified:Date|null}[], truncated: boolean }>}
+ */
+const listObjects = async (prefix, { maxObjects = 200000 } = {}) => {
+  const objects = [];
+  let token;
+  do {
+    const res = await r2.send(new ListObjectsV2Command({
+      Bucket: config.R2_BUCKET_NAME,
+      Prefix: prefix,
+      ContinuationToken: token
+    }));
+    for (const o of res.Contents || []) {
+      objects.push({ key: o.Key, size: o.Size || 0, lastModified: o.LastModified || null });
+    }
+    token = res.IsTruncated ? res.NextContinuationToken : undefined;
+  } while (token && objects.length < maxObjects);
+  return { objects, truncated: !!token };
+};
+
+/**
+ * Delete many objects, at most 1000 per request. A key that is already gone
+ * counts as deleted (S3 semantics).
+ * @returns {Promise<{ failed: {key:string,message:string}[] }>}
+ */
+const deleteObjects = async (keys) => {
+  const failed = [];
+  for (let i = 0; i < keys.length; i += DELETE_BATCH_MAX) {
+    const chunk = keys.slice(i, i + DELETE_BATCH_MAX);
+    try {
+      const res = await r2.send(new DeleteObjectsCommand({
+        Bucket: config.R2_BUCKET_NAME,
+        Delete: { Objects: chunk.map(Key => ({ Key })), Quiet: true }
+      }));
+      for (const e of res.Errors || []) failed.push({ key: e.Key, message: e.Message || e.Code || 'delete failed' });
+    } catch (err) {
+      chunk.forEach(key => failed.push({ key, message: err.message }));
+    }
+  }
+  return { failed };
+};
+
+module.exports = { uploadImage, deleteImage, listObjects, deleteObjects, DELETE_BATCH_MAX };

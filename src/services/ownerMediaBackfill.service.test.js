@@ -144,3 +144,11 @@ test('start with nothing to do finishes immediately', async () => {
   assert.equal(job.status, 'done');
   assert.equal(job.total, 0);
 });
+
+test('rows whose file storage cleanup removed (media_removed_at) are not backfilled again', async () => {
+  db.messages = [echo('m1'), echo('purged', { media_removed_at: '2026-10-08T00:00:00Z' })];
+  assert.equal((await svc.preview('b1', 7, NOW)).count, 1);
+  await svc.start(business, 7, NOW);
+  await settle('b1');
+  assert.deepEqual(downloads.map(d => d[0]), ['wa-m1']);
+});

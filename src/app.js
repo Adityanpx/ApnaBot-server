@@ -21,6 +21,7 @@ const publicRoutes = require('./routes/public.routes');
 const vehicleCatalogRoutes = require('./routes/vehicleCatalog.routes');
 const courseCatalogRoutes = require('./routes/courseCatalog.routes');
 const categoryFeatureRoutes = require('./routes/categoryFeature.routes');
+const storageCleanupRoutes = require('./routes/storageCleanup.routes');
 const botSettingsRoutes = require('./routes/botSettings.routes');
 const courseRoutes = require('./routes/course.routes');
 const vehicleRoutes = require('./routes/vehicle.routes');
@@ -124,6 +125,8 @@ app.use('/api/admin/vehicle-catalog', vehicleCatalogRoutes);
 app.use('/api/admin/course-catalog', courseCatalogRoutes);
 // Super Admin feature switches per category (e.g. coaching → bot_builder).
 app.use('/api/admin/category-features', categoryFeatureRoutes);
+// Super Admin storage cleanup (R2) - superadmin only; above the /api/admin catch-all.
+app.use('/api/admin/storage-cleanup', storageCleanupRoutes);
 app.use('/api/admin/rate-cards', rateCardRoutes);
 app.use('/api/admin/category-templates', categoryTemplateRoutes);
 app.use('/api/admin/whatsapp-flows', whatsappFlowRoutes);

@@ -116,6 +116,12 @@ module.exports = {
   // would message real customers. Read by server.js (the 15-min sweep);
   // scripts/runFollowupSweep.js is a manual run and doesn't need it.
   ENABLE_FOLLOWUP_SWEEPER: process.env.ENABLE_FOLLOWUP_SWEEPER === 'true',
+  // Storage cleanup sweeper (purges marked R2 files after their 24h pending
+  // window, and creates the daily automatic chat-media retention run). Off by
+  // default and must stay off everywhere except the one production server:
+  // like the follow-up sweeper it reads the production database directly, and it
+  // DELETES files. Read by server.js; scripts/storageCleanup.js is a manual run.
+  ENABLE_STORAGE_SWEEPER: process.env.ENABLE_STORAGE_SWEEPER === 'true',
   // (Bot Builder + Courses are switched per category from Super Admin —
   // category_features — not by an environment variable.)
   // Optional: configurable ceiling on recipients per broadcast send. See the

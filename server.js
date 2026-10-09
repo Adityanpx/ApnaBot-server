@@ -94,6 +94,40 @@ if (config.ENABLE_FOLLOWUP_SWEEPER) {
   logger.info('Follow-up sweeper scheduled (first run in 60 s, then every 15 min)');
 }
 
+// ── Storage cleanup sweeper (every 15 min) ────────────────────────────────
+// Off unless ENABLE_STORAGE_SWEEPER=true (config/env.js). Purges the R2 files of
+// cleanup runs whose 24h pending window has passed, and once a day creates the
+// automatic chat-media retention run. In-process timer like the follow-up
+// sweeper; a tick that finds the previous one still running is skipped, and
+// claims are atomic in the database so two instances cannot purge the same item.
+if (config.ENABLE_STORAGE_SWEEPER) {
+  const storageSweeper = require('./src/services/storageCleanupSweeper.service');
+  const STORAGE_SWEEP_FIRST_DELAY_MS = 2 * 60 * 1000;
+  const STORAGE_SWEEP_INTERVAL_MS = 15 * 60 * 1000;
+  let storageSweepRunning = false;
+
+  const runStorageSweep = async () => {
+    if (storageSweepRunning) {
+      logger.warn('Storage cleanup sweep still running — skipping this tick');
+      return;
+    }
+    storageSweepRunning = true;
+    try {
+      await storageSweeper.runTick();
+    } catch (err) {
+      logger.error('Storage cleanup sweep failed:', err);
+    } finally {
+      storageSweepRunning = false;
+    }
+  };
+
+  setTimeout(() => {
+    runStorageSweep();
+    setInterval(runStorageSweep, STORAGE_SWEEP_INTERVAL_MS);
+  }, STORAGE_SWEEP_FIRST_DELAY_MS);
+  logger.info('Storage cleanup sweeper scheduled (first run in 2 min, then every 15 min)');
+}
+
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
   logger.error('Unhandled Rejection:', err);
