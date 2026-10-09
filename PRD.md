@@ -914,6 +914,9 @@ Customers opt in to marketing in three ways besides the owner's manual toggle an
    a real database. A summary / preview scans R2 in the request (capped at 200k objects).
 17. **Owner-media backfill panel + job persistence (2026-10-09).** Backfill job state is in memory;
    the Features screen has no backfill panel yet.
+18. **Supabase version of `rotateEncryptionKey` (encryption key rotation).** The old script
+   (re-encrypting stored access tokens with a new `ENCRYPTION_KEY`) was Mongo-only and was deleted
+   in the MongoDB cleanup; no replacement exists yet.
 
 ## Session log (append here as major milestones land)
 - 2026-10-11: Post-booking marketing-consent question (server only; see "Marketing consent").

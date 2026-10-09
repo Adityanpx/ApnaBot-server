@@ -38,8 +38,6 @@ if (missingEnvVars.length > 0) {
 module.exports = {
   PORT: process.env.PORT,
   NODE_ENV: process.env.NODE_ENV,
-  // MONGODB_URI is no longer read anywhere (MongoDB fully replaced by Supabase).
-  // Still needs to be removed from Render's env vars.
   REDIS_URL: process.env.REDIS_URL,
   SUPABASE_URL: process.env.SUPABASE_URL,
   SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY,

@@ -3,7 +3,6 @@
     "allow": [
       "Bash(node --check src/services/smartFallback.service.js)",
       "Bash(node --check src/controllers/webhook.controller.js)",
-      "Bash(node --check src/models/Shop.js)",
       "Bash(node --check src/services/tenant.service.js)",
       "Bash(cp \"C:\\\\Users\\\\Admin\\\\AppData\\\\Local\\\\Temp\\\\claude\\\\d--flutter-projects-ApnaBot-server\\\\2aebd4ad-89e0-4a73-bc12-d637d3225b23\\\\scratchpad\\\\live_list_test.js\" ./live_list_test_tmp.js)",
       "Bash(node ./live_list_test_tmp.js)",
