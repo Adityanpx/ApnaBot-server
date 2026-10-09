@@ -238,3 +238,11 @@ test('summarize: totals by kind and by business', () => {
   assert.deepEqual(s.byKind.chat_inbound, { count: 2, bytes: 150 });
   assert.deepEqual(s.byBusiness.map(b => [b.name, b.bytes]), [['SG Travels', 400], ['Averix', 50]]);
 });
+
+test('summarize: chatMediaBytes per business counts chat_inbound + chat_echo only', () => {
+  const s = inventory.summarize([
+    entry({ sizeBytes: 100 }), entry({ sizeBytes: 40, kind: 'chat_echo' }), entry({ sizeBytes: 300, kind: 'library' }),
+    entry({ sizeBytes: 7, kind: 'orphan' }), entry({ sizeBytes: 50, businessId: B2, kind: 'library' })
+  ], new Map([[B1, { name: 'SG Travels' }], [B2, { name: 'Averix' }]]));
+  assert.deepEqual(s.byBusiness.map(b => [b.name, b.bytes, b.chatMediaBytes]), [['SG Travels', 447, 140], ['Averix', 50, 0]]);
+});

@@ -109,6 +109,37 @@ test('files already waiting in an open run are not marked twice', async () => {
   await rejects(cleanup.createManualRun({ businessId: B1 }, 'a'), 400, /Nothing matches/);
 });
 
+test('summary: addedThisMonth counts R2 last-modified in the current India-time month', async () => {
+  const now = new Date('2026-10-15T12:00:00Z');
+  const put = (name, lastModified, size) => {
+    const key = `inbound-media/${B1}/${name}.jpeg`;
+    h.state.bucket.set(key, { size, lastModified: new Date(lastModified) });
+    return key;
+  };
+  put(uuid(1), '2026-09-30T18:29:59Z', 1);   // 23:59:59 IST on 30 Sep - last month
+  put(uuid(2), '2026-09-30T18:30:00Z', 20);  // 00:00:00 IST on 1 Oct - this month
+  put(uuid(3), '2026-10-14T09:00:00Z', 300);
+  const s = await cleanup.summary({ now });
+  assert.deepEqual(s.addedThisMonth, { files: 2, bytes: 320 });
+  assert.equal(s.count, 3, 'the totals still cover every file');
+});
+
+test('summary: addedThisMonth is zero when nothing is in R2', async () => {
+  const s = await cleanup.summary({ now: new Date('2026-10-15T12:00:00Z') });
+  assert.deepEqual(s.addedThisMonth, { files: 0, bytes: 0 });
+});
+
+test('summary: byBusiness carries chatMediaBytes (customer + owner chat files only)', async () => {
+  chat(1, B1, { size: 500 });
+  chat(2, B1, { size: 250, folder: 'echo-media' });
+  const lib = h.put('business-media/lib.jpeg', { size: 4000 });
+  db.business_media = [{ id: uuid(100), business_id: B1, r2_key: lib, url: url(lib), file_size_bytes: 4000, media_type: 'image' }];
+  chat(3, B2, { size: 70 });
+  const s = await cleanup.summary();
+  const by = Object.fromEntries(s.byBusiness.map(b => [b.name, [b.bytes, b.chatMediaBytes]]));
+  assert.deepEqual(by, { 'SG Travels': [4750, 750], Averix: [70, 70] });
+});
+
 test('cancel works until the purge time, then not; items follow the run', async () => {
   chat(1, B1);
   const run = await cleanup.createManualRun({ businessId: B1 }, 'a');

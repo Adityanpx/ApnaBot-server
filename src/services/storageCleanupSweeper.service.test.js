@@ -102,6 +102,21 @@ test('library file: row deleted, storage decremented, bot node text-only, templa
   assert.equal(runRow(run.id).status, 'done');
 });
 
+test('bot node image removed: image_removed_at is stamped on that node only', async () => {
+  const key = lib(1);
+  db.flow_nodes = [
+    { id: uuid(200), business_id: B1, keyword: 'hi', label: 'Welcome', image_url: url(key), media_id: uuid(101), image_removed_at: null },
+    { id: uuid(201), business_id: B1, keyword: 'other', label: 'Other', image_url: 'https://elsewhere.test/x.png', media_id: null, image_removed_at: null }
+  ];
+  await markAndDue({ businessId: B1, includeInUse: true, confirmBusinessName: 'SG Travels' });
+  const before = Date.now();
+  await sweeper.runTick({ retention: false });
+  const [hit, other] = db.flow_nodes;
+  assert.equal(hit.image_url, null);
+  assert.ok(hit.image_removed_at && new Date(hit.image_removed_at).getTime() >= before - 1000, 'stamped with the purge time');
+  assert.deepEqual([other.image_url, other.image_removed_at], ['https://elsewhere.test/x.png', null]);
+});
+
 test('legacy template header image: cleared on the template, template kept', async () => {
   const key = h.put('template-headers/header-1.png');
   db.message_templates = [{

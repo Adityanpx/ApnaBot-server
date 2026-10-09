@@ -8,7 +8,7 @@ const supabase = require('../config/supabase');
 const logger = require('../utils/logger');
 const inventory = require('./storageInventory.service');
 const { CHAT_KINDS, KINDS, PREFIX_KIND, KNOWN_PREFIXES } = require('../utils/storageKinds');
-const { istDayStart } = require('../utils/ist');
+const { istDayStart, istMonthStart } = require('../utils/ist');
 
 const PENDING_MS = 24 * 60 * 60 * 1000;
 const INSERT_CHUNK = 500;
@@ -242,8 +242,13 @@ const exportCsv = async (runId) => {
 };
 
 /** GET /summary - bytes / files by kind and per business in R2, plus what is waiting to be purged. */
-const summary = async () => {
+const summary = async ({ now = new Date() } = {}) => {
   const { entries, truncated, businesses } = await inventory.scan({});
+  const monthStartMs = istMonthStart(now).getTime();
+  const addedThisMonth = entries.reduce((acc, e) => {
+    if (e.objectDate && new Date(e.objectDate).getTime() >= monthStartMs) { acc.files += 1; acc.bytes += e.sizeBytes; }
+    return acc;
+  }, { files: 0, bytes: 0 });
   const referenced = entries.filter(e => e.referenced);
   const orphans = entries.filter(e => !e.referenced);
   const { data: pending, error } = await supabase.from('storage_cleanup_items')
@@ -251,6 +256,7 @@ const summary = async () => {
   if (error) throw error;
   return {
     ...inventory.summarize(entries, businesses),
+    addedThisMonth,
     inUse: inventory.summarize(entries.filter(e => e.inUse), businesses).count,
     referencedCount: referenced.length,
     orphanCount: orphans.length,

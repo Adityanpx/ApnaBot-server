@@ -277,8 +277,9 @@ const summarize = (entries, businesses = new Map()) => {
     const k = (byKind[e.kind] = byKind[e.kind] || { count: 0, bytes: 0 });
     k.count += 1; k.bytes += e.sizeBytes;
     const bid = e.businessId || 'none';
-    const b = (byBusiness[bid] = byBusiness[bid] || { businessId: e.businessId, name: e.businessId ? (businesses.get(e.businessId) || {}).name || null : 'Platform / unattributed', count: 0, bytes: 0 });
+    const b = (byBusiness[bid] = byBusiness[bid] || { businessId: e.businessId, name: e.businessId ? (businesses.get(e.businessId) || {}).name || null : 'Platform / unattributed', count: 0, bytes: 0, chatMediaBytes: 0 });
     b.count += 1; b.bytes += e.sizeBytes;
+    if (CHAT_KINDS.includes(e.kind)) b.chatMediaBytes += e.sizeBytes;
   }
   return { count, bytes, byKind, byBusiness: Object.values(byBusiness).sort((a, b) => b.bytes - a.bytes) };
 };

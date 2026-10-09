@@ -351,10 +351,12 @@ const updateReplyNode = async (req, res, next) => {
     // in the request (the legacy path, unchanged) sets image_url only and
     // clears media_id, since the node's image is no longer backed by a
     // library asset once overwritten this way.
+    // Setting a new image also clears image_removed_at (storage cleanup's marker).
     if (mediaId !== undefined) {
       if (mediaId) {
         updateData.image_url = await resolveMediaIdToUrl(businessId, mediaId);
         updateData.media_id = mediaId;
+        updateData.image_removed_at = null;
       } else {
         updateData.image_url = null;
         updateData.media_id = null;
@@ -362,6 +364,7 @@ const updateReplyNode = async (req, res, next) => {
     } else if (imageUrl !== undefined) {
       updateData.image_url = imageUrl || null;
       updateData.media_id = null;
+      if (imageUrl) updateData.image_removed_at = null;
     }
     if (labelTranslations !== undefined) updateData.label_translations = labelTranslations || null;
     if (label !== undefined) updateData.label = label;
@@ -759,6 +762,7 @@ const updateQuestionNode = async (req, res, next) => {
       if (mediaId) {
         updateData.image_url = await resolveMediaIdToUrl(businessId, mediaId);
         updateData.media_id = mediaId;
+        updateData.image_removed_at = null;
       } else {
         updateData.image_url = null;
         updateData.media_id = null;
@@ -766,6 +770,7 @@ const updateQuestionNode = async (req, res, next) => {
     } else if (imageUrl !== undefined) {
       updateData.image_url = imageUrl || null;
       updateData.media_id = null;
+      if (imageUrl) updateData.image_removed_at = null;
     }
     if (summaryLabel !== undefined) updateData.summary_label = summaryLabel;
     if (required !== undefined) updateData.required = required;

@@ -83,7 +83,7 @@ const clearReferences = async (item, nowIso, ctx, snapshotIds = []) => {
   const nodeFilters = [['image_url', url]];
   if (mediaId) nodeFilters.push(['media_id', mediaId]);
   for (const [column, value] of nodeFilters) {
-    const nodes = must(await supabase.from('flow_nodes').update({ image_url: null, media_id: null }).eq(column, value).select('id, business_id'));
+    const nodes = must(await supabase.from('flow_nodes').update({ image_url: null, media_id: null, image_removed_at: nowIso }).eq(column, value).select('id, business_id'));
     (nodes || []).forEach(n => ctx.touchedBusinesses.add(n.business_id));
   }
 

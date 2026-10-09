@@ -22,6 +22,7 @@ const { validateLabelTranslations } = require('../utils/bookingFieldValidation')
 const { validateFlowFields } = require('../utils/flowFieldsValidation');
 const { toCamelCase } = require('../utils/caseConvert');
 const { isValidLanguageCode } = require('../utils/languageCatalog');
+const logger = require('../utils/logger');
 
 const VALID_MATCH_TYPES = ['exact', 'contains', 'startsWith'];
 const VALID_CONTENT_TYPES = ['text', 'buttons', 'list', 'location', 'location_request'];
@@ -639,6 +640,17 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
     p_edge_deletes: edgeDeleteIds
   });
   if (rpcError) throw rpcError;
+
+  // A node that had its image removed by storage cleanup and was just given a new one: clear the
+  // marker. The RPC's UPDATE SET leaves image_removed_at alone (its payload never carries it).
+  const imageReplacedIds = nodeUpserts
+    .filter(n => n.image_url && currentNodeById.get(n.id) && currentNodeById.get(n.id).image_removed_at)
+    .map(n => n.id);
+  if (imageReplacedIds.length > 0) {
+    const { error: markerErr } = await supabase.from('flow_nodes').update({ image_removed_at: null })
+      .eq('business_id', businessId).in('id', imageReplacedIds);
+    if (markerErr) logger.error('saveFullGraph: could not clear image_removed_at', { businessId, message: markerErr.message });
+  }
 
   await invalidateRulesCache(businessId);
   return { error: null };
