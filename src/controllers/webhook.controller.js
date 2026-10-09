@@ -167,6 +167,7 @@ const upsertCustomerForInboundMessage = async (businessId, customerNumber, profi
   const bumpExisting = async (existing) => {
     const updateFields = {
       last_message_at: nowIso,
+      last_activity_at: nowIso,
       total_messages: (existing.total_messages || 0) + 1
     };
     // Only backfill the name from WhatsApp if we don't already have one —
@@ -189,6 +190,7 @@ const upsertCustomerForInboundMessage = async (businessId, customerNumber, profi
     name: profileName || null,
     first_seen_at: nowIso,
     last_message_at: nowIso,
+    last_activity_at: nowIso,
     total_messages: 1
   }).select().single();
   if (error && error.code === '23505') {
@@ -206,14 +208,15 @@ const upsertCustomerForInboundMessage = async (businessId, customerNumber, profi
 /**
  * Customer for a message that replaced an earlier 'unsupported' row of the same
  * WhatsApp id. That row already counted toward total_messages (and usage), so
- * only last_message_at is refreshed here - no second count.
+ * only last_message_at / last_activity_at are refreshed here - no second count.
  * @param {string} businessId
  * @param {string} customerId
  * @returns {Promise<Object>} camelCase customer row
  */
 const touchCustomerForReplacedMessage = async (businessId, customerId) => {
+  const nowIso = new Date().toISOString();
   const { data, error } = await supabase
-    .from('customers').update({ last_message_at: new Date().toISOString() })
+    .from('customers').update({ last_message_at: nowIso, last_activity_at: nowIso })
     .eq('id', customerId).eq('business_id', businessId).select().single();
   if (error) throw error;
   return toCamelCase(data);

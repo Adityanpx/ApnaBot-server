@@ -99,6 +99,11 @@ module.exports = {
   // back by webhook - so leave this off until the smb_app_state_sync / history
   // webhook handlers are deployed, or the one-time sync is spent and lost.
   COEXISTENCE_SYNC_ENABLED: process.env.COEXISTENCE_SYNC_ENABLED === 'true',
+  // Pause the bot for a customer when the owner replies from the WhatsApp
+  // Business app (an smb_message_echoes webhook), the way a dashboard reply
+  // does. Off by default: needs the echoes webhook field subscribed, and the
+  // first real echoes checked in the logs (see coexistence.service.js).
+  ECHO_AUTO_PAUSE: process.env.ECHO_AUTO_PAUSE === 'true',
   // AI flow generation, Phase 1 (questionnaire/FlowSpec -> graph, no LLM).
   // Off by default: /api/flow-graph/ai is only mounted when this is 'true'
   // (see app.js), so the whole feature switches off in one place without

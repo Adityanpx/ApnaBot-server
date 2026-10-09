@@ -128,7 +128,7 @@ test('lone unsupported: stored with a readable label and the raw payload; counte
   await unsupported();
   assert.equal(inbound().length, 1);
   assert.equal(inbound()[0].type, 'unsupported');
-  assert.match(inbound()[0].content, /couldn't be displayed.*error 131051/);
+  assert.equal(inbound()[0].content, "WhatsApp couldn't show this message here — open it in your WhatsApp Business app.");
   assert.equal(inbound()[0].raw_payload.errors[0].code, 131051);
   assert.equal(customer().total_messages, 4);
   assert.equal(inboundUsage(), 1);
@@ -141,6 +141,7 @@ test('real after unsupported: the row is replaced, processed once, nothing count
   assert.equal(inbound().length, 1);
   assert.equal(inbound()[0].type, 'text');
   assert.equal(inbound()[0].content, 'price');
+  assert.ok(customer().last_activity_at); // the replacing delivery refreshes the inbox stamp too
   assert.equal(inbound()[0].raw_payload, null);
   assert.equal(customer().total_messages, 4); // only the first delivery counted
   assert.equal(inboundUsage(), 1);

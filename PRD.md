@@ -561,6 +561,12 @@ tracked as a deferred "future initiative" — it's built and live.
   `coex_history_sync_requested_at`. `is_whatsapp_connected=false` makes the
   tenant resolver treat the number as not live (set by an `account_update`
   webhook; IDs and token are kept so a reconnect can restore it).
+- `customers.last_activity_at` (migration `20261009120000`): last chat activity -
+  an inbound message, a dashboard reply, or an owner reply from the WhatsApp
+  Business app (echo). It decides who is in the inbox and its order
+  (`GET /api/messages`). `last_message_at` keeps ONE job: the last inbound
+  customer message, which opens the 24h window (also follow-ups, audiences);
+  echoes and dashboard sends never move it. Backfilled from `last_message_at`.
 - `messages` extras: `sender_type` (`bot` | `human` | `phone_app` - sent from
   the WhatsApp Business app), `is_history_import` (coexistence history rows:
   excluded from `report_response_time_stats`, read, original timestamps),
@@ -648,8 +654,10 @@ for what is actually deployed before assuming.
   apart - seen live on Search cab AI). `services/inboundMessage.service.js`
   decides before any side effect: real over unsupported -> replace the row and
   process once (no second count); unsupported after anything, or a repeat -> ignore;
-  23505 from the unique index is handled the same way. Unsupported rows show a
-  readable label and keep `raw_payload`.
+  23505 from the unique index is handled the same way. Unsupported rows (e.g. error
+  131051) show "WhatsApp couldn't show this message here — open it in your WhatsApp
+  Business app." (since 2026-10-09; older rows keep the old "ask the customer to
+  resend" text, no backfill) and keep `raw_payload` with the real type/error code.
 - **Coexistence handlers** (`services/coexistence.service.js`, shapes in
   `utils/coexistencePayload.js`): `smb_message_echoes` (owner's phone messages ->
   outbound `phone_app`, dashboard socket event; revoke/edit skipped),
@@ -661,7 +669,22 @@ for what is actually deployed before assuming.
   events carry no phone number). None reaches the bot, usage, or the outbound
   queue, and none touches `customers.last_message_at` / `total_messages` - those
   drive the 24h window, which only a real inbound customer message may open.
-  Echoes do NOT pause the bot (separate decision pending).
+  An echo DOES stamp `customers.last_activity_at` (inbox), so an owner-first chat
+  shows up in the inbox without opening the 24h window.
+  **Echo auto-pause** (built 2026-10-09, env `ECHO_AUTO_PAUSE`, default false):
+  after a NEW (non-duplicate) `phone_app` echo row, an in-process timer fires
+  15 s later (lost on restart), re-reads, and pauses the bot 24h (same as a
+  dashboard reply, `afterManualSend`) + advances the customer to `contacted` -
+  unless a message with the same wamid has `sender_type` `bot`/`human` (an echo of
+  something ApnaBot sent; the API row takes the wamid and the echo row is deleted).
+  Echoes older than 10 min are skipped; an indefinite pause is never shortened
+  (the stage still advances); customers who never messaged are paused too;
+  a tenant with `whatsapp_onboarding_type = 'cloud_api'` is skipped, NULL (legacy,
+  e.g. Search cab AI) counts as coexistence. One log line per echo:
+  `echo auto-pause: wamid .. business .. apiRowMatched yes|no paused yes|no (reason)`;
+  a duplicate echo logs `apiRowMatched yes ... (wamid already stored)` - that is how to
+  tell from the Render logs whether Meta echoes API-sent messages (unverified).
+  Flag off = nothing scheduled, nothing logged.
 - **Outbound ids + statuses.** Every send that has a `messages` row saves Meta's
   wamid on it: the BullMQ worker (covers bot replies, dashboard sends, payment
   QR / confirmations) and the template path of `windowAwareSend` (follow-ups,
@@ -678,6 +701,9 @@ for what is actually deployed before assuming.
   them together with the flag, then check the first real echo's stored row.
   Search cab AI is already a coexistence number, so its owner's phone replies
   start appearing in the dashboard the moment echoes are subscribed.
+  `ECHO_AUTO_PAUSE` (env, default off) is separate from `COEXISTENCE_SYNC_ENABLED`:
+  subscribe `smb_message_echoes`, check the first real echoes in the logs, then
+  turn it on. Search cab AI (live) is affected by both the moment they are on.
 
 ## Known gaps / deferred work
 

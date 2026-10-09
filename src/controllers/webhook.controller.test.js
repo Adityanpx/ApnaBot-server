@@ -55,6 +55,8 @@ test('new customer: inserted with one message', async () => {
   const c = await upsertCustomerForInboundMessage('b', '919800000001', 'Ravi');
   assert.equal(c.name, 'Ravi');
   assert.equal(c.totalMessages, 1);
+  assert.ok(c.lastActivityAt);
+  assert.equal(c.lastActivityAt, c.lastMessageAt);
   assert.deepEqual(calls, ['select', 'insert']);
 });
 
@@ -63,6 +65,8 @@ test('existing customer: bumped, an owner-set name is kept', async () => {
   const c = await upsertCustomerForInboundMessage('b', '919800000001', 'Ravi WA');
   assert.equal(c.totalMessages, 5);
   assert.equal(c.name, 'Ravi (owner)');
+  assert.ok(c.lastActivityAt);
+  assert.equal(c.lastActivityAt, c.lastMessageAt);
   assert.deepEqual(calls, ['select', 'update']);
 });
 

@@ -16,8 +16,8 @@ const storedType = (type) => (INBOUND_MESSAGE_TYPES.has(type) ? type : 'unsuppor
 
 /**
  * Text for the inbox. A type we don't store is labelled quietly - the
- * "ask the customer to resend" label of live inbound messages makes no sense
- * for something the owner sent or an old chat.
+ * "couldn't show this message here" label of live inbound messages makes no
+ * sense for something the owner sent or an old chat.
  */
 const contentFor = (message) => {
   if (message.text && message.text.body) return message.text.body;

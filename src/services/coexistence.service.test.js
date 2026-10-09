@@ -58,6 +58,7 @@ const from = (table) => {
 };
 
 const stub = (rel, exports) => { const p = require.resolve(rel); require.cache[p] = { id: p, filename: p, loaded: true, exports }; };
+stub('../config/env', { ECHO_AUTO_PAUSE: false });
 stub('../config/supabase', { from });
 stub('../utils/logger', {
   info: (m) => logs.push(['info', m]), warn: (m) => logs.push(['warn', m]), error: (m) => logs.push(['error', m])

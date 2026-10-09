@@ -8,16 +8,27 @@
 // billing count (Meta does not charge for app-sent messages), and none of them
 // touches customers.last_message_at / total_messages - those drive the 24h
 // customer-service window, which only a real inbound customer message may open.
+// An echo does stamp customers.last_activity_at (inbox order), and - behind
+// ECHO_AUTO_PAUSE - pauses the bot for that customer (see scheduleEchoPause).
 // Payload shapes: utils/coexistencePayload.js.
 
 const supabase = require('../config/supabase');
+const config = require('../config/env');
 const logger = require('../utils/logger');
 const socketService = require('./socket.service');
 const tenantService = require('./tenant.service');
+const customerPipelineService = require('./customerPipeline.service');
 const { toCamelCase } = require('../utils/caseConvert');
+const { isIndefinitePause, BOT_PAUSE_DURATION_MS } = require('../utils/botPause');
 const { digits, parseEcho, parseHistoryEntry, parseStateSync, accountUpdateAction } = require('../utils/coexistencePayload');
 
 const COEXISTENCE_FIELDS = new Set(['smb_message_echoes', 'history', 'smb_app_state_sync', 'account_update']);
+
+// Echo auto-pause timing. The delay gives an API-sent message's own row time to
+// claim its wamid (the BullMQ worker saves it after Meta's send response), so
+// an echo of a message we sent ourselves is recognised and does not pause.
+const ECHO_PAUSE_DELAY_MS = 15 * 1000;
+const ECHO_MAX_AGE_MS = 10 * 60 * 1000;
 
 // Postgres unique_violation: customers (business_id, whatsapp_number) and
 // messages (business_id, meta_message_id).
@@ -143,6 +154,104 @@ const insertMessages = async (businessId, rows) => {
   return out;
 };
 
+/**
+ * Stamp customers.last_activity_at for an echo (inbox order / membership) -
+ * never last_message_at. Only moves forward, so a late or replayed echo cannot
+ * push a conversation back down the list. Mutates `customer` so the socket
+ * payload carries the new value. Never throws: the echo is already stored.
+ */
+const touchActivityForEcho = async (customer, createdAt) => {
+  try {
+    const at = createdAt || new Date().toISOString();
+    if (customer.last_activity_at && new Date(customer.last_activity_at).getTime() >= new Date(at).getTime()) return;
+    const { error } = await supabase.from('customers').update({ last_activity_at: at }).eq('id', customer.id);
+    if (error) throw error;
+    customer.last_activity_at = at;
+  } catch (err) {
+    logger.error('smb_message_echoes: failed to stamp last_activity_at', { customerId: customer.id, error: err.message });
+  }
+};
+
+const echoPauseLog = (wamid, businessId, matched, paused, reason) =>
+  logger.info(`echo auto-pause: wamid ${wamid} business ${businessId} apiRowMatched ${matched} paused ${paused}${reason ? ` (${reason})` : ''}`);
+
+/**
+ * Runs ECHO_PAUSE_DELAY_MS after a new echo row: pauses the bot for the customer
+ * like a dashboard staff reply (message.controller.js afterManualSend) unless
+ * the wamid belongs to a message we sent ourselves through the API. Re-reads
+ * everything, since the world has moved on since the echo arrived. Never
+ * throws; always logs one line (this line is how to tell, from the logs,
+ * whether Meta echoes API sends).
+ * @returns {Promise<{apiRowMatched:boolean, paused:boolean, reason:string}>}
+ */
+const decideEchoPause = async ({ businessId, customerId, wamid }) => {
+  let matched = false;
+  let paused = false;
+  let reason = '';
+  try {
+    // Once the API row has its wamid, the echo row is deleted and the API row
+    // ('bot' / 'human') is what holds the id (outboundMessageId.service.js).
+    const { data: apiRows, error: apiErr } = await supabase
+      .from('messages').select('id')
+      .eq('business_id', businessId).eq('meta_message_id', wamid).in('sender_type', ['bot', 'human']);
+    if (apiErr) throw apiErr;
+    matched = (apiRows || []).length > 0;
+
+    if (matched) {
+      reason = 'echo of a message sent through the API';
+    } else {
+      const { data: customer, error: custErr } = await supabase
+        .from('customers').select('id, bot_paused_until').eq('id', customerId).maybeSingle();
+      if (custErr) throw custErr;
+      if (!customer) {
+        reason = 'customer not found';
+      } else {
+        // An indefinite pause (set from the pause endpoint) is never shortened to 24h.
+        if (isIndefinitePause(customer.bot_paused_until)) {
+          reason = 'indefinite pause kept';
+        } else {
+          const until = new Date(Date.now() + BOT_PAUSE_DURATION_MS).toISOString();
+          const { error: pauseErr } = await supabase.from('customers').update({ bot_paused_until: until }).eq('id', customerId);
+          if (pauseErr) throw pauseErr;
+          paused = true;
+        }
+        // A genuine staff reply moves New -> Contacted, paused or not.
+        await customerPipelineService.advancePipelineStage(customerId, 'contacted');
+      }
+    }
+  } catch (err) {
+    reason = `error: ${err.message}`;
+    logger.error('echo auto-pause: failed', { businessId, wamid, error: err.message });
+  }
+  echoPauseLog(wamid, businessId, matched ? 'yes' : 'no', paused ? 'yes' : 'no', reason);
+  return { apiRowMatched: matched, paused, reason };
+};
+
+/**
+ * Called once per NEW (non-duplicate) echo row. With ECHO_AUTO_PAUSE off it does
+ * nothing at all. An in-process timer (lost on a restart - an echo in flight
+ * during a deploy simply doesn't pause).
+ * A NULL whatsapp_onboarding_type (connected before 2026-10-05) is treated as
+ * coexistence; only an explicit 'cloud_api' number is skipped.
+ */
+const scheduleEchoPause = (tenant, customerId, row) => {
+  if (!config.ECHO_AUTO_PAUSE) return;
+  if (tenant.whatsappOnboardingType === 'cloud_api') {
+    echoPauseLog(row.metaId, tenant.businessId, 'n/a', 'no', 'cloud_api number');
+    return;
+  }
+  const echoMs = row.createdAt ? new Date(row.createdAt).getTime() : NaN;
+  if (Number.isFinite(echoMs) && Date.now() - echoMs > ECHO_MAX_AGE_MS) {
+    echoPauseLog(row.metaId, tenant.businessId, 'n/a', 'no', 'echo older than 10 minutes');
+    return;
+  }
+  const timer = setTimeout(() => {
+    decideEchoPause({ businessId: tenant.businessId, customerId, wamid: row.metaId })
+      .catch((err) => logger.error('echo auto-pause: unexpected failure', { error: err.message }));
+  }, ECHO_PAUSE_DELAY_MS);
+  if (typeof timer.unref === 'function') timer.unref();
+};
+
 /** smb_message_echoes: stored as outbound 'phone_app' messages, shown in the dashboard. */
 const handleEchoes = async (tenant, value) => {
   const businessDigits = digits(value.metadata && value.metadata.display_phone_number);
@@ -171,8 +280,16 @@ const handleEchoes = async (tenant, value) => {
         is_read: true,
         ...(row.createdAt ? { created_at: row.createdAt } : {})
       });
-      if (res.duplicate) { stats.duplicates += 1; continue; }
+      if (res.duplicate) {
+        stats.duplicates += 1;
+        // Usually Meta echoing a message we sent ourselves, whose row already holds the wamid.
+        if (config.ECHO_AUTO_PAUSE) echoPauseLog(row.metaId, tenant.businessId, 'yes', 'no', 'wamid already stored');
+        continue;
+      }
       stats.stored += 1;
+
+      await touchActivityForEcho(customer, row.createdAt);
+      scheduleEchoPause(tenant, customer.id, row);
 
       try {
         socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
@@ -400,6 +517,10 @@ module.exports = {
   handleHistory,
   handleStateSync,
   handleAccountUpdate,
+  decideEchoPause,
+  scheduleEchoPause,
+  ECHO_PAUSE_DELAY_MS,
+  ECHO_MAX_AGE_MS,
   findOrCreateCustomer,
   ensureCustomers
 };

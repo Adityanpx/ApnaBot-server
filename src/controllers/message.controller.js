@@ -5,7 +5,7 @@ const { successResponse, errorResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
 const { toCamelCase } = require('../utils/caseConvert');
 const { withWindowExpiresAt } = require('./customer.controller');
-const { INDEFINITE_PAUSE_SENTINEL, isIndefinitePause } = require('../utils/botPause');
+const { INDEFINITE_PAUSE_SENTINEL, BOT_PAUSE_DURATION_MS, isIndefinitePause } = require('../utils/botPause');
 const customerPipelineService = require('../services/customerPipeline.service');
 const paymentService = require('../services/payment.service');
 const logger = require('../utils/logger');
@@ -15,10 +15,14 @@ const logger = require('../utils/logger');
  * List conversations grouped by customer.
  * Returns latest message per customer + unread count.
  *
- * A conversation = a customer who has messaged in (last_message_at set by
- * upsertCustomerForInboundMessage in webhook.controller.js). Customers added
- * by a contact import have never messaged (last_message_at null) and stay out
- * of the inbox until they do. Paginating those customers by lastMessageAt
+ * A conversation = a customer with chat activity (last_activity_at: set by
+ * upsertCustomerForInboundMessage in webhook.controller.js on an inbound
+ * message, by afterManualSend on a dashboard reply, and by the echo handler on
+ * a reply from the WhatsApp Business app). Customers added by a contact import
+ * with no activity (last_activity_at null) stay out of the inbox until they
+ * have some. Ordering by last_activity_at, not last_message_at: an owner who
+ * messages first from the phone must show up, but that must not open the 24h
+ * window, which last_message_at alone drives. Paginating those customers
  * stands in for the old Message-grouped aggregation, without needing a
  * Postgres view/RPC for it.
  */
@@ -31,8 +35,8 @@ const getConversations = async (req, res, next) => {
 
     const { data: customers, error, count } = await supabase
       .from('customers').select('*', { count: 'exact' }).eq('business_id', businessId)
-      .not('last_message_at', 'is', null)
-      .order('last_message_at', { ascending: false, nullsFirst: false })
+      .not('last_activity_at', 'is', null)
+      .order('last_activity_at', { ascending: false, nullsFirst: false })
       .range((pageNum - 1) * limitNum, pageNum * limitNum - 1);
     if (error) throw error;
 
@@ -127,7 +131,6 @@ const markAsRead = async (req, res, next) => {
 };
 
 const FREE_FORM_WINDOW_MS = 24 * 60 * 60 * 1000; // WhatsApp's 24h customer service window
-const BOT_PAUSE_DURATION_MS = 24 * 60 * 60 * 1000; // How long a pause (manual or implied by a staff reply) lasts
 
 /**
  * Shared gate for the manual (human) send paths — sendMessage and
@@ -176,14 +179,18 @@ const afterManualSend = async (customer) => {
   // a while — pause it the same way the explicit pause endpoint does.
   // An indefinite pause (set via the pause endpoint) must not be
   // shortened to 24h by a manual send, so leave it untouched.
+  // The same write also stamps last_activity_at (inbox order); it never
+  // touches last_message_at, which only an inbound message may move.
   let botPausedUntil = customer.botPausedUntil;
+  const customerUpdate = { last_activity_at: new Date().toISOString() };
   if (!isIndefinitePause(botPausedUntil)) {
     botPausedUntil = new Date(Date.now() + BOT_PAUSE_DURATION_MS).toISOString();
-    const { error: pauseErr } = await supabase
-      .from('customers').update({ bot_paused_until: botPausedUntil }).eq('id', customer.id);
-    if (pauseErr) {
-      logger.error('Error pausing bot after manual send:', pauseErr);
-    }
+    customerUpdate.bot_paused_until = botPausedUntil;
+  }
+  const { error: updateErr } = await supabase
+    .from('customers').update(customerUpdate).eq('id', customer.id);
+  if (updateErr) {
+    logger.error('Error pausing bot / stamping activity after manual send:', updateErr);
   }
   return botPausedUntil;
 };

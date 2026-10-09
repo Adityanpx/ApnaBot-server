@@ -53,6 +53,8 @@ const resolveBusinessByPhoneNumberId = async (phoneNumberId) => {
       fallbackReply: business.fallback_reply,
       enableSmartFallback: business.enable_smart_fallback,
       businessCategory: business.business_category,
+      // NULL for businesses connected before 2026-10-05 (no backfill).
+      whatsappOnboardingType: business.whatsapp_onboarding_type || null,
       isActive: business.is_active,
       subscription: subscription || null,
       plan: subscription ? subscription.plan : null

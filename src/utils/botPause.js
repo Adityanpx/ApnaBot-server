@@ -9,4 +9,9 @@ const isIndefinitePause = (botPausedUntil) => {
   return new Date(botPausedUntil).getTime() === new Date(INDEFINITE_PAUSE_SENTINEL).getTime();
 };
 
-module.exports = { INDEFINITE_PAUSE_SENTINEL, isIndefinitePause };
+// How long a pause lasts when it is implied by a staff reply (dashboard send,
+// or the owner replying from the WhatsApp Business app) rather than set
+// explicitly through the pause endpoint.
+const BOT_PAUSE_DURATION_MS = 24 * 60 * 60 * 1000;
+
+module.exports = { INDEFINITE_PAUSE_SENTINEL, BOT_PAUSE_DURATION_MS, isIndefinitePause };

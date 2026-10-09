@@ -27,18 +27,16 @@ const decideDuplicate = (existingType, incomingType) => {
   return 'ignore';
 };
 
+const UNSUPPORTED_LABEL = "WhatsApp couldn't show this message here — open it in your WhatsApp Business app.";
+
 /**
  * Inbox text for an unsupported inbound message, so the owner sees a reason
- * instead of a blank bubble.
- * @param {Object} message - Meta webhook message object
+ * instead of a blank bubble. The raw type / error code (e.g. 131051) is not
+ * shown: it stays in messages.raw_payload, which is kept for these rows.
+ * @param {Object} [_message] - Meta webhook message object (unused; kept so callers need not change)
  * @returns {string}
  */
-const unsupportedLabel = (message) => {
-  const rawType = String(message?.type || 'unknown').slice(0, 40);
-  const code = message?.errors?.[0]?.code;
-  const detail = code ? `type: ${rawType}, error ${code}` : `type: ${rawType}`;
-  return `⚠️ Message couldn't be displayed (${detail}) - ask the customer to resend`;
-};
+const unsupportedLabel = (_message) => UNSUPPORTED_LABEL;
 
 /**
  * Inbox text for an inbound message that has no text body — without it,
