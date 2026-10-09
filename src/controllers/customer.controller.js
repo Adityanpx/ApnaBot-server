@@ -32,10 +32,11 @@ const withWindowExpiresAt = (customer) => ({
     : null
 });
 
-// Mirrors broadcastAudience.service.js#resolveAudience's exact send-audience
-// filter (opted_in=true AND is_blocked=false AND opted_out_at IS NULL) — kept
-// in one place so the two can't drift apart. Takes a raw (snake_case)
-// customer row.
+// Mirrors broadcastAudience.service.js#resolveAudience's MARKETING send-audience
+// filter (opted_in=true AND is_blocked=false AND opted_out_at IS NULL). It has
+// no template, so it stays marketing-strict: a UTILITY broadcast also reaches
+// customers this flag calls ineligible (resolveAudience drops opted_in for
+// UTILITY, see requiresMarketingOptIn). Takes a raw (snake_case) customer row.
 const isBroadcastEligible = (customer) =>
   customer.opted_in === true && customer.is_blocked !== true && !customer.opted_out_at;
 

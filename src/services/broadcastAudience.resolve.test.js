@@ -74,6 +74,7 @@ const query = (table) => {
     is: (c, v) => add(`is ${c} ${v}`, r => (valueOf(r, c) ?? null) === v),
     order: (c, { ascending = true } = {}) => { orders.push({ c, ascending }); return q; },
     range: (from, to) => { range = [from, to]; return q; },
+    maybeSingle: async () => ({ data: (tables[table] || []).find(r => filters.every(f => f(r))) || null, error: null }),
     then: (resolve) => {
       requests.push({ table, filters: described });
       let rows = tables[table].filter(r => filters.every(f => f(r)));
@@ -88,7 +89,7 @@ const query = (table) => {
 };
 const supabasePath = require.resolve('../config/supabase');
 require.cache[supabasePath] = { id: supabasePath, filename: supabasePath, loaded: true, exports: { from: query, rpc: (...args) => rpc(...args) } };
-const { resolveAudience, normalizeAudience, audienceSummary, audienceSkipped, SKIP_REASONS } = require('./broadcastAudience.service');
+const { resolveAudience, normalizeAudience, audienceSummary, audienceSkipped, requiresMarketingOptIn, templateCategory, SKIP_REASONS } = require('./broadcastAudience.service');
 
 const names = async (filter, params) => {
   const a = normalizeAudience(filter, params);
@@ -336,11 +337,11 @@ test('segment: applies every filter on every page (3,000 matching customers)', a
 // list plumbing, masking, paging) and that the documented rules agree with
 // resolveAudience on these fixtures. The real SQL is compared against the real
 // database by scripts/checkAudienceParity.js.
-const reasonOf = (c) => {
+const reasonOf = (c, requireOptIn = true) => {
   if (typeof c.whatsapp_number !== 'string' || !/^[0-9]{8,15}$/.test(c.whatsapp_number)) return 'no_number';
   if (c.is_blocked !== false) return 'blocked';
   if (c.opted_out_at) return 'opted_out';
-  if (c.opted_in !== true) return 'not_opted_in';
+  if (requireOptIn && c.opted_in !== true) return 'not_opted_in';
   return null;
 };
 const selects = (businessId, c, filter, p) => {
@@ -362,14 +363,14 @@ const selects = (businessId, c, filter, p) => {
     default: return false;
   }
 };
-const sqlModel = (businessId, filter, params) => tables.customers
+const sqlModel = (businessId, filter, params, requireOptIn = true) => tables.customers
   .filter(c => c.business_id === businessId && selects(businessId, c, filter, params || {}))
-  .map(c => ({ customer_id: c.id, whatsapp_number: c.whatsapp_number, name: c.name, skip_reason: reasonOf(c) }));
+  .map(c => ({ customer_id: c.id, whatsapp_number: c.whatsapp_number, name: c.name, skip_reason: reasonOf(c, requireOptIn) }));
 
 const rpcCalls = [];
 const rpc = (name, args, opts = {}) => {
   rpcCalls.push({ name, args, opts });
-  let rows = sqlModel(args.p_business_id, args.p_filter, args.p_params);
+  let rows = sqlModel(args.p_business_id, args.p_filter, args.p_params, args.p_require_opt_in);
   if (name === 'broadcast_audience_summary') {
     const n = (r) => rows.filter(x => x.skip_reason === r).length;
     return Promise.resolve({ data: { selected: rows.length, willReceive: rows.filter(x => !x.skip_reason).length, skipped: { no_number: n('no_number'), blocked: n('blocked'), opted_out: n('opted_out'), not_opted_in: n('not_opted_in') } }, error: null });
@@ -455,7 +456,7 @@ test('summary: reasons with no one still appear as 0; an empty audience is all z
 test('summary: asks the SQL function for this business, filter and params', async () => {
   rpcCalls.length = 0;
   await audienceSummary('seg', 'segment', { neverMessaged: true });
-  assert.deepEqual(rpcCalls, [{ name: 'broadcast_audience_summary', args: { p_business_id: 'seg', p_filter: 'segment', p_params: { neverMessaged: true } }, opts: {} }]);
+  assert.deepEqual(rpcCalls, [{ name: 'broadcast_audience_summary', args: { p_business_id: 'seg', p_filter: 'segment', p_params: { neverMessaged: true }, p_require_opt_in: true }, opts: {} }]);
   rpcCalls.length = 0;
   await audienceSummary('seg', 'all_customers', null);
   assert.deepEqual(rpcCalls[0].args.p_params, {}); // null params go as an empty object
@@ -507,4 +508,102 @@ test('skipped: paged A→Z by name (no name last), pages never overlap and cover
 
 test('skipped: nobody skipped → empty list', async () => {
   assert.deepEqual(await audienceSkipped('seg', 'segment', { tags: ['diwali'] }), { items: [], total: 0 });
+});
+
+// ── UTILITY templates: opted_in is not required ──
+// Fixture business 'b': Asha, Ravi, Neha opted in; Meena NOT opted in; Kiran blocked; Sunil sent STOP.
+
+test('requiresMarketingOptIn: false ONLY for utility (any case); everything else is strict', () => {
+  for (const c of ['UTILITY', 'utility', 'Utility', ' UTILITY ']) assert.equal(requiresMarketingOptIn(c), false, c);
+  for (const c of ['MARKETING', 'marketing', 'AUTHENTICATION', 'authentication', 'SERVICE', '', null, undefined, 5, {}, 'UTILITY_PLUS', 'non-utility']) {
+    assert.equal(requiresMarketingOptIn(c), true, String(c));
+  }
+});
+
+test('UTILITY: a customer who is not opted in is included; opted-out, blocked and bad numbers still are not', async () => {
+  const a = normalizeAudience('all_customers');
+  const got = (await resolveAudience('b', a.filter, a.params, { category: 'UTILITY' })).map(c => c.name).sort();
+  assert.deepEqual(got, ['Asha', 'Meena', 'Neha', 'Ravi']); // + Meena (not opted in); not Kiran (blocked) or Sunil (STOP)
+  tables.customers.push({ id: 'u1', business_id: 'util', whatsapp_number: '12', name: 'BadNumber', opted_in: false, is_blocked: false });
+  assert.deepEqual(await resolveAudience('util', 'all_customers', null, { category: 'utility' }), []);
+});
+
+test('UTILITY: the same holds for groups, requests, picked customers and segments', async () => {
+  const GROUPS = { groupIds: ['aaaaaaaa-0000-4000-8000-000000000001'] };
+  const util = async (filter, params) => (await resolveAudience('b', filter, params, { category: 'UTILITY' })).map(c => c.name).sort();
+  assert.deepEqual(await util('groups', GROUPS), ['Asha', 'Meena']); // c3 is in; c4 blocked and c6 STOP are not
+  assert.deepEqual(await util('coaching_requests', { form: 'any', course: null, skipClosed: true }), ['Asha', 'Meena']);
+  assert.deepEqual(await util('customers', { customerIds: ['c1', 'c3', 'c4', 'c6', 'x1'] }), ['Asha', 'Meena']); // x1 is another business's
+  const seg = (await resolveAudience('seg', 'segment', { tags: ['vip'] }, { category: 'UTILITY' })).map(c => c.id);
+  const strict = (await resolveAudience('seg', 'segment', { tags: ['vip'] })).map(c => c.id);
+  assert.ok(seg.includes('s5') && !strict.includes('s5')); // s5: vip, not opted in
+  assert.ok(!seg.includes('s6') && !seg.includes('s7')); // blocked / STOP stay out
+});
+
+test('MARKETING, AUTHENTICATION, no category and unknown categories keep the opted-in rule (the exact same filters)', async () => {
+  for (const options of [undefined, {}, { category: null }, { category: 'MARKETING' }, { category: 'marketing' }, { category: 'AUTHENTICATION' }, { category: 'SERVICE' }, { category: 7 }]) {
+    requests.length = 0;
+    const got = (await resolveAudience('b', 'all_customers', null, options)).map(c => c.name).sort();
+    assert.deepEqual(got, ['Asha', 'Neha', 'Ravi'], JSON.stringify(options));
+    assert.deepEqual(requests[0].filters, ['eq business_id b', 'eq opted_in true', 'eq is_blocked false', 'is opted_out_at null'], JSON.stringify(options));
+  }
+});
+
+test('UTILITY: no opted_in filter is sent, on every page', async () => {
+  requests.length = 0;
+  await resolveAudience('big', 'all_customers', null, { category: 'UTILITY' });
+  assert.ok(requests.length >= 2);
+  for (const r of requests) assert.deepEqual(r.filters.slice(0, 3), ['eq business_id big', 'eq is_blocked false', 'is opted_out_at null']);
+  assert.ok(requests.every(r => !r.filters.includes('eq opted_in true')));
+});
+
+test('parity (mocked): UTILITY willReceive ids = resolveAudience ids for every audience type', async () => {
+  for (const [businessId, filter, params] of PARITY_CASES) {
+    const a = filter === 'customers' ? { filter, params } : normalizeAudience(filter, params);
+    const resolved = (await resolveAudience(businessId, a.filter, a.params, { category: 'UTILITY' })).map(c => c.id).sort();
+    const viaSql = sqlModel(businessId, a.filter, a.params, false).filter(r => !r.skip_reason).map(r => r.customer_id).sort();
+    assert.deepEqual(viaSql, resolved, `${businessId} ${filter}`);
+  }
+});
+
+test('summary: UTILITY asks for no opt-in and never reports not_opted_in', async () => {
+  const everyone = { customerIds: tables.customers.filter(c => c.business_id === 'seg').map(c => c.id) };
+  rpcCalls.length = 0;
+  const s = await audienceSummary('seg', 'customers', everyone, { category: 'UTILITY' });
+  assert.equal(rpcCalls[0].args.p_require_opt_in, false);
+  assert.equal(s.skipped.not_opted_in, 0);
+  // s5 (not opted in) now receives: 7 + 1; blocked, STOP and the five bad numbers are still skipped
+  assert.deepEqual(s, { selected: 15, willReceive: 8, skipped: { no_number: 5, blocked: 1, opted_out: 1, not_opted_in: 0 } });
+  rpcCalls.length = 0;
+  for (const category of ['MARKETING', 'AUTHENTICATION', null, undefined, 'nope']) {
+    await audienceSummary('seg', 'customers', everyone, { category });
+    assert.equal(rpcCalls.at(-1).args.p_require_opt_in, true, String(category));
+  }
+});
+
+test('skipped: UTILITY has no not_opted_in rows; blocked, opted_out and no_number are still listed', async () => {
+  const everyone = { customerIds: tables.customers.filter(c => c.business_id === 'seg').map(c => c.id) };
+  rpcCalls.length = 0;
+  const all = await audienceSkipped('seg', 'customers', everyone, { category: 'UTILITY' });
+  assert.equal(rpcCalls[0].args.p_require_opt_in, false);
+  assert.equal(all.total, 7);
+  assert.ok(!all.items.some(i => i.reason === 'not_opted_in' || i.customerId === 's5'));
+  assert.deepEqual([...new Set(all.items.map(i => i.reason))].sort(), ['blocked', 'no_number', 'opted_out']);
+  assert.equal((await audienceSkipped('seg', 'customers', everyone, { category: 'UTILITY', reason: 'not_opted_in' })).total, 0);
+  assert.equal((await audienceSkipped('seg', 'customers', everyone, { reason: 'not_opted_in' })).total, 1); // marketing unchanged
+});
+
+// ── templateCategory: the stored category, scoped to the business ──
+
+test("templateCategory: only an id that is this business's template gives a category; otherwise null", async () => {
+  const T_OWN = 'bbbbbbbb-0000-4000-8000-000000000001';
+  const T_OTHER = 'bbbbbbbb-0000-4000-8000-000000000002';
+  tables.message_templates = [
+    { id: T_OWN, business_id: 'b', category: 'UTILITY' },
+    { id: T_OTHER, business_id: 'other', category: 'UTILITY' }
+  ];
+  assert.equal(await templateCategory('b', T_OWN), 'UTILITY');
+  assert.equal(await templateCategory('b', T_OTHER), null); // another business's template
+  assert.equal(await templateCategory('b', 'bbbbbbbb-0000-4000-8000-0000000000ff'), null); // not found
+  for (const bad of [undefined, null, '', 'not-a-uuid', 5, {}]) assert.equal(await templateCategory('b', bad), null, String(bad));
 });

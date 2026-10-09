@@ -24,6 +24,14 @@
 // Every audience, whatever its type, also drops customers whose
 // whatsapp_number isn't 8-15 digits (hasValidNumber) — Meta would refuse them.
 //
+// "Opted-in" above is the MARKETING rule. A UTILITY template (payment reminder,
+// booking update …) doesn't need marketing consent, so for it opted_in is not
+// required — opted_out_at, is_blocked and the number check still apply. The
+// template's category is read from the stored message_templates row by the
+// caller (never the request body) and passed as `category`; anything that isn't
+// UTILITY, including no category at all, keeps the marketing rule
+// (requiresMarketingOptIn).
+//
 // The same rules exist in SQL (broadcast_audience, 20261007120000) for the
 // summary / skipped list: that function says WHY a selected customer is
 // skipped. resolveAudience stays the send path; scripts/checkAudienceParity.js
@@ -53,6 +61,26 @@ const ID_CHUNK = 200;
 const PAGE = 1000;
 
 const hasValidNumber = (number) => typeof number === 'string' && VALID_NUMBER.test(number);
+
+/**
+ * Whether a broadcast with a template of this category needs customers.opted_in.
+ * False ONLY for UTILITY (case-insensitive); MARKETING, AUTHENTICATION, an
+ * unknown category or none all keep the strict marketing rule.
+ */
+const requiresMarketingOptIn = (category) => !(typeof category === 'string' && category.trim().toLowerCase() === 'utility');
+
+/**
+ * The stored category of one of this business's templates, or null when no id
+ * was given or it isn't this business's template (callers then apply the strict
+ * marketing rule). Never trusts a category from the request.
+ */
+const templateCategory = async (businessId, templateId) => {
+  if (typeof templateId !== 'string' || !UUID_PATTERN.test(templateId)) return null;
+  const { data, error } = await supabase
+    .from('message_templates').select('category').eq('id', templateId).eq('business_id', businessId).maybeSingle();
+  if (error) throw error;
+  return data ? data.category : null;
+};
 
 /**
  * Every row of a query, paged past the max_rows cap. `build` returns a fresh
@@ -200,13 +228,16 @@ const applySegment = (query, params, now = Date.now()) => {
 };
 
 /**
- * The opted-in, non-blocked, not-opted-out customers with a valid number that
- * a broadcast with this audience reaches.
+ * The non-blocked, not-opted-out customers with a valid number that a
+ * broadcast with this audience reaches — opted-in ones only, unless the
+ * template's `category` is UTILITY (requiresMarketingOptIn).
  * @returns {Promise<{ id, whatsapp_number, name }[]>}
  */
-const resolveAudience = async (businessId, filter, params) => {
-  const base = () => supabase.from('customers').select('id, whatsapp_number, name')
-    .eq('business_id', businessId).eq('opted_in', true).eq('is_blocked', false).is('opted_out_at', null);
+const resolveAudience = async (businessId, filter, params, { category = null } = {}) => {
+  const base = () => {
+    const query = supabase.from('customers').select('id, whatsapp_number, name').eq('business_id', businessId);
+    return (requiresMarketingOptIn(category) ? query.eq('opted_in', true) : query).eq('is_blocked', false).is('opted_out_at', null);
+  };
   let customers = [];
   if (filter === 'segment') {
     customers = await fetchAllPages(() => applySegment(base(), params || {}).order('id', { ascending: true }));
@@ -237,12 +268,13 @@ const maskNumber = (number) => {
 
 /**
  * How many customers an audience selects, how many of them will receive the
- * broadcast and how many are skipped, by reason.
+ * broadcast and how many are skipped, by reason. `category` is the template's
+ * stored category (UTILITY never skips anyone for not_opted_in).
  * @returns {Promise<{ selected: number, willReceive: number, skipped: Object<string, number> }>}
  */
-const audienceSummary = async (businessId, filter, params) => {
+const audienceSummary = async (businessId, filter, params, { category = null } = {}) => {
   const { data, error } = await supabase.rpc('broadcast_audience_summary', {
-    p_business_id: businessId, p_filter: filter, p_params: params || {}
+    p_business_id: businessId, p_filter: filter, p_params: params || {}, p_require_opt_in: requiresMarketingOptIn(category)
   });
   if (error) throw error;
   const skipped = {};
@@ -252,12 +284,12 @@ const audienceSummary = async (businessId, filter, params) => {
 
 /**
  * One page of the selected-but-skipped customers (name A→Z, then id), optionally
- * for one reason. Numbers are masked.
+ * for one reason. Numbers are masked. `category` as for audienceSummary.
  * @returns {Promise<{ items: { customerId, name, number, reason }[], total: number }>}
  */
-const audienceSkipped = async (businessId, filter, params, { reason = null, page = 1, limit = 50 } = {}) => {
+const audienceSkipped = async (businessId, filter, params, { reason = null, page = 1, limit = 50, category = null } = {}) => {
   let query = supabase.rpc('broadcast_audience', {
-    p_business_id: businessId, p_filter: filter, p_params: params || {}
+    p_business_id: businessId, p_filter: filter, p_params: params || {}, p_require_opt_in: requiresMarketingOptIn(category)
   }, { count: 'exact' });
   query = reason ? query.eq('skip_reason', reason) : query.not('skip_reason', 'is', null);
   const from = (page - 1) * limit;
@@ -278,6 +310,8 @@ module.exports = {
   MAX_CUSTOMER_IDS,
   ID_CHUNK,
   hasValidNumber,
+  requiresMarketingOptIn,
+  templateCategory,
   normalizeAudience,
   resolveAudience,
   businessGroupIds,

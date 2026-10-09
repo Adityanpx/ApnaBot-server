@@ -6,7 +6,8 @@ const walletService = require('../services/wallet.service');
 const rateCardService = require('../services/rateCard.service');
 const { addToBroadcastQueue } = require('../queues/broadcast.queue');
 const {
-  normalizeAudience, resolveAudience, businessGroupIds, businessCustomerIds, audienceSummary, audienceSkipped, SKIP_REASONS
+  normalizeAudience, resolveAudience, businessGroupIds, businessCustomerIds, audienceSummary, audienceSkipped, SKIP_REASONS,
+  requiresMarketingOptIn, templateCategory
 } = require('../services/broadcastAudience.service');
 const { getPagination } = require('../utils/pagination');
 const { isTemplateUsable, sendSupportBlockReason } = require('../utils/templateStatus');
@@ -64,6 +65,23 @@ const headerButtonMappingError = (templateRow, variableMapping) => {
     }
   }
   return null;
+};
+
+// Why a send has nobody to go to. A UTILITY template doesn't need marketing
+// opt-in (broadcastAudience.service.js), so its messages don't say "opted-in".
+const noRecipientsMessage = (audienceFilter, category) => {
+  const optedIn = requiresMarketingOptIn(category);
+  const messages = {
+    coaching_requests: optedIn ? 'No opted-in parents match this audience' : 'No parents who can receive this message match this audience',
+    groups: optedIn
+      ? 'No opted-in customers in the chosen groups (or the groups were deleted)'
+      : 'No customers who can receive this message in the chosen groups (or the groups were deleted)',
+    customers: optedIn
+      ? 'None of the chosen customers can receive this broadcast (not opted in, opted out, blocked, or no valid WhatsApp number)'
+      : 'None of the chosen customers can receive this broadcast (opted out, blocked, or no valid WhatsApp number)',
+    segment: optedIn ? 'No opted-in customers match these filters' : 'No customers who can receive this message match these filters'
+  };
+  return messages[audienceFilter] || (optedIn ? 'No opted-in customers to send this broadcast to' : 'No customers who can receive this message to send this broadcast to');
 };
 
 /**
@@ -205,16 +223,11 @@ const sendBroadcast = async (req, res, next) => {
     }
 
     // Same audience the recipients preview showed (broadcastAudience.service.js).
-    const customers = await resolveAudience(businessId, broadcastRow.audience_filter, broadcastRow.audience_params);
+    // The category is the stored template's, never the request's.
+    const customers = await resolveAudience(businessId, broadcastRow.audience_filter, broadcastRow.audience_params, { category: templateRow.category });
 
     if (!customers || customers.length === 0) {
-      const noRecipients = {
-        coaching_requests: 'No opted-in parents match this audience',
-        groups: 'No opted-in customers in the chosen groups (or the groups were deleted)',
-        customers: 'None of the chosen customers can receive this broadcast (not opted in, opted out, blocked, or no valid WhatsApp number)',
-        segment: 'No opted-in customers match these filters'
-      };
-      return errorResponse(res, 400, noRecipients[broadcastRow.audience_filter] || 'No opted-in customers to send this broadcast to');
+      return errorResponse(res, 400, noRecipientsMessage(broadcastRow.audience_filter, templateRow.category));
     }
 
     const usesCustomerNameMapping = (broadcastRow.variable_mapping || []).some((entry) => entry.source === 'customer.name');
@@ -375,7 +388,8 @@ const getBroadcastRecipientsPreview = async (req, res, next) => {
       return errorResponse(res, 400, 'Only draft broadcasts can be previewed');
     }
 
-    const eligibleCustomers = await resolveAudience(businessId, broadcastRow.audience_filter, broadcastRow.audience_params);
+    const category = await templateCategory(businessId, broadcastRow.template_id);
+    const eligibleCustomers = await resolveAudience(businessId, broadcastRow.audience_filter, broadcastRow.audience_params, { category });
 
     const result = {
       totalCount: eligibleCustomers.length,
@@ -423,15 +437,18 @@ const getBroadcast = async (req, res, next) => {
 
 /**
  * POST /api/broadcasts/audience-count
- * Body: { audienceFilter?, audienceParams? } — how many opted-in customers an
- * audience reaches, for the "New broadcast" form before a draft exists.
+ * Body: { audienceFilter?, audienceParams?, templateId? } — how many customers an
+ * audience reaches, for the "New broadcast" form before a draft exists. With
+ * templateId (this business's template) a UTILITY template doesn't need opt-in;
+ * without it, or for an unknown id, the opted-in marketing rule applies.
  */
 const getAudienceCount = async (req, res, next) => {
   try {
-    const { audienceFilter, audienceParams } = req.body || {};
+    const { audienceFilter, audienceParams, templateId } = req.body || {};
     const audience = normalizeAudience(audienceFilter, audienceParams);
     if (audience.error) return errorResponse(res, 400, audience.error);
-    const customers = await resolveAudience(req.user.businessId, audience.filter, audience.params);
+    const category = await templateCategory(req.user.businessId, templateId);
+    const customers = await resolveAudience(req.user.businessId, audience.filter, audience.params, { category });
     return successResponse(res, 200, { count: customers.length });
   } catch (error) {
     logger.error('Error in getAudienceCount:', error);
@@ -441,17 +458,19 @@ const getAudienceCount = async (req, res, next) => {
 
 /**
  * POST /api/broadcasts/audience-summary
- * Body: { audienceFilter?, audienceParams? } → { selected, willReceive,
+ * Body: { audienceFilter?, audienceParams?, templateId? } → { selected, willReceive,
  * skipped: { no_number, blocked, opted_out, not_opted_in }, overCap, cap }.
  * selected = who the audience picks; willReceive = those a send reaches;
  * overCap = willReceive is above MAX_BROADCAST_RECIPIENTS (a send would be refused).
+ * templateId as for audience-count: a UTILITY template never skips for not_opted_in.
  */
 const getAudienceSummary = async (req, res, next) => {
   try {
-    const { audienceFilter, audienceParams } = req.body || {};
+    const { audienceFilter, audienceParams, templateId } = req.body || {};
     const audience = normalizeAudience(audienceFilter, audienceParams);
     if (audience.error) return errorResponse(res, 400, audience.error);
-    const summary = await audienceSummary(req.user.businessId, audience.filter, audience.params);
+    const category = await templateCategory(req.user.businessId, templateId);
+    const summary = await audienceSummary(req.user.businessId, audience.filter, audience.params, { category });
     const cap = config.MAX_BROADCAST_RECIPIENTS;
     return successResponse(res, 200, { ...summary, overCap: summary.willReceive > cap, cap });
   } catch (error) {
@@ -464,14 +483,15 @@ const SKIPPED_MAX_LIMIT = 100;
 
 /**
  * POST /api/broadcasts/audience-skipped
- * Body: { audienceFilter?, audienceParams?, reason?, page? (1), limit? (50, max 100) }
+ * Body: { audienceFilter?, audienceParams?, templateId?, reason?, page? (1), limit? (50, max 100) }
  * → { items: [{ customerId, name, number (masked), reason }], pagination }:
  * the customers the audience selects but a send would skip, A→Z, optionally
  * only for one reason (no_number | blocked | opted_out | not_opted_in).
+ * templateId as for audience-count.
  */
 const getAudienceSkipped = async (req, res, next) => {
   try {
-    const { audienceFilter, audienceParams, reason, page = 1, limit = 50 } = req.body || {};
+    const { audienceFilter, audienceParams, templateId, reason, page = 1, limit = 50 } = req.body || {};
     const audience = normalizeAudience(audienceFilter, audienceParams);
     if (audience.error) return errorResponse(res, 400, audience.error);
     if (reason !== undefined && reason !== null && !SKIP_REASONS.includes(reason)) {
@@ -481,7 +501,8 @@ const getAudienceSkipped = async (req, res, next) => {
     if (!Number.isInteger(limit) || limit < 1 || limit > SKIPPED_MAX_LIMIT) {
       return errorResponse(res, 400, `limit must be a whole number from 1 to ${SKIPPED_MAX_LIMIT}`);
     }
-    const { items, total } = await audienceSkipped(req.user.businessId, audience.filter, audience.params, { reason: reason || null, page, limit });
+    const category = await templateCategory(req.user.businessId, templateId);
+    const { items, total } = await audienceSkipped(req.user.businessId, audience.filter, audience.params, { reason: reason || null, page, limit, category });
     return successResponse(res, 200, { items, pagination: getPagination(total, page, limit) });
   } catch (error) {
     logger.error('Error in getAudienceSkipped:', error);

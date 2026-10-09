@@ -2,7 +2,8 @@
 // audience-summary / audience-skipped handlers (cap flag, validation, paging)
 // and createBroadcast with the 'customers' / 'segment' audiences (ids must be
 // this business's → 404). The audience service is the real one; Supabase is a
-// small stand-in with an rpc recorder. Owner-only access is the route's
+// small stand-in with an rpc recorder. A UTILITY template (templateId, looked up
+// scoped to the business) drops the opted-in requirement; anything else keeps it. Owner-only access is the route's
 // requireRole, checked in src/routes/broadcastTemplate.roles.test.js.
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -13,9 +14,18 @@ const stub = (rel, exports) => {
 };
 
 const CUSTOMERS = [
-  { id: 'aaaaaaaa-0000-4000-8000-000000000001', business_id: 'b' },
-  { id: 'aaaaaaaa-0000-4000-8000-000000000002', business_id: 'b' },
-  { id: 'aaaaaaaa-0000-4000-8000-0000000000ff', business_id: 'other' }
+  { id: 'aaaaaaaa-0000-4000-8000-000000000001', business_id: 'b', whatsapp_number: '919000000001', name: 'Opted', opted_in: true, is_blocked: false },
+  { id: 'aaaaaaaa-0000-4000-8000-000000000002', business_id: 'b', whatsapp_number: '919000000002', name: 'NotOpted', opted_in: false, is_blocked: false },
+  { id: 'aaaaaaaa-0000-4000-8000-0000000000ff', business_id: 'other', whatsapp_number: '919000000003', name: 'Other', opted_in: true, is_blocked: false }
+];
+const T_MARKETING = 'bbbbbbbb-0000-4000-8000-000000000001';
+const T_UTILITY = 'bbbbbbbb-0000-4000-8000-000000000002';
+const T_OTHER_UTILITY = 'bbbbbbbb-0000-4000-8000-000000000003'; // UTILITY, but another business's
+const TEMPLATES = [
+  { id: 't', business_id: 'b', category: 'MARKETING' },
+  { id: T_MARKETING, business_id: 'b', category: 'MARKETING' },
+  { id: T_UTILITY, business_id: 'b', category: 'UTILITY' },
+  { id: T_OTHER_UTILITY, business_id: 'other', category: 'UTILITY' }
 ];
 const [C1, C2, CX] = CUSTOMERS.map(c => c.id);
 const inserted = [];
@@ -40,14 +50,27 @@ const supabase = {
   },
   from: (table) => {
     const filters = [];
+    let range = null;
     const q = {
       select: () => q,
       eq: (c, v) => { filters.push(r => r[c] === v); return q; },
       in: (c, vs) => { filters.push(r => vs.includes(r[c])); return q; },
+      is: (c, v) => { filters.push(r => (r[c] ?? null) === v); return q; },
+      order: () => q,
+      range: (from, to) => { range = [from, to]; return q; },
       insert: (row) => { inserted.push(row); return q; },
       single: async () => ({ data: { id: 'new', ...inserted[inserted.length - 1] }, error: null }),
-      maybeSingle: async () => ({ data: { id: 't', business_id: 'b', name: 'promo', status: 'approved', send_support: 'ok', category: 'MARKETING', language: 'en_US', body_text: 'Hi', header_type: 'NONE' }, error: null }),
-      then: (resolve) => resolve({ data: table === 'customers' ? CUSTOMERS.filter(r => filters.every(f => f(r))) : [], error: null })
+      maybeSingle: async () => {
+        if (table === 'message_templates') {
+          const found = TEMPLATES.find(r => filters.every(f => f(r)));
+          return { data: found ? { name: 'promo', status: 'approved', send_support: 'ok', language: 'en_US', body_text: 'Hi', header_type: 'NONE', ...found } : null, error: null };
+        }
+        return { data: null, error: null };
+      },
+      then: (resolve) => {
+        const rows = table === 'customers' ? CUSTOMERS.filter(r => filters.every(f => f(r))) : [];
+        resolve({ data: range ? rows.slice(range[0], range[1] + 1) : rows, error: null });
+      }
     };
     return q;
   }
@@ -59,7 +82,7 @@ stub('../services/business.service', { getBusinessById: async () => ({}) });
 stub('../services/wallet.service', {});
 stub('../services/rateCard.service', {});
 stub('../queues/broadcast.queue', { addToBroadcastQueue: async () => {} });
-const { createBroadcast, getAudienceSummary, getAudienceSkipped } = require('./broadcast.controller');
+const { createBroadcast, getAudienceCount, getAudienceSummary, getAudienceSkipped } = require('./broadcast.controller');
 
 const call = async (handler, body, businessId = 'b') => {
   let failure;
@@ -87,11 +110,11 @@ test('summary: selected / willReceive / skipped by reason, and the cap', async (
 test('summary: asks SQL for this business with the normalized audience', async () => {
   await call(getAudienceSummary, { audienceFilter: 'segment', audienceParams: { tags: [' vip ', 'vip'], neverMessaged: false, activeWithinDays: 30 } }, 'biz-1');
   assert.deepEqual(rpcCalls.map(c => [c.name, c.args]), [[
-    'broadcast_audience_summary', { p_business_id: 'biz-1', p_filter: 'segment', p_params: { tags: ['vip'], activeWithinDays: 30 } }
+    'broadcast_audience_summary', { p_business_id: 'biz-1', p_filter: 'segment', p_params: { tags: ['vip'], activeWithinDays: 30 }, p_require_opt_in: true }
   ]]);
   rpcCalls.length = 0;
   await call(getAudienceSummary, {}); // no audience given = everyone
-  assert.deepEqual(rpcCalls[0].args, { p_business_id: 'b', p_filter: 'all_customers', p_params: {} });
+  assert.deepEqual(rpcCalls[0].args, { p_business_id: 'b', p_filter: 'all_customers', p_params: {}, p_require_opt_in: true });
 });
 
 test('summary: overCap is true only when willReceive is above the cap (exactly the cap is fine)', async () => {
@@ -204,4 +227,69 @@ test("create 'segment': saved with the normalized filters; an empty segment is a
   inserted.length = 0;
   assert.equal((await call(createBroadcast, { name: 'Seg', templateId: 't', audienceFilter: 'segment', audienceParams: {} })).statusCode, 400);
   assert.equal(inserted.length, 0);
+});
+
+// ── UTILITY templates: templateId on audience-count / summary / skipped ──
+
+const optInRequired = () => rpcCalls.at(-1).args.p_require_opt_in;
+
+test('summary: a UTILITY templateId of this business drops the opt-in requirement', async () => {
+  await call(getAudienceSummary, { templateId: T_UTILITY });
+  assert.equal(optInRequired(), false);
+});
+
+test("summary: MARKETING template, no templateId, unknown / malformed id, another business's template → strict marketing rule", async () => {
+  for (const body of [
+    { templateId: T_MARKETING },
+    {},
+    { templateId: undefined },
+    { templateId: null },
+    { templateId: 'bbbbbbbb-0000-4000-8000-0000000000ff' }, // not found
+    { templateId: 'not-a-uuid' },
+    { templateId: 42 },
+    { templateId: T_OTHER_UTILITY }                          // UTILITY, but not this business's
+  ]) {
+    rpcCalls.length = 0;
+    const res = await call(getAudienceSummary, body);
+    assert.equal(res.statusCode, 200, JSON.stringify(body));
+    assert.equal(optInRequired(), true, JSON.stringify(body));
+  }
+});
+
+test('summary: a category in the request body is ignored — only the stored template decides', async () => {
+  for (const body of [{ category: 'UTILITY' }, { templateCategory: 'UTILITY' }, { templateId: T_MARKETING, category: 'UTILITY' }]) {
+    rpcCalls.length = 0;
+    await call(getAudienceSummary, body);
+    assert.equal(optInRequired(), true, JSON.stringify(body));
+  }
+  rpcCalls.length = 0;
+  await call(getAudienceSummary, { templateId: T_UTILITY, category: 'MARKETING' }); // the stored UTILITY wins
+  assert.equal(optInRequired(), false);
+});
+
+test("summary: a template of business 'other' is not visible to business 'b' (and the reverse)", async () => {
+  await call(getAudienceSummary, { templateId: T_OTHER_UTILITY }, 'other');
+  assert.equal(optInRequired(), false);
+  await call(getAudienceSummary, { templateId: T_UTILITY }, 'other');
+  assert.equal(optInRequired(), true);
+});
+
+test('skipped: templateId is honoured the same way', async () => {
+  await call(getAudienceSkipped, { audienceFilter: 'all_customers', templateId: T_UTILITY });
+  assert.equal(optInRequired(), false);
+  await call(getAudienceSkipped, { audienceFilter: 'all_customers', templateId: T_MARKETING });
+  assert.equal(optInRequired(), true);
+  await call(getAudienceSkipped, { audienceFilter: 'all_customers' });
+  assert.equal(optInRequired(), true);
+  await call(getAudienceSkipped, { audienceFilter: 'all_customers', templateId: T_OTHER_UTILITY });
+  assert.equal(optInRequired(), true);
+});
+
+test('count: UTILITY reaches the customer who is not opted in; MARKETING / no template does not', async () => {
+  assert.equal((await call(getAudienceCount, {})).body.data.count, 1);
+  assert.equal((await call(getAudienceCount, { templateId: T_MARKETING })).body.data.count, 1);
+  assert.equal((await call(getAudienceCount, { templateId: T_UTILITY })).body.data.count, 2);
+  assert.equal((await call(getAudienceCount, { templateId: T_OTHER_UTILITY })).body.data.count, 1);
+  assert.equal((await call(getAudienceCount, { templateId: T_UTILITY, category: 'MARKETING' })).body.data.count, 2);
+  assert.equal((await call(getAudienceCount, { audienceFilter: 'vip', templateId: T_UTILITY })).statusCode, 400); // still validated
 });

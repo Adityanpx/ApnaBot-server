@@ -66,12 +66,18 @@ stub('../queues/broadcast.queue', {
     queued.push(job);
   }
 });
+// The category rule is the real one (requiresMarketingOptIn); the queries are stubbed.
+const { requiresMarketingOptIn } = require('../services/broadcastAudience.service');
+const resolveCalls = []; // { options } per resolveAudience call
+const categoryLookups = [];
 stub('../services/broadcastAudience.service', {
   normalizeAudience: () => ({ filter: 'all_customers', params: {} }),
-  resolveAudience: async () => audience,
-  businessGroupIds: async () => []
+  resolveAudience: async (businessId, filter, params, options) => { resolveCalls.push({ options }); return audience; },
+  businessGroupIds: async () => [],
+  requiresMarketingOptIn,
+  templateCategory: async (businessId, templateId) => { categoryLookups.push({ businessId, templateId }); return templateRow ? templateRow.category : null; }
 });
-const { createBroadcast, sendBroadcast } = require('./broadcast.controller');
+const { createBroadcast, sendBroadcast, getBroadcastRecipientsPreview } = require('./broadcast.controller');
 
 const call = async (handler, req) => {
   const res = { statusCode: 200, body: null, status(c) { this.statusCode = c; return this; }, json(b) { this.body = b; return this; } };
@@ -82,6 +88,7 @@ const tpl = (status) => ({ id: 't', business_id: 'b', name: 'promo', status, cat
 
 test.beforeEach(() => {
   inserted.length = 0; queued.length = 0; debits.length = 0; refunds.length = 0; billing = true;
+  resolveCalls.length = 0; categoryLookups.length = 0;
   broadcastState = { ...draft }; audience = [{ id: 'c1', whatsapp_number: '911', name: 'A' }];
   failQueue = () => false; debitError = null; queueCalls = 0;
 });
@@ -244,4 +251,53 @@ test('send with billing off: a queue failure releases the claim and refunds noth
   assert.equal(res.statusCode, 500);
   assert.equal(refunds.length, 0);
   assert.equal(broadcastState.status, 'draft');
+});
+
+// ── UTILITY templates: the stored category decides who is reachable ──
+
+test('send: resolveAudience gets the STORED template category (UTILITY / MARKETING), whatever the request says', async () => {
+  for (const category of ['UTILITY', 'MARKETING']) {
+    resolveCalls.length = 0;
+    broadcastState = { ...draft };
+    templateRow = { ...tpl('approved'), category };
+    const res = await call(sendBroadcast, { params: { id: 'bc' }, body: { category: category === 'UTILITY' ? 'MARKETING' : 'UTILITY' } });
+    assert.equal(res.statusCode, 200, category);
+    assert.equal(resolveCalls.length, 1);
+    assert.deepEqual(resolveCalls[0].options, { category });
+  }
+});
+
+test('send: nobody to send to → a 400 that says "opted-in" for MARKETING but not for UTILITY', async () => {
+  audience = [];
+  for (const [filter, optedInWord] of [['all_customers', 'opted-in'], ['coaching_requests', 'opted-in'], ['groups', 'opted-in'], ['customers', 'not opted in'], ['segment', 'opted-in']]) {
+    broadcastState = { ...draft, audience_filter: filter };
+    templateRow = { ...tpl('approved'), category: 'MARKETING' };
+    const marketing = await call(sendBroadcast, { params: { id: 'bc' } });
+    assert.equal(marketing.statusCode, 400, filter);
+    assert.ok(marketing.body.message.includes(optedInWord), `${filter}: ${marketing.body.message}`);
+
+    broadcastState = { ...draft, audience_filter: filter };
+    templateRow = { ...tpl('approved'), category: 'UTILITY' };
+    const utility = await call(sendBroadcast, { params: { id: 'bc' } });
+    assert.equal(utility.statusCode, 400, filter);
+    assert.ok(!/opted[- ]in|not opted in/i.test(utility.body.message), `${filter}: ${utility.body.message}`);
+    assert.ok(/opted out/.test(utility.body.message) || filter !== 'customers', `${filter}: ${utility.body.message}`);
+  }
+  assert.equal(queued.length + debits.length, 0); // nothing queued or debited
+});
+
+test('preview: the audience is resolved with the stored template category; no usable template → strict', async () => {
+  templateRow = { ...tpl('approved'), category: 'UTILITY' };
+  resolveCalls.length = 0;
+  const res = await call(getBroadcastRecipientsPreview, { params: { id: 'bc' } });
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.data.totalCount, 1);
+  assert.deepEqual(resolveCalls[0].options, { category: 'UTILITY' });
+  assert.deepEqual(categoryLookups, [{ businessId: 'b', templateId: 't' }]);
+
+  // template deleted / not found: templateCategory gives null → the marketing rule
+  templateRow = null;
+  resolveCalls.length = 0;
+  await call(getBroadcastRecipientsPreview, { params: { id: 'bc' } });
+  assert.deepEqual(resolveCalls[0].options, { category: null });
 });

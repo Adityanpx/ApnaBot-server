@@ -399,7 +399,16 @@ question nodes) plus web-form links for Free demo / Admission.
   approved template to opted-in, non-blocked, not-opted-out (`opted_out_at`
   null) customers **whose `whatsapp_number` is 8-15 digits** (the number rule
   applies to every type, added 2026-10-07; a malformed number is no longer
-  attempted):
+  attempted). **Opt-in depends on the template's category (2026-10-12):** a
+  MARKETING template needs `opted_in = true` as above; a **UTILITY** template
+  (payment reminder, booking update …) does not — it reaches opted-in AND
+  not-opted-in customers, but never `opted_out_at` set, blocked or a bad
+  number. AUTHENTICATION, an unknown category or none keep the marketing rule:
+  `requiresMarketingOptIn(category)` is false ONLY for a case-insensitive
+  "utility". The category always comes from the stored `message_templates`
+  row (`templateCategory(businessId, templateId)`, scoped to the business),
+  never from a request body. The worker does no eligibility check of its own;
+  the audience is fixed when `sendBroadcast` snapshots it:
   - `all_customers` (default; nothing stored).
   - `coaching_requests` `{ form: demo|admission|any, course, skipClosed }` —
     parents with a matching Free demo / Admission request (`bookings.form_key`,
@@ -419,6 +428,15 @@ question nodes) plus web-form links for Free demo / Admission.
 
   `resolveAudience` is the send path and is also used by the preview and
   `POST /api/broadcasts/audience-count`, so the count shown is who gets it.
+  `audience-count`, `audience-summary` and `audience-skipped` take an optional
+  `templateId` in the body (looked up scoped to the business); missing,
+  malformed, not found or another business's template means the strict
+  marketing rule, so an old client sees no change. For UTILITY the summary's
+  `not_opted_in` is always 0 (the reason set and order are unchanged).
+  `recipients-preview` and the send read the draft's own template. The empty-audience
+  400 from the send says "opted-in" only for templates that need it.
+  `GET /api/customers`' `broadcastEligible` flag and filter (`isBroadcastEligible`)
+  have no template and stay marketing-strict.
   **Summary / skipped list (owner + superadmin only):** `POST
   /api/broadcasts/audience-summary` → `{ selected, willReceive, skipped:
   { no_number, blocked, opted_out, not_opted_in }, overCap, cap }` (`cap` =
@@ -426,14 +444,17 @@ question nodes) plus web-form links for Free demo / Admission.
   which the send would refuse); `POST /api/broadcasts/audience-skipped`
   `{ …audience, reason?, page?, limit?≤100 }` → `{ items: [{ customerId, name,
   number (masked), reason }], pagination }`. Both read the SQL functions
-  `broadcast_audience` / `broadcast_audience_summary` (migration
-  `20261007120000_broadcast_audience_builder.sql`, service_role only), which
+  `broadcast_audience` / `broadcast_audience_summary` (migrations
+  `20261007120000_broadcast_audience_builder.sql`, then
+  `20261012120000_broadcast_audience_utility_optin.sql`, which adds
+  `p_require_opt_in boolean default true` and drops the 3-argument versions;
+  service_role only), which
   select by the same rules and give each skipped customer ONE reason (order
   no_number > blocked > opted_out > not_opted_in). The send does not use them:
   `node src/scripts/checkAudienceParity.js --business <id>` (read-only, no
   `--confirm`) compares the SQL's willReceive ids with `resolveAudience` for
-  every type on a real business — run it after the migration and whenever
-  either side changes. `GET /api/customers/ids?<list filters>` →
+  every type on a real business, once as MARKETING and once as UTILITY — run it
+  after the migration and whenever either side changes. `GET /api/customers/ids?<list filters>` →
   `{ ids, total, truncated }` (≤2000, for "select all matching") and `GET
   /api/customers/tags` → `{ tags }` back the picker; the customer list gained
   `?tags=` (ANY; `tags=a&tags=b` or `tags=a,b`). `/api/broadcasts` accepts JSON
@@ -801,7 +822,9 @@ test on the modules' `require`s and a runtime trap test; keep it that way).
 
 Customers opt in to marketing in three ways besides the owner's manual toggle and contact import.
 (`customers.opted_in` / `opted_in_at` / `opt_in_source`; STOP sets `opted_out_at` and pauses the bot
-24h, START clears it; broadcasts and follow-ups skip `opted_out_at`.)
+24h, START clears it; broadcasts and follow-ups skip `opted_out_at`. A UTILITY-template broadcast
+does not need `opted_in` at all - see "Broadcast audiences"; follow-ups have their own
+`message_category` rule.)
 
 - **Opt-in links** (`opt_in_links`, `opt_in_link_events`, feature `opt_in_links`, migration
   `20261003180000`): a wa.me link / QR whose message carries `JOIN-<code>`; Step 11.7 of the webhook asks
@@ -919,6 +942,13 @@ Customers opt in to marketing in three ways besides the owner's manual toggle an
    in the MongoDB cleanup; no replacement exists yet.
 
 ## Session log (append here as major milestones land)
+- 2026-10-12: Broadcast audiences: UTILITY templates no longer need marketing opt-in (`opted_out_at`,
+  blocked and number checks still apply; MARKETING / AUTHENTICATION / unknown stay strict). Optional
+  `templateId` on audience-count / summary / skipped; category-aware empty-audience message.
+  **Deploy: apply migration `20261012120000` (either order works - old 3-argument calls resolve to the
+  new functions with the marketing rule), then run `checkAudienceParity.js` on a real business.** Live-path
+  note: `sendBroadcast` changes for every business the moment the server deploys (no flag), but only a
+  UTILITY-template broadcast behaves differently; every MARKETING send is byte-for-byte the same query.
 - 2026-10-11: Post-booking marketing-consent question (server only; see "Marketing consent").
   **Deploy: apply migration `20261011120000` first.** Default off per business, so deploying
   changes nothing customer-facing until a business's `ask_consent_after_booking` is switched on.

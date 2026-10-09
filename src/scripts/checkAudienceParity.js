@@ -3,7 +3,9 @@
 // Read-only check that the SQL function broadcast_audience (migration
 // 20261007120000_broadcast_audience_builder.sql) selects exactly the customers
 // broadcastAudience.service.js#resolveAudience (the real send path) does, for
-// every audience type, on ONE real business.
+// every audience type, on ONE real business, under both rules: MARKETING
+// (opted-in only) and UTILITY (opted_in not required — migration
+// 20261012120000_broadcast_audience_utility_optin.sql).
 //
 // For each audience case it prints how many customers the audience selects, how
 // many will receive the broadcast and why the rest are skipped, then compares:
@@ -34,7 +36,10 @@
 require('dotenv').config();
 
 const supabase = require('../config/supabase');
-const { resolveAudience, normalizeAudience, maskNumber, SKIP_REASONS } = require('../services/broadcastAudience.service');
+const { resolveAudience, normalizeAudience, maskNumber, requiresMarketingOptIn, SKIP_REASONS } = require('../services/broadcastAudience.service');
+
+// The template categories each case is checked under.
+const CATEGORIES = ['MARKETING', 'UTILITY'];
 
 const PAGE = 1000;
 const PICKED_CUSTOMERS = 300;
@@ -64,12 +69,12 @@ const fetchAll = async (build) => {
   return rows;
 };
 
-const sqlRows = async (businessId, filter, params) => fetchAll(() => supabase
-  .rpc('broadcast_audience', { p_business_id: businessId, p_filter: filter, p_params: params || {} })
+const sqlRows = async (businessId, filter, params, category) => fetchAll(() => supabase
+  .rpc('broadcast_audience', { p_business_id: businessId, p_filter: filter, p_params: params || {}, p_require_opt_in: requiresMarketingOptIn(category) })
   .order('customer_id', { ascending: true }));
 
-const sqlSummary = async (businessId, filter, params) => {
-  const { data, error } = await supabase.rpc('broadcast_audience_summary', { p_business_id: businessId, p_filter: filter, p_params: params || {} });
+const sqlSummary = async (businessId, filter, params, category) => {
+  const { data, error } = await supabase.rpc('broadcast_audience_summary', { p_business_id: businessId, p_filter: filter, p_params: params || {}, p_require_opt_in: requiresMarketingOptIn(category) });
   if (error) throw error;
   return data;
 };
@@ -119,15 +124,15 @@ const buildCases = async (businessId) => {
 
 const diff = (a, b) => [...a].filter(x => !b.has(x));
 
-const runCase = async (businessId, testCase, numberById) => {
+const runCase = async (businessId, testCase, numberById, category) => {
   const normalized = testCase.filter === 'customers' ? { filter: testCase.filter, params: testCase.params } : normalizeAudience(testCase.filter, testCase.params);
   if (normalized.error) throw new Error(`${testCase.name}: ${normalized.error}`);
 
-  const js = new Set((await resolveAudience(businessId, normalized.filter, normalized.params)).map(c => c.id));
-  const rows = await sqlRows(businessId, normalized.filter, normalized.params);
+  const js = new Set((await resolveAudience(businessId, normalized.filter, normalized.params, { category })).map(c => c.id));
+  const rows = await sqlRows(businessId, normalized.filter, normalized.params, category);
   const sql = new Set(rows.filter(r => !r.skip_reason).map(r => r.customer_id));
   const counts = { selected: rows.length, willReceive: sql.size, skipped: Object.fromEntries(SKIP_REASONS.map(r => [r, rows.filter(x => x.skip_reason === r).length])) };
-  const summary = await sqlSummary(businessId, normalized.filter, normalized.params);
+  const summary = await sqlSummary(businessId, normalized.filter, normalized.params, category);
 
   const problems = [];
   const onlyJs = diff(js, sql);
@@ -138,6 +143,7 @@ const runCase = async (businessId, testCase, numberById) => {
   const summaryOk = Number(summary.selected) === counts.selected && Number(summary.willReceive) === counts.willReceive
     && SKIP_REASONS.every(r => Number(summary.skipped[r]) === counts.skipped[r]);
   if (!summaryOk) problems.push(`summary function ${JSON.stringify(summary)} disagrees with the rows ${JSON.stringify(counts)}`);
+  if (!requiresMarketingOptIn(category) && counts.skipped.not_opted_in !== 0) problems.push('a UTILITY audience skipped someone as not_opted_in');
   if (counts.selected !== counts.willReceive + Object.values(counts.skipped).reduce((x, y) => x + y, 0)) problems.push('selected != willReceive + skipped');
 
   const line = `selected ${counts.selected}, will receive ${counts.willReceive} (JS ${js.size}), skipped ${SKIP_REASONS.map(r => `${r} ${counts.skipped[r]}`).join(', ')}`;
@@ -154,9 +160,9 @@ const main = async () => {
   if (!business) usage(`No business with id ${businessId}.`);
   console.log(`Audience parity for ${business.name} (${business.business_category}) — read-only.\n`);
 
-  const probe = await supabase.rpc('broadcast_audience_summary', { p_business_id: businessId, p_filter: 'all_customers', p_params: {} });
+  const probe = await supabase.rpc('broadcast_audience_summary', { p_business_id: businessId, p_filter: 'all_customers', p_params: {}, p_require_opt_in: false });
   if (probe.error) {
-    console.error(`Can't call broadcast_audience_summary: ${probe.error.message}\nApply supabase/migrations/20261007120000_broadcast_audience_builder.sql first.`);
+    console.error(`Can't call broadcast_audience_summary: ${probe.error.message}\nApply supabase/migrations/20261007120000_broadcast_audience_builder.sql and 20261012120000_broadcast_audience_utility_optin.sql first.`);
     process.exit(2);
   }
 
@@ -165,13 +171,16 @@ const main = async () => {
 
   const cases = await buildCases(businessId);
   let failed = 0;
-  for (const testCase of cases) {
-    const result = await runCase(businessId, testCase, numberById);
-    console.log(`${result.ok ? 'OK  ' : 'FAIL'} ${testCase.name}\n       ${result.line}`);
-    for (const p of result.problems) console.log(`       ! ${p}`);
-    if (!result.ok) failed += 1;
+  for (const category of CATEGORIES) {
+    for (const testCase of cases) {
+      const result = await runCase(businessId, testCase, numberById, category);
+      console.log(`${result.ok ? 'OK  ' : 'FAIL'} [${category}] ${testCase.name}\n       ${result.line}`);
+      for (const p of result.problems) console.log(`       ! ${p}`);
+      if (!result.ok) failed += 1;
+    }
   }
-  console.log(`\n${cases.length - failed} of ${cases.length} cases match${failed > 0 ? `; ${failed} DIFFER` : ''}. Nothing was written.`);
+  const total = cases.length * CATEGORIES.length;
+  console.log(`\n${total - failed} of ${total} cases match${failed > 0 ? `; ${failed} DIFFER` : ''}. Nothing was written.`);
   process.exit(failed > 0 ? 1 : 0);
 };
 
