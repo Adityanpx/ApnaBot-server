@@ -9,10 +9,13 @@
 const { headerMediaLinkOf } = require('./templateSendSupport');
 const { buttonsOf } = require('./templateMapping');
 const { buildTapPayload } = require('./templateButtonTap');
+const { cleanValue } = require('./templateValue');
 
 const MEDIA_HEADER_TYPES = { IMAGE: 'image', VIDEO: 'video', DOCUMENT: 'document' };
 
-const textParams = (values) => values.map((v) => ({ type: 'text', text: String(v) }));
+// Meta rejects newlines, tabs and 4+ consecutive spaces in a parameter, so
+// every text value is cleaned here, whatever path built it.
+const textParams = (values) => values.map((v) => ({ type: 'text', text: cleanValue(v) }));
 
 /**
  * Body component for already-resolved {{1}}..{{n}} values, or [] when there
@@ -44,7 +47,7 @@ const buildButtonComponents = (buttons) => Object.keys(buttons || {})
     type: 'button',
     sub_type: 'url',
     index: String(index),
-    parameters: [{ type: 'text', text: String(buttons[index]) }]
+    parameters: [{ type: 'text', text: cleanValue(buttons[index], { multiline: true }) }]
   }));
 
 /**

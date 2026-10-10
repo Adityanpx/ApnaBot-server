@@ -13,6 +13,7 @@ const { r2KeyFromUrl } = require('../utils/r2Key');
 const config = require('../config/env');
 const { isValidLanguageCode, LANGUAGE_CATALOG } = require('../utils/languageCatalog');
 const { validateFlowFields } = require('../utils/flowFieldsValidation');
+const { cleanValue } = require('../utils/templateValue');
 const { META_API_BASE } = require('../services/whatsapp.service');
 const templateSyncService = require('../services/templateSync.service');
 const onboardingService = require('../services/whatsappOnboarding.service');
@@ -122,7 +123,7 @@ const createBusiness = async (req, res, next) => {
     }
 
     // Validate required fields
-    if (!name) {
+    if (!cleanValue(name)) {
       return errorResponse(res, 400, 'Business name is required');
     }
 
@@ -225,6 +226,10 @@ const updateBusiness = async (req, res, next) => {
 
     // Set only via POST/DELETE /payment-qr (uploaded to R2), never a raw URL.
     delete req.body.paymentQrUrl;
+
+    if (req.body.name !== undefined && !cleanValue(req.body.name)) {
+      return errorResponse(res, 400, 'Business name cannot be empty');
+    }
 
     if (req.body.disabledBookingFields !== undefined) {
       // Validate against this business's own flow_nodes, not the shared

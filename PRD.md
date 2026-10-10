@@ -1059,6 +1059,15 @@ funding), so nothing here calls the Graph API.
    in the MongoDB cleanup; no replacement exists yet.
 
 ## Session log (append here as major milestones land)
+- 2026-10-10: Variable values are cleaned before they go into outgoing text (built, not yet deployed; a
+  one-time cutover, no flag). `utils/templateValue.js` (`cleanValue`, `fillPlaceholders`) is the one
+  place: names collapse whitespace and trim (so `*{{businessName}}*` bolds even if the name has a
+  trailing space), address / business hours trim the ends only. Used by `applyMessageTemplate`,
+  follow-up text and template params, system messages, coaching translations, opt-in prefill and the demo
+  reminder. `templateComponents.js#textParams` also collapses every Meta template parameter (no newlines,
+  tabs or 4+ spaces; broadcasts included; button URL suffix trims the ends only). Business name / display
+  name / city / address and customer names (WhatsApp profile name, coexistence contacts) are trimmed on
+  save; an empty business name is a 400 on create and update. Existing rows are not rewritten.
 - 2026-10-14: Account health & stopped marketing (see that section): `businesses.payment_issue_at` /
   `payment_issue_code` (Meta 131042 -> `paymentIssue` on `GET /api/business`, owner dismiss) and
   `customers.marketing_blocked_at` (Meta 131050 / `user_preferences` -> `marketing_stopped` skip reason).

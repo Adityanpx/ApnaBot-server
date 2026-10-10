@@ -46,7 +46,7 @@ const run = (data) => processor({
 test.beforeEach(() => { refunds.length = 0; sentComponents.length = 0; billing = false; });
 
 // Step A (#6 Phase 2): components on the wire must match what the worker built before.
-test('mapped variables: header passthrough + per-recipient body, as before', async () => {
+test('mapped variables: header passthrough + per-recipient body, values cleaned for Meta', async () => {
   const header = { type: 'header', parameters: [{ type: 'image', image: { link: 'https://cdn.example.com/a.jpg' } }] };
   await run({
     components: [header, { type: 'body', parameters: [{ type: 'text', text: 'ignored' }] }],
@@ -55,7 +55,7 @@ test('mapped variables: header passthrough + per-recipient body, as before', asy
   });
   assert.equal(JSON.stringify(sentComponents[0].components), JSON.stringify([
     header,
-    { type: 'body', parameters: [{ type: 'text', text: ' Ravi ' }, { type: 'text', text: 'SALE' }] }
+    { type: 'body', parameters: [{ type: 'text', text: 'Ravi' }, { type: 'text', text: 'SALE' }] }
   ]));
 });
 

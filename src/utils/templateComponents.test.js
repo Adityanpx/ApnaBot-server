@@ -84,3 +84,16 @@ test('header comes first, then body', () => {
   const out = buildTemplateComponents(IMAGE, { body: ['x'] });
   assert.deepEqual(out.map((c) => c.type), ['header', 'body']);
 });
+
+test('text parameters are cleaned for Meta: no newlines, tabs or runs of spaces; button suffix trims the ends only', () => {
+  const { buildTemplateComponents: build } = require('./templateComponents');
+  assert.deepEqual(build({ header_type: 'NONE' }, { body: [' Ravi\nKumar ', 'a\t\tb     c', 42] }), [
+    { type: 'body', parameters: [{ type: 'text', text: 'Ravi Kumar' }, { type: 'text', text: 'a b c' }, { type: 'text', text: '42' }] }
+  ]);
+  assert.deepEqual(buildBodyComponents([' x ']), [{ type: 'body', parameters: [{ type: 'text', text: 'x' }] }]);
+  const withButton = build(
+    { id: 't1', header_type: 'NONE', meta_components: [{ type: 'BODY', text: 'Hi {{1}}' }, { type: 'BUTTONS', buttons: [{ type: 'URL', text: 'Track', url: 'https://x.example.com/{{1}}' }] }] },
+    { body: ['A'], buttons: { 0: ' SG-1 ' } }
+  );
+  assert.deepEqual(withButton[1].parameters, [{ type: 'text', text: 'SG-1' }]);
+});

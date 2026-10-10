@@ -345,3 +345,14 @@ test('handleChange: routes each field to its handler; a payload with no phone_nu
   assert.ok(customers().some(c => c.whatsapp_number === '919800000005'));
   assert.equal(await svc.handleChange({ id: 'w' }, { field: 'history', value: { history: [] } }), null);
 });
+
+test('contact sync: names are stored trimmed, both on create and when filling an empty name', async () => {
+  customers().push({ id: 'c2', business_id: BIZ, whatsapp_number: '919800000002', name: null, total_messages: 0, last_message_at: null });
+  await svc.handleStateSync(tenant, { metadata: meta, state_sync: [
+    contactItem('919800000002', ' Filled \n Name '),
+    contactItem('919800000003', ' Brand New ')
+  ] });
+  const byNumber = Object.fromEntries(customers().map(c => [c.whatsapp_number, c]));
+  assert.equal(byNumber['919800000002'].name, 'Filled Name');
+  assert.equal(byNumber['919800000003'].name, 'Brand New');
+});

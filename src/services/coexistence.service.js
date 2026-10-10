@@ -20,6 +20,7 @@ const tenantService = require('./tenant.service');
 const customerPipelineService = require('./customerPipeline.service');
 const { echoMediaOf, isOwnerMediaEnabled, storeEchoMedia } = require('./echoMedia.service');
 const { toCamelCase } = require('../utils/caseConvert');
+const { cleanValue } = require('../utils/templateValue');
 const { isIndefinitePause, BOT_PAUSE_DURATION_MS } = require('../utils/botPause');
 const { digits, parseEcho, parseHistoryEntry, parseStateSync, accountUpdateAction } = require('../utils/coexistencePayload');
 
@@ -45,7 +46,7 @@ const chunksOf = (list, size) => {
 const newCustomerRow = (businessId, number, name) => ({
   business_id: businessId,
   whatsapp_number: number,
-  name: name || null,
+  name: cleanValue(name) || null,
   first_seen_at: new Date().toISOString(),
   // Never messaged in: no window, no count (see the file header).
   last_message_at: null,
@@ -419,9 +420,10 @@ const handleStateSync = async (tenant, value) => {
     // Only ever fills an empty name.
     for (const a of parsed.adds) {
       const current = existing.get(a.phone);
-      if (!current || current.name || !a.name) continue;
+      const cleanName = cleanValue(a.name);
+      if (!current || current.name || !cleanName) continue;
       const { data, error } = await supabase
-        .from('customers').update({ name: a.name }).eq('id', current.id).or('name.is.null,name.eq.').select('id');
+        .from('customers').update({ name: cleanName }).eq('id', current.id).or('name.is.null,name.eq.').select('id');
       if (error) { stats.failed += 1; continue; }
       stats.namesFilled += (data || []).length;
     }

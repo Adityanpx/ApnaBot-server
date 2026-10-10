@@ -98,3 +98,7 @@ test('parseOptInTapId: the post-booking question ids carry no link and flag book
   assert.equal(parseOptInTapId(`optin_yes:${id}`).bookingPrompt, undefined);
   assert.equal(parseOptInTapId('optin_yes:bookings').bookingPrompt, undefined);
 });
+
+test('buildPrefillText: the business name is trimmed', () => {
+  assert.equal(buildPrefillText('Hi {{businessName}} 👋', 'K7Q2', ' SG Travels \n'), 'Hi SG Travels 👋 Code: JOIN-K7Q2');
+});

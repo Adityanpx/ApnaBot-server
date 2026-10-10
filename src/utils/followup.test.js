@@ -330,3 +330,22 @@ test('a template ApnaBot can\'t send yet (send_support not ok) is refused', () =
   // 'deleted' (soft) is not approved either
   assert.match(f.validateAutomation(base, { templateRow: marketingTpl({ status: 'deleted' }) }).error, /not approved/);
 });
+
+test('stray whitespace in a name never reaches bold text or a Meta parameter', () => {
+  const business = { displayName: 'Bright Minds ' };
+  const customer = { name: ' Asha\nPatil ' };
+  assert.equal(
+    f.renderText({ message_text: 'Hi *{{customerName}}* from *{{businessName}}*' }, business, customer, null),
+    'Hi *Asha Patil* from *Bright Minds*'
+  );
+  assert.deepEqual(f.renderTemplateParams(nameMapping, business, customer, 'en_US'), ['Asha Patil', 'Bright Minds']);
+  assert.deepEqual(
+    f.renderTemplateParams([{ source: 'static', value: 'a\n\n    b\tc', fallback: 'x' }], business, customer, 'en_US'),
+    ['a b c']
+  );
+  assert.deepEqual(f.renderTemplateParams([{ source: 'customer.name', fallback: ' ok \n' }], business, { name: '  ' }, 'en_US'), ['ok']);
+});
+
+test('renderTemplateText reads a value with $ patterns literally', () => {
+  assert.equal(f.renderTemplateText('Hi {{1}}, {{2}}', ['A $& B', '$1']), 'Hi A $& B, $1');
+});

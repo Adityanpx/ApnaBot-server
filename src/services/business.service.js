@@ -5,6 +5,20 @@ const { toCamelCase } = require('../utils/caseConvert');
 const { computeFeatureFlags, isTravelFeaturedCategory } = require('../config/categoryFeatures');
 const logger = require('../utils/logger');
 const { istDayStart } = require('../utils/ist');
+const { cleanValue } = require('../utils/templateValue');
+
+// Business text that is dropped into customer messages ({{businessName}},
+// {{businessAddress}}) — stray spaces break WhatsApp bold, so it is trimmed on
+// save. Names collapse inner whitespace; the address keeps its line breaks.
+const cleanBusinessText = {
+  name: (v) => cleanValue(v),
+  displayName: (v) => cleanValue(v),
+  city: (v) => cleanValue(v),
+  address: (v) => cleanValue(v, { multiline: true })
+};
+const cleanBusinessField = (field, value) => (
+  typeof value === 'string' && cleanBusinessText[field] ? cleanBusinessText[field](value) : value
+);
 
 const businessFieldMap = {
   name: 'name', displayName: 'display_name', address: 'address', city: 'city',
@@ -142,7 +156,11 @@ const getBusinessByPhoneNumberId = async (phoneNumberId) => {
  */
 const createBusiness = async (ownerUserId, data) => {
   try {
-    const { name, businessCategory, subCategories, address, city, displayName } = data;
+    const { businessCategory, subCategories } = data;
+    const name = cleanBusinessField('name', data.name);
+    const address = cleanBusinessField('address', data.address);
+    const city = cleanBusinessField('city', data.city);
+    const displayName = cleanBusinessField('displayName', data.displayName);
 
     const webhookVerifyToken = generateWebhookToken();
 
@@ -208,7 +226,7 @@ const updateBusiness = async (businessId, data) => {
     const updateData = {};
     for (const [field, column] of Object.entries(businessFieldMap)) {
       if (data[field] !== undefined) {
-        updateData[column] = data[field];
+        updateData[column] = cleanBusinessField(field, data[field]);
       }
     }
 
@@ -379,8 +397,8 @@ const connectWhatsapp = async (businessId, data) => {
       updateData.coex_history_sync_requested_at = null;
     }
 
-    if (displayName) {
-      updateData.display_name = displayName;
+    if (cleanValue(displayName)) {
+      updateData.display_name = cleanValue(displayName);
     }
 
     const { data: business, error } = await supabase

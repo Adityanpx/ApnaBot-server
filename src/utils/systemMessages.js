@@ -7,6 +7,8 @@
 // {{name}} marks a value filled in by the caller (getSystemMessage's vars).
 // The 'en' text of every entry that replaced an inline string is exactly
 // what was sent before — English customers see no change.
+const { fillPlaceholders } = require('./templateValue');
+
 const SYSTEM_MESSAGES = {
   webFormPrompt: {
     en: 'Tap below to fill in your request. This link expires in 30 minutes.',
@@ -277,9 +279,7 @@ const SYSTEM_MESSAGES = {
   }
 };
 
-const fill = (text, vars) => (vars
-  ? text.replace(/\{\{(\w+)\}\}/g, (m, name) => (Object.prototype.hasOwnProperty.call(vars, name) ? String(vars[name]) : m))
-  : text);
+const fill = fillPlaceholders;
 
 /**
  * Look up a system-authored string by key, falling back to English when

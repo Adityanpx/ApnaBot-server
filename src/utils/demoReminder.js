@@ -9,6 +9,7 @@
 
 const { getSystemMessage } = require('./systemMessages');
 const { IST_OFFSET_MS } = require('./ist');
+const { cleanValue } = require('./templateValue');
 
 const REMINDER_CHOICES = ['off', '2h', 'evening'];
 const HOUR_MS = 60 * 60 * 1000;
@@ -56,7 +57,7 @@ const reminderAt = (demoAt, choice) => {
 /** The booking's parent-facing details, with fallbacks so no template value is ever empty. */
 const demoDetails = (booking, businessName, demoAt) => {
   const fields = booking.fields || {};
-  const clean = (v, fallback) => (typeof v === 'string' && v.trim() ? v.trim() : fallback);
+  const clean = (v, fallback) => (typeof v === 'string' && cleanValue(v)) || fallback;
   return {
     student: clean(fields.studentName, 'Your child'),
     course: clean(fields.course, 'the course'),
@@ -72,8 +73,10 @@ const reminderText = (d, languageCode = null) => getSystemMessage('demoReminder'
 
 /** {{1}}..{{4}} of REMINDER_TEMPLATE, and the same message as it reads in the chat. */
 const templateParams = (d) => [d.student, d.course, d.business, d.time];
-const templateText = (d) => templateParams(d)
-  .reduce((text, value, i) => text.replace(`{{${i + 1}}}`, value), REMINDER_TEMPLATE.bodyText);
+const templateText = (d) => {
+  const params = templateParams(d);
+  return REMINDER_TEMPLATE.bodyText.replace(/\{\{(\d+)\}\}/g, (mark, n) => (n >= 1 && n <= params.length ? params[n - 1] : mark));
+};
 
 module.exports = {
   REMINDER_CHOICES,

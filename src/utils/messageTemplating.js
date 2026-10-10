@@ -1,10 +1,13 @@
+const { cleanValue, fillPlaceholders } = require('./templateValue');
+
 function applyMessageTemplate(text, business, customer) {
   if (!text) return text;
-  let result = text.replace(/\{\{businessName\}\}/g, business.displayName || business.name || '');
-  result = result.replace(/\{\{customerName\}\}/g, (customer?.name || '').trim() || 'there');
-  result = result.replace(/\{\{businessAddress\}\}/g, business.address || '');
-  result = result.replace(/\{\{businessHours\}\}/g, business.businessHours || '');
-  return result;
+  return fillPlaceholders(text, {
+    businessName: cleanValue(business.displayName) || cleanValue(business.name),
+    customerName: cleanValue(customer?.name) || 'there',
+    businessAddress: cleanValue(business.address, { multiline: true }),
+    businessHours: cleanValue(business.businessHours, { multiline: true })
+  }, { clean: false });
 }
 
 function applyMessageTemplateWithFooter(text, business, customer) {

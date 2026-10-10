@@ -53,3 +53,12 @@ test('post-booking consent "declined" line exists in every language', () => {
     assert.ok(text && text.trim(), `bookingConsentDeclined.${lang} missing`);
   }
 });
+
+test('values filled into system messages are cleaned', () => {
+  assert.equal(
+    getSystemMessage('optInConfirmed', 'en', { business: ' PrimeCare\n Clinic ' }),
+    "Thanks! You'll now get offers and updates from PrimeCare Clinic. Reply STOP anytime to stop."
+  );
+  assert.equal(getSystemMessage('bookingIdLine', 'en', { code: 'SG1234 ' }), 'Booking ID: *SG1234*');
+  assert.equal(getSystemMessage('bookingIdLine', 'en', { code: '$&' }), 'Booking ID: *$&*');
+});

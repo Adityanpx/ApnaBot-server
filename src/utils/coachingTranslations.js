@@ -18,6 +18,7 @@
 // through makeTranslator().tr, which also records the slot list the
 // Translations screen shows (POST /api/bot-settings/translation-slots).
 const { LANGUAGE_CATALOG } = require('./languageCatalog');
+const { fillPlaceholders } = require('./templateValue');
 
 const TRANSLATION_LANGUAGES = Object.keys(LANGUAGE_CATALOG).filter(code => code !== 'en');
 const SLOT_ID_PATTERN = /^[A-Za-z0-9_.:-]{1,120}$/;
@@ -133,7 +134,7 @@ const FORM_TITLES = {
 
 const isPlainObject = (v) => !!v && typeof v === 'object' && !Array.isArray(v);
 const placeholders = (text) => [...new Set(String(text || '').match(PLACEHOLDER_RE) || [])].sort().join('|');
-const fill = (text, vars) => (vars ? text.replace(/\{\{(\w+)\}\}/g, (m, k) => (Object.prototype.hasOwnProperty.call(vars, k) ? String(vars[k]) : m)) : text);
+const fill = fillPlaceholders;
 
 /**
  * Checks settings.translations (draft or publish). Returns an error or null.

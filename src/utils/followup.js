@@ -8,6 +8,7 @@
 const { getSystemMessage } = require('./systemMessages');
 const { getLocalizedText } = require('./localization');
 const { applyMessageTemplate } = require('./messageTemplating');
+const { cleanValue, fillPlaceholders } = require('./templateValue');
 const { isSendSupported, sendSupportBlockReason } = require('./templateStatus');
 const { requiredParams, splitMapping, checkParamCounts, BUTTON_SOURCES } = require('./templateMapping');
 
@@ -482,7 +483,7 @@ const EMPTY_NAME = { en: 'there', hi: 'जी', mr: 'जी' };
 const EMPTY_AMOUNT = { en: 'your payment', hi: 'आपका भुगतान', mr: 'तुमचे पेमेंट' };
 
 const customerNameOr = (customer, languageCode) => {
-  const name = customer && typeof customer.name === 'string' ? customer.name.trim() : '';
+  const name = customer && typeof customer.name === 'string' ? cleanValue(customer.name) : '';
   return name || EMPTY_NAME[languageCode] || EMPTY_NAME.en;
 };
 
@@ -494,7 +495,7 @@ const formatAmount = (amount) => {
   return new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: digits, maximumFractionDigits: digits }).format(n);
 };
 
-const bookingCodeOf = (booking) => (booking && typeof booking.booking_code === 'string' ? booking.booking_code.trim() : '');
+const bookingCodeOf = (booking) => (booking && typeof booking.booking_code === 'string' ? cleanValue(booking.booking_code) : '');
 
 /** 'hi' from 'hi', 'hi_IN'; null for anything else. */
 const baseLanguage = (code) => (typeof code === 'string' && code ? code.split(/[_-]/)[0].toLowerCase() : null);
@@ -510,13 +511,12 @@ const renderText = (automation, business, customer, languageCode, booking = null
   const translations = automation.message_text_translations || {};
   const translated = languageCode && typeof translations[languageCode] === 'string' && translations[languageCode].trim() !== '';
   const textLanguage = translated ? languageCode : 'en';
-  let text = getLocalizedText(automation, 'message_text', languageCode)
-    .replace(/\{\{customerName\}\}/g, () => customerNameOr(customer, textLanguage));
+  const vars = { customerName: customerNameOr(customer, textLanguage) };
   if (booking) {
-    text = text
-      .replace(/\{\{bookingCode\}\}/g, () => bookingCodeOf(booking))
-      .replace(/\{\{amount\}\}/g, () => formatAmount(booking.payment_amount) || EMPTY_AMOUNT[textLanguage] || EMPTY_AMOUNT.en);
+    vars.bookingCode = bookingCodeOf(booking);
+    vars.amount = formatAmount(booking.payment_amount) || EMPTY_AMOUNT[textLanguage] || EMPTY_AMOUNT.en;
   }
+  const text = fillPlaceholders(getLocalizedText(automation, 'message_text', languageCode), vars);
   return applyMessageTemplate(text, business, customer);
 };
 
@@ -526,7 +526,7 @@ const renderText = (automation, business, customer, languageCode, booking = null
  * template's language ('जी' / 'आपका भुगतान' for hi, etc., else English).
  */
 const resolveMappingEntry = (entry, business, customer, templateLanguage, booking) => {
-  const fallback = typeof entry.fallback === 'string' ? entry.fallback.trim() : '';
+  const fallback = typeof entry.fallback === 'string' ? cleanValue(entry.fallback) : '';
   const lang = baseLanguage(templateLanguage);
   let v;
   if (entry.source === 'customer.name') {
@@ -538,7 +538,7 @@ const resolveMappingEntry = (entry, business, customer, templateLanguage, bookin
     v = booking ? formatAmount(booking.payment_amount) : '';
     if (!v && !fallback) return EMPTY_AMOUNT[lang] || EMPTY_AMOUNT.en;
   } else v = entry.value;
-  return typeof v === 'string' && v.trim() ? v.trim() : fallback;
+  return (typeof v === 'string' && cleanValue(v)) || fallback;
 };
 
 /** {{1}}..{{n}} body values from template_variable_mapping (header / button entries are renderTemplateValues'). */
@@ -560,8 +560,8 @@ const renderTemplateValues = (mapping, business, customer, templateLanguage = nu
 };
 
 /** The template body as it reads in the chat. */
-const renderTemplateText = (bodyText, params) => params
-  .reduce((text, value, i) => text.replace(new RegExp(`\\{\\{\\s*${i + 1}\\s*\\}\\}`, 'g'), value), bodyText || '');
+const renderTemplateText = (bodyText, params) => (bodyText || '')
+  .replace(/\{\{\s*(\d+)\s*\}\}/g, (mark, n) => (n >= 1 && n <= params.length ? String(params[n - 1]) : mark));
 
 /** "9198*****210" — the start and the last digits of a number. */
 const maskNumber = (n) => {

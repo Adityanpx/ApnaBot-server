@@ -4,6 +4,7 @@
 // Pure helpers only — no database access — so they're unit-testable.
 
 const crypto = require('crypto');
+const { fillPlaceholders } = require('./templateValue');
 
 // No 0/O, 1/I/L or U — easy to read off a printed poster.
 const CODE_ALPHABET = '23456789ABCDEFGHJKMNPQRSTVWXYZ';
@@ -74,7 +75,7 @@ const normalizeGreeting = (input) => {
  * @param {string} businessName
  */
 const buildPrefillText = (greeting, code, businessName) =>
-  `${String(greeting || '').replace(/\{\{businessName\}\}/g, businessName || '').trim()} Code: JOIN-${code}`;
+  `${fillPlaceholders(String(greeting || ''), { businessName }).trim()} Code: JOIN-${code}`;
 
 /**
  * https://wa.me/<digits>?text=<prefill>, or null when the business has no

@@ -63,3 +63,9 @@ test('demoReminderFor reads the published settings', () => {
   assert.equal(demoReminderFor(settingsWith({})), null);
   assert.equal(demoReminderFor(null), null);
 });
+
+test('template values lose newlines and stray spaces; the chat text reads them literally', () => {
+  const d = demoDetails({ fields: { studentName: ' Aarav\nKumar ', course: 'Abacus  Level 1' } }, 'Bright Minds ', DEMO);
+  assert.deepEqual(templateParams(d), ['Aarav Kumar', 'Abacus Level 1', 'Bright Minds', 'Sun 4 Oct, 10:00 AM']);
+  assert.equal(templateText({ ...d, student: 'A $& B' }), "Hi! A $& B's free demo class for Abacus Level 1 at Bright Minds is on Sun 4 Oct, 10:00 AM. Reply here if you need to change it.");
+});

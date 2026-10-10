@@ -15,6 +15,7 @@ const { applyMessageTemplate, applyMessageTemplateWithFooter } = require('../uti
 const { LANGUAGE_CATALOG, isValidLanguageCode } = require('../utils/languageCatalog');
 const { getLocalizedText } = require('../utils/localization');
 const { getSystemMessage } = require('../utils/systemMessages');
+const { cleanValue } = require('../utils/templateValue');
 const { isIndefinitePause } = require('../utils/botPause');
 const { parseJoinCode, isSystemTapId, parseOptInTapId, OPT_IN_YES_PREFIX, OPT_IN_NO_PREFIX } = require('../utils/optInLink');
 const optInLinkService = require('../services/optInLink.service');
@@ -996,7 +997,7 @@ const processWebhookChange = async (entry, changes) => {
     const phoneNumberId = value.metadata.phone_number_id;
     // Meta includes the sender's current WhatsApp display name alongside each
     // inbound message via the contacts array — capture it for first contact.
-    const profileName = value.contacts?.[0]?.profile?.name || null;
+    const profileName = cleanValue(value.contacts?.[0]?.profile?.name) || null;
 
     // Step 4 - Resolve tenant
     const tenant = await tenantService.resolveBusinessByPhoneNumberId(phoneNumberId);
