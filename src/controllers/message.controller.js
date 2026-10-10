@@ -135,6 +135,20 @@ const markAsRead = async (req, res, next) => {
 
 const FREE_FORM_WINDOW_MS = 24 * 60 * 60 * 1000; // WhatsApp's 24h customer service window
 
+// What a business sees as the sender of a superadmin's message: the platform
+// team's own name is not shown to a business.
+const SUPPORT_SENDER_NAME = 'ApnaBot Support';
+
+/**
+ * The messages.sent_by_* columns for a human send. The name is stored as it is
+ * at send time (a snapshot); a superadmin's is the support label. The user id is
+ * kept either way.
+ */
+const senderStamp = (user) => ({
+  sent_by_user_id: user.userId,
+  sent_by_name: user.role === 'superadmin' ? SUPPORT_SENDER_NAME : (user.name || null)
+});
+
 /**
  * Shared gate for the manual (human) send paths — sendMessage and
  * sendPaymentQr. Returns { business, customer } or { status, error }.
@@ -229,6 +243,7 @@ const sendMessage = async (req, res, next) => {
       content: message.trim(),
       status: 'sent',
       sender_type: 'human',
+      ...senderStamp(req.user),
       is_read: true
     }).select().single();
     if (msgErr) throw msgErr;
@@ -316,6 +331,7 @@ const sendPaymentQr = async (req, res, next) => {
       media_url: business.paymentQrUrl,
       status: 'sent',
       sender_type: 'human',
+      ...senderStamp(req.user),
       is_read: true
     }).select().single();
     if (msgErr) throw msgErr;
@@ -388,6 +404,7 @@ const setBotPause = async (req, res, next) => {
 };
 
 module.exports = {
+  SUPPORT_SENDER_NAME,
   getConversations,
   getChatHistory,
   markAsRead,
