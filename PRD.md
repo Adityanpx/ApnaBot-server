@@ -612,6 +612,10 @@ tracked as a deferred "future initiative" — it's built and live.
   `media_removed_at` (set when storage cleanup removed the file; `media_url`
   is NULL then and the message keeps its label). See "Owner phone-app media &
   storage cleanup".
+- `messages` chat columns (2026-10-14, migration `20261014140000`): `sent_by_user_id` (uuid, FK
+  `users`, ON DELETE SET NULL), `sent_by_name` (text) and `interactive_payload` (jsonb, CHECK: NULL or an
+  object). All nullable, no default, no index, no backfill: older rows are NULL and read as plain text.
+  See "Chat redesign support".
 - `message_templates` — one row per WhatsApp template. `source` (`app` |
   `meta_sync`), `meta_template_id`, `status` (draft, pending, approved,
   rejected, paused, disabled, deleted), raw `meta_status`, `quality_score`,
@@ -973,6 +977,60 @@ funding), so nothing here calls the Graph API.
   reason table (section 7) still lacks `marketing_stopped`; a backfill of old 131050 failures
   (deliberately not written).
 
+## Chat redesign support (built 2026-10-14, commits 108ff65..684a7cb, local - not pushed)
+
+Server side of the Flutter chat redesign. Everything is additive: `GET /api/messages/:customerId` still
+does `select('*')` + camelCase, so the new columns appear as `sentByUserId`, `sentByName` and
+`interactivePayload` (null on older rows) and in the socket `new_message` row. Customer-facing WhatsApp
+messages are byte-for-byte unchanged; only what is written to `messages` changed.
+
+- **Who sent a human message.** `sendMessage` and `sendPaymentQr` (`message.controller.js`, the only two
+  human-send inserts) stamp `sent_by_user_id` = `req.user.userId` and `sent_by_name` = `req.user.name`,
+  or the fixed label **'ApnaBot Support'** for a superadmin (the id is kept). The name is a snapshot
+  taken at send time, so a rename or a deleted user changes nothing old. Bot and phone-app rows stay
+  NULL. It is shown to people who can view that business's chats and is never sent to Meta. Staff
+  still cannot send (route roles unchanged: owner / superadmin).
+- **What the customer saw: `interactive_payload`.** A jsonb object
+  `{ kind, body, buttonText?, options?: [{ id, title, description? }], label?, imageUrl? }` with
+  `kind` = `list` | `buttons` | `cta_url` | `location_request`. Text is cut to the same limits as the
+  senders (`LIMITS` + the grapheme-safe `truncate`), buttons capped at 3, list label defaults to
+  'Choose'. `null` when there is nothing interactive (plain text, image, location pin, template).
+  `cta_url` stores **kind, body and label only - NOT the link**: the booking-form link carries a
+  single-use token. `imageUrl` is set only on `buttons` (the list senders never send a header image).
+  The migration header comment still lists `url?` in the shape: that comment is stale, no payload
+  has a url, and no data is affected.
+- **The helper.** `utils/interactivePayload.js#buildInteractivePayload(jobData)` takes the same job data
+  the queue gets and follows the worker's dispatch order (`location` > `locationRequest` > `ctaButton` >
+  `interactiveList` > `interactiveButtons` > `buttons` > `listOptions`). The Meta senders and the worker do
+  NOT use it. `utils/interactivePayload.test.js` runs the REAL worker and senders (axios stubbed) over 17
+  job shapes and fails if the stored payload and what Meta was given ever differ - run it after any
+  change to `whatsapp.service.js` or the worker.
+- **Save sites** (each sets `interactive_payload` in its existing insert): `webhook.controller.js` Step 15
+  (flow buttons / list / web-form link / a tapped question node), `sendFieldPrompt` (booking question as
+  list, buttons or location request), the vehicle carousel ("Book this" and "Other options"), both language
+  pickers, the opt-in consent question, and `bookingConsent.service.js#sendQuestion`.
+  `webhook.interactiveSites.test.js` + `webhook.interactiveSites.golden.json` hold the exact queue job and
+  Meta body per site, captured BEFORE the change; they must stay equal. Step 15 and `sendFieldPrompt`
+  work out the interactive job fields before the insert and add them to the job afterwards in the same
+  key order.
+- **Batch mark-read.** `PUT /api/messages/customer/:customerId/read` (owner / staff / superadmin): ONE
+  UPDATE setting `is_read = true` where business, customer, `direction = 'inbound'` and `is_read = false`;
+  answers `{ customerId, updated }`. A customer id from another business updates 0 rows (200, not 404).
+  Dashboard-only: no queue, no Meta call, no socket event. The single-message
+  `PUT /api/messages/:id/read` is unchanged. The conversations list still computes `unreadCount` per
+  customer (count of inbound `is_read = false`).
+- **Outbound location pins.** A location reply node's row used to be saved with empty text. It now holds
+  "📍 name · address" (`utils/locationLabel.js`; just the name or address if only one exists; "📍 Location"
+  if neither). No coordinates are stored. The queue job is unchanged. The pin's coordinates are worked
+  out before the row is saved; if the business lookup there throws, it is treated as "no coordinates":
+  the row is saved with the fallback text and the customer gets it (previously nothing was sent). The
+  same fallback text is now also what the row holds when no coordinates are configured at all.
+- **Deploy order:** apply `20261014140000`, run `supabase/verification/verify_messages_chat_columns.sql`
+  (rolls back; expect `RESULT: ALL 18 CHECKS PASSED`), confirm the three columns, THEN deploy the server.
+  One-time cutover, no flag: every bot reply insert now writes `interactive_payload` for ALL businesses
+  (Search cab AI included), so code before the migration fails those inserts. Rolling the code back is
+  always safe with the columns present.
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism
@@ -1057,8 +1115,23 @@ funding), so nothing here calls the Graph API.
 18. **Supabase version of `rotateEncryptionKey` (encryption key rotation).** The old script
    (re-encrypting stored access tokens with a new `ENCRYPTION_KEY`) was Mongo-only and was deleted
    in the MongoDB cleanup; no replacement exists yet.
+19. **Language-picker titles use `.slice(0, 20)`** (two places in `webhook.controller.js`, where
+   `languageButtons` is built): not grapheme-safe, unlike the senders' `truncate`. Current language names
+   are short, so nothing is affected today.
+20. **Chat redesign leftovers (2026-10-14).** The tapped button / list id is not stored (an inbound tap is
+   `type 'interactive'` with the tapped title as `content`); inbound location lat/lng are not stored (only
+   the "📍 Location · name · address" text); outbound pin coordinates are not stored; the web inbox does not
+   show `sentByName` yet; list messages have no header image because `sendListMessage` /
+   `sendRuleListMessage` ignore `imageUrl`.
 
 ## Session log (append here as major milestones land)
+- 2026-10-14: Chat redesign server support (see "Chat redesign support"): `messages.sent_by_user_id` /
+  `sent_by_name` / `interactive_payload` (migration `20261014140000`), the payload helper and its save
+  sites, `PUT /api/messages/customer/:customerId/read`, and the outbound location pin text. Commits
+  108ff65, c91529c, 2e13942, aabcba6, 684a7cb (local, not pushed). **Deploy: apply `20261014140000`
+  first, run `supabase/verification/verify_messages_chat_columns.sql`, then deploy the server.**
+  One-time cutover, no flag: every bot reply insert changes at deploy for all businesses (Search cab AI
+  included); customer-facing WhatsApp messages do not.
 - 2026-10-10: Variable values are cleaned before they go into outgoing text (built, not yet deployed; a
   one-time cutover, no flag). `utils/templateValue.js` (`cleanValue`, `fillPlaceholders`) is the one
   place: names collapse whitespace and trim (so `*{{businessName}}*` bolds even if the name has a
