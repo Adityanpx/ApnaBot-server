@@ -4,6 +4,7 @@ const supabase = require('../config/supabase');
 const { toCamelCase } = require('../utils/caseConvert');
 const { getLocalizedText } = require('../utils/localization');
 const { getSystemMessage } = require('../utils/systemMessages');
+const { cleanValue } = require('../utils/templateValue');
 const businessService = require('./business.service');
 const paymentService = require('./payment.service');
 const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
@@ -429,12 +430,14 @@ const buildBookingSummaryBody = (collected, orderedFields, localRentalUnconfigur
       // advanceGraphSession), not a string, unless the customer used the
       // manual-text fallback instead of sharing their location — string
       // concatenation below would otherwise silently print "[object Object]".
+      // A stray space or line break inside the asterisks stops WhatsApp bolding.
       if (typeof value === 'object') {
-        const displayValue = value.address ||
-          `https://maps.google.com/?q=${value.latitude},${value.longitude}`;
-        return label + ': *' + displayValue + '*';
+        const displayValue = cleanValue(value.address ||
+          `https://maps.google.com/?q=${value.latitude},${value.longitude}`);
+        return displayValue ? label + ': *' + displayValue + '*' : null;
       }
-      return label + ': *' + value + '*';
+      const answer = cleanValue(value);
+      return answer ? label + ': *' + answer + '*' : null;
     })
     .filter(line => line !== null)
     .join('\n');
