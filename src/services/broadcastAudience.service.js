@@ -5,7 +5,9 @@
 // owner sees is exactly who gets the message.
 //
 //   all_customers      every opted-in, non-blocked customer who hasn't sent
-//                      STOP (customers.opted_out_at, cleared by START)
+//                      STOP (customers.opted_out_at, cleared by START) and who
+//                      hasn't stopped marketing messages (customers.marketing_blocked_at,
+//                      Meta 131050 - MARKETING rule only, see below)
 //   coaching_requests  those of them with a matching Free demo / Admission
 //                      request (bookings.form_key), optionally for one
 //                      course (bookings.fields.course), optionally skipping
@@ -26,7 +28,8 @@
 //
 // "Opted-in" above is the MARKETING rule. A UTILITY template (payment reminder,
 // booking update …) doesn't need marketing consent, so for it opted_in is not
-// required — opted_out_at, is_blocked and the number check still apply. The
+// required and a customer who stopped marketing messages (marketing_blocked_at)
+// is still reached — opted_out_at, is_blocked and the number check still apply. The
 // template's category is read from the stored message_templates row by the
 // caller (never the request body) and passed as `category`; anything that isn't
 // UTILITY, including no category at all, keeps the marketing rule
@@ -48,8 +51,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
 const FORM_CHOICES = ['demo', 'admission', 'any'];
 const DAY_MS = 24 * 60 * 60 * 1000;
 // Why a selected customer is skipped, in the order they are checked
-// (broadcast_audience in SQL uses the same order).
-const SKIP_REASONS = ['no_number', 'blocked', 'opted_out', 'not_opted_in'];
+// (broadcast_audience in SQL uses the same order). marketing_stopped comes
+// before not_opted_in: marking the customer opted in cannot fix it.
+const SKIP_REASONS = ['no_number', 'blocked', 'opted_out', 'marketing_stopped', 'not_opted_in'];
 const VALID_NUMBER = /^[0-9]{8,15}$/;
 // Ids per `in (...)` filter. The URL has a hard ceiling — measured on the
 // hosted project 2026-10-07: 350 UUIDs work, 400 fail ("fetch failed") — so
@@ -63,9 +67,11 @@ const PAGE = 1000;
 const hasValidNumber = (number) => typeof number === 'string' && VALID_NUMBER.test(number);
 
 /**
- * Whether a broadcast with a template of this category needs customers.opted_in.
- * False ONLY for UTILITY (case-insensitive); MARKETING, AUTHENTICATION, an
- * unknown category or none all keep the strict marketing rule.
+ * Whether a broadcast with a template of this category follows the MARKETING
+ * rule: customers.opted_in is needed and a customer who stopped marketing
+ * messages (marketing_blocked_at) is skipped. False ONLY for UTILITY
+ * (case-insensitive); MARKETING, AUTHENTICATION, an unknown category or none
+ * all keep the strict marketing rule.
  */
 const requiresMarketingOptIn = (category) => !(typeof category === 'string' && category.trim().toLowerCase() === 'utility');
 
@@ -229,14 +235,15 @@ const applySegment = (query, params, now = Date.now()) => {
 
 /**
  * The non-blocked, not-opted-out customers with a valid number that a
- * broadcast with this audience reaches — opted-in ones only, unless the
- * template's `category` is UTILITY (requiresMarketingOptIn).
+ * broadcast with this audience reaches — opted-in ones who haven't stopped
+ * marketing messages only, unless the template's `category` is UTILITY
+ * (requiresMarketingOptIn).
  * @returns {Promise<{ id, whatsapp_number, name }[]>}
  */
 const resolveAudience = async (businessId, filter, params, { category = null } = {}) => {
   const base = () => {
     const query = supabase.from('customers').select('id, whatsapp_number, name').eq('business_id', businessId);
-    return (requiresMarketingOptIn(category) ? query.eq('opted_in', true) : query).eq('is_blocked', false).is('opted_out_at', null);
+    return (requiresMarketingOptIn(category) ? query.eq('opted_in', true).is('marketing_blocked_at', null) : query).eq('is_blocked', false).is('opted_out_at', null);
   };
   let customers = [];
   if (filter === 'segment') {
@@ -269,7 +276,7 @@ const maskNumber = (number) => {
 /**
  * How many customers an audience selects, how many of them will receive the
  * broadcast and how many are skipped, by reason. `category` is the template's
- * stored category (UTILITY never skips anyone for not_opted_in).
+ * stored category (UTILITY never skips anyone for not_opted_in or marketing_stopped).
  * @returns {Promise<{ selected: number, willReceive: number, skipped: Object<string, number> }>}
  */
 const audienceSummary = async (businessId, filter, params, { category = null } = {}) => {

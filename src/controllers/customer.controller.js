@@ -33,12 +33,13 @@ const withWindowExpiresAt = (customer) => ({
 });
 
 // Mirrors broadcastAudience.service.js#resolveAudience's MARKETING send-audience
-// filter (opted_in=true AND is_blocked=false AND opted_out_at IS NULL). It has
-// no template, so it stays marketing-strict: a UTILITY broadcast also reaches
+// filter (opted_in=true AND marketing_blocked_at IS NULL AND is_blocked=false AND
+// opted_out_at IS NULL). It has no template, so it stays marketing-strict: a
+// UTILITY broadcast also reaches
 // customers this flag calls ineligible (resolveAudience drops opted_in for
 // UTILITY, see requiresMarketingOptIn). Takes a raw (snake_case) customer row.
 const isBroadcastEligible = (customer) =>
-  customer.opted_in === true && customer.is_blocked !== true && !customer.opted_out_at;
+  customer.opted_in === true && customer.is_blocked !== true && !customer.opted_out_at && !customer.marketing_blocked_at;
 
 const buildBookingStatsByCustomer = (bookingRows) => {
   const stats = {};
@@ -133,10 +134,10 @@ const buildCustomerQuery = (businessId, filters, columns = '*', options = { coun
     query = query.eq('opted_in', optedIn === 'true');
   }
   if (broadcastEligible === 'true') {
-    // Mirrors isBroadcastEligible() above — opted_in, is_blocked and
-    // opted_out_at are all real columns, so this filters at the query level
-    // like isBlocked.
-    query = query.eq('opted_in', true).eq('is_blocked', false).is('opted_out_at', null);
+    // Mirrors isBroadcastEligible() above — opted_in, marketing_blocked_at,
+    // is_blocked and opted_out_at are all real columns, so this filters at the
+    // query level like isBlocked.
+    query = query.eq('opted_in', true).is('marketing_blocked_at', null).eq('is_blocked', false).is('opted_out_at', null);
   }
   if (pipelineStage !== undefined) {
     query = query.eq('pipeline_stage', pipelineStage);
@@ -340,7 +341,7 @@ const getCustomerSummary = async (req, res, next) => {
     const [totalRes, optedInRes, broadcastEligibleRes, consentAskedRes, consentYesRes, consentNoRes] = await Promise.all([
       supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId),
       supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).eq('opted_in', true),
-      supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).eq('opted_in', true).eq('is_blocked', false).is('opted_out_at', null),
+      supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).eq('opted_in', true).is('marketing_blocked_at', null).eq('is_blocked', false).is('opted_out_at', null),
       // Post-booking consent question (services/bookingConsent.service.js), all time.
       supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).not('consent_prompted_at', 'is', null),
       supabase.from('customers').select('*', { count: 'exact', head: true }).eq('business_id', businessId).eq('consent_prompt_result', 'yes'),
@@ -532,6 +533,36 @@ const unblockCustomer = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/customers/:id/resume-marketing
+ * The owner lifts a stopped-marketing flag (Meta 131050 / the customer's own
+ * choice in WhatsApp) - e.g. the customer told them they want offers again.
+ * Meta may still refuse a marketing message if the customer has not resumed on
+ * their side; the flag is set again by the next 131050.
+ */
+const resumeMarketing = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const businessId = req.user.businessId;
+
+    const { data: existing, error: findErr } = await supabase
+      .from('customers').select('marketing_blocked_at').eq('id', id).eq('business_id', businessId).maybeSingle();
+    if (findErr) throw findErr;
+    if (!existing) return errorResponse(res, 404, 'Customer not found');
+    if (!existing.marketing_blocked_at) return errorResponse(res, 400, 'Customer has not stopped marketing messages');
+
+    const { data: customer, error } = await supabase
+      .from('customers').update({ marketing_blocked_at: null }).eq('id', id).eq('business_id', businessId).select().single();
+    if (error) throw error;
+
+    logger.info(`Customer ${id} marketing messages resumed by the owner for business ${businessId}`);
+    return successResponse(res, 200, toCamelCase(customer), 'Marketing messages resumed');
+  } catch (error) {
+    logger.error('Error in resumeMarketing:', error);
+    next(error);
+  }
+};
+
 const OPT_IN_SOURCES = ['customer_initiated', 'manual', 'website_form'];
 
 /**
@@ -589,6 +620,7 @@ module.exports = {
   updateCustomer,
   blockCustomer,
   unblockCustomer,
+  resumeMarketing,
   toggleCustomerOptIn,
   withWindowExpiresAt,
   isBroadcastEligible

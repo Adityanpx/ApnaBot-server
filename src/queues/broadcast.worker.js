@@ -10,6 +10,8 @@ const { splitMapping } = require('../utils/templateMapping');
 const { extractMetaMessageId } = require('../services/outboundMessageId.service');
 const { fromSendError } = require('../utils/whatsappErrors');
 const { notifyBroadcastProgress } = require('../services/broadcastProgress.service');
+const deliverySignals = require('../services/deliverySignals.service');
+const { isPaymentIssueCode } = require('../services/accountHealth.service');
 
 // Must match the prefix used by broadcast.queue.js - see comment there.
 const prefix = `apnabot:${config.QUEUE_NAMESPACE}`;
@@ -73,6 +75,8 @@ const worker = new Worker('broadcast-outbound', async (job) => {
 
   let sent = 0;
   let failed = 0;
+  // A payment-method failure is the same for every recipient: noted once per batch.
+  let paymentIssueNoted = false;
 
   // Per-recipient failures (e.g. a single bad number) must not fail the
   // whole job - attempts:1 on this queue means a thrown job error loses
@@ -107,6 +111,10 @@ const worker = new Worker('broadcast-outbound', async (job) => {
       logger.error(`Broadcast ${broadcastId}: failed to send to ${recipient.whatsappNumber}`, {
         error: error.response?.data || error.message
       });
+      if (!(isPaymentIssueCode(errorCode) && paymentIssueNoted)) {
+        await deliverySignals.noteSendFailure({ businessId, errorCode, customerId: recipient.customerId, whatsappNumber: recipient.whatsappNumber });
+      }
+      if (isPaymentIssueCode(errorCode)) paymentIssueNoted = true;
 
       if (debited && ratePerMessage > 0) {
         try {

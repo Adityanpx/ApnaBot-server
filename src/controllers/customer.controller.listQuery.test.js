@@ -67,7 +67,7 @@ test('every plain filter + search + page: same calls, same order', async () => {
     ['select', '*', COUNT], ['eq', 'business_id', 'b'],
     ['or', 'name.ilike.%rahul%,whatsapp_number.ilike.%rahul%'],
     ['eq', 'is_blocked', false], ['eq', 'opted_in', true],
-    ['eq', 'opted_in', true], ['eq', 'is_blocked', false], ['is', 'opted_out_at', null],
+    ['eq', 'opted_in', true], ['is', 'marketing_blocked_at', null], ['eq', 'is_blocked', false], ['is', 'opted_out_at', null],
     ['eq', 'pipeline_stage', 'contacted'], ['is', 'last_message_at', null],
     ORDER, ['range', 20, 29]
   ]]);

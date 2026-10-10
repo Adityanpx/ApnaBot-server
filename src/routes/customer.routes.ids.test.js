@@ -25,6 +25,7 @@ stub('../controllers/customer.controller', {
   updateCustomer: reached('updateCustomer'),
   blockCustomer: reached('blockCustomer'),
   unblockCustomer: reached('unblockCustomer'),
+  resumeMarketing: reached('resumeMarketing'),
   toggleCustomerOptIn: reached('toggleCustomerOptIn')
 });
 

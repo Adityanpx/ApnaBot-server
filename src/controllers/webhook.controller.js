@@ -32,6 +32,8 @@ const coexistenceService = require('../services/coexistence.service');
 const { buildStatusEvents, statusOnlySummary } = require('../utils/statusPayload');
 const { withFailure } = require('../utils/whatsappErrors');
 const { notifyBroadcastProgress } = require('../services/broadcastProgress.service');
+const deliverySignals = require('../services/deliverySignals.service');
+const userPreferencesService = require('../services/userPreferences.service');
 const { splitMessages } = require('../utils/webhookBatch');
 
 // Exact-match greeting keywords that trigger the welcome message / menu.
@@ -727,6 +729,7 @@ const applyStatusEvents = async (events) => {
     for (const rec of (data && data.changed_recipients) || []) {
       notifyBroadcastProgress(rec.business_id, rec.broadcast_id);
     }
+    await deliverySignals.noteStatusChanges(data && data.changed, data && data.changed_recipients);
     return (data && data.unmatched) || [];
   } catch (err) {
     logger.error('Error updating message statuses:', err);
@@ -940,6 +943,13 @@ const processWebhookChange = async (entry, changes) => {
         logger.error(`Error emitting template_status_update socket event (${changes.field}):`, socketErr);
       }
 
+      return;
+    }
+
+    // A customer stopped or resumed MARKETING messages from this business
+    // (marketing_blocked_at). Not a customer message: it never reaches the bot.
+    if (changes?.field === 'user_preferences') {
+      await userPreferencesService.handleUserPreferences(value);
       return;
     }
 
@@ -1194,7 +1204,7 @@ const processWebhookChange = async (entry, changes) => {
       // deliberately NOT clearable by the customer's own START — only a
       // timed pause (owner's 24h pause or a prior customer STOP) is.
       const { error: startPauseErr } = await supabase
-        .from('customers').update({ bot_paused_until: null, opted_out_at: null }).eq('id', customer.id);
+        .from('customers').update({ bot_paused_until: null, opted_out_at: null, marketing_blocked_at: null }).eq('id', customer.id);
       if (startPauseErr) {
         logger.error('Error clearing bot pause via customer START keyword:', startPauseErr);
       }
@@ -1250,16 +1260,18 @@ const processWebhookChange = async (entry, changes) => {
 
     // START with no timed pause left to clear (the 24h STOP pause has run
     // out, or an owner pause / handoff is indefinite): still lift the lasting
-    // opt-out a STOP set, so broadcasts and follow-ups reach the customer
+    // opt-out a STOP set - and a stopped-marketing flag (Meta 131050 /
+    // user_preferences) - so broadcasts and follow-ups reach the customer
     // again. No extra reply — 'start' carries on as a greeting below, and an
     // owner's pause is left as it is (isBotPaused still returns).
-    if (START_KEYWORDS.has(normalizedStopStartText) && customer.optedOutAt) {
+    if (START_KEYWORDS.has(normalizedStopStartText) && (customer.optedOutAt || customer.marketingBlockedAt)) {
       const { error: optInAgainErr } = await supabase
-        .from('customers').update({ opted_out_at: null }).eq('id', customer.id);
+        .from('customers').update({ opted_out_at: null, marketing_blocked_at: null }).eq('id', customer.id);
       if (optInAgainErr) {
         logger.error('Error clearing opt-out via customer START keyword:', optInAgainErr);
       } else {
         customer.optedOutAt = null;
+        customer.marketingBlockedAt = null;
         logger.info(`Customer ${customerNumber} cleared their opt-out via START keyword for business ${tenant.businessId}`);
       }
     }

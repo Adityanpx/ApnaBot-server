@@ -14,6 +14,13 @@
 // and the summary function's counts against the SQL rows. Any difference lists
 // the first few customer ids (numbers masked) and the script exits 1.
 //
+// customers.marketing_blocked_at (migration 20261014130000_customers_marketing_blocked.sql,
+// the 'marketing_stopped' skip reason): the MARKETING cases only exercise that rule
+// once some customer of the business has the column set. On a business where nobody
+// does, every case passes vacuously for it - a pass proves nothing about that rule
+// there. supabase/verification/verify_marketing_blocked.sql checks the rule itself on
+// made-up rows.
+//
 // NEVER WRITES. There is no --confirm: it only reads customers, bookings,
 // contact_groups and the two RPCs, so it is safe against any business — the
 // live Search cab AI included — but it reads that business's customers, so run

@@ -229,3 +229,11 @@ test('sendQuestion: one text message with Yes/No buttons optin_yes:booking / opt
   assert.equal(db.messages[0].content, job.message);
   assert.equal(db.messages[0].sender_type, 'bot');
 });
+
+test('tap yes does not clear marketing_blocked_at: only Meta\'s resume, START or the owner do', async () => {
+  asked({ marketing_blocked_at: '2026-10-01T10:00:00Z' });
+  const res = await service.handleBookingConsentTap({ id: 'c1' }, { answer: 'yes' });
+  assert.equal(res.newlyOptedIn, true);
+  assert.equal(customer().opted_in, true);
+  assert.equal(customer().marketing_blocked_at, '2026-10-01T10:00:00Z');
+});

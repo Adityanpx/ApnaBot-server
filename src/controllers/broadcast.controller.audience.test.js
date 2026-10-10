@@ -95,7 +95,7 @@ const call = async (handler, body, businessId = 'b') => {
 
 test.beforeEach(() => {
   inserted.length = 0; rpcCalls.length = 0; rpcRows = []; rpcCount = 0;
-  summaryData = { selected: 10, willReceive: 7, skipped: { no_number: 1, blocked: 1, opted_out: 0, not_opted_in: 1 } };
+  summaryData = { selected: 10, willReceive: 7, skipped: { no_number: 1, blocked: 1, opted_out: 0, marketing_stopped: 0, not_opted_in: 1 } };
 });
 
 // ── audience-summary ──
@@ -104,7 +104,7 @@ test('summary: selected / willReceive / skipped by reason, and the cap', async (
   const res = await call(getAudienceSummary, { audienceFilter: 'segment', audienceParams: { tags: ['vip'] } });
   assert.equal(res.statusCode, 200);
   assert.deepEqual(res.body.data, {
-    selected: 10, willReceive: 7, skipped: { no_number: 1, blocked: 1, opted_out: 0, not_opted_in: 1 }, overCap: false, cap: 1000
+    selected: 10, willReceive: 7, skipped: { no_number: 1, blocked: 1, opted_out: 0, marketing_stopped: 0, not_opted_in: 1 }, overCap: false, cap: 1000
   });
 });
 

@@ -48,7 +48,7 @@ const SENT_STATUSES = ['sent_text', 'sent_template'];
 const TRIGGER_PRIORITY = { after_last_inbound: 0, after_payment_requested: 1, after_completed: 2, inactive_for: 3 };
 const OPEN_BOOKING_STATUSES = ['pending', 'confirmed'];
 const PAST_CUSTOMER_STATUSES = ['confirmed', 'completed'];
-const CUSTOMER_COLUMNS = 'id, business_id, whatsapp_number, name, last_message_at, opted_in, opted_out_at, is_blocked, bot_paused_until, preferred_language';
+const CUSTOMER_COLUMNS = 'id, business_id, whatsapp_number, name, last_message_at, opted_in, opted_out_at, marketing_blocked_at, is_blocked, bot_paused_until, preferred_language';
 
 const iso = (d) => new Date(d).toISOString();
 
@@ -78,7 +78,7 @@ const fetchCandidatePage = async (automation, now, offset, limit) => {
     .is('opted_out_at', null)
     .or(`bot_paused_until.is.null,bot_paused_until.lte.${iso(now)}`);
   // inactive_for always sends a template (the window has long closed).
-  if (automation.trigger_type === 'inactive_for' && needsOptIn(automation)) query = query.eq('opted_in', true);
+  if (automation.trigger_type === 'inactive_for' && needsOptIn(automation)) query = query.eq('opted_in', true).is('marketing_blocked_at', null);
   const { data, error } = await query
     .order('last_message_at', { ascending: false })
     .range(offset, offset + limit - 1);
@@ -337,6 +337,7 @@ const freshGuard = async (automation, fresh, sendRow, now, booking = null) => {
   }
   if (!isWindowOpen(fresh, nowMs)) {
     if (!automation.template_id) return 'no_template';
+    if (needsOptIn(automation) && fresh.marketing_blocked_at) return 'marketing_stopped';
     if (needsOptIn(automation) && !fresh.opted_in) return 'not_opted_in';
   }
   return null;

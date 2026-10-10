@@ -436,10 +436,11 @@ question nodes) plus web-form links for Free demo / Admission.
   `recipients-preview` and the send read the draft's own template. The empty-audience
   400 from the send says "opted-in" only for templates that need it.
   `GET /api/customers`' `broadcastEligible` flag and filter (`isBroadcastEligible`)
-  have no template and stay marketing-strict.
+  have no template and stay marketing-strict (so they also leave out a customer with
+  `marketing_blocked_at` - see "Account health & stopped marketing").
   **Summary / skipped list (owner + superadmin only):** `POST
   /api/broadcasts/audience-summary` → `{ selected, willReceive, skipped:
-  { no_number, blocked, opted_out, not_opted_in }, overCap, cap }` (`cap` =
+  { no_number, blocked, opted_out, marketing_stopped, not_opted_in }, overCap, cap }` (`cap` =
   `MAX_BROADCAST_RECIPIENTS`, default 2000; `overCap` = willReceive above it,
   which the send would refuse); `POST /api/broadcasts/audience-skipped`
   `{ …audience, reason?, page?, limit?≤100 }` → `{ items: [{ customerId, name,
@@ -450,7 +451,7 @@ question nodes) plus web-form links for Free demo / Admission.
   `p_require_opt_in boolean default true` and drops the 3-argument versions;
   service_role only), which
   select by the same rules and give each skipped customer ONE reason (order
-  no_number > blocked > opted_out > not_opted_in). The send does not use them:
+  no_number > blocked > opted_out > marketing_stopped > not_opted_in). The send does not use them:
   `node src/scripts/checkAudienceParity.js --business <id>` (read-only, no
   `--confirm`) compares the SQL's willReceive ids with `resolveAudience` for
   every type on a real business, once as MARKETING and once as UTILITY — run it
@@ -905,6 +906,73 @@ does not need `opted_in` at all - see "Broadcast audiences"; follow-ups have the
   sent before (one extra uncached business read per booking); the behaviour change happens when an
   owner switches it on for a business. Search cab AI uses these paths.
 
+## Account health & stopped marketing (built 2026-10-14)
+
+Two things Meta tells us only when a send fails (or, for the second, ahead of time), turned into
+flags the owner can see. Both are **reactive**: Meta documents no field that reports a WhatsApp
+payment-method status (checked 2026-10-10: the health-status doc mentions neither billing nor
+funding), so nothing here calls the Graph API.
+
+- **Payment-method problem (Meta 131042)** - migration `20261014120000_business_payment_issue.sql`
+  (`businesses.payment_issue_at`, `payment_issue_code`). `services/accountHealth.service.js`;
+  `services/deliverySignals.service.js` is the one entry point the failing places call
+  (`noteSendFailure`, `noteStatusChanges`). Sources: the status webhook (`applyStatusEvents` in
+  `webhook.controller.js`: failed chat messages and broadcast recipients), the broadcast worker's
+  immediate rejection (noted once per batch), and `windowAwareSend`'s rejection (follow-ups, demo
+  reminders; it still returns `{ sent: false, code: 'rejected' }`). **Set:** the first failure wins
+  (`where payment_issue_at is null`), so `since` stays put. **Cleared only** (a) atomically when a
+  broadcast recipient sent AFTER `payment_issue_at` is delivered / read (a chat message delivering
+  never clears it - template messages are stored as `type 'text'`, so free in-window text can't be
+  told apart), or (b) by the owner: `POST /api/business/payment-issue/dismiss` (`protect`,
+  `requireBusiness`, `requireRole('owner')`). No auto-expiry. **API:** `GET/POST/PUT /api/business`
+  and the connect-WhatsApp response carry `paymentIssue: { since, code } | null`; the raw columns are
+  deleted from the response (`withPaymentIssue`). The login response has no business, so it has no
+  `paymentIssue`. Superadmin's admin business responses (`admin.controller.js`) were NOT changed and
+  still return the raw camelCase columns. There is no server-side setup-checklist / setup-status
+  endpoint: web and Flutter read `paymentIssue` from `GET /api/business` and own the "Add a payment
+  method to your WhatsApp account" step (it can't be auto-completed; the owner dismisses it).
+- **Stopped marketing messages (Meta 131050 / `user_preferences`)** - migration
+  `20261014130000_customers_marketing_blocked.sql` (`customers.marketing_blocked_at`, plus
+  `create or replace` of `broadcast_audience` / `broadcast_audience_summary`, same signatures and
+  grants). It is separate from `opted_out_at` (the customer's STOP: nothing at all) because 131050 is
+  marketing-only. **It blocks exactly where `requiresMarketingOptIn(category)` is true** (MARKETING,
+  AUTHENTICATION, unknown, none) - a UTILITY broadcast still reaches them. New skip reason
+  **`marketing_stopped`**, order no_number > blocked > opted_out > marketing_stopped > not_opted_in
+  (before `not_opted_in`: marking them opted in can't fix it); the summary gains
+  `skipped.marketing_stopped`. `isBroadcastEligible`, the list filter and the summary count also leave
+  them out; `GET /api/customers[/:id]` carries `marketingBlockedAt`. **Follow-ups:** a marketing
+  automation skips them (`followupSweep.service.js`: the `inactive_for` query, and `freshGuard` when
+  the window is closed, reason `marketing_stopped`); free in-window text still goes. **Set** by
+  `services/marketingBlock.service.js#blockMarketing` (first stamp wins, scoped to one business, never
+  inserts, so an unknown customer is a no-op): a 131050 on a failed status webhook row, a broadcast
+  worker rejection, a `windowAwareSend` rejection, or a `user_preferences` `stop`. 131049 / 130472
+  never set it. **Cleared ONLY by** a `user_preferences` `resume` (only if the stamp is OLDER than the
+  event, so an out-of-order resume can't undo a newer stop), the customer's own START message
+  (`webhook.controller.js`, both START branches) or the owner (`POST /api/customers/:id/resume-marketing`,
+  owner / superadmin). A "Yes" tap (opt-in link, post-booking question) and contact import never clear
+  it. Known limit: a *stop* event that arrives after a newer *resume* has no memory of that resume and
+  stamps the older time.
+- **`user_preferences` webhook** (`services/userPreferences.service.js`, dispatched from
+  `processWebhookChange`): category `marketing_messages`, value `stop` | `resume`. **Needs a manual
+  step in the Meta app dashboard** - subscribe the `user_preferences` field (like the coexistence
+  fields); until then it never fires and nothing changes. Safe with any payload shape; an unknown
+  `wa_id` is logged (last 4 digits) and ignored. Meta says `wa_id` "may differ from the phone number"
+  (see gap 9, BSUID): we match `customers.whatsapp_number = wa_id` only.
+- **Verification:** `supabase/verification/verify_marketing_blocked.sql` (rollback-safe; re-creates the
+  two functions in `pg_temp` from their deployed text over a temp `customers` table; **written without
+  access to a database, so its first run is also a test of the script**) and `checkAudienceParity.js`
+  (passes vacuously for the marketing rule until some customer of the business has the column set).
+- **Live-path note:** the webhook, the broadcast worker and `windowAwareSend` changed for every
+  business the moment the server deploys (no flag); both flags start empty, so behaviour is identical
+  until Meta returns a first 131042 / 131050 (or the field is subscribed). The SQL replacement gives
+  identical results while the column is all NULL. **Deploy order: apply both migrations first** -
+  the START handler writes `marketing_blocked_at` and the audience/follow-up queries filter on it, so
+  code without the migration fails those queries. Search cab AI takes all of these paths.
+- **Not built:** the web / Flutter banner, checklist step, "Stopped marketing messages" skip-reason
+  label and customer-page badge / "resume marketing" button; `docs/FOLLOWUP_AUTOMATIONS.md`'s send-log
+  reason table (section 7) still lacks `marketing_stopped`; a backfill of old 131050 failures
+  (deliberately not written).
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism
@@ -951,12 +1019,12 @@ does not need `opted_in` at all - see "Broadcast audiences"; follow-ups have the
    trigger a per-business sync (`templateSync.service.js#runSync`) from that
    webhook.
 
-8. **Meta error 131050 (user stopped marketing messages) doesn't set
-   `opted_out_at` (backlog, 2026-10-05).** A broadcast / follow-up send that
-   Meta refuses with 131050 is only counted as failed; the customer stays
-   eligible and is retried next time. Later: set `customers.opted_out_at` from
-   the broadcast worker / follow-up sender on that code. (From memory of Meta's
-   docs, unverified - confirm the code against a real refusal first.)
+8. ~~**Meta error 131050 (user stopped marketing messages) doesn't set
+   `opted_out_at`**~~ - built 2026-10-14 as a separate `customers.marketing_blocked_at`
+   (marketing rule only; see "Account health & stopped marketing"). 131050 is now
+   verified against Meta's error-code page: the recipient chose to stop marketing
+   messages from the business; do not retry. Still open: the web / Flutter labels and
+   badge, and subscribing the `user_preferences` webhook field in the Meta dashboard.
 
 9. **BSUID / usernames (backlog, 2026-10-05).** Meta sends a business-scoped
    `user_id` (contacts[].user_id, `from_user_id`) on messages/status webhooks and
@@ -991,6 +1059,15 @@ does not need `opted_in` at all - see "Broadcast audiences"; follow-ups have the
    in the MongoDB cleanup; no replacement exists yet.
 
 ## Session log (append here as major milestones land)
+- 2026-10-14: Account health & stopped marketing (see that section): `businesses.payment_issue_at` /
+  `payment_issue_code` (Meta 131042 -> `paymentIssue` on `GET /api/business`, owner dismiss) and
+  `customers.marketing_blocked_at` (Meta 131050 / `user_preferences` -> `marketing_stopped` skip reason).
+  **Deploy: apply `20261014120000` and `20261014130000` first (either order), run
+  `supabase/verification/verify_marketing_blocked.sql` in the SQL editor, then deploy the server; then
+  subscribe the `user_preferences` field in the Meta app.** One-time cutover, no flag: the status webhook,
+  broadcast worker, `windowAwareSend`, the START keyword handler and every marketing audience / follow-up
+  query change for all businesses (Search cab AI included) at deploy; both flags start empty, so nothing
+  differs until Meta reports a first 131042 / 131050.
 - 2026-10-13: Delivery tracking, commit B (broadcasts; see "Delivery tracking, broadcasts").
   **Deploy: apply `20261013120000` (commit A) first if not yet applied, then `20261013130000`, run
   `supabase/verification/verify_broadcast_recipients.sql`, then deploy the server.** One-time cutover,

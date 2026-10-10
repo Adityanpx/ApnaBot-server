@@ -14,6 +14,7 @@ const {
   updateCustomer,
   blockCustomer,
   unblockCustomer,
+  resumeMarketing,
   toggleCustomerOptIn
 } = require('../controllers/customer.controller');
 
@@ -27,6 +28,7 @@ router.get('/:id',          requireRole('owner', 'staff', 'superadmin'), getCust
 router.put('/:id',          requireRole('owner', 'superadmin'),          updateCustomer);
 router.post('/:id/block',   requireRole('owner', 'superadmin'),          blockCustomer);
 router.post('/:id/unblock', requireRole('owner', 'superadmin'),          unblockCustomer);
+router.post('/:id/resume-marketing', requireRole('owner', 'superadmin'), resumeMarketing);
 router.patch('/:id/opt-in', requireRole('owner', 'superadmin'),          toggleCustomerOptIn);
 
 module.exports = router;

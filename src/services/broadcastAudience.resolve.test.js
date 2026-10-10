@@ -161,7 +161,7 @@ test('all customers: opted_in / not blocked / not opted out is applied on every 
   const pages = requests.filter(r => r.table === 'customers');
   assert.equal(pages.length, 3); // 1000 + 1000 + 500
   for (const p of pages) {
-    assert.deepEqual(p.filters, ['eq business_id big', 'eq opted_in true', 'eq is_blocked false', 'is opted_out_at null']);
+    assert.deepEqual(p.filters, ['eq business_id big', 'eq opted_in true', 'is marketing_blocked_at null', 'eq is_blocked false', 'is opted_out_at null']);
   }
 });
 
@@ -326,7 +326,7 @@ test('segment: applies every filter on every page (3,000 matching customers)', a
   const pages = requests.filter(r => r.table === 'customers');
   assert.equal(pages.length, 4); // 1000 x3 + an empty last page
   for (const p of pages) {
-    assert.deepEqual(p.filters, ['eq business_id sg', 'eq opted_in true', 'eq is_blocked false', 'is opted_out_at null', 'or tags', 'in pipeline_stage', 'gte last_message_at']);
+    assert.deepEqual(p.filters, ['eq business_id sg', 'eq opted_in true', 'is marketing_blocked_at null', 'eq is_blocked false', 'is opted_out_at null', 'or tags', 'in pipeline_stage', 'gte last_message_at']);
   }
 });
 
@@ -341,6 +341,7 @@ const reasonOf = (c, requireOptIn = true) => {
   if (typeof c.whatsapp_number !== 'string' || !/^[0-9]{8,15}$/.test(c.whatsapp_number)) return 'no_number';
   if (c.is_blocked !== false) return 'blocked';
   if (c.opted_out_at) return 'opted_out';
+  if (requireOptIn && c.marketing_blocked_at) return 'marketing_stopped';
   if (requireOptIn && c.opted_in !== true) return 'not_opted_in';
   return null;
 };
@@ -373,7 +374,7 @@ const rpc = (name, args, opts = {}) => {
   let rows = sqlModel(args.p_business_id, args.p_filter, args.p_params, args.p_require_opt_in);
   if (name === 'broadcast_audience_summary') {
     const n = (r) => rows.filter(x => x.skip_reason === r).length;
-    return Promise.resolve({ data: { selected: rows.length, willReceive: rows.filter(x => !x.skip_reason).length, skipped: { no_number: n('no_number'), blocked: n('blocked'), opted_out: n('opted_out'), not_opted_in: n('not_opted_in') } }, error: null });
+    return Promise.resolve({ data: { selected: rows.length, willReceive: rows.filter(x => !x.skip_reason).length, skipped: { no_number: n('no_number'), blocked: n('blocked'), opted_out: n('opted_out'), marketing_stopped: n('marketing_stopped'), not_opted_in: n('not_opted_in') } }, error: null });
   }
   const orders = [];
   let range = null;
@@ -431,7 +432,7 @@ test('summary: counts by skip reason, nothing double counted (selected = willRec
   const everyone = { customerIds: tables.customers.filter(c => c.business_id === 'seg').map(c => c.id) };
   const s = await audienceSummary('seg', 'customers', everyone);
   // s1-s4, s12-s14 receive; s5 not opted in; s6 blocked; s7 STOP; s8-s11 + s15 no valid number
-  assert.deepEqual(s, { selected: 15, willReceive: 7, skipped: { no_number: 5, blocked: 1, opted_out: 1, not_opted_in: 1 } });
+  assert.deepEqual(s, { selected: 15, willReceive: 7, skipped: { no_number: 5, blocked: 1, opted_out: 1, marketing_stopped: 0, not_opted_in: 1 } });
   assert.equal(s.willReceive + Object.values(s.skipped).reduce((x, y) => x + y, 0), s.selected);
 });
 
@@ -443,14 +444,14 @@ test('summary: one reason per customer, in the order no_number > blocked > opted
     { id: 'm4', business_id: 'multi', whatsapp_number: '919000000024', name: 'M4', opted_in: false, is_blocked: false, opted_out_at: null }                       // -> not_opted_in
   );
   assert.deepEqual(await audienceSummary('multi', 'all_customers', null),
-    { selected: 4, willReceive: 0, skipped: { no_number: 1, blocked: 1, opted_out: 1, not_opted_in: 1 } });
+    { selected: 4, willReceive: 0, skipped: { no_number: 1, blocked: 1, opted_out: 1, marketing_stopped: 0, not_opted_in: 1 } });
 });
 
 test('summary: reasons with no one still appear as 0; an empty audience is all zeros', async () => {
   assert.deepEqual(await audienceSummary('seg', 'segment', { tags: ['diwali'] }),
-    { selected: 2, willReceive: 2, skipped: { no_number: 0, blocked: 0, opted_out: 0, not_opted_in: 0 } });
+    { selected: 2, willReceive: 2, skipped: { no_number: 0, blocked: 0, opted_out: 0, marketing_stopped: 0, not_opted_in: 0 } });
   assert.deepEqual(await audienceSummary('seg', 'segment', { tags: ['none-has-this'] }),
-    { selected: 0, willReceive: 0, skipped: { no_number: 0, blocked: 0, opted_out: 0, not_opted_in: 0 } });
+    { selected: 0, willReceive: 0, skipped: { no_number: 0, blocked: 0, opted_out: 0, marketing_stopped: 0, not_opted_in: 0 } });
 });
 
 test('summary: asks the SQL function for this business, filter and params', async () => {
@@ -486,7 +487,7 @@ test('skipped: a reason filter returns that reason only, and total counts just t
     assert.equal(r.total, n, reason);
     assert.ok(r.items.every(i => i.reason === reason), reason);
   }
-  assert.deepEqual(SKIP_REASONS, ['no_number', 'blocked', 'opted_out', 'not_opted_in']);
+  assert.deepEqual(SKIP_REASONS, ['no_number', 'blocked', 'opted_out', 'marketing_stopped', 'not_opted_in']);
 });
 
 test('skipped: paged A→Z by name (no name last), pages never overlap and cover everything', async () => {
@@ -545,7 +546,7 @@ test('MARKETING, AUTHENTICATION, no category and unknown categories keep the opt
     requests.length = 0;
     const got = (await resolveAudience('b', 'all_customers', null, options)).map(c => c.name).sort();
     assert.deepEqual(got, ['Asha', 'Neha', 'Ravi'], JSON.stringify(options));
-    assert.deepEqual(requests[0].filters, ['eq business_id b', 'eq opted_in true', 'eq is_blocked false', 'is opted_out_at null'], JSON.stringify(options));
+    assert.deepEqual(requests[0].filters, ['eq business_id b', 'eq opted_in true', 'is marketing_blocked_at null', 'eq is_blocked false', 'is opted_out_at null'], JSON.stringify(options));
   }
 });
 
@@ -573,7 +574,7 @@ test('summary: UTILITY asks for no opt-in and never reports not_opted_in', async
   assert.equal(rpcCalls[0].args.p_require_opt_in, false);
   assert.equal(s.skipped.not_opted_in, 0);
   // s5 (not opted in) now receives: 7 + 1; blocked, STOP and the five bad numbers are still skipped
-  assert.deepEqual(s, { selected: 15, willReceive: 8, skipped: { no_number: 5, blocked: 1, opted_out: 1, not_opted_in: 0 } });
+  assert.deepEqual(s, { selected: 15, willReceive: 8, skipped: { no_number: 5, blocked: 1, opted_out: 1, marketing_stopped: 0, not_opted_in: 0 } });
   rpcCalls.length = 0;
   for (const category of ['MARKETING', 'AUTHENTICATION', null, undefined, 'nope']) {
     await audienceSummary('seg', 'customers', everyone, { category });

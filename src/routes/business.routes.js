@@ -14,6 +14,7 @@ const { uploadSingle, uploadMediaSingle } = require('../middleware/upload.middle
 // GET    /served-cities/suggestions → protect, requireBusiness, business.controller.getServedCitySuggestions
 // POST   /connect-whatsapp   → protect, requireBusiness, requireRole('owner'), business.controller.connectWhatsapp
 // DELETE /disconnect-whatsapp → protect, requireBusiness, requireRole('owner'), business.controller.disconnectWhatsapp
+// POST   /payment-issue/dismiss → protect, requireBusiness, requireRole('owner'), business.controller.dismissPaymentIssue
 // GET    /dashboard-stats     → protect, requireBusiness, business.controller.getDashboardStats
 // GET    /flow-fields         → protect, requireBusiness, requireRole('owner'), business.controller.getFlowFields
 // PUT    /flow-fields         → protect, requireBusiness, requireRole('owner'), business.controller.updateFlowFields
@@ -64,6 +65,16 @@ router.delete(
   requireBusiness,
   requireRole('owner'),
   businessController.disconnectWhatsapp
+);
+
+// POST /payment-issue/dismiss - The owner says the WhatsApp payment-method problem
+// shown as paymentIssue on GET / is fixed. Owner only, like connecting WhatsApp.
+router.post(
+  '/payment-issue/dismiss',
+  protect,
+  requireBusiness,
+  requireRole('owner'),
+  businessController.dismissPaymentIssue
 );
 
 // GET /dashboard-stats - Get dashboard statistics

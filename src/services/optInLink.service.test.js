@@ -309,3 +309,13 @@ test('fetchLinkNames: only this business\'s links, ignores nulls', async () => {
   assert.equal(names.has(theirs.id), false);
   assert.equal((await service.fetchLinkNames(BIZ, [null, undefined])).size, 0);
 });
+
+test('consent Yes does not clear marketing_blocked_at: only Meta\'s resume, START or the owner do', async () => {
+  reset();
+  const link = addLink();
+  const c = addCustomer({ marketing_blocked_at: '2026-10-01T10:00:00Z' });
+  const { newlyOptedIn } = await service.handleConsentTap(BIZ, camel(c), { answer: 'yes', linkId: link.id });
+  assert.equal(newlyOptedIn, true);
+  assert.equal(c.opted_in, true);
+  assert.equal(c.marketing_blocked_at, '2026-10-01T10:00:00Z');
+});

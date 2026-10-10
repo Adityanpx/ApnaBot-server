@@ -16,6 +16,7 @@ const { validateFlowFields } = require('../utils/flowFieldsValidation');
 const { META_API_BASE } = require('../services/whatsapp.service');
 const templateSyncService = require('../services/templateSync.service');
 const onboardingService = require('../services/whatsappOnboarding.service');
+const { withPaymentIssue, dismissPaymentIssue } = require('../services/accountHealth.service');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -85,6 +86,7 @@ const getBusiness = async (req, res, next) => {
     const businessData = { ...businessService.flattenTravelSettings(business), _id: business.id };
     delete businessData.accessToken;
     delete businessData.whatsappRegisterPin;
+    withPaymentIssue(businessData);
 
     const { remaining, resetAt } = bookingService.getPreviewCreditsStatus(business);
     businessData.previewCreditsRemaining = remaining;
@@ -195,6 +197,7 @@ const createBusiness = async (req, res, next) => {
     const businessData = { ...businessService.flattenTravelSettings(business), _id: business.id };
     delete businessData.accessToken;
     delete businessData.whatsappRegisterPin;
+    withPaymentIssue(businessData);
 
     return successResponse(res, 201, {
       business: businessData,
@@ -312,6 +315,7 @@ const updateBusiness = async (req, res, next) => {
     const businessData = { ...businessService.flattenTravelSettings(business), _id: business.id };
     delete businessData.accessToken;
     delete businessData.whatsappRegisterPin;
+    withPaymentIssue(businessData);
 
     return successResponse(res, 200, businessData);
   } catch (error) {
@@ -691,6 +695,7 @@ const connectWhatsapp = async (req, res, next) => {
     const businessData = { ...businessService.flattenTravelSettings(business), _id: business.id };
     delete businessData.accessToken;
     delete businessData.whatsappRegisterPin;
+    withPaymentIssue(businessData);
 
     logger.info('connectWhatsapp: connection saved, returning success', { businessId, wabaId, phoneNumberId, onboardingType });
 
@@ -708,6 +713,25 @@ const connectWhatsapp = async (req, res, next) => {
       phoneNumberId: req.body?.phoneNumberId || req.body?.phone_number_id,
       error: error.response?.data || error.message || error
     });
+    next(error);
+  }
+};
+
+/**
+ * POST /api/business/payment-issue/dismiss
+ * The owner says the WhatsApp payment-method problem is fixed: clears the flag
+ * GET /api/business reports as paymentIssue. It comes back if Meta fails a
+ * send with the same error again.
+ */
+const dismissPaymentIssueHandler = async (req, res, next) => {
+  try {
+    const businessId = req.user.businessId;
+    if (!(await dismissPaymentIssue(businessId))) {
+      return errorResponse(res, 500, 'Could not update the payment status. Please try again.');
+    }
+    return successResponse(res, 200, { paymentIssue: null }, 'Payment issue dismissed');
+  } catch (error) {
+    logger.error('Error in dismissPaymentIssue:', error);
     next(error);
   }
 };
@@ -1067,6 +1091,7 @@ module.exports = {
   getServedCitySuggestions,
   connectWhatsapp,
   disconnectWhatsapp,
+  dismissPaymentIssue: dismissPaymentIssueHandler,
   getDashboardStats,
   uploadProfileImage,
   uploadPaymentQr,

@@ -728,3 +728,61 @@ test('window open: still plain text — the template checks are not consulted', 
   assert.equal(sendCalls.length, 1);
   assert.equal(db.followup_sends[0].status, 'sent_text');
 });
+
+// ── marketing_blocked_at (Meta 131050: the customer stopped marketing messages) ──
+test('stopped marketing: a marketing win-back skips them as candidates; others still get it', async () => {
+  const past = (id) => ({ customer_id: id, business_id: 'b1', status: 'completed', created_at: ago(60 * DAY) });
+  reset({
+    automations: [winBack()],
+    customers: [
+      customer('c01', { last_message_at: ago(40 * DAY), opted_in: true, marketing_blocked_at: ago(DAY) }),
+      customer('c02', { last_message_at: ago(40 * DAY), opted_in: true })
+    ],
+    bookings: [past('c01'), past('c02')]
+  });
+  const s = await sweep();
+  assert.deepEqual(sendCalls.map(c => c.customerId), ['c02']);
+  assert.equal(s.candidates, 1);
+  assert.equal(sendFor('c01'), undefined);
+});
+
+test('stopped marketing: a stop landing between the claim and the send is skipped as marketing_stopped', async () => {
+  reset({
+    automations: [winBack()],
+    customers: [customer('c01', { last_message_at: ago(40 * DAY), opted_in: true })],
+    bookings: [{ customer_id: 'c01', business_id: 'b1', status: 'completed', created_at: ago(60 * DAY) }]
+  });
+  hooks.afterClaim = (row) => { db.customers.find(x => x.id === row.customer_id).marketing_blocked_at = NOW.toISOString(); };
+  const s = await sweep();
+  assert.equal(sendCalls.length, 0);
+  assert.equal(sendFor('c01').status, 'skipped');
+  assert.equal(sendFor('c01').reason, 'marketing_stopped');
+  assert.equal(s.skipped, 1);
+});
+
+test('stopped marketing: a UTILITY follow-up still reaches them (the block is the marketing rule only)', async () => {
+  reset({
+    automations: [winBack({ message_category: 'utility' })],
+    customers: [customer('c01', { last_message_at: ago(40 * DAY), opted_in: false, marketing_blocked_at: ago(DAY) })],
+    bookings: [{ customer_id: 'c01', business_id: 'b1', status: 'completed', created_at: ago(60 * DAY) }]
+  });
+  const s = await sweep();
+  assert.deepEqual(sendCalls.map(c => c.customerId), ['c01']);
+  assert.equal(sendFor('c01').status, 'sent_template');
+  assert.equal(s.sent, 1);
+});
+
+test('stopped marketing: free in-window text is not a marketing template, so the nudge still goes as text', async () => {
+  reset({ automations: [nudge()], customers: [customer('c01', { marketing_blocked_at: ago(DAY) })] });
+  const s = await sweep();
+  assert.deepEqual(sendCalls.map(c => c.customerId), ['c01']);
+  assert.equal(sendFor('c01').status, 'sent_text');
+  assert.equal(s.sent, 1);
+});
+
+test('stopped marketing: opted_out_at still wins over it (STOP is checked first)', async () => {
+  reset({ automations: [nudge()], customers: [customer('c01', { marketing_blocked_at: ago(DAY) }), customer('c02')] });
+  hooks.afterClaim = (row) => { if (row.customer_id === 'c01') db.customers.find(x => x.id === 'c01').opted_out_at = NOW.toISOString(); };
+  await sweep();
+  assert.equal(sendFor('c01').reason, 'opted_out');
+});

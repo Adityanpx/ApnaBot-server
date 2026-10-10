@@ -559,10 +559,11 @@ const getAudienceCount = async (req, res, next) => {
 /**
  * POST /api/broadcasts/audience-summary
  * Body: { audienceFilter?, audienceParams?, templateId? } → { selected, willReceive,
- * skipped: { no_number, blocked, opted_out, not_opted_in }, overCap, cap }.
+ * skipped: { no_number, blocked, opted_out, marketing_stopped, not_opted_in }, overCap, cap }.
  * selected = who the audience picks; willReceive = those a send reaches;
  * overCap = willReceive is above MAX_BROADCAST_RECIPIENTS (a send would be refused).
- * templateId as for audience-count: a UTILITY template never skips for not_opted_in.
+ * templateId as for audience-count: a UTILITY template never skips for not_opted_in
+ * or marketing_stopped.
  */
 const getAudienceSummary = async (req, res, next) => {
   try {
@@ -586,7 +587,7 @@ const SKIPPED_MAX_LIMIT = 100;
  * Body: { audienceFilter?, audienceParams?, templateId?, reason?, page? (1), limit? (50, max 100) }
  * → { items: [{ customerId, name, number (masked), reason }], pagination }:
  * the customers the audience selects but a send would skip, A→Z, optionally
- * only for one reason (no_number | blocked | opted_out | not_opted_in).
+ * only for one reason (no_number | blocked | opted_out | marketing_stopped | not_opted_in).
  * templateId as for audience-count.
  */
 const getAudienceSkipped = async (req, res, next) => {

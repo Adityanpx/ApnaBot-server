@@ -28,6 +28,8 @@ const from = (table) => {
   const q = {
     select: () => q,
     eq: (c, v) => { filters.push(r => r[c] === v); return q; },
+    is: (c, v) => { filters.push(r => (r[c] ?? null) === v); return q; },
+    lt: (c, v) => { filters.push(r => r[c] != null && new Date(r[c]).getTime() < new Date(v).getTime()); return q; },
     update: (p) => { op = 'update'; payload = p; return q; },
     insert: (p) => { op = 'insert'; payload = p; return q; },
     order: () => q,
@@ -316,4 +318,46 @@ test('a wamid that is a broadcast recipient is matched: no retry', async () => {
   await status('wamid.BC1', 'delivered');
   await sleep(80);
   assert.equal(rpcCalls.length, 1);
+});
+
+test('a 131042 failure on a chat message flags that message\'s business; a repeat keeps the first time', async () => {
+  db.businesses = [{ id: BIZ, payment_issue_at: null, payment_issue_code: null }, { id: OTHER_BIZ, payment_issue_at: null, payment_issue_code: null }];
+  const failed = { timestamp: '1767261600', errors: [{ code: 131042, title: 'Payment issue' }] };
+  await status('wamid.OUT1', 'failed', failed);
+  assert.deepEqual([db.businesses[0].payment_issue_at, db.businesses[0].payment_issue_code], ['2026-01-01T10:00:00.000Z', 131042]);
+  assert.equal(db.businesses[1].payment_issue_at, null);
+  row().status = 'sent';
+  await status('wamid.OUT1', 'failed', { ...failed, timestamp: '1767265200' });
+  assert.equal(db.businesses[0].payment_issue_at, '2026-01-01T10:00:00.000Z');
+});
+
+test('a 131042 failure on a broadcast recipient flags its business', async () => {
+  db.businesses = [{ id: BIZ, payment_issue_at: null, payment_issue_code: null }];
+  db.broadcast_recipients = [{ id: 'rec1', broadcast_id: 'bc1', business_id: BIZ, status: 'sent', meta_message_id: 'wamid.BC1', sent_at: '2026-01-01T09:00:00.000Z' }];
+  await status('wamid.BC1', 'failed', { timestamp: '1767261600', errors: [{ code: 131042 }] });
+  assert.equal(db.businesses[0].payment_issue_code, 131042);
+});
+
+test('a failure with another code leaves the business alone', async () => {
+  db.businesses = [{ id: BIZ, payment_issue_at: null, payment_issue_code: null }];
+  await status('wamid.OUT1', 'failed', { errors: [{ code: 131026 }] });
+  assert.equal(db.businesses[0].payment_issue_at, null);
+});
+
+test('a broadcast delivered after the problem began clears it; one sent before does not', async () => {
+  db.businesses = [{ id: BIZ, payment_issue_at: '2026-01-01T10:00:00.000Z', payment_issue_code: 131042 }];
+  db.broadcast_recipients = [
+    { id: 'rec1', broadcast_id: 'bc1', business_id: BIZ, status: 'sent', meta_message_id: 'wamid.OLD', sent_at: '2026-01-01T09:00:00.000Z' },
+    { id: 'rec2', broadcast_id: 'bc2', business_id: BIZ, status: 'sent', meta_message_id: 'wamid.NEW', sent_at: '2026-01-01T11:00:00.000Z' }
+  ];
+  await status('wamid.OLD', 'delivered', { timestamp: '1767265200' });
+  assert.equal(db.businesses[0].payment_issue_at, '2026-01-01T10:00:00.000Z');
+  await status('wamid.NEW', 'read', { timestamp: '1767268800' });
+  assert.deepEqual([db.businesses[0].payment_issue_at, db.businesses[0].payment_issue_code], [null, null]);
+});
+
+test('a chat message delivered never clears the payment problem (it may be free text)', async () => {
+  db.businesses = [{ id: BIZ, payment_issue_at: '2026-01-01T10:00:00.000Z', payment_issue_code: 131042 }];
+  await status('wamid.OUT1', 'delivered', { timestamp: '1767268800' });
+  assert.equal(db.businesses[0].payment_issue_at, '2026-01-01T10:00:00.000Z');
 });

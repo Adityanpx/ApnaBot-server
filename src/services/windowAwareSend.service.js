@@ -21,6 +21,8 @@ const { buildTemplateComponents, headerMediaOf } = require('../utils/templateCom
 const { buttonsOf } = require('../utils/templateMapping');
 const logger = require('../utils/logger');
 const { extractMetaMessageId, attachMetaMessageId } = require('./outboundMessageId.service');
+const { fromSendError } = require('../utils/whatsappErrors');
+const deliverySignals = require('./deliverySignals.service');
 
 const FREE_FORM_WINDOW_MS = 24 * 60 * 60 * 1000; // same as message.controller.js
 
@@ -121,7 +123,8 @@ const sendWindowAwareMessage = async (business, customerRow, { textFor, template
       business.phoneNumberId, business.accessToken, customerRow.whatsapp_number, templateRow.name, templateRow.language,
       buildTemplateComponents(templateRow, { body: templateParams, header: templateHeader, buttons: templateButtons })
     );
-  } catch {
+  } catch (err) {
+    await deliverySignals.noteSendFailure({ businessId: business.id, errorCode: fromSendError(err).errorCode, customerId: customerRow.id });
     if (ratePaise > 0) {
       await walletService.refundToWallet(business.id, ratePaise, billing.referenceId, billing.refundNotes)
         .catch(err => logger.error('Window-aware send: refund failed', { businessId: business.id, bookingId, error: err.message }));
