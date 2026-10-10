@@ -1031,6 +1031,38 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
   (Search cab AI included), so code before the migration fails those inserts. Rolling the code back is
   always safe with the columns present.
 
+## Auth sessions & refresh tokens (built 2026-10-10, commits 49ff028, 5d472fe, c4d2765, local - not pushed)
+
+- **One session per login.** `startSession` (`services/auth.service.js`) is used by login, register and
+  `createBusiness`. Redis `refresh:{userId}:{sid}` holds `{ jti, prevJti, prevUntil }`; the set
+  `sessions:{userId}` lists a user's sids. The refresh token is a JWT `{ userId, sid, jti }`; the access
+  token also carries `sid`. Two devices no longer kick each other out (the old single `refresh:{userId}`
+  slot is gone, with no fallback).
+- **`POST /api/auth/refresh` rotates.** It returns `accessToken` AND a new `refreshToken` (clients must store
+  it every time). The old token stays valid for a **30-second grace window**; a call inside the window gets
+  the session's current token back, so parallel or retried refreshes all work. A reuse after the window
+  returns 401 "Refresh token expired or revoked" and deletes only that session. Rotation is one Lua `eval`
+  (compare-and-rotate), smoke-tested against a throwaway local Redis 7 (parallel rotations: exactly one
+  rotates, none orphaned). Missing token = 400 "Refresh token required"; bad JWT = 401 "Invalid refresh token".
+- **Sliding expiry.** Each rotation resets the session to `JWT_REFRESH_EXPIRY` and the Redis TTL (same value;
+  falls back to 30d if unset). **Set `JWT_REFRESH_EXPIRY=30d` on Render** (local `.env` has 7d).
+  `JWT_EXPIRY` (access token) is unchanged.
+- **Logout** ends only the caller's session and needs no body: it uses the body's `refreshToken`, else the
+  Bearer access token (an expired one is accepted). Neither = harmless 200 (it used to be 400).
+- **Revoke all sessions** (`revokeAllSessions`): password reset, and `removeStaff` / `toggleStaff`
+  (deactivate) in `staff.controller.js` (a Redis failure there is logged, not fatal). There is no
+  password-change endpoint yet; call it from one when added.
+- **`GET /api/subscription/plans` is public** (no token), above `router.use(protect)`; everything else under
+  `/api/subscription` still needs login. It returns all `plans` columns (`select('*')`).
+- **One-time cutover at deploy, no flag.** Existing refresh tokens have no `sid`, so every logged-in user
+  (web, Super Admin, Flutter; Search cab AI's owner included) must log in once, within `JWT_EXPIRY` of the
+  deploy as their access token lapses. WhatsApp traffic does not use these tokens. **Do not push until web,
+  Super Admin and Flutter store the rotated `refreshToken`** (web already does; the others were not
+  checked).
+- **Known leftovers.** `createBusiness` leaves the caller's previous session alive until its TTL (no sid on
+  `req.user`). Tests: `auth.sessions.test.js`, `staff.revokeSessions.test.js`,
+  `subscription.plans.routes.test.js` (the Lua itself is exercised only by the manual smoke test).
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism
@@ -1125,6 +1157,11 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
    `sendRuleListMessage` ignore `imageUrl`.
 
 ## Session log (append here as major milestones land)
+- 2026-10-10: Auth sessions (see "Auth sessions & refresh tokens"): per-login sessions, rotating refresh
+  tokens with a 30s grace window, public `GET /api/subscription/plans`, and sessions ended for removed or
+  deactivated staff. Commits 49ff028, 5d472fe, c4d2765 (local, not pushed). **Deploy: set
+  `JWT_REFRESH_EXPIRY=30d` on Render; one-time cutover, no flag - every logged-in user must log in once.
+  Do not push until web, Super Admin and Flutter store the rotated `refreshToken`.**
 - 2026-10-14: Chat redesign server support (see "Chat redesign support"): `messages.sent_by_user_id` /
   `sent_by_name` / `interactive_payload` (migration `20261014140000`), the payload helper and its save
   sites, `PUT /api/messages/customer/:customerId/read`, and the outbound location pin text. Commits
