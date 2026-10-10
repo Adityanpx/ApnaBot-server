@@ -16,6 +16,7 @@ const usageService = require('./usage.service');
 const socketService = require('./socket.service');
 const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
 const { getSystemMessage } = require('../utils/systemMessages');
+const { buildInteractivePayload } = require('../utils/interactivePayload');
 const { BOOKING_CONSENT_YES_ID, BOOKING_CONSENT_NO_ID } = require('../utils/optInLink');
 const logger = require('../utils/logger');
 
@@ -83,6 +84,10 @@ const claimAfterBooking = async ({ businessId, customerNumber, windowCheck = nul
 const sendQuestion = async ({ businessId, phoneNumberId, encryptedAccessToken, businessName, customer, customerNumber }) => {
   const languageCode = customer.preferredLanguage;
   const text = getSystemMessage('bookingConsentQuestion', languageCode, { business: businessName });
+  const buttons = [
+    { title: getSystemMessage('optInYesButton', languageCode), nextKeyword: BOOKING_CONSENT_YES_ID },
+    { title: getSystemMessage('optInNoButton', languageCode), nextKeyword: BOOKING_CONSENT_NO_ID }
+  ];
 
   const { data: messageRow, error } = await supabase.from('messages').insert({
     business_id: businessId,
@@ -93,6 +98,7 @@ const sendQuestion = async ({ businessId, phoneNumberId, encryptedAccessToken, b
     content: text,
     status: 'sent',
     sender_type: 'bot',
+    interactive_payload: buildInteractivePayload({ message: text, buttons }),
     is_read: true
   }).select().single();
   if (error) throw error;
@@ -105,10 +111,7 @@ const sendQuestion = async ({ businessId, phoneNumberId, encryptedAccessToken, b
     to: customerNumber,
     message: text,
     type: 'text',
-    buttons: [
-      { title: getSystemMessage('optInYesButton', languageCode), nextKeyword: BOOKING_CONSENT_YES_ID },
-      { title: getSystemMessage('optInNoButton', languageCode), nextKeyword: BOOKING_CONSENT_NO_ID }
-    ],
+    buttons,
     messageId: message.id
   });
   usageService.incrementUsage(businessId, 'outbound').catch(err =>

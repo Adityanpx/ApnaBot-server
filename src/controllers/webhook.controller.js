@@ -28,6 +28,7 @@ const r2 = require('../services/r2.service');
 const logger = require('../utils/logger');
 const inboundMessageService = require('../services/inboundMessage.service');
 const { INBOUND_MESSAGE_TYPES, inboundMediaLabel } = require('../utils/inboundMessage');
+const { buildInteractivePayload } = require('../utils/interactivePayload');
 const { isBulkSyncBody } = require('../utils/coexistencePayload');
 const coexistenceService = require('../services/coexistence.service');
 const { buildStatusEvents, statusOnlySummary } = require('../utils/statusPayload');
@@ -316,6 +317,7 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
         if (option.seats) captionParts.push(`${option.seats} seats`);
         captionParts.push(`₹${option.fare}`);
         const caption = captionParts.join(' • ');
+        const vehicleButtons = [{ title: 'Book this', nextKeyword: `${field.nodeId}:${option.index}` }];
 
         const vehicleMsg = await createMessageSoft({
           business_id: tenant.businessId,
@@ -327,6 +329,7 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
           status: 'sent',
           triggered_rule_id: triggeredRuleId,
           sender_type: 'bot',
+          interactive_payload: buildInteractivePayload({ message: caption, imageUrl: option.photoUrl || null, buttons: vehicleButtons }),
           is_read: true
         }, 'carousel vehicle');
 
@@ -341,7 +344,7 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
             message: caption,
             type: 'text',
             imageUrl: option.photoUrl || null,
-            buttons: [{ title: 'Book this', nextKeyword: `${field.nodeId}:${option.index}` }],
+            buttons: vehicleButtons,
             messageId: vehicleMsg.id
           });
           sentCount++;
@@ -380,6 +383,7 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
       // Escape hatch: let the customer opt out of the carousel if their
       // preferred vehicle isn't listed.
       const otherOptionsText = "Don't see the vehicle you want?";
+      const otherOptionsButtons = [{ title: 'Other options', nextKeyword: `${field.nodeId}:other` }];
       const otherOptionsMsg = await createMessageSoft({
         business_id: tenant.businessId,
         customer_id: customer.id,
@@ -390,6 +394,7 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
         status: 'sent',
         triggered_rule_id: triggeredRuleId,
         sender_type: 'bot',
+        interactive_payload: buildInteractivePayload({ message: otherOptionsText, buttons: otherOptionsButtons }),
         is_read: true
       }, 'carousel other-options');
 
@@ -403,7 +408,7 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
           to: customerNumber,
           message: otherOptionsText,
           type: 'text',
-          buttons: [{ title: 'Other options', nextKeyword: `${field.nodeId}:other` }],
+          buttons: otherOptionsButtons,
           messageId: otherOptionsMsg.id
         });
       } catch (sendError) {
@@ -440,6 +445,26 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
 
   const templatedLabel = applyMessageTemplateWithFooter(field.label, tenant, customer);
 
+  // The interactive part of the job, worked out before the row is saved so the row
+  // can keep what the customer is shown. Added to the job after messageId below.
+  const interactiveJobFields = {};
+  if (field.fieldType === 'buttons' || field.fieldType === 'list') {
+    interactiveJobFields.step = field.nodeId;
+    const labels = (field.options || []).map(opt => opt.label);
+    if (field.fieldType === 'buttons') {
+      interactiveJobFields.interactiveButtons = labels;
+    } else {
+      interactiveJobFields.interactiveList = labels;
+      interactiveJobFields.listButtonLabel = 'Choose';
+    }
+  } else if (field.fieldType === 'location_request') {
+    // Native "Send location" prompt (whatsapp.worker.js#locationRequest) —
+    // the customer can still reply with plain text instead of tapping it
+    // (handled as a manual-fallback answer in bookingGraph.service.js), so
+    // no options/step bookkeeping is needed here the way buttons/list need.
+    interactiveJobFields.locationRequest = true;
+  }
+
   const outboundMsg = await saveMessage({
     business_id: tenant.businessId,
     customer_id: customer.id,
@@ -450,6 +475,7 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
     status: 'sent',
     triggered_rule_id: triggeredRuleId,
     sender_type: 'bot',
+    interactive_payload: buildInteractivePayload({ message: templatedLabel, ...interactiveJobFields }),
     is_read: true
   });
 
@@ -462,22 +488,7 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
     type: 'text',
     messageId: outboundMsg.id
   };
-  if (field.fieldType === 'buttons' || field.fieldType === 'list') {
-    outboundJobData.step = field.nodeId;
-    const labels = (field.options || []).map(opt => opt.label);
-    if (field.fieldType === 'buttons') {
-      outboundJobData.interactiveButtons = labels;
-    } else {
-      outboundJobData.interactiveList = labels;
-      outboundJobData.listButtonLabel = 'Choose';
-    }
-  } else if (field.fieldType === 'location_request') {
-    // Native "Send location" prompt (whatsapp.worker.js#locationRequest) —
-    // the customer can still reply with plain text instead of tapping it
-    // (handled as a manual-fallback answer in bookingGraph.service.js), so
-    // no options/step bookkeeping is needed here the way buttons/list need.
-    outboundJobData.locationRequest = true;
-  }
+  Object.assign(outboundJobData, interactiveJobFields);
   await addToWhatsappQueue(outboundJobData);
 
   usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
@@ -556,6 +567,11 @@ const sendOptInConsentQuestion = async (ctx, link) => {
   const languageCode = customer.preferredLanguage;
   const text = getSystemMessage('optInConsentQuestion', languageCode, { business: tenant.displayName || tenant.businessName });
 
+  const consentButtons = [
+    { title: getSystemMessage('optInYesButton', languageCode), nextKeyword: `${OPT_IN_YES_PREFIX}${link.id}` },
+    { title: getSystemMessage('optInNoButton', languageCode), nextKeyword: `${OPT_IN_NO_PREFIX}${link.id}` }
+  ];
+
   const consentMsg = await saveMessage({
     business_id: tenant.businessId,
     customer_id: customer.id,
@@ -565,6 +581,7 @@ const sendOptInConsentQuestion = async (ctx, link) => {
     content: text,
     status: 'sent',
     sender_type: 'bot',
+    interactive_payload: buildInteractivePayload({ message: text, buttons: consentButtons }),
     is_read: true
   });
   await addToWhatsappQueue({
@@ -574,10 +591,7 @@ const sendOptInConsentQuestion = async (ctx, link) => {
     to: customerNumber,
     message: text,
     type: 'text',
-    buttons: [
-      { title: getSystemMessage('optInYesButton', languageCode), nextKeyword: `${OPT_IN_YES_PREFIX}${link.id}` },
-      { title: getSystemMessage('optInNoButton', languageCode), nextKeyword: `${OPT_IN_NO_PREFIX}${link.id}` }
-    ],
+    buttons: consentButtons,
     messageId: consentMsg.id
   });
   usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
@@ -1383,6 +1397,7 @@ const processWebhookChange = async (entry, changes) => {
         content: languagePromptText,
         status: 'sent',
         sender_type: 'bot',
+        interactive_payload: buildInteractivePayload({ message: languagePromptText, buttons: languageButtons }),
         is_read: true
       });
       await addToWhatsappQueue({
@@ -1889,6 +1904,7 @@ const processWebhookChange = async (entry, changes) => {
           content: languagePromptText,
           status: 'sent',
           sender_type: 'bot',
+          interactive_payload: buildInteractivePayload({ message: languagePromptText, buttons: languageButtons }),
           is_read: true
         });
         await addToWhatsappQueue({
@@ -2372,21 +2388,7 @@ const processWebhookChange = async (entry, changes) => {
       }
     }
 
-    // Step 15 - Save outbound message
-    const outboundMsg = await saveMessage({
-      business_id: tenant.businessId,
-      customer_id: customer.id,
-      customer_number: customerNumber,
-      direction: 'outbound',
-      type: 'text',
-      content: replyText,
-      status: 'sent',
-      triggered_rule_id: triggeredRuleId,
-      sender_type: 'bot',
-      is_read: true
-    });
-
-    // Step 16 - Queue outbound message. matchedNode's buttons/list options
+    // Step 15 - Save outbound message. matchedNode's buttons/list options
     // are built from its outgoing flow_edges — nextKeyword is each edge's
     // own id (see chatbot.service.js's getOutgoingEdges), which comes back
     // unchanged as button_reply.id/list_reply.id and is resolved
@@ -2394,7 +2396,7 @@ const processWebhookChange = async (entry, changes) => {
     // matchedNode stays null in the no-rule-matched fallback branch above,
     // so this borrows fallbackMenuNode/fallbackMenuEdges (the greeting
     // node's buttons) for rendering only — matchedNode itself, and
-    // therefore triggeredRuleId/outboundMsg.triggered_rule_id above, are
+    // therefore triggeredRuleId/outboundMsg.triggered_rule_id below, are
     // untouched.
     const buttonSourceNode = matchedNode || fallbackMenuNode;
     const buttonSourceEdges = matchedNode ? matchedEdges : fallbackMenuEdges;
@@ -2413,6 +2415,49 @@ const processWebhookChange = async (entry, changes) => {
         }))
       : [];
 
+    // The rest of the interactive job, worked out before the row is saved so the
+    // row can keep what the customer is shown. Added to the job after messageId
+    // below, in this order.
+    const interactiveJobFields = {};
+    if (buttonSourceNode?.contentType === 'list') {
+      interactiveJobFields.listButtonLabel = getListButtonLabel(buttonSourceNode, customer.preferredLanguage);
+    }
+    if (bookingField && (bookingField.fieldType === 'buttons' || bookingField.fieldType === 'list')) {
+      // Reuses the worker/whatsapp.service `step` job-data field to carry
+      // the entry node's id under the graph engine's "{node_id}:{index}" id
+      // scheme (see sendFieldPrompt's doc comment) instead of a numeric step.
+      interactiveJobFields.step = bookingField.nodeId;
+      const bookingFieldLabels = (bookingField.options || []).map(bookingService.normalizeOption).map(opt => opt.label);
+      if (bookingField.fieldType === 'buttons') {
+        interactiveJobFields.interactiveButtons = bookingFieldLabels;
+      } else {
+        interactiveJobFields.interactiveList = bookingFieldLabels;
+        interactiveJobFields.listButtonLabel = 'Choose';
+      }
+    }
+
+    const outboundMsg = await saveMessage({
+      business_id: tenant.businessId,
+      customer_id: customer.id,
+      customer_number: customerNumber,
+      direction: 'outbound',
+      type: 'text',
+      content: replyText,
+      status: 'sent',
+      triggered_rule_id: triggeredRuleId,
+      sender_type: 'bot',
+      interactive_payload: buildInteractivePayload({
+        message: replyText,
+        imageUrl: matchedNode?.imageUrl || null,
+        buttons: localizedButtons,
+        listOptions: localizedListOptions,
+        ctaButton,
+        ...interactiveJobFields
+      }),
+      is_read: true
+    });
+
+    // Step 16 - Queue outbound message.
     const outboundJobData = {
       businessId: tenant.businessId,
       phoneNumberId: tenant.phoneNumberId,
@@ -2426,22 +2471,7 @@ const processWebhookChange = async (entry, changes) => {
       ctaButton,
       messageId: outboundMsg.id
     };
-    if (buttonSourceNode?.contentType === 'list') {
-      outboundJobData.listButtonLabel = getListButtonLabel(buttonSourceNode, customer.preferredLanguage);
-    }
-    if (bookingField && (bookingField.fieldType === 'buttons' || bookingField.fieldType === 'list')) {
-      // Reuses the worker/whatsapp.service `step` job-data field to carry
-      // the entry node's id under the graph engine's "{node_id}:{index}" id
-      // scheme (see sendFieldPrompt's doc comment) instead of a numeric step.
-      outboundJobData.step = bookingField.nodeId;
-      const bookingFieldLabels = (bookingField.options || []).map(bookingService.normalizeOption).map(opt => opt.label);
-      if (bookingField.fieldType === 'buttons') {
-        outboundJobData.interactiveButtons = bookingFieldLabels;
-      } else {
-        outboundJobData.interactiveList = bookingFieldLabels;
-        outboundJobData.listButtonLabel = 'Choose';
-      }
-    }
+    Object.assign(outboundJobData, interactiveJobFields);
 
     if (matchedNode?.contentType === 'location') {
       // Reply node sends either its own per-node override coordinates (for a

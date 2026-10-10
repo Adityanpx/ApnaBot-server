@@ -1,0 +1,98 @@
+{
+  "flow buttons with an image": [
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Our services\",\"type\":\"text\",\"imageUrl\":\"https://img/menu.png\",\"buttons\":[{\"nextKeyword\":\"e1\",\"title\":\"Prices\"},{\"nextKeyword\":\"e2\",\"title\":\"Timings and a very long title\"}],\"listOptions\":[],\"ctaButton\":null,\"messageId\":\"messages-2\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"button\",\"body\":{\"text\":\"Our services\"},\"action\":{\"buttons\":[{\"type\":\"reply\",\"reply\":{\"id\":\"e1\",\"title\":\"Prices\"}},{\"type\":\"reply\",\"reply\":{\"id\":\"e2\",\"title\":\"Timings and a very l\"}}]},\"header\":{\"type\":\"image\",\"image\":{\"link\":\"https://img/menu.png\"}}}}"
+    }
+  ],
+  "flow list with descriptions and a button label": [
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Courses\",\"type\":\"text\",\"imageUrl\":null,\"buttons\":[],\"listOptions\":[{\"nextKeyword\":\"e1\",\"label\":\"Abacus\",\"description\":\"Ages 5-14\"},{\"nextKeyword\":\"e2\",\"label\":\"Vedic maths\"}],\"ctaButton\":null,\"messageId\":\"messages-2\",\"listButtonLabel\":\"See courses\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"list\",\"body\":{\"text\":\"Courses\"},\"action\":{\"button\":\"See courses\",\"sections\":[{\"rows\":[{\"id\":\"e1\",\"title\":\"Abacus\",\"description\":\"Ages 5-14\"},{\"id\":\"e2\",\"title\":\"Vedic maths\"}]}]}}}"
+    }
+  ],
+  "flow plain text reply": [
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Prices start at 100\",\"type\":\"text\",\"imageUrl\":null,\"buttons\":[],\"listOptions\":[],\"ctaButton\":null,\"messageId\":\"messages-2\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"text\",\"text\":{\"body\":\"Prices start at 100\",\"preview_url\":false}}"
+    }
+  ],
+  "flow web-form link button": [
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Fill the form\",\"type\":\"text\",\"imageUrl\":null,\"buttons\":[],\"listOptions\":[],\"ctaButton\":{\"buttonText\":\"Open form\",\"url\":\"https://app.test/book/tok123\"},\"messageId\":\"messages-2\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"cta_url\",\"body\":{\"text\":\"Fill the form\"},\"action\":{\"name\":\"cta_url\",\"parameters\":{\"display_text\":\"Open form\",\"url\":\"https://app.test/book/tok123\"}}}}"
+    }
+  ],
+  "tapped question node asks a list": [
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Which car?\",\"type\":\"text\",\"imageUrl\":null,\"buttons\":[],\"listOptions\":[],\"ctaButton\":null,\"messageId\":\"messages-2\",\"step\":\"q9\",\"interactiveList\":[\"Swift\",\"Innova\"],\"listButtonLabel\":\"Choose\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"list\",\"body\":{\"text\":\"Which car?\"},\"action\":{\"button\":\"Choose\",\"sections\":[{\"rows\":[{\"id\":\"q9:0\",\"title\":\"Swift\"},{\"id\":\"q9:1\",\"title\":\"Innova\"}]}]}}}"
+    }
+  ],
+  "tapped question node asks buttons": [
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Trip type?\",\"type\":\"text\",\"imageUrl\":null,\"buttons\":[],\"listOptions\":[],\"ctaButton\":null,\"messageId\":\"messages-2\",\"step\":\"q8\",\"interactiveButtons\":[\"One way\",\"Round trip\"]}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"button\",\"body\":{\"text\":\"Trip type?\"},\"action\":{\"buttons\":[{\"type\":\"reply\",\"reply\":{\"id\":\"q8:0\",\"title\":\"One way\"}},{\"type\":\"reply\",\"reply\":{\"id\":\"q8:1\",\"title\":\"Round trip\"}}]}}}"
+    }
+  ],
+  "booking question as a list": [
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Which car?\",\"type\":\"text\",\"messageId\":\"messages-2\",\"step\":\"q9\",\"interactiveList\":[\"Swift\",\"Innova\"],\"listButtonLabel\":\"Choose\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"list\",\"body\":{\"text\":\"Which car?\"},\"action\":{\"button\":\"Choose\",\"sections\":[{\"rows\":[{\"id\":\"q9:0\",\"title\":\"Swift\"},{\"id\":\"q9:1\",\"title\":\"Innova\"}]}]}}}"
+    }
+  ],
+  "booking question as buttons": [
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Trip type?\",\"type\":\"text\",\"messageId\":\"messages-2\",\"step\":\"q8\",\"interactiveButtons\":[\"One way\",\"Round trip\"]}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"button\",\"body\":{\"text\":\"Trip type?\"},\"action\":{\"buttons\":[{\"type\":\"reply\",\"reply\":{\"id\":\"q8:0\",\"title\":\"One way\"}},{\"type\":\"reply\",\"reply\":{\"id\":\"q8:1\",\"title\":\"Round trip\"}}]}}}"
+    }
+  ],
+  "booking question asks for a location": [
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Share pickup\",\"type\":\"text\",\"messageId\":\"messages-2\",\"locationRequest\":true}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"location_request_message\",\"body\":{\"text\":\"Share pickup\"},\"action\":{\"name\":\"send_location\"}}}"
+    }
+  ],
+  "booking question as plain text": [
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Your name?\",\"type\":\"text\",\"messageId\":\"messages-2\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"text\",\"text\":{\"body\":\"Your name?\",\"preview_url\":false}}"
+    }
+  ],
+  "vehicle carousel": [
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Pick a vehicle\",\"type\":\"text\",\"messageId\":\"messages-2\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"text\",\"text\":{\"body\":\"Pick a vehicle\",\"preview_url\":false}}"
+    },
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Swift • 4 seats • ₹1200\",\"type\":\"text\",\"imageUrl\":\"https://img/swift.png\",\"buttons\":[{\"title\":\"Book this\",\"nextKeyword\":\"v1:0\"}],\"messageId\":\"messages-3\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"button\",\"body\":{\"text\":\"Swift • 4 seats • ₹1200\"},\"action\":{\"buttons\":[{\"type\":\"reply\",\"reply\":{\"id\":\"v1:0\",\"title\":\"Book this\"}}]},\"header\":{\"type\":\"image\",\"image\":{\"link\":\"https://img/swift.png\"}}}}"
+    },
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Innova • ₹2000\",\"type\":\"text\",\"imageUrl\":null,\"buttons\":[{\"title\":\"Book this\",\"nextKeyword\":\"v1:1\"}],\"messageId\":\"messages-4\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"button\",\"body\":{\"text\":\"Innova • ₹2000\"},\"action\":{\"buttons\":[{\"type\":\"reply\",\"reply\":{\"id\":\"v1:1\",\"title\":\"Book this\"}}]}}}"
+    },
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Don't see the vehicle you want?\",\"type\":\"text\",\"buttons\":[{\"title\":\"Other options\",\"nextKeyword\":\"v1:other\"}],\"messageId\":\"messages-5\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"button\",\"body\":{\"text\":\"Don't see the vehicle you want?\"},\"action\":{\"buttons\":[{\"type\":\"reply\",\"reply\":{\"id\":\"v1:other\",\"title\":\"Other options\"}}]}}}"
+    }
+  ],
+  "language picker on the first message": [
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Choose your language / अपनी भाषा चुनें\",\"type\":\"text\",\"buttons\":[{\"title\":\"English\",\"nextKeyword\":\"lang_en\"},{\"title\":\"हिंदी\",\"nextKeyword\":\"lang_hi\"}],\"messageId\":\"messages-2\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"button\",\"body\":{\"text\":\"Choose your language / अपनी भाषा चुनें\"},\"action\":{\"buttons\":[{\"type\":\"reply\",\"reply\":{\"id\":\"lang_en\",\"title\":\"English\"}},{\"type\":\"reply\",\"reply\":{\"id\":\"lang_hi\",\"title\":\"हिंदी\"}}]}}}"
+    }
+  ],
+  "change-language keyword": [
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Choose your language / अपनी भाषा चुनें\",\"type\":\"text\",\"buttons\":[{\"title\":\"English\",\"nextKeyword\":\"lang_en\"},{\"title\":\"हिंदी\",\"nextKeyword\":\"lang_hi\"}],\"messageId\":\"messages-2\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"button\",\"body\":{\"text\":\"Choose your language / अपनी भाषा चुनें\"},\"action\":{\"buttons\":[{\"type\":\"reply\",\"reply\":{\"id\":\"lang_en\",\"title\":\"English\"}},{\"type\":\"reply\",\"reply\":{\"id\":\"lang_hi\",\"title\":\"हिंदी\"}}]}}}"
+    }
+  ],
+  "opt-in consent question": [
+    {
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Biz would like to send you offers and updates on WhatsApp. Would you like to receive them?\\n\\nYou can reply STOP anytime to stop.\",\"type\":\"text\",\"buttons\":[{\"title\":\"Yes, send offers\",\"nextKeyword\":\"optin_yes:link1\"},{\"title\":\"No thanks\",\"nextKeyword\":\"optin_no:link1\"}],\"messageId\":\"messages-2\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"button\",\"body\":{\"text\":\"Biz would like to send you offers and updates on WhatsApp. Would you like to receive them?\\n\\nYou can reply STOP anytime to stop.\"},\"action\":{\"buttons\":[{\"type\":\"reply\",\"reply\":{\"id\":\"optin_yes:link1\",\"title\":\"Yes, send offers\"}},{\"type\":\"reply\",\"reply\":{\"id\":\"optin_no:link1\",\"title\":\"No thanks\"}}]}}}"
+    }
+  ]
+}

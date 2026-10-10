@@ -230,6 +230,19 @@ test('sendQuestion: one text message with Yes/No buttons optin_yes:booking / opt
   assert.equal(db.messages[0].sender_type, 'bot');
 });
 
+test('sendQuestion: the saved row keeps the Yes/No buttons the customer was shown', async () => {
+  asked({ preferred_language: 'en' });
+  await service.sendQuestion({
+    businessId: BIZ, phoneNumberId: 'pn1', encryptedAccessToken: 'tok', businessName: 'SG Travels',
+    customer: { id: 'c1', preferredLanguage: 'en' }, customerNumber: NUMBER
+  });
+  const payload = db.messages[0].interactive_payload;
+  assert.equal(payload.kind, 'buttons');
+  assert.equal(payload.body, queued[0].message);
+  assert.deepEqual(payload.options.map(o => o.id), ['optin_yes:booking', 'optin_no:booking']);
+  assert.deepEqual(payload.options.map(o => o.title), queued[0].buttons.map(b => b.title));
+});
+
 test('tap yes does not clear marketing_blocked_at: only Meta\'s resume, START or the owner do', async () => {
   asked({ marketing_blocked_at: '2026-10-01T10:00:00Z' });
   const res = await service.handleBookingConsentTap({ id: 'c1' }, { answer: 'yes' });
