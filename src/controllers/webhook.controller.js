@@ -29,6 +29,7 @@ const logger = require('../utils/logger');
 const inboundMessageService = require('../services/inboundMessage.service');
 const { INBOUND_MESSAGE_TYPES, inboundMediaLabel } = require('../utils/inboundMessage');
 const { buildInteractivePayload } = require('../utils/interactivePayload');
+const { locationPinLabel } = require('../utils/locationLabel');
 const { isBulkSyncBody } = require('../utils/coexistencePayload');
 const coexistenceService = require('../services/coexistence.service');
 const { buildStatusEvents, statusOnlySummary } = require('../utils/statusPayload');
@@ -2436,13 +2437,58 @@ const processWebhookChange = async (entry, changes) => {
       }
     }
 
+    // A location reply node has no authored text (replyText is ''): the chat row
+    // keeps what the customer actually got - the pin's label, or the fallback text
+    // when no coordinates are configured. Coordinates themselves are not stored.
+    let resolvedLocation = null;
+    let messageContent = replyText;
+    if (matchedNode?.contentType === 'location') {
+      const hasNodeLat = matchedNode.latitude != null;
+      const hasNodeLng = matchedNode.longitude != null;
+      if (hasNodeLat !== hasNodeLng) {
+        logger.warn(`Reply node ${matchedNode.id} (business ${tenant.businessId}) has only one of latitude/longitude set -- treating as not configured and falling back to business-level location.`);
+      }
+
+      if (hasNodeLat && hasNodeLng) {
+        resolvedLocation = {
+          latitude: matchedNode.latitude,
+          longitude: matchedNode.longitude,
+          name: matchedNode.locationName || undefined,
+          address: matchedNode.address || undefined
+        };
+      } else {
+        // This read used to run after the row was saved; a failure here must not stop
+        // the row or the reply, so it counts as "no coordinates" and the fallback text goes out.
+        try {
+          const locationBusiness = await businessService.getBusinessById(tenant.businessId);
+          if (locationBusiness?.businessLatitude != null && locationBusiness?.businessLongitude != null) {
+            resolvedLocation = {
+              latitude: locationBusiness.businessLatitude,
+              longitude: locationBusiness.businessLongitude,
+              name: locationBusiness.displayName || locationBusiness.name,
+              address: locationBusiness.address || undefined
+            };
+          }
+        } catch (locationError) {
+          logger.error('Error loading the business location for a location reply node, sending the fallback text:', {
+            businessId: tenant.businessId,
+            nodeId: matchedNode.id,
+            message: locationError.message
+          });
+        }
+      }
+      messageContent = resolvedLocation
+        ? locationPinLabel(resolvedLocation)
+        : getSystemMessage('locationNotConfigured', customer.preferredLanguage);
+    }
+
     const outboundMsg = await saveMessage({
       business_id: tenant.businessId,
       customer_id: customer.id,
       customer_number: customerNumber,
       direction: 'outbound',
       type: 'text',
-      content: replyText,
+      content: messageContent,
       status: 'sent',
       triggered_rule_id: triggeredRuleId,
       sender_type: 'bot',
@@ -2479,34 +2525,9 @@ const processWebhookChange = async (entry, changes) => {
       // different physical locations) or the business's saved coordinates,
       // as a map pin instead of authored text (matchedNode.label is '' for
       // this contentType -- see flowGraph.controller.js's createReplyNode/
-      // saveFullGraph carve-out). outboundMsg was already saved above with
-      // replyText ('' here), so reuse its id rather than saving a second row.
-      const hasNodeLat = matchedNode.latitude != null;
-      const hasNodeLng = matchedNode.longitude != null;
-      if (hasNodeLat !== hasNodeLng) {
-        logger.warn(`Reply node ${matchedNode.id} (business ${tenant.businessId}) has only one of latitude/longitude set -- treating as not configured and falling back to business-level location.`);
-      }
-
-      let resolvedLocation = null;
-      if (hasNodeLat && hasNodeLng) {
-        resolvedLocation = {
-          latitude: matchedNode.latitude,
-          longitude: matchedNode.longitude,
-          name: matchedNode.locationName || undefined,
-          address: matchedNode.address || undefined
-        };
-      } else {
-        const locationBusiness = await businessService.getBusinessById(tenant.businessId);
-        if (locationBusiness?.businessLatitude != null && locationBusiness?.businessLongitude != null) {
-          resolvedLocation = {
-            latitude: locationBusiness.businessLatitude,
-            longitude: locationBusiness.businessLongitude,
-            name: locationBusiness.displayName || locationBusiness.name,
-            address: locationBusiness.address || undefined
-          };
-        }
-      }
-
+      // saveFullGraph carve-out). outboundMsg was already saved above (its text
+      // is the pin's label, or the fallback text below), so reuse its id rather
+      // than saving a second row. resolvedLocation is worked out before that save.
       if (resolvedLocation) {
         await addToWhatsappQueue({
           businessId: tenant.businessId,
@@ -2523,7 +2544,7 @@ const processWebhookChange = async (entry, changes) => {
           phoneNumberId: tenant.phoneNumberId,
           encryptedAccessToken: tenant.accessToken,
           to: customerNumber,
-          message: getSystemMessage('locationNotConfigured', customer.preferredLanguage),
+          message: messageContent,
           type: 'text',
           messageId: outboundMsg.id
         });
