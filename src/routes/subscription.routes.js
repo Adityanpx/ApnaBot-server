@@ -15,10 +15,11 @@ const {
   verifyAutopayAuthorization
 } = require('../controllers/subscription.controller');
 
-router.use(protect);
-
-// Plan listing is public (no business required — needed during onboarding)
+// Plan listing is public — no token, no business (signup / onboarding screens
+// show it before login). Must stay above router.use(protect).
 router.get('/plans', getPlans);
+
+router.use(protect);
 
 // All below require business + owner role
 router.use(requireBusiness, requireRole('owner', 'superadmin'));
