@@ -6,7 +6,7 @@ const bookingService = require('../services/booking.service');
 const businessCategoryService = require('../services/businessCategory.service');
 const supabase = require('../config/supabase');
 const { successResponse, errorResponse } = require('../utils/response');
-const { generateTokens, saveTokenToRedis } = require('../services/auth.service');
+const { generateTokens } = require('../services/auth.service');
 const logger = require('../utils/logger');
 const r2 = require('../services/r2.service');
 const { r2KeyFromUrl } = require('../utils/r2Key');
@@ -187,10 +187,8 @@ const createBusiness = async (req, res, next) => {
       businessId: business.id
     };
 
+    // Starts a new session (its own refresh token, stored in Redis)
     const { accessToken, refreshToken } = await generateTokens(userPayload);
-
-    // Save refresh token to Redis
-    await saveTokenToRedis(req.user.userId, refreshToken);
 
     // Remove accessToken from business data (see getBusiness's comment on
     // flattenTravelSettings for why travelSettings fields are also flattened

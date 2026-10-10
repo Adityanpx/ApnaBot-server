@@ -1,11 +1,12 @@
 const bcrypt = require('bcryptjs');
 const supabase = require('../config/supabase');
 const {
+  startSession,
+  rotateSession,
+  revokeSession,
+  revokeAllSessions,
   generateAccessToken,
-  generateRefreshToken,
-  saveRefreshToken,
-  getRefreshToken,
-  deleteRefreshToken,
+  verifyAccessToken,
   verifyRefreshToken,
   buildPermissions
 } = require('../services/auth.service');
@@ -87,10 +88,7 @@ const register = async (req, res, next) => {
       permissions
     };
 
-    const accessToken = generateAccessToken(payload);
-    const refreshToken = generateRefreshToken(user.id);
-
-    await saveRefreshToken(user.id, refreshToken);
+    const { accessToken, refreshToken } = await startSession(user.id, payload);
 
     return successResponse(res, 201, {
       user: toUserResponse(user),
@@ -148,10 +146,7 @@ const login = async (req, res, next) => {
       permissions
     };
 
-    const accessToken = generateAccessToken(payload);
-    const refreshToken = generateRefreshToken(user.id);
-
-    await saveRefreshToken(user.id, refreshToken);
+    const { accessToken, refreshToken } = await startSession(user.id, payload);
 
     return successResponse(res, 200, {
       user: toUserResponse(user),
@@ -179,13 +174,16 @@ const refresh = async (req, res, next) => {
       return errorResponse(res, 401, 'Invalid refresh token');
     }
 
-    const storedToken = await getRefreshToken(decoded.userId);
-    if (storedToken !== refreshToken) {
+    // Rotates the session's refresh token; the old one stays valid for a short
+    // grace window so parallel or retried refreshes still work.
+    const rotated = await rotateSession(decoded);
+    if (rotated.status === 'revoked' || rotated.status === 'reused') {
       return errorResponse(res, 401, 'Refresh token expired or revoked');
     }
 
     const { data: user } = await supabase.from('users').select('*').eq('id', decoded.userId).maybeSingle();
     if (!user || user.is_active === false) {
+      await revokeSession(decoded.userId, decoded.sid);
       return errorResponse(res, 401, 'User not found');
     }
 
@@ -202,9 +200,9 @@ const refresh = async (req, res, next) => {
       }
     };
 
-    const accessToken = generateAccessToken(payload);
+    const accessToken = generateAccessToken({ ...payload, sid: decoded.sid });
 
-    return successResponse(res, 200, { accessToken }, 'Token refreshed');
+    return successResponse(res, 200, { accessToken, refreshToken: rotated.refreshToken }, 'Token refreshed');
   } catch (error) {
     logger.error('Refresh error:', error);
     next(error);
@@ -213,22 +211,25 @@ const refresh = async (req, res, next) => {
 
 const logout = async (req, res, next) => {
   try {
-    const { refreshToken } = req.body;
-
-    if (!refreshToken) {
-      return errorResponse(res, 400, 'Refresh token required');
+    // Ends only the caller's session. It is found from the refresh token in the
+    // body if there is one, else from the Bearer access token (an expired one is
+    // fine — logout is exactly when it may have lapsed). A client that sends
+    // neither has nothing to end and still gets a 200.
+    const claims = {};
+    const refreshToken = req.body && req.body.refreshToken;
+    const bearer = (req.headers.authorization || '').startsWith('Bearer ')
+      ? req.headers.authorization.split(' ')[1] : null;
+    if (refreshToken) {
+      try { Object.assign(claims, verifyRefreshToken(refreshToken)); }
+      catch (err) { logger.info('Invalid refresh token during logout'); }
+    }
+    if (!claims.sid && bearer) {
+      try { Object.assign(claims, verifyAccessToken(bearer, { ignoreExpiration: true })); }
+      catch (err) { logger.info('Invalid access token during logout'); }
     }
 
-    let userId = null;
-    try {
-      const decoded = verifyRefreshToken(refreshToken);
-      userId = decoded.userId;
-    } catch (err) {
-      logger.info('Invalid refresh token during logout');
-    }
-
-    if (userId) {
-      await deleteRefreshToken(userId);
+    if (claims.userId && claims.sid) {
+      await revokeSession(claims.userId, claims.sid);
     }
 
     return successResponse(res, 200, null, 'Logged out successfully');
@@ -302,7 +303,7 @@ const resetPassword = async (req, res, next) => {
     await supabase.from('users').update({ password_hash: passwordHash }).eq('id', user.id);
 
     await redis.del(`reset:${user.id}`);
-    await deleteRefreshToken(user.id);
+    await revokeAllSessions(user.id);
 
     return successResponse(res, 200, null, 'Password reset successfully');
   } catch (error) {
