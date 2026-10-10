@@ -133,6 +133,32 @@ const markAsRead = async (req, res, next) => {
   }
 };
 
+/**
+ * PUT /api/messages/customer/:customerId/read
+ * Mark every unread inbound message of one conversation as read, in one UPDATE
+ * scoped by business, customer, direction and is_read. Dashboard-only: it
+ * never queues anything or calls WhatsApp. A customer id that is not this
+ * business's (or has nothing unread) just updates 0 rows.
+ */
+const markConversationRead = async (req, res, next) => {
+  try {
+    const { customerId } = req.params;
+    const businessId = req.user.businessId;
+
+    const { data: updatedRows, error } = await supabase
+      .from('messages').update({ is_read: true })
+      .eq('business_id', businessId).eq('customer_id', customerId)
+      .eq('direction', 'inbound').eq('is_read', false)
+      .select('id');
+    if (error) throw error;
+
+    return successResponse(res, 200, { customerId, updated: (updatedRows || []).length }, 'Conversation marked as read');
+  } catch (error) {
+    logger.error('Error in markConversationRead:', error);
+    next(error);
+  }
+};
+
 const FREE_FORM_WINDOW_MS = 24 * 60 * 60 * 1000; // WhatsApp's 24h customer service window
 
 // What a business sees as the sender of a superadmin's message: the platform
@@ -408,6 +434,7 @@ module.exports = {
   getConversations,
   getChatHistory,
   markAsRead,
+  markConversationRead,
   sendMessage,
   sendPaymentQr,
   setBotPause

@@ -9,6 +9,7 @@ const {
   getConversations,
   getChatHistory,
   markAsRead,
+  markConversationRead,
   sendMessage,
   sendPaymentQr,
   setBotPause
@@ -22,6 +23,8 @@ router.post('/send',           requireRole('owner', 'superadmin'),          send
 // Body: { customerNumber, amount?, bookingId? } — sends businesses.payment_qr_url as an image
 router.post('/send-payment-qr', requireRole('owner', 'superadmin'),         sendPaymentQr);
 router.patch('/customer/:customerId/pause', requireRole('owner', 'superadmin'), setBotPause);
+// Marks every unread inbound message of that conversation read; returns { customerId, updated }
+router.put('/customer/:customerId/read', requireRole('owner', 'staff', 'superadmin'), markConversationRead);
 
 router.get('/',                requireRole('owner', 'staff', 'superadmin'), getConversations);
 router.get('/:customerId',     requireRole('owner', 'staff', 'superadmin'), getChatHistory);
