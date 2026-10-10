@@ -13,6 +13,7 @@ const { validateFlowFields } = require('../utils/flowFieldsValidation');
 const { successResponse, errorResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
 const { toCamelCase } = require('../utils/caseConvert');
+const { validateEdgeCopy, validateButtonText } = require('../utils/textLimits');
 const logger = require('../utils/logger');
 
 // Shared with flowGraph.service.js#saveFullGraph (the canvas batch save /
@@ -175,6 +176,10 @@ const createReplyNode = async (req, res, next) => {
     if (buttonTextTranslationsError) {
       return errorResponse(res, 400, buttonTextTranslationsError);
     }
+    const buttonTextLengthError = validateButtonText({ buttonText, buttonTextTranslations }, null);
+    if (buttonTextLengthError) {
+      return errorResponse(res, 400, buttonTextLengthError);
+    }
     if (formFields !== undefined) {
       const formFieldsError = validateFlowFields(formFields);
       if (formFieldsError) {
@@ -281,6 +286,10 @@ const updateReplyNode = async (req, res, next) => {
     const buttonTextTranslationsError = validateTranslationsMap(buttonTextTranslations, 'buttonTextTranslations');
     if (buttonTextTranslationsError) {
       return errorResponse(res, 400, buttonTextTranslationsError);
+    }
+    const buttonTextLengthError = validateButtonText({ buttonText, buttonTextTranslations }, node);
+    if (buttonTextLengthError) {
+      return errorResponse(res, 400, buttonTextLengthError);
     }
     if (formFields !== undefined) {
       const formFieldsError = validateFlowFields(formFields);
@@ -1026,7 +1035,7 @@ const createEdge = async (req, res, next) => {
     }
 
     const { data: endpointNodes, error: nodesErr } = await supabase
-      .from('flow_nodes').select('id, node_type').eq('business_id', businessId).in('id', [fromNodeId, toNodeId]);
+      .from('flow_nodes').select('id, node_type, content_type').eq('business_id', businessId).in('id', [fromNodeId, toNodeId]);
     if (nodesErr) throw nodesErr;
     const fromNode = (endpointNodes || []).find(n => n.id === fromNodeId);
     if (!fromNode) {
@@ -1049,6 +1058,12 @@ const createEdge = async (req, res, next) => {
     if (labelTranslationsError) return errorResponse(res, 400, labelTranslationsError);
     const descriptionTranslationsError = validateTranslationsMap(descriptionTranslations, 'descriptionTranslations');
     if (descriptionTranslationsError) return errorResponse(res, 400, descriptionTranslationsError);
+    const edgeCopyError = validateEdgeCopy({
+      parentNodeType: fromNode.node_type,
+      parentContentType: fromNode.content_type,
+      label, labelTranslations, description, descriptionTranslations
+    }, null);
+    if (edgeCopyError) return errorResponse(res, 400, edgeCopyError);
 
     const conditionShapeError = validateConditionShape(condition);
     if (conditionShapeError) return errorResponse(res, 400, conditionShapeError);
@@ -1155,6 +1170,18 @@ const updateEdge = async (req, res, next) => {
       if (err) return errorResponse(res, 400, err);
       updateData.description_translations = descriptionTranslations || null;
     }
+    const copyTouched = [label, labelTranslations, description, descriptionTranslations].some(v => v !== undefined);
+    if (copyTouched) {
+      const { data: parentNode, error: parentErr } = await supabase
+        .from('flow_nodes').select('node_type, content_type').eq('id', edge.from_node_id).eq('business_id', businessId).maybeSingle();
+      if (parentErr) throw parentErr;
+      const edgeCopyError = validateEdgeCopy({
+        parentNodeType: parentNode?.node_type,
+        parentContentType: parentNode?.content_type,
+        label, labelTranslations, description, descriptionTranslations
+      }, edge);
+      if (edgeCopyError) return errorResponse(res, 400, edgeCopyError);
+    }
     if (label !== undefined) updateData.label = label;
     if (description !== undefined) updateData.description = description;
     if (displayOrder !== undefined) {
@@ -1204,7 +1231,7 @@ const updateEdge = async (req, res, next) => {
     }
 
     const { data: updatedEdge, error } = await supabase
-      .from('flow_edges').update(updateData).eq('id', id).select().single();
+      .from('flow_edges').update(updateData).eq('id', id).eq('business_id', businessId).select().single();
     if (error) throw error;
 
     return successResponse(res, 200, toCamelCase(updatedEdge));

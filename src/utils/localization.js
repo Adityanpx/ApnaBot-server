@@ -21,4 +21,17 @@ const getLocalizedText = (record, field, languageCode) => {
   return record[field];
 };
 
-module.exports = { getLocalizedText };
+const DEFAULT_LIST_BUTTON_LABEL = 'Choose';
+
+/**
+ * Label of the button that opens a reply node's list message: the node's own
+ * button_text in the customer's language, or "Choose" when it is empty or the
+ * node is not a list (button_text keeps its web-form meaning on other nodes).
+ */
+const getListButtonLabel = (node, languageCode) => {
+  if (node?.contentType !== 'list') return DEFAULT_LIST_BUTTON_LABEL;
+  const label = getLocalizedText(node, 'buttonText', languageCode);
+  return typeof label === 'string' && label.trim() ? label.trim() : DEFAULT_LIST_BUTTON_LABEL;
+};
+
+module.exports = { getLocalizedText, getListButtonLabel };

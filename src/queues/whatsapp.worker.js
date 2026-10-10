@@ -49,7 +49,7 @@ const worker = new Worker('whatsapp-outbound', async (job) => {
     } else if (Array.isArray(buttons) && buttons.length > 0) {
       sendResult = await whatsappService.sendInteractiveButtons(phoneNumberId, encryptedAccessToken, to, message, buttons, imageUrl);
     } else if (Array.isArray(listOptions) && listOptions.length > 0) {
-      sendResult = await whatsappService.sendRuleListMessage(phoneNumberId, encryptedAccessToken, to, message, 'Choose', listOptions, imageUrl);
+      sendResult = await whatsappService.sendRuleListMessage(phoneNumberId, encryptedAccessToken, to, message, listButtonLabel, listOptions, imageUrl);
     } else if (imageUrl) {
       sendResult = await whatsappService.sendImageMessage(phoneNumberId, encryptedAccessToken, to, imageUrl, message);
     } else {

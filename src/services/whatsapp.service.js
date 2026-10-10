@@ -2,6 +2,7 @@ const axios = require('axios');
 const { decrypt } = require('../utils/crypto');
 const logger = require('../utils/logger');
 const config = require('../config/env');
+const { LIMITS, truncate } = require('../utils/textLimits');
 
 // Every Graph API call in the server builds on this (one version, set by
 // GRAPH_API_VERSION — see config/graphApiVersion.js).
@@ -135,7 +136,7 @@ const sendLocationRequest = async (phoneNumberId, encryptedAccessToken, to, body
         type: 'interactive',
         interactive: {
           type: 'location_request_message',
-          body: { text: (bodyText || '').slice(0, 4096) },
+          body: { text: truncate(bodyText, LIMITS.TEXT_BODY) },
           action: { name: 'send_location' }
         }
       },
@@ -167,11 +168,11 @@ const sendInteractiveButtons = async (phoneNumberId, encryptedAccessToken, to, b
     const accessToken = decrypt(encryptedAccessToken);
     const interactive = {
       type: 'button',
-      body: { text: (bodyText || '').slice(0, 1024) },
+      body: { text: truncate(bodyText, LIMITS.INTERACTIVE_BODY) },
       action: {
         buttons: buttons.slice(0, 3).map((b) => ({
           type: 'reply',
-          reply: { id: b.nextKeyword, title: (b.title || '').slice(0, 20) }
+          reply: { id: b.nextKeyword, title: truncate(b.title, LIMITS.BUTTON_TITLE) }
         }))
       }
     };
@@ -212,14 +213,14 @@ const sendListMessage = async (phoneNumberId, encryptedAccessToken, to, bodyText
     const accessToken = decrypt(encryptedAccessToken);
     const interactive = {
       type: 'list',
-      body: { text: (bodyText || '').slice(0, 1024) },
+      body: { text: truncate(bodyText, LIMITS.INTERACTIVE_BODY) },
       action: {
-        button: (buttonLabel || '').slice(0, 20),
+        button: truncate(buttonLabel, LIMITS.LIST_BUTTON_LABEL),
         sections: [
           {
             rows: options.map((opt, index) => ({
               id: `${step}:${index}`,
-              title: (opt || '').slice(0, 24)
+              title: truncate(opt, LIMITS.LIST_ROW_TITLE)
             }))
           }
         ]
@@ -255,15 +256,15 @@ const sendRuleListMessage = async (phoneNumberId, encryptedAccessToken, to, body
     const accessToken = decrypt(encryptedAccessToken);
     const interactive = {
       type: 'list',
-      body: { text: (bodyText || '').slice(0, 1024) },
+      body: { text: truncate(bodyText, LIMITS.INTERACTIVE_BODY) },
       action: {
-        button: (buttonLabel || 'Choose').slice(0, 20),
+        button: truncate(buttonLabel || 'Choose', LIMITS.LIST_BUTTON_LABEL),
         sections: [
           {
             rows: options.map((opt) => ({
               id: opt.nextKeyword,
-              title: (opt.label || '').slice(0, 24),
-              ...(opt.description ? { description: opt.description.slice(0, 72) } : {})
+              title: truncate(opt.label, LIMITS.LIST_ROW_TITLE),
+              ...(opt.description ? { description: truncate(opt.description, LIMITS.LIST_ROW_DESCRIPTION) } : {})
             }))
           }
         ]
@@ -305,10 +306,10 @@ const sendCtaUrlButton = async (phoneNumberId, encryptedAccessToken, to, bodyTex
         type: 'interactive',
         interactive: {
           type: 'cta_url',
-          body: { text: (bodyText || '').slice(0, 1024) },
+          body: { text: truncate(bodyText, LIMITS.INTERACTIVE_BODY) },
           action: {
             name: 'cta_url',
-            parameters: { display_text: (buttonText || '').slice(0, 20), url }
+            parameters: { display_text: truncate(buttonText, LIMITS.BUTTON_TITLE), url }
           }
         }
       },

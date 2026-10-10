@@ -13,7 +13,7 @@ const supabase = require('../config/supabase');
 const { toCamelCase } = require('../utils/caseConvert');
 const { applyMessageTemplate, applyMessageTemplateWithFooter } = require('../utils/messageTemplating');
 const { LANGUAGE_CATALOG, isValidLanguageCode } = require('../utils/languageCatalog');
-const { getLocalizedText } = require('../utils/localization');
+const { getLocalizedText, getListButtonLabel } = require('../utils/localization');
 const { getSystemMessage } = require('../utils/systemMessages');
 const { cleanValue } = require('../utils/templateValue');
 const { isIndefinitePause } = require('../utils/botPause');
@@ -2426,6 +2426,9 @@ const processWebhookChange = async (entry, changes) => {
       ctaButton,
       messageId: outboundMsg.id
     };
+    if (buttonSourceNode?.contentType === 'list') {
+      outboundJobData.listButtonLabel = getListButtonLabel(buttonSourceNode, customer.preferredLanguage);
+    }
     if (bookingField && (bookingField.fieldType === 'buttons' || bookingField.fieldType === 'list')) {
       // Reuses the worker/whatsapp.service `step` job-data field to carry
       // the entry node's id under the graph engine's "{node_id}:{index}" id

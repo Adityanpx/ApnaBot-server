@@ -22,6 +22,7 @@ const { validateLabelTranslations } = require('../utils/bookingFieldValidation')
 const { validateFlowFields } = require('../utils/flowFieldsValidation');
 const { toCamelCase } = require('../utils/caseConvert');
 const { isValidLanguageCode } = require('../utils/languageCatalog');
+const { validateEdgeCopy, validateButtonText } = require('../utils/textLimits');
 const logger = require('../utils/logger');
 
 const VALID_MATCH_TYPES = ['exact', 'contains', 'startsWith'];
@@ -300,6 +301,7 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
   const nodeUpserts = [];         // snake_case rows for the RPC
   const proposedNodes = [];       // camelCase {id, nodeType, fieldKey, replyKind} for validation
 
+  const replyContentTypeById = new Map(); // final content_type of each reply node in this save, for the edge copy limits
   const seenKeywords = new Set();
   for (let i = 0; i < replyNodes.length; i++) {
     const item = replyNodes[i] || {};
@@ -311,7 +313,7 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
 
     const {
       keyword, matchType = 'contains', replyKind = 'text', contentType = 'text',
-      imageUrl = null, mediaId = null, hindiAliases = [], labelTranslations = null, isActive = true,
+      imageUrl = null, mediaId = null, hindiAliases = [], isActive = true,
       positionX = null, positionY = null
     } = item;
     let { label } = item;
@@ -332,18 +334,20 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
     if (hindiAliases !== undefined && !Array.isArray(hindiAliases)) {
       return { error: `replyNodes[${i}]: hindiAliases must be an array of strings.` };
     }
-    const replyLabelTranslationsError = validateTranslationsMap(labelTranslations, `replyNodes[${i}].labelTranslations`);
-    if (replyLabelTranslationsError) return { error: replyLabelTranslationsError };
-
-    // buttonText/buttonTextTranslations/formFields/latitude/longitude/
-    // locationName/address: preserve-on-omit for EXISTING nodes — a key
-    // absent from the item keeps the current row's value, so a canvas
+    // labelTranslations/buttonText/buttonTextTranslations/formFields/latitude/
+    // longitude/locationName/address: preserve-on-omit for EXISTING nodes — a
+    // key absent from the item keeps the current row's value, so a canvas
     // client that doesn't send these can't null them out (the RPC sets
     // every column unconditionally). New nodes: omitted → null. A key
     // present with null still clears it, same as the single-node PUT.
     const pickReplyField = (key, column) => (
       Object.prototype.hasOwnProperty.call(item, key) ? item[key] : (existing ? existing[column] : null)
     );
+    const labelTranslations = pickReplyField('labelTranslations', 'label_translations');
+    const replyLabelTranslationsError = Object.prototype.hasOwnProperty.call(item, 'labelTranslations')
+      ? validateTranslationsMap(labelTranslations, `replyNodes[${i}].labelTranslations`)
+      : null;
+    if (replyLabelTranslationsError) return { error: replyLabelTranslationsError };
     const buttonText = pickReplyField('buttonText', 'button_text');
     const buttonTextTranslations = pickReplyField('buttonTextTranslations', 'button_text_translations');
     const formFields = pickReplyField('formFields', 'form_fields');
@@ -354,6 +358,8 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
 
     const replyButtonTextTranslationsError = validateTranslationsMap(buttonTextTranslations, `replyNodes[${i}].buttonTextTranslations`);
     if (replyButtonTextTranslationsError) return { error: replyButtonTextTranslationsError };
+    const replyButtonTextLengthError = validateButtonText({ buttonText, buttonTextTranslations }, existing, `replyNodes[${i}].`);
+    if (replyButtonTextLengthError) return { error: replyButtonTextLengthError };
     // null is accepted here (unlike PUT, which rejects formFields: null) —
     // GET /full returns formFields: null for every node without fields, and
     // the canvas echoes that back on every save.
@@ -380,6 +386,7 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
     const id = existing ? existing.id : crypto.randomUUID();
     if (providedId && providedId !== id) idMap.set(providedId, id);
     keepNodeIds.add(id);
+    replyContentTypeById.set(id, contentType);
 
     nodeUpserts.push({
       id, node_type: 'reply', keyword: normalizedKeyword, match_type: matchType,
@@ -514,10 +521,21 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
     const providedId = item.id;
     const existingEdge = providedId ? currentEdgeById.get(providedId) : undefined;
 
-    const {
-      fromNodeId: rawFrom, toNodeId: rawTo, label = null, labelTranslations = null,
-      description = null, descriptionTranslations = null, condition = null, preset = null, displayOrder
-    } = item;
+    const { fromNodeId: rawFrom, toNodeId: rawTo, label = null, displayOrder } = item;
+    // labelTranslations/description/descriptionTranslations/condition/preset:
+    // preserve-on-omit for EXISTING edges, same rule as pickReplyField above —
+    // the RPC rewrites every column, so a client that leaves a key out must
+    // not null it. New edges: omitted → null. A key present with null still
+    // clears it. Values kept from the stored row are not re-validated.
+    const suppliedEdgeField = (key) => Object.prototype.hasOwnProperty.call(item, key);
+    const pickEdgeField = (key, column) => (
+      suppliedEdgeField(key) ? item[key] : (existingEdge ? existingEdge[column] : null)
+    );
+    const labelTranslations = pickEdgeField('labelTranslations', 'label_translations');
+    const description = pickEdgeField('description', 'description');
+    const descriptionTranslations = pickEdgeField('descriptionTranslations', 'description_translations');
+    const condition = pickEdgeField('condition', 'condition');
+    const preset = pickEdgeField('preset', 'preset');
 
     if (!rawFrom || !rawTo) {
       return { error: `edges[${i}]: fromNodeId and toNodeId are required` };
@@ -533,20 +551,36 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
         `edges[${i}]: vehicle_carousel nodes cannot have outgoing edges — the post-selection flow is handled entirely in bookingGraph.service.js, not by edges.` };
     }
 
-    const edgeLabelTranslationsError = validateTranslationsMap(labelTranslations, `edges[${i}].labelTranslations`);
+    const edgeLabelTranslationsError = suppliedEdgeField('labelTranslations')
+      ? validateTranslationsMap(labelTranslations, `edges[${i}].labelTranslations`)
+      : null;
     if (edgeLabelTranslationsError) return { error: edgeLabelTranslationsError };
-    const edgeDescriptionTranslationsError = validateTranslationsMap(descriptionTranslations, `edges[${i}].descriptionTranslations`);
+    const edgeDescriptionTranslationsError = suppliedEdgeField('descriptionTranslations')
+      ? validateTranslationsMap(descriptionTranslations, `edges[${i}].descriptionTranslations`)
+      : null;
     if (edgeDescriptionTranslationsError) return { error: edgeDescriptionTranslationsError };
 
-    const conditionShapeError = validateConditionShape(condition);
-    if (conditionShapeError) return { error: `edges[${i}]: ${conditionShapeError}` };
-    if (condition) {
-      const conditionFieldError = validateConditionField(condition, knownFieldKeys);
-      if (conditionFieldError) return { error: `edges[${i}]: ${conditionFieldError}` };
+    const parentNode = proposedNodeById.get(fromNodeId);
+    const edgeCopyError = validateEdgeCopy({
+      parentNodeType: parentNode?.nodeType,
+      parentContentType: replyContentTypeById.get(fromNodeId),
+      label, labelTranslations, description, descriptionTranslations
+    }, existingEdge, `edges[${i}].`);
+    if (edgeCopyError) return { error: edgeCopyError };
+
+    if (suppliedEdgeField('condition')) {
+      const conditionShapeError = validateConditionShape(condition);
+      if (conditionShapeError) return { error: `edges[${i}]: ${conditionShapeError}` };
+      if (condition) {
+        const conditionFieldError = validateConditionField(condition, knownFieldKeys);
+        if (conditionFieldError) return { error: `edges[${i}]: ${conditionFieldError}` };
+      }
     }
 
-    const presetShapeError = validatePresetShape(preset);
-    if (presetShapeError) return { error: `edges[${i}]: ${presetShapeError}` };
+    if (suppliedEdgeField('preset')) {
+      const presetShapeError = validatePresetShape(preset);
+      if (presetShapeError) return { error: `edges[${i}]: ${presetShapeError}` };
+    }
 
     if (displayOrder !== undefined && typeof displayOrder !== 'number') {
       return { error: `edges[${i}]: displayOrder must be a number` };
