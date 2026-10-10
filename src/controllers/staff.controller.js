@@ -2,8 +2,18 @@ const bcrypt = require('bcryptjs');
 const supabase = require('../config/supabase');
 const subscriptionService = require('../services/subscription.service');
 const { successResponse, errorResponse } = require('../utils/response');
-const { buildPermissions } = require('../services/auth.service');
+const { buildPermissions, revokeAllSessions } = require('../services/auth.service');
 const logger = require('../utils/logger');
+
+// A removed or deactivated user must not keep refreshing: end every session.
+// The DB change already blocks them, so a Redis failure here is logged, not fatal.
+const endSessions = async (userId) => {
+  try {
+    await revokeAllSessions(userId);
+  } catch (err) {
+    logger.error(`Failed to revoke sessions for user ${userId}:`, err);
+  }
+};
 
 const toStaffResponse = (u) => ({
   _id: u.id,
@@ -174,6 +184,8 @@ const removeStaff = async (req, res, next) => {
     const { error } = await supabase.from('users').delete().eq('id', id);
     if (error) throw error;
 
+    await endSessions(id);
+
     logger.info(`Staff ${id} removed from business ${businessId}`);
     return successResponse(res, 200, null, 'Staff member removed successfully');
   } catch (error) {
@@ -198,6 +210,8 @@ const toggleStaff = async (req, res, next) => {
     const { data: updated, error } = await supabase
       .from('users').update({ is_active: !staffMember.is_active }).eq('id', id).select().single();
     if (error) throw error;
+
+    if (!updated.is_active) await endSessions(id);
 
     const action = updated.is_active ? 'activated' : 'deactivated';
     logger.info(`Staff ${id} ${action} for business ${businessId}`);
