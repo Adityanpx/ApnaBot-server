@@ -74,6 +74,8 @@ app.use(cors({
 // which skips a request this one already read; every other route keeps the
 // default limit.
 app.use('/api/broadcasts', express.json({ limit: '1mb' }));
+// Category-template JSON import carries a whole flow (nodes + edges).
+app.use('/api/admin/category-templates', express.json({ limit: '1mb' }));
 app.use(express.json({
   verify: (req, res, buf) => {
     req.rawBody = buf;

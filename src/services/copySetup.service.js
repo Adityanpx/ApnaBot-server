@@ -44,7 +44,13 @@ const countRows = async (table, businessId) => {
   return count || 0;
 };
 
-const formatDate = () => new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+// Date + HH:MM in IST so same-day attempts get distinguishable snapshot names.
+const formatDate = () => {
+  const now = new Date();
+  const day = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'Asia/Kolkata' });
+  const time = now.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
+  return `${day} ${time} IST`;
+};
 
 /**
  * Reads everything a copy needs and validates it (all read-only). Throws CopySetupError for
@@ -188,7 +194,7 @@ const applyPlan = async (plan, adminUserId) => {
       await invalidateRulesCache(targetId);
       const recovery = restoreName
         ? `Restore the target's flow from the "${restoreName}" snapshot in its Versions tab.`
-        : 'The target had no flow before, so it is now empty or partial; run the copy again.';
+        : 'No restore point was saved by this attempt because the target had no flow when it started (an earlier failed attempt may already have cleared it; check the Versions tab for a "Before copy from" snapshot). The target is now empty or partial; run the copy again.';
       throw new CopySetupError(500, `Copy failed while writing the new flow, so the target's flow may be empty or incomplete. ${recovery}`);
     }
 

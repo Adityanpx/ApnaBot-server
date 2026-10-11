@@ -33,6 +33,33 @@ const deleteBusinessGraphRows = async (businessId) => {
   if (nodesErr) throw nodesErr;
 };
 
+// supabase-js bulk insert sends a key missing from some rows as NULL (it does
+// not fall back to the column default), so hand-written/imported template rows
+// that omit NOT NULL columns fail the whole insert. Fill them here.
+const NODE_DEFAULTS = {
+  hindi_aliases: () => [],
+  options: () => [],
+  required: () => false,
+  is_computed: () => false,
+  is_active: () => true,
+  trigger_count: () => 0,
+  gallery_media_ids: () => []
+};
+const EDGE_DEFAULTS = {
+  display_order: () => 0
+};
+
+const fillDefaults = (row, defaults) => {
+  const out = { ...row };
+  for (const [key, makeDefault] of Object.entries(defaults)) {
+    if (out[key] === undefined || out[key] === null) out[key] = makeDefault();
+  }
+  return out;
+};
+
+const withNodeDefaults = (row) => fillDefaults(row, NODE_DEFAULTS);
+const withEdgeDefaults = (row) => fillDefaults(row, EDGE_DEFAULTS);
+
 /**
  * Recreates flow_nodes/flow_edges rows for targetBusinessId from stored
  * snapshot/template row arrays (raw snake_case shape, as returned by
@@ -65,10 +92,10 @@ const writeBusinessGraphRows = async (targetBusinessId, storedNodes, storedEdges
     idMap.set(n.id, newId);
     const { id, created_at, updated_at, ...rest } = n;
     return {
-      ...rest,
+      ...withNodeDefaults(rest),
       id: newId,
       business_id: targetBusinessId,
-      trigger_count: resetTriggerCount ? 0 : n.trigger_count
+      trigger_count: resetTriggerCount ? 0 : (n.trigger_count ?? 0)
     };
   });
 
@@ -80,7 +107,7 @@ const writeBusinessGraphRows = async (targetBusinessId, storedNodes, storedEdges
   const edgesToInsert = (storedEdges || []).map(e => {
     const { id, created_at, updated_at, from_node_id, to_node_id, ...rest } = e;
     return {
-      ...rest,
+      ...withEdgeDefaults(rest),
       id: reuseIds ? id : crypto.randomUUID(),
       business_id: targetBusinessId,
       from_node_id: idMap.get(from_node_id),
@@ -156,6 +183,8 @@ module.exports = {
   readBusinessGraphRows,
   deleteBusinessGraphRows,
   writeBusinessGraphRows,
+  withNodeDefaults,
+  withEdgeDefaults,
   enforceSnapshotCap,
   setActiveSnapshot,
   createSnapshotFromRows

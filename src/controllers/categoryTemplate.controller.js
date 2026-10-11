@@ -1,7 +1,7 @@
 const supabase = require('../config/supabase');
 const { successResponse, errorResponse } = require('../utils/response');
 const { toCamelCase } = require('../utils/caseConvert');
-const { readBusinessGraphRows } = require('../services/flowSnapshot.service');
+const { readBusinessGraphRows, withNodeDefaults, withEdgeDefaults } = require('../services/flowSnapshot.service');
 const businessCategoryService = require('../services/businessCategory.service');
 const logger = require('../utils/logger');
 const { r2KeyFromUrl } = require('../utils/r2Key');
@@ -214,8 +214,8 @@ const importTemplateJson = async (req, res, next) => {
       category,
       name: name.trim(),
       description: description || null,
-      nodes,
-      edges,
+      nodes: nodes.map(withNodeDefaults),
+      edges: edges.map(withEdgeDefaults),
       is_category_template: true,
       is_active: true
     }).select('id, category, name, description, created_at, updated_at').single();

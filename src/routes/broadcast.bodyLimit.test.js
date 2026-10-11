@@ -52,5 +52,7 @@ test('app.js mounts the broadcast parser before the global one', () => {
   const globalParser = src.indexOf('app.use(express.json({');
   assert.ok(broadcastParser > 0, 'broadcast parser missing');
   assert.ok(globalParser > broadcastParser, 'global parser must come after the broadcast one');
-  assert.equal(src.split("express.json({ limit: '1mb' })").length - 1, 1, 'the 1 MB limit must apply to /api/broadcasts only');
+  assert.equal(src.split("express.json({ limit: '1mb' })").length - 1, 2, 'the 1 MB limit must apply to /api/broadcasts and /api/admin/category-templates only');
+  const templateParser = src.indexOf("app.use('/api/admin/category-templates', express.json({ limit: '1mb' }));");
+  assert.ok(templateParser > 0 && globalParser > templateParser, 'category-templates parser must come before the global one');
 });
