@@ -63,7 +63,7 @@ test('listForBusiness: category state, override and result', async () => {
   assert.deepEqual({ feature: f.feature, categoryEnabled: f.categoryEnabled, override: f.override, isEnabled: f.isEnabled },
     { feature: 'bot_builder', categoryEnabled: false, override: true, isEnabled: true });
   // bot_builder is coaching-only; followups, opt_in_links, contact_import and owner_phone_media ('*') apply everywhere.
-  assert.deepEqual((await svc.listForBusiness('swanand', 'internet_cafe')).map(f => f.feature), ['followups', 'opt_in_links', 'contact_import', 'owner_phone_media']);
+  assert.deepEqual((await svc.listForBusiness('swanand', 'internet_cafe')).map(f => f.feature), ['followups', 'opt_in_links', 'contact_import', 'owner_phone_media', 'staff', 'broadcasts']);
 });
 
 test('followups: off for every category until switched on; per-business pilot works', async () => {
@@ -75,7 +75,7 @@ test('followups: off for every category until switched on; per-business pilot wo
   assert.equal(await svc.isEnabled('travels', 'followups', 'searchcab'), false);
   // bot_builder stays coaching-only
   assert.equal(svc.appliesTo('travels', 'bot_builder'), false);
-  assert.deepEqual((await svc.listForBusiness('sg', 'travels')).map(f => [f.feature, f.isEnabled]), [['followups', true], ['opt_in_links', false], ['contact_import', false], ['owner_phone_media', false]]);
+  assert.deepEqual((await svc.listForBusiness('sg', 'travels')).map(f => [f.feature, f.isEnabled]), [['followups', true], ['opt_in_links', false], ['contact_import', false], ['owner_phone_media', false], ['staff', true], ['broadcasts', true]]);
 });
 
 test('opt_in_links: off for every category until switched on; per-business pilot works', async () => {
@@ -95,8 +95,8 @@ test("'*' covers every category, including one added later; a list stays a list"
   assert.equal(svc.appliesTo('pet_shop', 'bot_builder'), false);
   assert.equal(svc.appliesTo('coaching', 'bot_builder'), true);
   assert.equal(svc.appliesTo('pet_shop', 'no_such_feature'), false);
-  assert.deepEqual((await svc.listForCategory('pet_shop')).map(f => f.feature), ['followups', 'opt_in_links', 'contact_import', 'owner_phone_media']);
-  assert.deepEqual((await svc.listForCategory('coaching')).map(f => f.feature), ['bot_builder', 'followups', 'opt_in_links', 'contact_import', 'owner_phone_media']);
+  assert.deepEqual((await svc.listForCategory('pet_shop')).map(f => f.feature), ['followups', 'opt_in_links', 'contact_import', 'owner_phone_media', 'staff', 'broadcasts']);
+  assert.deepEqual((await svc.listForCategory('coaching')).map(f => f.feature), ['bot_builder', 'followups', 'opt_in_links', 'contact_import', 'owner_phone_media', 'staff', 'broadcasts']);
   await svc.setBusinessOverride('pets', 'followups', true);
   assert.equal(await svc.isEnabled('pet_shop', 'followups', 'pets'), true);
 });
@@ -118,4 +118,61 @@ test('owner_phone_media: every category, off until switched on; Search cab AI st
   await svc.setBusinessOverride('sg', 'owner_phone_media', true);
   assert.equal(await svc.isEnabled('travels', 'owner_phone_media', 'sg'), true);
   assert.equal(await svc.isEnabled('travels', 'owner_phone_media', 'searchcab'), false);
+});
+
+test('staff / broadcasts: defaultEnabled, every category; a missing row means On', async () => {
+  reset(null);
+  for (const key of ['staff', 'broadcasts']) {
+    assert.equal(svc.FEATURES[key].categories, '*');
+    assert.equal(svc.FEATURES[key].defaultEnabled, true);
+    assert.equal(await svc.isEnabled('travels', key, 'searchcab'), true);
+    assert.equal(await svc.isEnabled('pet_shop', key, 'pets'), true); // category with no rows at all
+    assert.equal(await svc.isEnabled('pet_shop', key), true); // no business id
+  }
+  assert.equal(svc.FEATURES.staff.label, 'Staff');
+  assert.equal(svc.FEATURES.staff.description, 'Staff members and permissions');
+  assert.equal(svc.FEATURES.broadcasts.label, 'Broadcasts');
+  assert.equal(svc.FEATURES.broadcasts.description, 'Broadcasts to customers');
+});
+
+test('staff / broadcasts: an explicit Off row wins over the default; an override wins over the row', async () => {
+  reset(null);
+  tables.category_features.push({ category: 'travels', feature: 'broadcasts', is_enabled: false });
+  assert.equal(await svc.isEnabled('travels', 'broadcasts', 'sg'), false);
+  assert.equal(await svc.isEnabled('salon', 'broadcasts', 's1'), true); // other categories keep the default
+  await svc.setBusinessOverride('sg', 'broadcasts', true);
+  assert.equal(await svc.isEnabled('travels', 'broadcasts', 'sg'), true);
+  await svc.setBusinessOverride('sg', 'staff', false); // business Off, category has no row
+  assert.equal(await svc.isEnabled('travels', 'staff', 'sg'), false);
+  assert.equal(await svc.isEnabled('travels', 'staff', 'searchcab'), true);
+  await svc.setBusinessOverride('sg', 'staff', null);
+  assert.equal(await svc.isEnabled('travels', 'staff', 'sg'), true);
+});
+
+test('staff / broadcasts: the Super Admin lists show the real state, not a false Off', async () => {
+  reset(null);
+  tables.category_features.push({ category: 'travels', feature: 'staff', is_enabled: false });
+  const cat = await svc.listForCategory('travels');
+  assert.deepEqual(cat.filter(f => ['staff', 'broadcasts'].includes(f.feature)).map(f => [f.feature, f.isEnabled]), [['staff', false], ['broadcasts', true]]);
+  await svc.setBusinessOverride('sg', 'staff', true);
+  const biz = await svc.listForBusiness('sg', 'travels');
+  const staff = biz.find(f => f.feature === 'staff');
+  const broadcasts = biz.find(f => f.feature === 'broadcasts');
+  assert.deepEqual({ c: staff.categoryEnabled, o: staff.override, e: staff.isEnabled }, { c: false, o: true, e: true });
+  assert.deepEqual({ c: broadcasts.categoryEnabled, o: broadcasts.override, e: broadcasts.isEnabled }, { c: true, o: null, e: true });
+});
+
+test('the existing five keys keep no row = off', async () => {
+  reset(null);
+  for (const key of ['followups', 'opt_in_links', 'contact_import', 'owner_phone_media']) {
+    assert.equal(svc.FEATURES[key].defaultEnabled, undefined);
+    assert.equal(await svc.isEnabled('travels', key, 'sg'), false);
+  }
+  assert.equal(svc.FEATURES.bot_builder.defaultEnabled, undefined);
+  assert.equal(await svc.isEnabled('coaching', 'bot_builder', 'daring'), false);
+});
+
+test('contact_import no longer promises a broadcast on its own', () => {
+  assert.doesNotMatch(svc.FEATURES.contact_import.description, /and broadcast to a group/);
+  assert.match(svc.FEATURES.contact_import.description, /while Broadcasts is on/);
 });

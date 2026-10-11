@@ -1,6 +1,7 @@
 // Super Admin on/off feature switches per business category
-// (category_features, 20260929140000_category_features.sql; no row = off),
-// with optional per-business overrides (business_features,
+// (category_features, 20260929140000_category_features.sql; no row = off, unless
+// the feature has defaultEnabled — then no row = on and only an explicit
+// is_enabled=false row turns it off), with optional per-business overrides (business_features,
 // 20261002120000_business_features.sql; no row = follow the category).
 // Not to be confused with config/categoryFeatures.js, which holds per-
 // category DEFAULT values for business_travel_settings columns.
@@ -9,7 +10,13 @@ const supabase = require('../config/supabase');
 // Every switchable feature, with the categories it applies to — a list, or
 // '*' for every category (including ones added later from Super Admin). The
 // DB check constraints (category_features.feature, business_features.feature)
-// must list the same keys.
+// must list the same keys (categoryFeature.migrationParity.test.js checks the
+// newest migration that sets them).
+//
+// defaultEnabled: true — the feature already works for every business, so a
+// missing category_features row (including a category added later from Super
+// Admin) means ON; Super Admin switches it off with an explicit row or a
+// per-business override. Omitted = off until switched on.
 const ALL_CATEGORIES = '*';
 const FEATURES = {
   bot_builder: {
@@ -29,13 +36,25 @@ const FEATURES = {
   },
   contact_import: {
     label: 'Contact import & groups',
-    description: 'Lets these businesses import contacts from a CSV / Excel file or Google Sheet, group their customers, and broadcast to a group.',
+    description: 'Lets these businesses import contacts from a CSV / Excel file or Google Sheet and group their customers. A group can be chosen as a broadcast audience while Broadcasts is on.',
     categories: ALL_CATEGORIES
   },
   owner_phone_media: {
     label: "Save owner's phone-app media",
     description: "Saves the photos, videos and PDFs the owner sends from the WhatsApp Business app, so they show in the dashboard chat. Uses storage; off by default (the message keeps its 'Photo' / 'Video' label).",
     categories: ALL_CATEGORIES
+  },
+  staff: {
+    label: 'Staff',
+    description: 'Staff members and permissions',
+    categories: ALL_CATEGORIES,
+    defaultEnabled: true
+  },
+  broadcasts: {
+    label: 'Broadcasts',
+    description: 'Broadcasts to customers',
+    categories: ALL_CATEGORIES,
+    defaultEnabled: true
   }
 };
 
@@ -46,13 +65,16 @@ const appliesTo = (category, feature) => {
   return definition.categories === ALL_CATEGORIES || definition.categories.includes(category);
 };
 
-/** The category switch alone (no row = off). */
+/** What a missing category_features row means for this feature. */
+const defaultEnabled = (feature) => !!FEATURES[feature]?.defaultEnabled;
+
+/** The category switch alone (no row = the feature's default: off unless defaultEnabled). */
 const isCategoryEnabled = async (category, feature) => {
   const { data, error } = await supabase
     .from('category_features').select('is_enabled')
     .eq('category', category).eq('feature', feature).maybeSingle();
   if (error) throw error;
-  return !!data?.is_enabled;
+  return data ? !!data.is_enabled : defaultEnabled(feature);
 };
 
 /** The business's override: true / false, or null when it follows its category. */
@@ -76,8 +98,12 @@ const getBusinessOverride = async (businessId, feature) => {
 const isEnabled = async (category, feature, businessId = null) => {
   if (!appliesTo(category, feature)) return false;
   if (businessId) {
-    const override = await getBusinessOverride(businessId, feature);
-    if (override !== null) return override;
+    // Independent reads, run together (no cache; this is on the request path).
+    const [override, categoryOn] = await Promise.all([
+      getBusinessOverride(businessId, feature),
+      isCategoryEnabled(category, feature)
+    ]);
+    return override !== null ? override : categoryOn;
   }
   return isCategoryEnabled(category, feature);
 };
@@ -94,7 +120,7 @@ const listForCategory = async (category) => {
     feature: key,
     label: f.label,
     description: f.description,
-    isEnabled: !!rows.get(key)?.is_enabled,
+    isEnabled: rows.has(key) ? !!rows.get(key).is_enabled : defaultEnabled(key),
     updatedAt: rows.get(key)?.updated_at || null
   }));
 };
