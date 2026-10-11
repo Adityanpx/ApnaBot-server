@@ -1,7 +1,6 @@
 // Super Admin on/off feature switches per business category
-// (category_features, 20260929140000_category_features.sql; no row = off, unless
-// the feature has defaultEnabled — then no row = on and only an explicit
-// is_enabled=false row turns it off), with optional per-business overrides (business_features,
+// (category_features, 20260929140000_category_features.sql; no row = off),
+// with optional per-business overrides (business_features,
 // 20261002120000_business_features.sql; no row = follow the category).
 // Not to be confused with config/categoryFeatures.js, which holds per-
 // category DEFAULT values for business_travel_settings columns.
@@ -12,11 +11,6 @@ const supabase = require('../config/supabase');
 // DB check constraints (category_features.feature, business_features.feature)
 // must list the same keys (categoryFeature.migrationParity.test.js checks the
 // newest migration that sets them).
-//
-// defaultEnabled: true — the feature already works for every business, so a
-// missing category_features row (including a category added later from Super
-// Admin) means ON; Super Admin switches it off with an explicit row or a
-// per-business override. Omitted = off until switched on.
 const ALL_CATEGORIES = '*';
 const FEATURES = {
   bot_builder: {
@@ -47,14 +41,12 @@ const FEATURES = {
   staff: {
     label: 'Staff',
     description: 'Staff members and permissions',
-    categories: ALL_CATEGORIES,
-    defaultEnabled: true
+    categories: ALL_CATEGORIES
   },
   broadcasts: {
     label: 'Broadcasts',
     description: 'Broadcasts to customers',
-    categories: ALL_CATEGORIES,
-    defaultEnabled: true
+    categories: ALL_CATEGORIES
   }
 };
 
@@ -65,16 +57,13 @@ const appliesTo = (category, feature) => {
   return definition.categories === ALL_CATEGORIES || definition.categories.includes(category);
 };
 
-/** What a missing category_features row means for this feature. */
-const defaultEnabled = (feature) => !!FEATURES[feature]?.defaultEnabled;
-
-/** The category switch alone (no row = the feature's default: off unless defaultEnabled). */
+/** The category switch alone (no row = off). */
 const isCategoryEnabled = async (category, feature) => {
   const { data, error } = await supabase
     .from('category_features').select('is_enabled')
     .eq('category', category).eq('feature', feature).maybeSingle();
   if (error) throw error;
-  return data ? !!data.is_enabled : defaultEnabled(feature);
+  return !!data?.is_enabled;
 };
 
 /** The business's override: true / false, or null when it follows its category. */
@@ -120,7 +109,7 @@ const listForCategory = async (category) => {
     feature: key,
     label: f.label,
     description: f.description,
-    isEnabled: rows.has(key) ? !!rows.get(key).is_enabled : defaultEnabled(key),
+    isEnabled: !!rows.get(key)?.is_enabled,
     updatedAt: rows.get(key)?.updated_at || null
   }));
 };

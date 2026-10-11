@@ -1,12 +1,12 @@
 -- Super Admin switches for 'staff' (staff members and permissions) and
 -- 'broadcasts' (broadcasts to customers).
 --
--- Both already work for every business, so both are defaultEnabled in
--- categoryFeature.service.js#FEATURES: NO ROWS ARE SEEDED. A missing
--- category_features row means ON for these two keys (including a category
--- added later); an explicit is_enabled=false row, or a business_features
--- override of false, turns it off. This migration only widens the check
--- constraints so those rows can be written; it changes no behaviour by itself.
+-- Like every other key, both are OFF until a category_features row or a
+-- business_features override switches them on (no row = off). This migration
+-- only widens the check constraints so those rows can be written; it seeds
+-- nothing and changes no behaviour by itself. The businesses that already use
+-- staff / broadcasts are switched on by the grandfathering migration that
+-- follows it (20261015130000_grandfather_staff_broadcasts.sql).
 --
 -- DEPLOY ORDER: apply this BEFORE the server code that can write the new
 -- keys (until then, saving an Off switch for either key fails the constraint).
