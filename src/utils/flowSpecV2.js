@@ -18,11 +18,12 @@
 //     pages: [ { id, text, keyword?, aliases?, mediaId?,      // mediaId: business_media image above the message (not on list pages)
 //                buttons?: [ { title, target } ],           // 1..3, OR
 //                list?: [ { title, description?, target } ] } ],  // 1..10
-//     forms: [ { id, text, buttonText, keyword?, aliases?, fields } ],  // fields: flowFieldsValidation.js shape
+//     forms: [ { id, text, buttonText, keyword?, aliases?, fields,   // fields: flowFieldsValidation.js shape
+//                title? } ],          // title: the form's name — page header + bookings.form_title, <= 60 chars
 //     location?: { keyword? }                               // required if any target is { type: 'location' }
 //   }
 //   Optional translations on any text: greeting/page/form textTranslations,
-//   form buttonTextTranslations, choice titleTranslations /
+//   form buttonTextTranslations, form titleTranslations (needs a title), choice titleTranslations /
 //   descriptionTranslations — { hi?: '...', mr?: '...' }, same limits as the
 //   English; compiled to the node/edge *_translations columns.
 //   target: { type: 'page', id } | { type: 'form', id } | { type: 'menu' } | { type: 'location' }
@@ -31,6 +32,7 @@
 const { normalizeText, ID_PATTERN, GREETING_WORDS, LIMITS, DX, DY } = require('./flowSpec');
 const { validateFlowFields } = require('./flowFieldsValidation');
 const { isValidLanguageCode } = require('./languageCatalog');
+const { FORM_TITLE_MAX } = require('./formTitle');
 
 const TARGET_TYPES = ['page', 'form', 'menu', 'location'];
 const LOCATION_TAP_KEYWORD = 'menu_location';
@@ -187,6 +189,15 @@ const validateFlowSpecV2 = (spec) => {
     const formTrError = validateTranslationMap(form.textTranslations, LIMITS.INTERACTIVE_BODY, `${at}.textTranslations`) ||
       validateTranslationMap(form.buttonTextTranslations, LIMITS.BUTTON_TITLE, `${at}.buttonTextTranslations`);
     if (formTrError) return formTrError;
+    if (form.title !== undefined && form.title !== null) {
+      if (!isNonEmptyString(form.title)) return `${at}.title must be a non-empty string`;
+      if (len(form.title) > FORM_TITLE_MAX) return `${at}.title must be ${FORM_TITLE_MAX} characters or less`;
+    }
+    if (form.titleTranslations !== undefined && form.titleTranslations !== null) {
+      if (form.title === undefined || form.title === null) return `${at}.titleTranslations needs a title`;
+      const titleTrError = validateTranslationMap(form.titleTranslations, FORM_TITLE_MAX, `${at}.titleTranslations`);
+      if (titleTrError) return titleTrError;
+    }
     if (!Array.isArray(form.fields) || form.fields.filter(f => f && f.type !== 'display_text').length === 0) {
       return `${at}.fields must include at least one question`;
     }
@@ -290,6 +301,8 @@ const compileFlowSpecV2 = (spec) => {
       ...(typedFields(form) || { keyword: formTapKeyword(form.id), matchType: 'exact', hindiAliases: [] }),
       replyKind: 'web_form_trigger', contentType: 'text', label: form.text.trim(),
       buttonText: form.buttonText.trim(), formFields: form.fields,
+      ...(isNonEmptyString(form.title) ? { formTitle: form.title.trim() } : {}),
+      ...(isNonEmptyString(form.title) && form.titleTranslations ? { formTitleTranslations: trimMap(form.titleTranslations) } : {}),
       ...(form.textTranslations ? { labelTranslations: trimMap(form.textTranslations) } : {}),
       ...(form.buttonTextTranslations ? { buttonTextTranslations: trimMap(form.buttonTextTranslations) } : {})
     });

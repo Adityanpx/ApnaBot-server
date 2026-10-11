@@ -31,6 +31,7 @@ const {
   validateConditionShape,
   validatePresetShape,
   validateTranslationsMap,
+  prepareFormTitleWrite,
   validateLatLng
 } = flowGraphService;
 
@@ -131,7 +132,8 @@ const getReplyNodes = async (req, res, next) => {
  * replyKind, contentType, label, labelTranslations, imageUrl, mediaId,
  * hindiAliases, buttonText, buttonTextTranslations, formFields, latitude,
  * longitude, locationName, address (latter four only meaningful when
- * contentType='location'), galleryMediaIds, videoMediaId (extra photos / one video, plan-limited —
+ * contentType='location'), formTitle, formTitleTranslations (the web form's name,
+ * replyKind 'web_form_trigger' only — see prepareFormTitleWrite), galleryMediaIds, videoMediaId (extra photos / one video, plan-limited —
  * see replyMedia.service.js) }. formFields is validated and stored exactly as
  * updateReplyNode does (validateFlowFields, any replyKind). mediaId (a business_media row id) takes precedence over a
  * raw imageUrl when both are present — see resolveMediaIdToUrl.
@@ -143,7 +145,7 @@ const createReplyNode = async (req, res, next) => {
       imageUrl = null, mediaId = null, hindiAliases = [], labelTranslations = null,
       buttonText = null, buttonTextTranslations = null, formFields,
       latitude = null, longitude = null, locationName = null, address = null,
-      galleryMediaIds, videoMediaId
+      formTitle, formTitleTranslations, galleryMediaIds, videoMediaId
     } = req.body;
     let { label } = req.body;
     const businessId = req.user.businessId;
@@ -188,6 +190,10 @@ const createReplyNode = async (req, res, next) => {
       if (formFieldsError) {
         return errorResponse(res, 400, formFieldsError);
       }
+    }
+    const formTitleWrite = prepareFormTitleWrite({ formTitle, formTitleTranslations }, replyKind);
+    if (formTitleWrite.error) {
+      return errorResponse(res, 400, formTitleWrite.error);
     }
 
     // No buttons/listOptions in this call (see doc comment above), so the
@@ -236,6 +242,7 @@ const createReplyNode = async (req, res, next) => {
       button_text: buttonText,
       button_text_translations: buttonTextTranslations || null,
       form_fields: formFields !== undefined ? formFields : null,
+      ...formTitleWrite.updates,
       image_url: resolvedImageUrl || null,
       media_id: mediaId || null,
       ...replyMedia.updates,
@@ -265,7 +272,7 @@ const createReplyNode = async (req, res, next) => {
 const updateReplyNode = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, mediaId, hindiAliases, label, labelTranslations, buttonText, buttonTextTranslations, formFields, latitude, longitude, locationName, address, galleryMediaIds, videoMediaId, force } = req.body || {};
+    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, mediaId, hindiAliases, label, labelTranslations, buttonText, buttonTextTranslations, formFields, latitude, longitude, locationName, address, formTitle, formTitleTranslations, galleryMediaIds, videoMediaId, force } = req.body || {};
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
@@ -308,6 +315,13 @@ const updateReplyNode = async (req, res, next) => {
       if (formFieldsError) {
         return errorResponse(res, 400, formFieldsError);
       }
+    }
+
+    const formTitleWrite = prepareFormTitleWrite(
+      { formTitle, formTitleTranslations }, replyKind !== undefined ? replyKind : node.reply_kind
+    );
+    if (formTitleWrite.error) {
+      return errorResponse(res, 400, formTitleWrite.error);
     }
 
     // Switching a node's contentType away from buttons/list to text would
@@ -407,6 +421,7 @@ const updateReplyNode = async (req, res, next) => {
     if (buttonTextTranslations !== undefined) updateData.button_text_translations = buttonTextTranslations || null;
     if (buttonText !== undefined) updateData.button_text = buttonText;
     if (formFields !== undefined) updateData.form_fields = formFields;
+    Object.assign(updateData, formTitleWrite.updates);
     if (latitude !== undefined) updateData.latitude = latitude;
     if (longitude !== undefined) updateData.longitude = longitude;
     if (locationName !== undefined) updateData.location_name = locationName || null;

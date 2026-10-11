@@ -229,3 +229,10 @@ test('findDanglingEdges: flags edges whose endpoints are not in the node list', 
   assert.equal(findDanglingEdges(nodes, [{ from_node_id: 'a', to_node_id: 'b' }]).length, 0);
   assert.equal(findDanglingEdges(nodes, [{ from_node_id: 'a', to_node_id: 'zzz' }]).length, 1);
 });
+
+test('transform: form_title / form_title_translations (a form name is not business-specific) carry over untouched', () => {
+  const titles = { form_title: 'Site visit', form_title_translations: { hi: 'साइट विज़िट' } };
+  const { nodes } = transformNodesForCopy([node({ reply_kind: 'web_form_trigger', ...titles })], { isStorageUrl });
+  assert.equal(nodes[0].form_title, 'Site visit');
+  assert.deepEqual(nodes[0].form_title_translations, { hi: 'साइट विज़िट' });
+});

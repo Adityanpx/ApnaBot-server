@@ -174,3 +174,41 @@ test('page mediaId: a media id on a buttons/text page; never on a list page', ()
   const bad = base(); bad.pages[0].mediaId = 'not-an-id';
   assert.match(validateFlowSpecV2(bad), /mediaId must be a media id/);
 });
+
+// ---- form title (the web form's name) ------------------------------------------------------
+
+test('form title: compiles to formTitle / formTitleTranslations on the form node only', () => {
+  const s = baseSpec();
+  s.forms[0].title = '  Free demo  ';
+  s.forms[0].titleTranslations = { hi: ' मुफ़्त डेमो ', mr: 'मोफत डेमो' };
+  assert.equal(validateFlowSpecV2(s), null);
+  const byId = new Map(compileFlowSpecV2(s).replyNodes.map(n => [n.id, n]));
+  const node = byId.get('tmp:form:demo');
+  assert.equal(node.formTitle, 'Free demo');
+  assert.deepEqual(node.formTitleTranslations, { hi: 'मुफ़्त डेमो', mr: 'मोफत डेमो' });
+  assert.equal(node.replyKind, 'web_form_trigger');
+  for (const [id, other] of byId) {
+    if (id !== 'tmp:form:demo') assert.ok(!('formTitle' in other) && !('formTitleTranslations' in other), id);
+  }
+});
+
+test('form title: optional - a form without one compiles exactly as before', () => {
+  const node = compileFlowSpecV2(baseSpec()).replyNodes.find(n => n.id === 'tmp:form:demo');
+  assert.ok(!('formTitle' in node) && !('formTitleTranslations' in node));
+  const withNulls = mutate(s => { s.forms[0].title = null; s.forms[0].titleTranslations = null; });
+  assert.equal(validateFlowSpecV2(withNulls), null);
+  assert.ok(!('formTitle' in compileFlowSpecV2(withNulls).replyNodes.find(n => n.id === 'tmp:form:demo')));
+});
+
+test('form title: 60 characters is accepted (also per translation)', () => {
+  const s = mutate(x => { x.forms[0].title = 'x'.repeat(60); x.forms[0].titleTranslations = { hi: 'अ'.repeat(60) }; });
+  assert.equal(validateFlowSpecV2(s), null);
+});
+
+rejects('form title over 60', s => { s.forms[0].title = 'x'.repeat(61); }, /forms\[0\]\.title must be 60 characters or less/);
+rejects('form title blank', s => { s.forms[0].title = '   '; }, /forms\[0\]\.title must be a non-empty string/);
+rejects('form title not text', s => { s.forms[0].title = 5; }, /forms\[0\]\.title must be a non-empty string/);
+rejects('form title translation over 60', s => { s.forms[0].title = 'Demo'; s.forms[0].titleTranslations = { hi: 'x'.repeat(61) }; }, /titleTranslations\.hi must be 60 characters or less/);
+rejects('form title translation with a bad language', s => { s.forms[0].title = 'Demo'; s.forms[0].titleTranslations = { zz: 'x' }; }, /titleTranslations has an invalid language code "zz"/);
+rejects('form title translation blank', s => { s.forms[0].title = 'Demo'; s.forms[0].titleTranslations = { hi: ' ' }; }, /titleTranslations\.hi must be a non-empty string/);
+rejects('form title translations without a title', s => { s.forms[0].titleTranslations = { hi: 'डेमो' }; }, /titleTranslations needs a title/);

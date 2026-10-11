@@ -21,7 +21,7 @@ const CONVERTING_STATUSES = ['confirmed', 'completed'];
  */
 const getBookings = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, status, date, customerNumber, customerId, form } = req.query;
+    const { page = 1, limit = 20, status, date, customerNumber, customerId, form, formTitle } = req.query;
     const businessId = req.user.businessId;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
@@ -56,6 +56,11 @@ const getBookings = async (req, res, next) => {
       query = query.eq('form_key', form);
     }
 
+    // Web-form name (bookings.form_title), exact match — values from GET /bookings/form-titles.
+    if (typeof formTitle === 'string' && formTitle.trim()) {
+      query = query.eq('form_title', formTitle.trim());
+    }
+
     const { data, error, count } = await query
       .order('created_at', { ascending: false })
       .range((pageNum - 1) * limitNum, pageNum * limitNum - 1);
@@ -66,6 +71,22 @@ const getBookings = async (req, res, next) => {
     return successResponse(res, 200, { bookings: (data || []).map(toCamelCase), pagination });
   } catch (error) {
     logger.error('Error fetching bookings:', error);
+    next(error);
+  }
+};
+
+/**
+ * GET /api/bookings/form-titles
+ * The distinct web-form names on this business's bookings (bookings.form_title), sorted — the
+ * options for the list's ?formTitle= filter. { formTitles: string[] }
+ */
+const getFormTitles = async (req, res, next) => {
+  try {
+    const { data, error } = await supabase.rpc('distinct_booking_form_titles', { p_business_id: req.user.businessId });
+    if (error) throw error;
+    return successResponse(res, 200, { formTitles: data || [] });
+  } catch (error) {
+    logger.error('Error fetching booking form titles:', error);
     next(error);
   }
 };
@@ -282,6 +303,7 @@ const getVehicleCarouselPreview = async (req, res, next) => {
 
 module.exports = {
   getBookings,
+  getFormTitles,
   getBookingById,
   updateBookingStatus,
   updateBookingPayment,

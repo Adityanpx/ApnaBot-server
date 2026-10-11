@@ -178,9 +178,11 @@ questions in chat.
 - **Public endpoints (`/api/public`, token = authorization, no login):**
   `GET /service-form/:token` → `{ businessName, isTravelBusiness,
   flowFields, prefill?, formTitle?, formSubtitle? }` (optional keys only
-  present when set; `formTitle` = a published Bot Builder form's page
-  header, "Book a free demo class" / "Admission form" —
-  `resolveFormTitle`); `POST /service-form/:token/submit { values }`;
+  present when set; `formTitle` = the page header: a published Bot Builder
+  form's title ("Book a free demo class" / "Admission form", with
+  `formSubtitle`), else the node's own form name `flow_nodes.form_title` in
+  the customer's language (`form_title_translations`, no subtitle) —
+  `resolveFormTitle`, `utils/formTitle.js`); `POST /service-form/:token/submit { values }`;
   travel helpers `GET .../vehicle-options`, `POST .../places-autocomplete`,
   `POST .../place-details`, `POST .../vehicle-quote`. Expired → 410, used →
   410, unknown → 404.
@@ -188,7 +190,8 @@ questions in chat.
   value must be a current course), creates the booking via
   `bookingService.createBookingAndConfirmation` (saving `bookings.form_key` /
   `form_title` — "demo"/"Free demo", "admission"/"Admission" for a published
-  Bot Builder form, else null — and `field_labels` `{fieldName: label}`, all
+  Bot Builder form; else `form_key` null and `form_title` = the node's
+  English `form_title` (null if unset) — and `field_labels` `{fieldName: label}`, all
   snapshotted at submit since Bot Builder rebuilds its forms on publish),
   marks the token used
   (`used_at` — one link, one booking), and sends the WhatsApp
@@ -1493,6 +1496,16 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
   10/min/IP `helpFeedbackLimiter` on top of `globalLimiter`) into the new
   `help_feedback` table (migration `20261004150000_help_feedback.sql`,
   **must be applied before the server code is deployed**).
+- 2026-10-17: Web-form name — optional `flow_nodes.form_title` (≤60) /
+  `form_title_translations` on `web_form_trigger` replies, set via
+  `formTitle`/`formTitleTranslations` on `POST|PUT /api/flow-graph/reply-nodes`
+  and `PUT /api/flow-graph/full`, and `forms[].title`/`titleTranslations` in
+  FlowSpec v2. Shown as the public form's title, snapshotted on
+  `bookings.form_title`. `GET /api/bookings?formTitle=` (exact) and
+  `GET /api/bookings/form-titles` (distinct names) for the filter.
+  Migration `20261017120000_flow_nodes_form_title.sql` (also re-creates
+  `save_flow_graph_full` and adds `distinct_booking_form_titles`; **apply
+  after 20261016 and before the server deploy**).
 - 2026-09-30: Coaching request tracking — `bookings.form_key/form_title/
   field_labels` (migration `20260930120000_bookings_form_meta.sql`, **must
   be applied before the server code that writes it is deployed**), coaching

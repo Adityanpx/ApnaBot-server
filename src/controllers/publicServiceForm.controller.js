@@ -18,6 +18,7 @@ const { isTravelFeaturedCategory } = require('../config/categoryFeatures');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 const { isValidLanguageCode } = require('../utils/languageCatalog');
+const { localizedFormTitle, bookingFormTitle } = require('../utils/formTitle');
 
 const TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -41,13 +42,13 @@ const loadToken = async (token) => {
 };
 
 /**
- * The token's form node ({ form_fields, keyword }), or null when the token
+ * The token's form node ({ form_fields, keyword, form_title, form_title_translations }), or null when the token
  * has no flow_node_id or the node no longer exists.
  */
 const loadFormNode = async (formToken) => {
   if (!formToken.flowNodeId) return null;
   const { data: node, error } = await supabase
-    .from('flow_nodes').select('form_fields, keyword').eq('id', formToken.flowNodeId).maybeSingle();
+    .from('flow_nodes').select('form_fields, keyword, form_title, form_title_translations').eq('id', formToken.flowNodeId).maybeSingle();
   if (error) throw error;
   return node;
 };
@@ -149,16 +150,20 @@ const resolvePrefill = async (formToken, fields) => {
 };
 
 /**
- * Page header for the form: { title, subtitle } for a published Bot Builder
- * form node (keyword demo/admission — coachingBotSettings.js
- * #formTitleForKeyword — and the business has published Bot Builder
- * settings), else null and the page keeps its generic header. Any other
- * keyword returns null without a DB call.
+ * Page header for the form: { title, subtitle? }. In order:
+ *   1. a published Bot Builder form node (keyword demo/admission —
+ *      coachingBotSettings.js#formTitleForKeyword — and the business has
+ *      published Bot Builder settings): its title + subtitle;
+ *   2. the node's own form name (flow_nodes.form_title, in the customer's
+ *      language when form_title_translations has it — utils/formTitle.js): title only;
+ *   3. null, and the page keeps its generic header.
+ * Any keyword that isn't a Bot Builder form makes no DB call.
  */
 const resolveFormTitle = async (formToken, formNode, languageCode = null) => {
-  const title = formTitleForKeyword(formNode?.keyword, languageCode);
-  if (!title) return null;
-  return (await hasPublishedBotSettings(formToken.businessId)) ? title : null;
+  const botTitle = formTitleForKeyword(formNode?.keyword, languageCode);
+  if (botTitle && (await hasPublishedBotSettings(formToken.businessId))) return botTitle;
+  const title = localizedFormTitle(formNode, languageCode);
+  return title ? { title } : null;
 };
 
 /**
@@ -284,7 +289,7 @@ const getServiceForm = async (req, res, next) => {
       // { course: 'Abacus' } — see resolvePrefill.
       ...(Object.keys(prefill).length > 0 ? { prefill } : {}),
       // Additive, only when known: this form's own page header — see resolveFormTitle.
-      ...(formTitle ? { formTitle: formTitle.title, formSubtitle: formTitle.subtitle } : {})
+      ...(formTitle ? { formTitle: formTitle.title, ...(formTitle.subtitle ? { formSubtitle: formTitle.subtitle } : {}) } : {})
     });
   } catch (error) {
     logger.error('Error in getServiceForm:', error);
@@ -365,7 +370,7 @@ const submitServiceForm = async (req, res, next) => {
         let parsed;
         try {
           parsed = JSON.parse(values[field.name]);
-        } catch (parseError) {
+        } catch {
           return errorResponse(res, 400, `${field.label} has an invalid value`);
         }
         if (!parsed || typeof parsed.description !== 'string' || !parsed.description.trim()) {
@@ -438,8 +443,9 @@ const submitServiceForm = async (req, res, next) => {
     }
 
     // Saved on the booking: which Bot Builder form this was (Free demo /
-    // Admission) and the question labels as the customer saw them. A lookup
-    // failure must not block the booking — it's saved without the form name.
+    // Admission, with form_key) or else the node's own form name (English,
+    // form_key stays null), and the question labels as the customer saw them.
+    // A lookup failure must not block the booking — it's saved without the Bot Builder name.
     let formRequest = null;
     try {
       formRequest = await resolveFormRequest(formToken, formNode);
@@ -448,7 +454,7 @@ const submitServiceForm = async (req, res, next) => {
     }
     const formMeta = {
       formKey: formRequest ? formRequest.key : null,
-      formTitle: formRequest ? formRequest.title : null,
+      formTitle: formRequest ? formRequest.title : bookingFormTitle(formNode),
       fieldLabels: Object.fromEntries(orderedFields.map(f => [f.fieldKey, f.label])),
       // Bot Builder forms decide their own payment (Admission fee or none);
       // every other form keeps the business-wide advance setting (no key).

@@ -23,6 +23,7 @@ const { validateFlowFields } = require('../utils/flowFieldsValidation');
 const { toCamelCase } = require('../utils/caseConvert');
 const { isValidLanguageCode } = require('../utils/languageCatalog');
 const { validateEdgeCopy, validateButtonText } = require('../utils/textLimits');
+const { FORM_TITLE_MAX } = require('../utils/formTitle');
 const logger = require('../utils/logger');
 
 const VALID_MATCH_TYPES = ['exact', 'contains', 'startsWith'];
@@ -172,6 +173,35 @@ const validateTranslationsMap = (translations, fieldLabel, maxLen) => {
     }
   }
   return null;
+};
+
+/**
+ * Write-side handling of a web-form reply's optional name — formTitle (string <= FORM_TITLE_MAX,
+ * trimmed; "" / null clears) and formTitleTranslations ({ hi?, mr? }, each <= FORM_TITLE_MAX;
+ * null / {} clears). Each key is independent: an absent (undefined) key is left out of
+ * `updates`, so the caller keeps the stored value. replyKind is the kind the node will have
+ * AFTER the write; a non-empty name on any kind but 'web_form_trigger' is refused (clearing is
+ * always allowed, so a client may echo nulls for every node). Returns { error } (message
+ * prefixed with `prefix`) or { updates: { form_title?, form_title_translations? } }.
+ */
+const prepareFormTitleWrite = ({ formTitle, formTitleTranslations } = {}, replyKind, prefix = '') => {
+  const updates = {};
+  if (formTitle !== undefined) {
+    if (formTitle !== null && typeof formTitle !== 'string') return { error: `${prefix}formTitle must be a string.` };
+    const title = formTitle === null ? '' : formTitle.trim();
+    if (title.length > FORM_TITLE_MAX) return { error: `${prefix}formTitle must be ${FORM_TITLE_MAX} characters or less.` };
+    updates.form_title = title || null;
+  }
+  if (formTitleTranslations !== undefined) {
+    const mapError = validateTranslationsMap(formTitleTranslations, `${prefix}formTitleTranslations`, FORM_TITLE_MAX);
+    if (mapError) return { error: mapError };
+    const entries = Object.entries(formTitleTranslations || {}).map(([code, text]) => [code, text.trim()]).filter(([, text]) => text);
+    updates.form_title_translations = entries.length > 0 ? Object.fromEntries(entries) : null;
+  }
+  if (replyKind !== 'web_form_trigger' && (updates.form_title || updates.form_title_translations)) {
+    return { error: `${prefix}formTitle / formTitleTranslations only apply to web form replies (replyKind "web_form_trigger").` };
+  }
+  return { updates };
 };
 
 /**
@@ -369,6 +399,14 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
     }
     const replyLatLngError = validateLatLng(latitude, longitude);
     if (replyLatLngError) return { error: `replyNodes[${i}]: ${replyLatLngError}` };
+    // formTitle / formTitleTranslations: preserve-on-omit like the fields above (stored values are
+    // not re-validated); a supplied key is validated against the kind this node will have.
+    const formTitleWrite = prepareFormTitleWrite(item, replyKind, `replyNodes[${i}].`);
+    if (formTitleWrite.error) return { error: formTitleWrite.error };
+    const formTitle = 'form_title' in formTitleWrite.updates
+      ? formTitleWrite.updates.form_title : (existing ? existing.form_title ?? null : null);
+    const formTitleTranslations = 'form_title_translations' in formTitleWrite.updates
+      ? formTitleWrite.updates.form_title_translations : (existing ? existing.form_title_translations ?? null : null);
 
     if (replyKind === 'payment_trigger' && !label) label = 'Please complete your payment.';
     if (replyKind === 'booking_trigger' && !label) label = 'Great! Let me collect your details.';
@@ -398,7 +436,8 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
       position_x: positionX, position_y: positionY,
       button_text: buttonText ?? null, button_text_translations: buttonTextTranslations || null,
       form_fields: formFields ?? null, latitude: latitude ?? null, longitude: longitude ?? null,
-      location_name: locationName || null, address: address || null
+      location_name: locationName || null, address: address || null,
+      form_title: formTitle, form_title_translations: formTitleTranslations
     });
     proposedNodes.push({ id, nodeType: 'reply', replyKind, fieldKey: null });
   }
@@ -496,7 +535,9 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
       latitude: existing ? existing.latitude : null,
       longitude: existing ? existing.longitude : null,
       location_name: existing ? existing.location_name : null,
-      address: existing ? existing.address : null
+      address: existing ? existing.address : null,
+      form_title: existing ? existing.form_title ?? null : null,
+      form_title_translations: existing ? existing.form_title_translations ?? null : null
     });
     proposedNodes.push({ id, nodeType, replyKind: null, fieldKey });
   }
@@ -702,6 +743,7 @@ module.exports = {
   validateConditionShape,
   validatePresetShape,
   validateTranslationsMap,
+  prepareFormTitleWrite,
   validateLatLng,
   saveFullGraph
 };
