@@ -135,7 +135,7 @@ test('staff / broadcasts: every category, Off until switched on like the other k
   assert.equal(svc.FEATURES.broadcasts.description, 'Broadcasts to customers');
 });
 
-test('staff / broadcasts: a business override On (the grandfathering rows) turns them on for that business only', async () => {
+test('staff / broadcasts: a business override On turns them on for that business only', async () => {
   reset(null);
   await svc.setBusinessOverride('sg', 'staff', true);
   await svc.setBusinessOverride('searchcab', 'broadcasts', true);
