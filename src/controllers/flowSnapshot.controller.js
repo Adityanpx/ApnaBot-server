@@ -13,6 +13,8 @@ const {
 } = require('../services/flowSnapshot.service');
 const businessCategoryService = require('../services/businessCategory.service');
 const logger = require('../utils/logger');
+const { r2KeyFromUrl } = require('../utils/r2Key');
+const { transformNodesForCopy } = require('../utils/copySetup');
 
 /**
  * POST /api/flow-graph/snapshots
@@ -220,8 +222,12 @@ const importCategoryTemplate = async (req, res, next) => {
       return errorResponse(res, 404, 'Template not found');
     }
 
+    // Templates saved before cloneFromBusiness cleaned its input may still carry the source
+    // business's media_id / R2 image_url / location pins — strip them on the way in.
+    const { nodes: cleanNodes } = transformNodesForCopy(template.nodes, { isStorageUrl: (url) => !!r2KeyFromUrl(url) });
+
     await deleteBusinessGraphRows(businessId);
-    await writeBusinessGraphRows(businessId, template.nodes, template.edges, {
+    await writeBusinessGraphRows(businessId, cleanNodes, template.edges, {
       reuseIds: false,
       resetTriggerCount: true
     });
@@ -235,7 +241,7 @@ const importCategoryTemplate = async (req, res, next) => {
       const { data: newSnapshot, error: snapshotErr } = await supabase.from('flow_snapshots').insert({
         business_id: businessId,
         name: `Imported ${categoryLabel} template — ${formattedDate}`,
-        nodes: template.nodes,
+        nodes: cleanNodes,
         edges: template.edges,
         is_category_template: false,
         is_active: true

@@ -277,6 +277,9 @@ set):
   (`GET` list, `POST /clone-from-business` to seed one from an existing
   business's live graph or one of its snapshots, `GET /:id/export` /
   `POST /import-json` for raw row JSON, `DELETE /:id`).
+  Template clone/import strips source-business media_id, our-R2 image_url,
+  image_removed_at and per-node location pins; importing businesses set their
+  own images/pins.
 - **Signup does NOT seed a template** (corrected 2026-09-29 — this file
   previously said it did). `business.service.js#createBusiness` gives every
   new business a literal empty graph; importing a category template is an

@@ -4,6 +4,8 @@ const { toCamelCase } = require('../utils/caseConvert');
 const { readBusinessGraphRows } = require('../services/flowSnapshot.service');
 const businessCategoryService = require('../services/businessCategory.service');
 const logger = require('../utils/logger');
+const { r2KeyFromUrl } = require('../utils/r2Key');
+const { transformNodesForCopy } = require('../utils/copySetup');
 
 /**
  * GET /api/admin/category-templates
@@ -81,12 +83,16 @@ const cloneFromBusiness = async (req, res, next) => {
       ({ nodes, edges } = await readBusinessGraphRows(businessId));
     }
 
+    // A template is copied into many businesses: store it without the source business's
+    // media_id / R2 image_url / per-node location pins (same transform as Copy setup).
+    const { nodes: cleanNodes } = transformNodesForCopy(nodes, { isStorageUrl: (url) => !!r2KeyFromUrl(url) });
+
     const { data: template, error: insertErr } = await supabase.from('flow_snapshots').insert({
       business_id: null,
       category,
       name: name.trim(),
       description: description || null,
-      nodes,
+      nodes: cleanNodes,
       edges,
       is_category_template: true,
       is_active: true
