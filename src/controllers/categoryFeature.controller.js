@@ -105,4 +105,22 @@ const setBusinessFeature = async (req, res, next) => {
   }
 };
 
-module.exports = { getCategoryFeatures, setCategoryFeature, getBusinessFeatures, setBusinessFeature };
+/**
+ * GET /api/features
+ * The caller's own business: { features: { [feature]: boolean } } — what the
+ * apps use to show or hide screens. Any role of the business. Read-only; the
+ * guards on the routes themselves stay the authority.
+ */
+const getMyFeatures = async (req, res, next) => {
+  try {
+    const business = await loadBusinessCategory(req.user.businessId);
+    if (!business) return errorResponse(res, 404, 'Business not found');
+    const features = await categoryFeatureService.effectiveForBusiness(business.id, business.business_category);
+    return successResponse(res, 200, { features });
+  } catch (error) {
+    logger.error('Error in getMyFeatures:', error);
+    next(error);
+  }
+};
+
+module.exports = { getCategoryFeatures, setCategoryFeature, getBusinessFeatures, setBusinessFeature, getMyFeatures };

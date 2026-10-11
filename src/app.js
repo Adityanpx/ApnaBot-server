@@ -46,6 +46,7 @@ const followupRoutes = require('./routes/followup.routes');
 const optInLinkRoutes = require('./routes/optInLink.routes');
 const contactImportRoutes = require('./routes/contactImport.routes');
 const contactGroupRoutes = require('./routes/contactGroup.routes');
+const featuresRoutes = require('./routes/features.routes');
 
 const app = express();
 
@@ -171,6 +172,9 @@ app.use('/api/opt-in-links', optInLinkRoutes);
 // it's off.
 app.use('/api/contacts/import', contactImportRoutes);
 app.use('/api/contacts/groups', contactGroupRoutes);
+// Which switchable features are on for the caller's business (the apps hide
+// screens from this). Any role; read-only.
+app.use('/api/features', featuresRoutes);
 
 // Error handler middleware
 app.use(errorHandler);

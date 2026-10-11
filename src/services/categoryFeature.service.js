@@ -148,6 +148,17 @@ const listForBusiness = async (businessId, category) => {
   });
 };
 
+/**
+ * What the apps read to show or hide screens: { [feature]: boolean } for every
+ * feature that applies to the business's category (the result of the category
+ * switch and the business's override, as isEnabled). A feature that doesn't
+ * apply to the category is absent, i.e. not available.
+ */
+const effectiveForBusiness = async (businessId, category) => {
+  const list = await listForBusiness(businessId, category);
+  return Object.fromEntries(list.map(f => [f.feature, f.isEnabled]));
+};
+
 /** Set (true/false) or remove (null) a business's override. */
 const setBusinessOverride = async (businessId, feature, override) => {
   if (override === null) {
@@ -161,4 +172,4 @@ const setBusinessOverride = async (businessId, feature, override) => {
   if (error) throw error;
 };
 
-module.exports = { FEATURES, appliesTo, isEnabled, listForCategory, setEnabled, listForBusiness, setBusinessOverride };
+module.exports = { FEATURES, appliesTo, isEnabled, listForCategory, setEnabled, listForBusiness, effectiveForBusiness, setBusinessOverride };
