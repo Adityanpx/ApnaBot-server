@@ -1063,6 +1063,53 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
   `req.user`). Tests: `auth.sessions.test.js`, `staff.revokeSessions.test.js`,
   `subscription.plans.routes.test.js` (the Lua itself is exercised only by the manual smoke test).
 
+## Staff & Broadcasts switches (built 2026-10-11, commits 1e5c472, f9a35f6, 7e18ec9, 7aef138, d7ce1b3, a3e30b6, local - not pushed)
+
+- **Two new keys in `FEATURES`** (`services/categoryFeature.service.js`): `staff` ("Staff members and
+  permissions") and `broadcasts` ("Broadcasts to customers"), both for every category, both **OFF by default**
+  like the other five keys (no row = off). A first version had a `defaultEnabled` flag; it was removed in
+  `7aef138` before anything shipped. Super Admin switches them per business from the existing Businesses ->
+  Features card (it builds its list from the server, so no Super Admin change). The category-level Features tab
+  still exists only for coaching, so these are per-business in practice.
+- **Migrations (order matters).** `20261015120000_staff_broadcasts_features.sql` widens both check constraints
+  to seven keys (seeds nothing). `20261015130000_grandfather_staff_broadcasts.sql` inserts two
+  `business_features` rows, `is_enabled = true`: **SG Travels `a94aec66-...` -> `staff`** and **Averix Solutions
+  `e7fe86ca-...` -> `broadcasts`**, `on conflict do nothing`; rollback SQL is in its header. Every other
+  business, **Search cab AI included**, has both switched off from the deploy on.
+- **Broadcast guard.** `routes/broadcast.routes.js` has one `router.use(protect, requireBusiness,
+  requireCategoryFeature('broadcasts'))` over all nine routes (the duplicate per-route `protect` /
+  `requireBusiness` are gone); 404 "Not found" while off, for every role. The worker, the status webhook,
+  follow-ups and message templates are **not** gated: a broadcast already queued or sending keeps sending
+  and its delivery receipts keep being recorded; switching off only stops new ones. (There is no retry or
+  scheduled-send route, so nothing else needed gating.)
+- **Staff guard.** `routes/staff.routes.js`: `protect, requireBusiness, requireCategoryFeature('staff'),
+  requireRole('owner', 'superadmin')`; all five management routes 404 while off. **Off hides management only:**
+  existing staff accounts keep logging in, refreshing and working (login, refresh and `protect` do not check
+  the switch; `auth.staffSwitchOff.test.js`). `inviteStaff` still has its own plan check (`staff_enabled`,
+  `max_staff`) on top.
+- **Guard cost.** `requireCategoryFeature` reads `businesses`, then `isEnabled` reads the override and the
+  category switch in parallel (`Promise.all`, no cache). A DB error is fail-closed (500 via `next(err)`).
+- **`GET /api/features`** (`routes/features.routes.js`; `protect`, `requireBusiness`, any role): the caller's
+  own business, `{ success, message, data: { features: { <key>: boolean } } }` from
+  `categoryFeature.service.js#effectiveForBusiness`. Only keys that apply to the business's category appear
+  (`bot_builder` only for coaching); `owner_phone_media` is included though it has no screen. A new business
+  with no override gets every key `false`.
+- **Tests:** `categoryFeature.service.test.js`, `categoryFeature.migrationParity.test.js` (every `FEATURES` key
+  must be in the newest constraint migration), `categoryFeature.middleware.test.js`,
+  `broadcast.routes.feature.test.js`, `staff.routes.feature.test.js`, `auth.staffSwitchOff.test.js`,
+  `features.routes.test.js`. `broadcastTemplate.roles.test.js` gained a pass-through stub for the guard.
+- **Open items for the clients (not done).** The web sidebar (`apnabot-web` `src/app/(app)/layout.tsx`) and
+  the Flutter drawer (`drawer_items.dart`) still show Broadcasts and Staff to everyone (`return true` /
+  `_ => true`), so a business with a switch off sees the item and gets a 404. Both should read
+  `GET /api/features` (one call replaces the per-feature probes; staff users can call it, unlike `GET /business`)
+  and hide Staff / Broadcasts, and handle a 404 on those screens (stale tab, deep link). Reachable from
+  elsewhere in the apps: audience pickers and contact groups that lead into broadcasts, and the "broadcast to
+  a group" wording in the contact-import UI.
+- **Known edges.** The `contact_import` description now says a group can be a broadcast audience "while
+  Broadcasts is on". A superadmin with no business id gets 404 on `/api/staff` (the guard has no business to
+  read). This section's business ids were taken from the owner, not looked up; the top of this file still says
+  Averix has no business row, which is stale (recreated 2026-10-03).
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism
@@ -1157,6 +1204,15 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
    `sendRuleListMessage` ignore `imageUrl`.
 
 ## Session log (append here as major milestones land)
+- 2026-10-11: Staff & Broadcasts per-business switches (see "Staff & Broadcasts switches"): keys `staff` and
+  `broadcasts`, off by default, route guards on `/api/staff` (management only; existing staff keep working)
+  and `/api/broadcasts` (queued broadcasts finish sending), and `GET /api/features`. Commits 1e5c472,
+  f9a35f6, 7e18ec9, 7aef138, d7ce1b3, a3e30b6 (local, not pushed). **Deploy: in the Supabase SQL editor apply
+  `20261015120000_staff_broadcasts_features.sql`, THEN `20261015130000_grandfather_staff_broadcasts.sql`,
+  THEN deploy the server.** One-time cutover, no flag: at deploy every business except SG Travels (staff) and
+  Averix Solutions (broadcasts) loses both screens' API access (404) - **Search cab AI included**. Deploying
+  before the second migration switches them off for those two as well. Clients still show the two nav items
+  until they read `GET /api/features`.
 - 2026-10-10: Auth sessions (see "Auth sessions & refresh tokens"): per-login sessions, rotating refresh
   tokens with a 30s grace window, public `GET /api/subscription/plans`, and sessions ended for removed or
   deactivated staff. Commits 49ff028, 5d472fe, c4d2765 (local, not pushed). **Deploy: set
