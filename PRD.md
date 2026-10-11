@@ -1063,7 +1063,7 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
   `req.user`). Tests: `auth.sessions.test.js`, `staff.revokeSessions.test.js`,
   `subscription.plans.routes.test.js` (the Lua itself is exercised only by the manual smoke test).
 
-## Staff & Broadcasts switches (built 2026-10-11, commits 1e5c472, f9a35f6, 7e18ec9, 7aef138, d7ce1b3, a3e30b6, local - not pushed)
+## Staff & Broadcasts switches (built 2026-10-11, commits 1e5c472, f9a35f6, 7e18ec9, 7aef138, a3e30b6, local - not pushed)
 
 - **Two new keys in `FEATURES`** (`services/categoryFeature.service.js`): `staff` ("Staff members and
   permissions") and `broadcasts` ("Broadcasts to customers"), both for every category, both **OFF by default**
@@ -1072,10 +1072,9 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
   Features card (it builds its list from the server, so no Super Admin change). The category-level Features tab
   still exists only for coaching, so these are per-business in practice.
 - **Migrations (order matters).** `20261015120000_staff_broadcasts_features.sql` widens both check constraints
-  to seven keys (seeds nothing). `20261015130000_grandfather_staff_broadcasts.sql` inserts two
-  `business_features` rows, `is_enabled = true`: **SG Travels `a94aec66-...` -> `staff`** and **Averix Solutions
-  `e7fe86ca-...` -> `broadcasts`**, `on conflict do nothing`; rollback SQL is in its header. Every other
-  business, **Search cab AI included**, has both switched off from the deploy on.
+  to seven keys (seeds nothing); that is the only migration, there is no second SQL file. **Staff and
+  broadcasts are Off for every business until Super Admin switches them On** (Search cab AI, the one live
+  business, uses neither; SG Travels and Averix are demos switched On by hand in Super Admin).
 - **Broadcast guard.** `routes/broadcast.routes.js` has one `router.use(protect, requireBusiness,
   requireCategoryFeature('broadcasts'))` over all nine routes (the duplicate per-route `protect` /
   `requireBusiness` are gone); 404 "Not found" while off, for every role. The worker, the status webhook,
@@ -1207,12 +1206,11 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
 - 2026-10-11: Staff & Broadcasts per-business switches (see "Staff & Broadcasts switches"): keys `staff` and
   `broadcasts`, off by default, route guards on `/api/staff` (management only; existing staff keep working)
   and `/api/broadcasts` (queued broadcasts finish sending), and `GET /api/features`. Commits 1e5c472,
-  f9a35f6, 7e18ec9, 7aef138, d7ce1b3, a3e30b6 (local, not pushed). **Deploy: in the Supabase SQL editor apply
-  `20261015120000_staff_broadcasts_features.sql`, THEN `20261015130000_grandfather_staff_broadcasts.sql`,
-  THEN deploy the server.** One-time cutover, no flag: at deploy every business except SG Travels (staff) and
-  Averix Solutions (broadcasts) loses both screens' API access (404) - **Search cab AI included**. Deploying
-  before the second migration switches them off for those two as well. Clients still show the two nav items
-  until they read `GET /api/features`.
+  f9a35f6, 7e18ec9, 7aef138, a3e30b6 (local, not pushed). **Deploy: the constraint-widening migration
+  `20261015120000_staff_broadcasts_features.sql` is already applied; deploy the server. No second SQL file.**
+  One-time cutover, no flag: at deploy every business loses both screens' API access (404) until Super Admin
+  switches them On - **Search cab AI included**, which uses neither. SG Travels and Averix (demos) are switched
+  On by hand in Super Admin. Clients still show the two nav items until they read `GET /api/features`.
 - 2026-10-10: Auth sessions (see "Auth sessions & refresh tokens"): per-login sessions, rotating refresh
   tokens with a 30s grace window, public `GET /api/subscription/plans`, and sessions ended for removed or
   deactivated staff. Commits 49ff028, 5d472fe, c4d2765 (local, not pushed). **Deploy: set
