@@ -14,6 +14,8 @@ stub('../middleware/auth.middleware', {
   protect: (req, res, next) => { req.user = { userId: 'u', businessId: 'b', role: req.headers['x-role'] || 'owner' }; next(); },
   requireBusiness: (req, res, next) => next()
 });
+// The 'broadcasts' switch is tested in broadcast.routes.feature.test.js.
+stub('../middleware/categoryFeature.middleware', { requireCategoryFeature: () => (req, res, next) => next() });
 stub('../middleware/upload.middleware', { uploadSingle: (req, res, next) => next() });
 const reached = (name) => (req, res) => res.status(200).json({ reached: name });
 stub('../controllers/broadcast.controller', {
