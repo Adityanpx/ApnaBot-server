@@ -618,6 +618,17 @@ const getPlans = async (req, res, next) => {
   }
 };
 
+// Per-reply media caps (see utils/replyMediaLimits.js). Returns an error message or null.
+const validateReplyMediaPlanFields = ({ imagesPerReply, videoPerReply }) => {
+  if (imagesPerReply !== undefined && (!Number.isInteger(imagesPerReply) || imagesPerReply < 1 || imagesPerReply > 10)) {
+    return 'imagesPerReply must be an integer between 1 and 10';
+  }
+  if (videoPerReply !== undefined && typeof videoPerReply !== 'boolean') {
+    return 'videoPerReply must be true or false';
+  }
+  return null;
+};
+
 /**
  * POST /api/admin/plans
  * Create a new plan
@@ -627,12 +638,14 @@ const createPlan = async (req, res, next) => {
     const {
       name, displayName, price, msgLimit, ruleLimit,
       customerLimit, bookingEnabled, paymentLinkEnabled,
-      staffEnabled, maxStaff, durationOptions
+      staffEnabled, maxStaff, durationOptions, imagesPerReply, videoPerReply
     } = req.body;
 
     if (!name || !displayName || price === undefined) {
       return errorResponse(res, 400, 'name, displayName, and price are required');
     }
+    const replyMediaError = validateReplyMediaPlanFields({ imagesPerReply, videoPerReply });
+    if (replyMediaError) return errorResponse(res, 400, replyMediaError);
 
     const { data: existing } = await supabase
       .from('plans').select('id').eq('name', name).maybeSingle();
@@ -647,6 +660,8 @@ const createPlan = async (req, res, next) => {
       payment_link_enabled: paymentLinkEnabled ?? false,
       staff_enabled: staffEnabled ?? false,
       max_staff: maxStaff ?? 0,
+      images_per_reply: imagesPerReply ?? 1,
+      video_per_reply: videoPerReply ?? false,
       is_active: true,
       duration_options: durationOptions || [{ months: 1, price, label: 'Monthly', discount: 0 }]
     }).select().single();
@@ -674,15 +689,18 @@ const updatePlan = async (req, res, next) => {
     const allowedFields = [
       'displayName', 'price', 'msgLimit', 'ruleLimit', 'customerLimit',
       'bookingEnabled', 'paymentLinkEnabled', 'staffEnabled', 'maxStaff', 'isActive',
-      'durationOptions'
+      'durationOptions', 'imagesPerReply', 'videoPerReply'
     ];
     const fieldMap = {
       displayName: 'display_name', msgLimit: 'msg_limit', ruleLimit: 'rule_limit',
       customerLimit: 'customer_limit', bookingEnabled: 'booking_enabled',
       paymentLinkEnabled: 'payment_link_enabled', staffEnabled: 'staff_enabled',
       maxStaff: 'max_staff', isActive: 'is_active', price: 'price',
-      durationOptions: 'duration_options'
+      durationOptions: 'duration_options', imagesPerReply: 'images_per_reply', videoPerReply: 'video_per_reply'
     };
+
+    const replyMediaError = validateReplyMediaPlanFields(req.body);
+    if (replyMediaError) return errorResponse(res, 400, replyMediaError);
 
     const updates = {};
     for (const field of allowedFields) {

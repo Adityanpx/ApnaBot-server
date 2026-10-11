@@ -30,6 +30,7 @@ const inboundMessageService = require('../services/inboundMessage.service');
 const { INBOUND_MESSAGE_TYPES, inboundMediaLabel } = require('../utils/inboundMessage');
 const { buildInteractivePayload } = require('../utils/interactivePayload');
 const { locationPinLabel } = require('../utils/locationLabel');
+const { getReplyMediaLimits, planReplyMediaSend } = require('../utils/replyMediaLimits');
 const { isBulkSyncBody } = require('../utils/coexistencePayload');
 const coexistenceService = require('../services/coexistence.service');
 const { buildStatusEvents, statusOnlySummary } = require('../utils/statusPayload');
@@ -145,6 +146,92 @@ const createMessageSoft = async (fields, context) => {
     return toCamelCase(fields);
   }
   return toCamelCase(data);
+};
+
+/**
+ * Sends a reply node's EXTRA media before the reply itself: gallery photos #2..N (no caption), then the
+ * video. Photo #1 is the node's own image and goes with the reply exactly as before. Each message is
+ * awaited to completion (addToWhatsappQueueAndWait, like the vehicle carousel) so the order holds, is
+ * stored as an outbound row, counted once against outbound usage and pushed to the dashboard.
+ *
+ * Limits come from the business's CURRENT plan (tenant.plan), not from what was stored: media beyond
+ * them (e.g. after a downgrade) and ids that no longer resolve in the business's library are skipped
+ * with an info log, never an error to the customer. Never throws - the reply must still go out.
+ * @param {Object} ctx { tenant, customer, customerNumber, triggeredRuleId }
+ * @param {Object} node the matched reply node (camelCase)
+ */
+const sendReplyExtraMedia = async (ctx, node) => {
+  const { tenant, customer, customerNumber, triggeredRuleId } = ctx;
+  try {
+    const plan = planReplyMediaSend(node, getReplyMediaLimits(tenant.plan));
+    if (plan.skippedPhotos > 0 || plan.skippedVideo) {
+      logger.info(`Reply node ${node.id} (business ${tenant.businessId}): skipping stored media over the plan's limits`, {
+        skippedPhotos: plan.skippedPhotos, skippedVideo: plan.skippedVideo
+      });
+    }
+    const wanted = [
+      ...plan.photoIds.map(id => ({ id, mediaType: 'image' })),
+      ...(plan.videoId ? [{ id: plan.videoId, mediaType: 'video' }] : [])
+    ];
+    if (wanted.length === 0) return;
+
+    const { data: rows, error: lookupError } = await supabase
+      .from('business_media').select('id, url, media_type').eq('business_id', tenant.businessId).in('id', wanted.map(w => w.id));
+    if (lookupError) throw lookupError;
+    const byId = new Map((rows || []).map(r => [r.id, r]));
+
+    for (const item of wanted) {
+      const media = byId.get(item.id);
+      if (!media || media.media_type !== item.mediaType) {
+        logger.info(`Reply node ${node.id} (business ${tenant.businessId}): ${item.mediaType} ${item.id} no longer resolves, skipped`);
+        continue;
+      }
+
+      const row = await createMessageSoft({
+        business_id: tenant.businessId,
+        customer_id: customer.id,
+        customer_number: customerNumber,
+        direction: 'outbound',
+        type: item.mediaType,
+        content: '',
+        media_url: media.url,
+        status: 'sent',
+        triggered_rule_id: triggeredRuleId,
+        sender_type: 'bot',
+        is_read: true
+      }, `reply ${item.mediaType}`);
+
+      try {
+        await addToWhatsappQueueAndWait({
+          businessId: tenant.businessId,
+          phoneNumberId: tenant.phoneNumberId,
+          encryptedAccessToken: tenant.accessToken,
+          to: customerNumber,
+          message: '',
+          type: item.mediaType,
+          ...(item.mediaType === 'video' ? { videoUrl: media.url } : { imageUrl: media.url }),
+          messageId: row.id
+        });
+      } catch (sendError) {
+        logger.error(`Error sending reply node ${item.mediaType}`, {
+          businessId: tenant.businessId, customerNumber, nodeId: node.id, mediaId: item.id, message: sendError.message
+        });
+      }
+
+      usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
+        logger.error('Error incrementing outbound usage:', err)
+      );
+      try {
+        socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', { customer, message: row, customerNumber });
+      } catch (socketError) {
+        logger.error('Error emitting socket event:', socketError);
+      }
+    }
+  } catch (error) {
+    logger.error('Error sending reply node extra media, continuing with the reply:', {
+      businessId: tenant.businessId, nodeId: node.id, message: error.message
+    });
+  }
 };
 
 /**
@@ -2480,6 +2567,11 @@ const processWebhookChange = async (entry, changes) => {
       messageContent = resolvedLocation
         ? locationPinLabel(resolvedLocation)
         : getSystemMessage('locationNotConfigured', customer.preferredLanguage);
+    }
+
+    // Extra photos / video go out first, each awaited, so they land before the reply row below.
+    if (matchedNode) {
+      await sendReplyExtraMedia({ tenant, customer, customerNumber, triggeredRuleId }, matchedNode);
     }
 
     const outboundMsg = await saveMessage({

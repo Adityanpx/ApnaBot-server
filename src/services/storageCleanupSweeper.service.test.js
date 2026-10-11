@@ -323,6 +323,22 @@ test('purging an in-use library file also strips it from personal flow snapshots
   assert.equal(nodes[1].image_url, 'https://elsewhere.test/x.png');
 });
 
+test('purging a file used as a snapshot node\'s extra photo / video strips just that id (photo #1 and other ids stay)', async () => {
+  const key = lib(1);
+  const snapNodes = [
+    { id: uuid(700), label: 'Rooms', image_url: 'https://elsewhere.test/main.png', media_id: null, gallery_media_ids: [uuid(150), uuid(101)], video_media_id: null },
+    { id: uuid(701), label: 'Tour', image_url: null, media_id: null, gallery_media_ids: [], video_media_id: uuid(101) }
+  ];
+  db.flow_snapshots = [{ id: uuid(800), business_id: B1, name: 'Before Diwali', is_category_template: false, nodes: snapNodes }];
+  await markAndDue({ businessId: B1, includeInUse: true, confirmBusinessName: 'SG Travels' });
+  const res = await sweeper.runTick({ retention: false });
+  assert.equal(res.purged, 1);
+  const nodes = db.flow_snapshots[0].nodes;
+  assert.deepEqual([nodes[0].gallery_media_ids, nodes[0].image_url], [[uuid(150)], 'https://elsewhere.test/main.png']);
+  assert.deepEqual([nodes[1].video_media_id, nodes[1].gallery_media_ids], [null, []]);
+  assert.equal(h.state.bucket.has(key), false);
+});
+
 test('re-check: a category template that adopted the image after marking protects it', async () => {
   const key = lib(1);
   await markAndDue({ businessId: B1 });

@@ -13,6 +13,7 @@ const { validateFlowFields } = require('../utils/flowFieldsValidation');
 const { successResponse, errorResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
 const { toCamelCase } = require('../utils/caseConvert');
+const { prepareReplyMediaWrite } = require('../services/replyMedia.service');
 const { validateEdgeCopy, validateButtonText } = require('../utils/textLimits');
 const logger = require('../utils/logger');
 
@@ -130,7 +131,8 @@ const getReplyNodes = async (req, res, next) => {
  * replyKind, contentType, label, labelTranslations, imageUrl, mediaId,
  * hindiAliases, buttonText, buttonTextTranslations, formFields, latitude,
  * longitude, locationName, address (latter four only meaningful when
- * contentType='location') }. formFields is validated and stored exactly as
+ * contentType='location'), galleryMediaIds, videoMediaId (extra photos / one video, plan-limited —
+ * see replyMedia.service.js) }. formFields is validated and stored exactly as
  * updateReplyNode does (validateFlowFields, any replyKind). mediaId (a business_media row id) takes precedence over a
  * raw imageUrl when both are present — see resolveMediaIdToUrl.
  */
@@ -140,7 +142,8 @@ const createReplyNode = async (req, res, next) => {
       keyword, matchType = 'contains', replyKind = 'text', contentType = 'text',
       imageUrl = null, mediaId = null, hindiAliases = [], labelTranslations = null,
       buttonText = null, buttonTextTranslations = null, formFields,
-      latitude = null, longitude = null, locationName = null, address = null
+      latitude = null, longitude = null, locationName = null, address = null,
+      galleryMediaIds, videoMediaId
     } = req.body;
     let { label } = req.body;
     const businessId = req.user.businessId;
@@ -202,6 +205,14 @@ const createReplyNode = async (req, res, next) => {
     }
     if (!label) label = '';
 
+    const replyMedia = await prepareReplyMediaWrite({
+      businessId, existing: null, galleryMediaIds, videoMediaId,
+      mainPhotoAfter: !!resolvedImageUrl, mainMediaIdAfter: mediaId || null, contentTypeAfter: contentType
+    });
+    if (replyMedia.error) {
+      return errorResponse(res, replyMedia.error.status, replyMedia.error.message, replyMedia.error.errors);
+    }
+
     const normalizedKeyword = keyword.toLowerCase().trim();
 
     const { data: existingNode, error: existingErr } = await supabase
@@ -227,6 +238,7 @@ const createReplyNode = async (req, res, next) => {
       form_fields: formFields !== undefined ? formFields : null,
       image_url: resolvedImageUrl || null,
       media_id: mediaId || null,
+      ...replyMedia.updates,
       latitude,
       longitude,
       location_name: locationName || null,
@@ -253,7 +265,7 @@ const createReplyNode = async (req, res, next) => {
 const updateReplyNode = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, mediaId, hindiAliases, label, labelTranslations, buttonText, buttonTextTranslations, formFields, latitude, longitude, locationName, address, force } = req.body || {};
+    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, mediaId, hindiAliases, label, labelTranslations, buttonText, buttonTextTranslations, formFields, latitude, longitude, locationName, address, galleryMediaIds, videoMediaId, force } = req.body || {};
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
@@ -375,6 +387,21 @@ const updateReplyNode = async (req, res, next) => {
       updateData.media_id = null;
       if (imageUrl) updateData.image_removed_at = null;
     }
+
+    // Extra photos / video: validated against the node as it will be AFTER this write (photo #1 may
+    // be changing in the same request) and the plan's limits, which are only checked on an increase.
+    const imageAfter = 'image_url' in updateData ? updateData.image_url : node.image_url;
+    const mediaIdAfter = 'media_id' in updateData ? updateData.media_id : node.media_id;
+    const replyMedia = await prepareReplyMediaWrite({
+      businessId, existing: node, galleryMediaIds, videoMediaId,
+      mainPhotoAfter: !!(imageAfter || mediaIdAfter), mainMediaIdAfter: mediaIdAfter || null,
+      contentTypeAfter: contentType !== undefined ? contentType : node.content_type
+    });
+    if (replyMedia.error) {
+      return errorResponse(res, replyMedia.error.status, replyMedia.error.message, replyMedia.error.errors);
+    }
+    Object.assign(updateData, replyMedia.updates);
+
     if (labelTranslations !== undefined) updateData.label_translations = labelTranslations || null;
     if (label !== undefined) updateData.label = label;
     if (buttonTextTranslations !== undefined) updateData.button_text_translations = buttonTextTranslations || null;

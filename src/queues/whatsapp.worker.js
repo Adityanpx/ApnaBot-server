@@ -12,7 +12,7 @@ const prefix = `apnabot:${config.QUEUE_NAMESPACE}`;
 
 const worker = new Worker('whatsapp-outbound', async (job) => {
   const { businessId, phoneNumberId, encryptedAccessToken, to, message, messageId,
-          type = 'text', imageUrl = null, buttons = [], listOptions = [],
+          type = 'text', imageUrl = null, videoUrl = null, buttons = [], listOptions = [],
           interactiveButtons = null, interactiveList = null, listButtonLabel = 'Choose',
           step = null, location = null, locationRequest = false, ctaButton = null } = job.data;
 
@@ -50,6 +50,9 @@ const worker = new Worker('whatsapp-outbound', async (job) => {
       sendResult = await whatsappService.sendInteractiveButtons(phoneNumberId, encryptedAccessToken, to, message, buttons, imageUrl);
     } else if (Array.isArray(listOptions) && listOptions.length > 0) {
       sendResult = await whatsappService.sendRuleListMessage(phoneNumberId, encryptedAccessToken, to, message, listButtonLabel, listOptions, imageUrl);
+    } else if (type === 'video' && videoUrl) {
+      // A reply node's video (webhook.controller.js sendReplyExtraMedia), sent on its own before the reply.
+      sendResult = await whatsappService.sendVideoMessage(phoneNumberId, encryptedAccessToken, to, videoUrl, message);
     } else if (imageUrl) {
       sendResult = await whatsappService.sendImageMessage(phoneNumberId, encryptedAccessToken, to, imageUrl, message);
     } else {

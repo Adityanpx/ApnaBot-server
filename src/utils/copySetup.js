@@ -95,6 +95,8 @@ const findDanglingEdges = (nodes, edges) => {
  *   - image_url -> null when isStorageUrl(url) (one of our R2 files: owned by the source
  *     business's library, so a copy would die with it); other URLs are kept
  *   - image_removed_at -> null (the source's "removed by storage cleanup" marker)
+ *   - gallery_media_ids -> [] and video_media_id -> null (same reason as media_id: library ids of the SOURCE
+ *     business; photos beyond #1 and the video are plan-limited, the target re-adds its own)
  * form_fields (per-node service form) and everything else is left as-is. Node ids are NOT
  * touched here — writeBusinessGraphRows({ reuseIds:false }) mints fresh ones.
  *
@@ -106,7 +108,8 @@ const transformNodesForCopy = (nodes, { isStorageUrl }) => {
 
   const out = (nodes || []).map(n => {
     const dropUrl = !!n.image_url && isStorageUrl(n.image_url);
-    if (n.media_id != null || dropUrl) imagesDropped += 1;
+    const hadGallery = Array.isArray(n.gallery_media_ids) && n.gallery_media_ids.length > 0;
+    if (n.media_id != null || dropUrl || hadGallery || n.video_media_id != null) imagesDropped += 1;
 
     const hadLocation = [n.latitude, n.longitude, n.location_name, n.address].some(v => v !== null && v !== undefined);
     if (hadLocation) locationsCleared += 1;
@@ -119,6 +122,8 @@ const transformNodesForCopy = (nodes, { isStorageUrl }) => {
       address: null,
       trigger_count: 0,
       media_id: null,
+      gallery_media_ids: [],
+      video_media_id: null,
       image_url: dropUrl ? null : (n.image_url ?? null),
       image_removed_at: null
     };

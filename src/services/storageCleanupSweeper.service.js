@@ -94,9 +94,14 @@ const clearReferences = async (item, nowIso, ctx, snapshotIds = []) => {
     if (!snap || !Array.isArray(snap.nodes)) continue;
     let changed = false;
     const nodes = snap.nodes.map((n) => {
-      if (n.image_url !== url && !(mediaId && n.media_id === mediaId)) return n;
+      const inGallery = mediaId && Array.isArray(n.gallery_media_ids) && n.gallery_media_ids.includes(mediaId);
+      const isVideo = mediaId && n.video_media_id === mediaId;
+      if (n.image_url !== url && !(mediaId && n.media_id === mediaId) && !inGallery && !isVideo) return n;
       changed = true;
-      return { ...n, image_url: null, media_id: null };
+      const cleaned = (n.image_url === url || (mediaId && n.media_id === mediaId)) ? { ...n, image_url: null, media_id: null } : { ...n };
+      if (inGallery) cleaned.gallery_media_ids = n.gallery_media_ids.filter(id => id !== mediaId);
+      if (isVideo) cleaned.video_media_id = null;
+      return cleaned;
     });
     if (changed) must(await supabase.from('flow_snapshots').update({ nodes }).eq('id', snapId));
   }

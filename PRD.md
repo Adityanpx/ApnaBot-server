@@ -1139,6 +1139,52 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
   read). This section's business ids were taken from the owner, not looked up; the top of this file still says
   Averix has no business row, which is stale (recreated 2026-10-03).
 
+## Reply photo gallery + video (built 2026-10-16, migration `20261016120000_reply_media_gallery.sql`)
+
+- **Limits per plan.** `plans.images_per_reply` (integer 1-10, total photos per reply, photo #1 included) and
+  `plans.video_per_reply` (boolean). Basic 1/no video, Pro 3/no video, Business 10/video. `planSeed.js` matches;
+  the migration backfills by plan name. Admin create/update plan accept `imagesPerReply` / `videoPerReply`
+  (integer 1..10, boolean). Plans endpoints return them camelCased.
+- **Columns.** `flow_nodes.gallery_media_ids` (jsonb array, default `[]`, ordered `business_media` ids of photos
+  #2..N; jsonb because it must round-trip through `flow_snapshots` rows and is short) and
+  `flow_nodes.video_media_id` (uuid FK, `on delete set null`). Photo #1 stays `media_id` / `image_url`, unchanged.
+  `save_flow_graph_full` deliberately does not list the new columns: the canvas batch save (`PUT /full`)
+  cannot set or null them; only `POST` / `PUT /api/flow-graph/reply-nodes` can.
+- **Cleanup trigger.** `trg_business_media_remove_from_galleries` (after delete on `business_media`) strips the
+  id from that business's galleries, so the library DELETE and the storage sweeper both clean up. The API also
+  refuses to delete a file used by a gallery or video (`businessMedia.service.js`); `storageInventory` and the
+  sweeper's snapshot cleaning treat both columns as references (never "protected").
+- **Write path** (`services/replyMedia.service.js`). Every id must be a `business_media` row of this business;
+  gallery = images, video = video <= 16 MB; no duplicates (photo #1's asset included); a list reply cannot carry
+  extra media. A gallery with no photo #1 is **rejected** (the web promotes client-side). Plan limits are checked
+  **only when the write increases** the photo count or adds a video where there was none, so a downgraded owner
+  can still edit text, reorder, swap or remove. Plan = `getActiveSubscription` (status `active` only): no
+  subscription, expired or trial = Basic limits (accepted for now).
+- **Send order** (`sendReplyExtraMedia`, `webhook.controller.js`, before the reply row is saved). Gallery photos
+  #2..N (no caption), then the video, each awaited (`addToWhatsappQueueAndWait`), then the normal reply with
+  photo #1. Each extra is an outbound `bot` row (`type` image/video, `media_url`), one outbound usage count, one
+  socket event. The worker has a `type: 'video'` + `videoUrl` branch (`sendVideoMessage`).
+- **Downgrade behaviour.** Limits are read from `tenant.plan` at send time; stored media over them, and ids that
+  no longer resolve in the business's library, are skipped with one info log, never an error to the customer. A
+  plan edit by admin reaches the send path after the tenant cache (1h) / subscription cache (5 min) expires.
+- **Error contract** (`errorResponse`: `message` top level, details in `errors`):
+
+  | Status | `message` | `errors` |
+  |---|---|---|
+  | 403 | `Your <Plan> plan allows up to N photo(s) per reply.` (`1 photo`, `3 photos`) | `{ code: 'PLAN_LIMIT_PHOTOS', limit, plan }` |
+  | 403 | `Video in replies is available on the Business plan.` | `{ code: 'PLAN_LIMIT_VIDEO', limit: 0, plan }` |
+  | 400 | `Videos in replies must be 16 MB or smaller.` | none |
+  | 400 | `Add a main photo to this reply before adding more photos.` | none |
+  | 400 | `A list reply cannot carry extra photos or a video.` | none |
+  | 400 | `galleryMediaIds contains the same photo more than once.` | none |
+  | 400 | wrong business / wrong type / malformed ids | none |
+
+- **Open items.** Copy setup / template clone / import clear both columns (`transformNodesForCopy`); the Test-tab
+  preview shows no images at all; `nodeLibraryPublic` inserts admin `node_data` raw (foreign ids are skipped at
+  send). Inventory filters with `gallery_media_ids.neq.[]` - confirm against live PostgREST after the migration.
+  Tests: `replyMediaLimits.test.js`, `flowGraph.replyMedia.test.js`, `webhook.replyMedia.test.js`,
+  `businessMedia.replyMedia.test.js`, plus additions to the worker, copySetup, inventory and sweeper tests.
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism

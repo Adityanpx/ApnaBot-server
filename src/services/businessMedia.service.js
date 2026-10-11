@@ -164,7 +164,8 @@ const listBusinessMedia = async (businessId, mediaType) => {
 
 /**
  * DELETE /api/business/media/:id
- * Refuses to delete a media row still referenced by a live flow_nodes row.
+ * Refuses to delete a media row still referenced by a live flow_nodes row (media_id,
+ * gallery_media_ids or video_media_id).
  */
 const deleteBusinessMedia = async (businessId, mediaId) => {
   const { data: media, error: findErr } = await supabase
@@ -176,9 +177,18 @@ const deleteBusinessMedia = async (businessId, mediaId) => {
     throw err;
   }
 
-  const { data: referencingNodes, error: refErr } = await supabase
-    .from('flow_nodes').select('label, keyword').eq('media_id', mediaId);
-  if (refErr) throw refErr;
+  // photo #1 (media_id), an extra gallery photo, or the reply's video.
+  const [mainRefs, galleryRefs, videoRefs] = await Promise.all([
+    supabase.from('flow_nodes').select('id, label, keyword').eq('media_id', mediaId),
+    supabase.from('flow_nodes').select('id, label, keyword').contains('gallery_media_ids', [mediaId]),
+    supabase.from('flow_nodes').select('id, label, keyword').eq('video_media_id', mediaId)
+  ]);
+  for (const res of [mainRefs, galleryRefs, videoRefs]) {
+    if (res.error) throw res.error;
+  }
+  const referencingNodes = [...new Map(
+    [...mainRefs.data, ...galleryRefs.data, ...videoRefs.data].map(n => [n.id, n])
+  ).values()];
 
   if ((referencingNodes || []).length > 0) {
     const names = referencingNodes.map(n => n.keyword || n.label).join(', ');

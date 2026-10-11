@@ -63,6 +63,21 @@ test('transform: media_id is always cleared; our own storage image_url is droppe
   for (const n of nodes) { assert.equal(n.media_id, null); assert.equal(n.image_url, null); }
 });
 
+test('transform: gallery_media_ids -> [] and video_media_id -> null (source-library ids), counted as dropped images', () => {
+  const input = [
+    node({ id: 'a', image_url: 'https://example.com/p.png', gallery_media_ids: [ID_A, ID_B], video_media_id: ID_A }),
+    node({ id: 'b', gallery_media_ids: [ID_B] }),
+    node({ id: 'c', video_media_id: ID_B }),
+    node({ id: 'd', gallery_media_ids: [] }),
+    node({ id: 'e' })
+  ];
+  const { nodes, imagesDropped } = transformNodesForCopy(input, { isStorageUrl });
+  assert.equal(imagesDropped, 3);
+  for (const n of nodes) { assert.deepEqual(n.gallery_media_ids, []); assert.equal(n.video_media_id, null); }
+  assert.equal(nodes[0].image_url, 'https://example.com/p.png', 'an external photo #1 is still kept');
+  assert.deepEqual(input[0].gallery_media_ids, [ID_A, ID_B], 'input rows are not mutated');
+});
+
 test('transform: an external (non-storage) image_url is kept and not counted; image_removed_at is cleared', () => {
   const { nodes, imagesDropped } = transformNodesForCopy(
     [node({ image_url: 'https://example.com/p.png', image_removed_at: '2026-10-01T00:00:00Z' })], { isStorageUrl });

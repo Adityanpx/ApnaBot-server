@@ -13,6 +13,8 @@ const orPredicate = (expr) => {
   const preds = expr.split(',').map((piece) => {
     const eq = piece.match(/^([a-z0-9_]+)\.eq\.(.+)$/);
     if (eq) return (r) => String(r[eq[1]]) === eq[2];
+    const neq = piece.match(/^([a-z0-9_]+)\.neq\.(.+)$/);
+    if (neq) return (r) => JSON.stringify(r[neq[1]] ?? null) !== neq[2];
     const m = piece.match(/^([a-z0-9_]+)\.(not\.)?is\.null$/);
     if (!m) throw new Error(`fake supabase: unsupported or() piece "${piece}"`);
     const [, col, neg] = m;
@@ -81,6 +83,8 @@ const createFakeSupabase = ({ uniques = [], rpc = {} } = {}) => {
       delete: () => { op = 'delete'; return q; },
       eq: (c, v) => { filters.push(r => r[c] === v); return q; },
       neq: (c, v) => { filters.push(r => r[c] !== v); return q; },
+      // jsonb array containment: every value in `vs` is an element of the row's array
+      contains: (c, vs) => { filters.push(r => Array.isArray(r[c]) && vs.every(v => r[c].includes(v))); return q; },
       in: (c, vs) => { filters.push(r => vs.includes(r[c])); return q; },
       is: (c, v) => { filters.push(r => (r[c] === undefined ? null : r[c]) === v); return q; },
       not: (c, _op, v) => { filters.push(r => (r[c] === undefined ? null : r[c]) !== v); return q; },

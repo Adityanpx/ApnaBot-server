@@ -79,6 +79,36 @@ const sendImageMessage = async (phoneNumberId, encryptedAccessToken, to, imageUr
 };
 
 /**
+ * Send a video message via WhatsApp (a reply node's video, sent before the reply itself)
+ * @param {string} phoneNumberId - The WhatsApp phone number ID
+ * @param {string} encryptedAccessToken - Encrypted Meta access token
+ * @param {string} to - Recipient phone number
+ * @param {string} videoUrl - Publicly reachable video URL (mp4)
+ * @param {string} [caption] - Optional caption
+ * @returns {Promise<Object>}
+ */
+const sendVideoMessage = async (phoneNumberId, encryptedAccessToken, to, videoUrl, caption) => {
+  try {
+    const accessToken = decrypt(encryptedAccessToken);
+    const response = await axios.post(
+      `${META_API_BASE}/${phoneNumberId}/messages`,
+      {
+        messaging_product: 'whatsapp',
+        recipient_type: 'individual',
+        to,
+        type: 'video',
+        video: { link: videoUrl, caption: caption || undefined }
+      },
+      { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
+    );
+    return response.data;
+  } catch (error) {
+    logger.error('Error sending video message:', { phoneNumberId, to, error: error.response?.data || error.message });
+    throw error;
+  }
+};
+
+/**
  * Send a location message via WhatsApp (the business's own saved coordinates
  * as a map pin, e.g. a reply/question node with contentType 'location').
  * @param {string} phoneNumberId - The WhatsApp phone number ID
@@ -439,6 +469,7 @@ module.exports = {
   sendTextMessage,
   downloadMedia,
   sendImageMessage,
+  sendVideoMessage,
   sendLocationMessage,
   sendLocationRequest,
   sendInteractiveButtons,

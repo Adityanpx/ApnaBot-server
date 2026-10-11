@@ -58,9 +58,14 @@ const loadReferences = async ({ businessId = null } = {}) => {
   const mediaRows = await fetchAll('business_media', 'id, business_id, r2_key, url, file_size_bytes, media_type', scoped);
   const mediaByKey = new Map(mediaRows.map(m => [m.r2_key, m]));
   const mediaById = new Map(mediaRows.map(m => [m.id, m]));
+  // gallery_media_ids (jsonb array) + video_media_id on a flow_nodes row or a snapshot's copy of one.
+  const addExtraMedia = (n, usage) => {
+    const ids = [...(Array.isArray(n.gallery_media_ids) ? n.gallery_media_ids : []), n.video_media_id];
+    for (const mediaId of ids) add(mediaId && mediaById.has(mediaId) ? mediaById.get(mediaId).r2_key : null, usage);
+  };
 
-  const nodes = await fetchAll('flow_nodes', 'id, business_id, keyword, label, image_url, media_id',
-    (q) => scoped(q).or('image_url.not.is.null,media_id.not.is.null'));
+  const nodes = await fetchAll('flow_nodes', 'id, business_id, keyword, label, image_url, media_id, gallery_media_ids, video_media_id',
+    (q) => scoped(q).or('image_url.not.is.null,media_id.not.is.null,video_media_id.not.is.null,gallery_media_ids.neq.[]'));
   for (const n of nodes) {
     // A reply whose only content is its image would send an EMPTY message once
     // the image is gone (Meta rejects it): never purge those. A translated label
@@ -73,6 +78,8 @@ const loadReferences = async ({ businessId = null } = {}) => {
     };
     add(n.media_id && mediaById.has(n.media_id) ? mediaById.get(n.media_id).r2_key : null, usage);
     add(r2KeyFromUrl(n.image_url), usage);
+    // Extra photos and the video: the reply still sends its text without them, so never protected.
+    addExtraMedia(n, { type: 'flow_node', id: n.id, businessId: n.business_id, label: n.keyword || n.label || n.id, protected: false, reason: null });
   }
 
   // Saved flow versions (flow_snapshots.nodes = full flow_nodes rows). Restoring one puts its
@@ -92,6 +99,7 @@ const loadReferences = async ({ businessId = null } = {}) => {
       };
       add(n.media_id && mediaById.has(n.media_id) ? mediaById.get(n.media_id).r2_key : null, usage);
       add(r2KeyFromUrl(n.image_url), usage);
+      addExtraMedia(n, { ...usage, protected: isTemplate, reason: isTemplate ? PROTECTED_CATEGORY_TEMPLATE : null });
     }
   }
 

@@ -42,7 +42,7 @@ stub('../config/supabase', { from });
 stub('../utils/logger', { info: () => {}, warn: () => {}, error: () => {} });
 const sendFn = (name) => async (...args) => { sends.push([name, args]); return sendImpl(name); };
 stub('../services/whatsapp.service', {
-  sendTextMessage: sendFn('text'), sendImageMessage: sendFn('image'), sendLocationMessage: sendFn('location'),
+  sendTextMessage: sendFn('text'), sendImageMessage: sendFn('image'), sendVideoMessage: sendFn('video'), sendLocationMessage: sendFn('location'),
   sendLocationRequest: sendFn('locationRequest'), sendInteractiveButtons: sendFn('buttons'), sendListMessage: sendFn('list'),
   sendRuleListMessage: sendFn('ruleList'), sendCtaUrlButton: sendFn('cta')
 });
@@ -75,6 +75,19 @@ test('every send branch saves the wamid (text, image, buttons, list, rule list, 
     assert.equal(rows[0].meta_message_id, `wamid.${branch}`, branch);
     assert.equal(rows[0].status, 'sent', branch);
   }
+});
+
+test('a reply node\'s video goes out as a video message (link + caption) and saves the wamid', async () => {
+  sendImpl = () => response('wamid.VID');
+  await processor(job({ type: 'video', videoUrl: 'https://r2.test/v.mp4', message: '' }));
+  assert.equal(sends[0][0], 'video');
+  assert.deepEqual(sends[0][1].slice(3), ['https://r2.test/v.mp4', '']);
+  assert.deepEqual([rows[0].status, rows[0].meta_message_id], ['sent', 'wamid.VID']);
+});
+
+test('type video without a videoUrl does not try to send a video', async () => {
+  await processor(job({ type: 'video' }));
+  assert.equal(sends[0][0], 'text');
 });
 
 test('Meta\'s status webhook now finds the row: its lookup key (meta_message_id) matches', async () => {

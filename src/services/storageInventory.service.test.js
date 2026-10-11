@@ -142,6 +142,29 @@ test('a snapshot that references the file through media_id only is also found', 
   assert.equal(find(await scan(), k).inUse, true);
 });
 
+test('a file used only as a reply\'s extra photo or video is in use by that node, and never protected', async () => {
+  const kPhoto = libFile(1);
+  const kVideo = libFile(2);
+  db.business_media.find(m => m.r2_key === kVideo).media_type = 'video';
+  // label is empty: photo #1's protection must not spread to the extra media
+  db.flow_nodes = [{ id: uuid(200), business_id: B1, keyword: 'rooms', label: '', image_url: null, media_id: null, gallery_media_ids: [uuid(101)], video_media_id: uuid(102) }];
+  const entries = await scan();
+  for (const k of [kPhoto, kVideo]) {
+    const e = find(entries, k);
+    assert.deepEqual([e.kind, e.inUse, e.protected], ['bot_node_image', true, false], k);
+    assert.deepEqual(e.usedBy, [{ type: 'flow_node', id: uuid(200), label: 'rooms' }], k);
+  }
+});
+
+test('a snapshot that references the file through gallery_media_ids / video_media_id is found too', async () => {
+  const kPhoto = libFile(1);
+  const kVideo = libFile(2);
+  db.flow_snapshots = [{ id: uuid(800), business_id: B1, name: 'v1', is_category_template: false, nodes: [{ id: uuid(700), label: 'x', image_url: null, media_id: null, gallery_media_ids: [uuid(101)], video_media_id: uuid(102) }] }];
+  const entries = await scan();
+  assert.equal(find(entries, kPhoto).inUse, true);
+  assert.equal(find(entries, kVideo).inUse, true);
+});
+
 test('a category template snapshot protects the image: "used by category template"', async () => {
   const k = libFile();
   db.flow_snapshots = [{ id: uuid(801), business_id: null, category: 'travels', name: 'Travels starter', is_category_template: true, nodes: [snapNode(k)] }];
