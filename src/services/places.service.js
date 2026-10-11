@@ -4,21 +4,47 @@ const logger = require('../utils/logger');
 const AUTOCOMPLETE_BASE = 'https://maps.googleapis.com/maps/api/place/autocomplete/json';
 const DETAILS_BASE = 'https://maps.googleapis.com/maps/api/place/details/json';
 
+const BIAS_RADIUS_METRES = 50000;
+const SESSION_TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A client-supplied Places session token if it is a uuid string, else undefined (ignored). */
+const normalizeSessionToken = (sessionToken) =>
+  typeof sessionToken === 'string' && SESSION_TOKEN_PATTERN.test(sessionToken) ? sessionToken : undefined;
+
 /**
- * Google Places Autocomplete predictions for a partial address string.
+ * PLACES_COUNTRY ("in", or "in,ae") → Autocomplete `components` value
+ * ("country:in", "country:in|country:ae"). Defaults to "in".
+ */
+const countryComponents = () => {
+  const codes = (process.env.PLACES_COUNTRY || 'in')
+    .split(',').map((c) => c.trim().toLowerCase()).filter(Boolean);
+  return (codes.length ? codes : ['in']).map((c) => `country:${c}`).join('|');
+};
+
+/**
+ * Google Places Autocomplete predictions for a partial address string,
+ * restricted to PLACES_COUNTRY and softly biased (not strict) towards the
+ * business location when coordinates are given.
  * @param {string} input
+ * @param {{lat?: number|null, lng?: number|null, sessionToken?: string}} [options]
  * @returns {Promise<Array<{placeId: string, description: string}>|null>} null on failure
  */
-const getAutocompletePredictions = async (input) => {
+const getAutocompletePredictions = async (input, { lat, lng, sessionToken } = {}) => {
   if (!process.env.GOOGLE_MAPS_API_KEY) {
     logger.error('GOOGLE_MAPS_API_KEY is not configured but a places autocomplete lookup was requested');
     return null;
   }
 
   try {
-    const response = await axios.get(AUTOCOMPLETE_BASE, {
-      params: { input, key: process.env.GOOGLE_MAPS_API_KEY }
-    });
+    const params = { input, key: process.env.GOOGLE_MAPS_API_KEY, components: countryComponents() };
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      params.location = `${lat},${lng}`;
+      params.radius = BIAS_RADIUS_METRES;
+    }
+    const token = normalizeSessionToken(sessionToken);
+    if (token) params.sessiontoken = token;
+
+    const response = await axios.get(AUTOCOMPLETE_BASE, { params });
 
     if (response.data.status !== 'OK' && response.data.status !== 'ZERO_RESULTS') {
       logger.error('Google Places Autocomplete returned non-OK status:', response.data.status);
@@ -39,22 +65,25 @@ const getAutocompletePredictions = async (input) => {
  * 'administrative_area_level_1' respectively, and can legitimately come
  * back null for a place with no matching component.
  * @param {string} placeId
+ * @param {{sessionToken?: string}} [options]
  * @returns {Promise<{lat: number|null, lng: number|null, city: string|null, state: string|null, formattedAddress: string|null}|null>} null on failure
  */
-const getPlaceDetails = async (placeId) => {
+const getPlaceDetails = async (placeId, { sessionToken } = {}) => {
   if (!process.env.GOOGLE_MAPS_API_KEY) {
     logger.error('GOOGLE_MAPS_API_KEY is not configured but a place details lookup was requested');
     return null;
   }
 
   try {
-    const response = await axios.get(DETAILS_BASE, {
-      params: {
-        place_id: placeId,
-        key: process.env.GOOGLE_MAPS_API_KEY,
-        fields: 'geometry,address_components,formatted_address'
-      }
-    });
+    const params = {
+      place_id: placeId,
+      key: process.env.GOOGLE_MAPS_API_KEY,
+      fields: 'geometry,address_components,formatted_address'
+    };
+    const token = normalizeSessionToken(sessionToken);
+    if (token) params.sessiontoken = token;
+
+    const response = await axios.get(DETAILS_BASE, { params });
 
     if (response.data.status !== 'OK' || !response.data.result) {
       logger.error('Google Place Details returned non-OK status:', response.data.status);

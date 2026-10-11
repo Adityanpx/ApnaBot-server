@@ -577,12 +577,14 @@ const getVehicleOptions = async (req, res, next) => {
 
 /**
  * POST /api/public/service-form/:token/places-autocomplete
- * Body: { input: string }
+ * Body: { input: string, sessionToken?: uuid string }
+ * Results are restricted to PLACES_COUNTRY and biased to the business's
+ * business_latitude/business_longitude when set.
  */
 const placesAutocomplete = async (req, res, next) => {
   try {
     const { token } = req.params;
-    const { status } = await loadToken(token);
+    const { row: formToken, status } = await loadToken(token);
 
     if (status === 'not_found') {
       return errorResponse(res, 404, 'This booking link is invalid.');
@@ -599,7 +601,23 @@ const placesAutocomplete = async (req, res, next) => {
       return errorResponse(res, 400, 'input must be a non-empty string');
     }
 
-    const predictions = await placesService.getAutocompletePredictions(input.trim());
+    // The token only carries businessId, so this is one extra (lat/lng only) read.
+    // A failure here just drops the bias — it must not break address search.
+    let lat = null;
+    let lng = null;
+    try {
+      const { data: biz, error: bizError } = await supabase
+        .from('businesses').select('business_latitude, business_longitude').eq('id', formToken.businessId).maybeSingle();
+      if (bizError) throw bizError;
+      lat = biz?.business_latitude ?? null;
+      lng = biz?.business_longitude ?? null;
+    } catch (locError) {
+      logger.warn('placesAutocomplete: could not load business location for bias:', locError.message);
+    }
+
+    const predictions = await placesService.getAutocompletePredictions(input.trim(), {
+      lat, lng, sessionToken: req.body?.sessionToken
+    });
     if (predictions === null) {
       return errorResponse(res, 502, 'Could not fetch address suggestions right now.');
     }
@@ -613,7 +631,7 @@ const placesAutocomplete = async (req, res, next) => {
 
 /**
  * POST /api/public/service-form/:token/place-details
- * Body: { placeId: string }
+ * Body: { placeId: string, sessionToken?: uuid string }
  */
 const placeDetails = async (req, res, next) => {
   try {
@@ -635,7 +653,7 @@ const placeDetails = async (req, res, next) => {
       return errorResponse(res, 400, 'placeId must be a non-empty string');
     }
 
-    const details = await placesService.getPlaceDetails(placeId.trim());
+    const details = await placesService.getPlaceDetails(placeId.trim(), { sessionToken: req.body?.sessionToken });
     if (details === null) {
       return errorResponse(res, 502, 'Could not fetch address details right now.');
     }

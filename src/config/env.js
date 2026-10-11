@@ -72,6 +72,10 @@ module.exports = {
   // Optional: only needed by shops with enableDistanceFares on; read directly
   // from process.env in distanceMatrix.service.js, exported here for consistency.
   GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY,
+  // Optional: country restriction for public-form address search (Places
+  // Autocomplete). Comma-separated ISO 3166-1 alpha-2 codes, e.g. "in" or
+  // "in,ae". Default "in". Read directly in places.service.js.
+  PLACES_COUNTRY: process.env.PLACES_COUNTRY || 'in',
   // Optional: a WhatsApp Business number ApnaBot itself owns, used only for
   // system-to-owner notifications (autopay grace/paused nudges) — distinct
   // from any business's own connected WABA number. Not required at boot:
