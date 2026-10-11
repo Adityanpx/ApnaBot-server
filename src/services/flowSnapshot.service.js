@@ -94,8 +94,69 @@ const writeBusinessGraphRows = async (targetBusinessId, storedNodes, storedEdges
   }
 };
 
+const MAX_SNAPSHOTS_PER_BUSINESS = 5;
+
+/**
+ * Keeps at most MAX_SNAPSHOTS_PER_BUSINESS of a business's own saved
+ * snapshots (is_category_template: false), deleting the oldest ones first.
+ */
+const enforceSnapshotCap = async (businessId) => {
+  const { data, error } = await supabase
+    .from('flow_snapshots')
+    .select('id')
+    .eq('business_id', businessId)
+    .eq('is_category_template', false)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+
+  const snapshots = data || [];
+  if (snapshots.length <= MAX_SNAPSHOTS_PER_BUSINESS) return;
+
+  const idsToDelete = snapshots.slice(0, snapshots.length - MAX_SNAPSHOTS_PER_BUSINESS).map((s) => s.id);
+  const { error: deleteErr } = await supabase.from('flow_snapshots').delete().in('id', idsToDelete);
+  if (deleteErr) throw deleteErr;
+};
+
+/**
+ * Marks snapshotId as the single active snapshot for this business's own
+ * saved snapshots (is_category_template: false), unsetting every other one.
+ */
+const setActiveSnapshot = async (businessId, snapshotId) => {
+  const { error: unsetErr } = await supabase
+    .from('flow_snapshots').update({ is_active: false })
+    .eq('business_id', businessId).eq('is_category_template', false).neq('id', snapshotId);
+  if (unsetErr) throw unsetErr;
+
+  const { error: setErr } = await supabase
+    .from('flow_snapshots').update({ is_active: true }).eq('id', snapshotId);
+  if (setErr) throw setErr;
+};
+
+/**
+ * Inserts one of a business's own snapshots (is_category_template: false,
+ * category null) from already-read row arrays and returns { id, name,
+ * created_at, is_active }. Does NOT mark it active or enforce the cap —
+ * callers decide (see setActiveSnapshot / enforceSnapshotCap above).
+ */
+const createSnapshotFromRows = async (businessId, name, nodes, edges) => {
+  const { data, error } = await supabase.from('flow_snapshots').insert({
+    business_id: businessId,
+    name,
+    nodes,
+    edges,
+    is_category_template: false,
+    category: null
+  }).select('id, name, created_at, is_active').single();
+  if (error) throw error;
+  return data;
+};
+
 module.exports = {
+  MAX_SNAPSHOTS_PER_BUSINESS,
   readBusinessGraphRows,
   deleteBusinessGraphRows,
-  writeBusinessGraphRows
+  writeBusinessGraphRows,
+  enforceSnapshotCap,
+  setActiveSnapshot,
+  createSnapshotFromRows
 };

@@ -24,6 +24,7 @@ const {
 } = require('../controllers/admin.controller');
 const categoryFeatureController = require('../controllers/categoryFeature.controller');
 const ownerMediaController = require('../controllers/ownerMedia.controller');
+const copySetupController = require('../controllers/copySetup.controller');
 
 // All admin routes — superadmin only
 router.use(protect, requireRole('superadmin'));
@@ -40,6 +41,10 @@ router.put('/businesses/:id/extend',     extendSubscription);
 router.post('/businesses/:id/grant-subscription',     grantSubscription);
 router.get('/businesses/:id/subscription-history',    getSubscriptionHistory);
 router.get('/businesses/:businessId/flow-snapshots',   getBusinessFlowSnapshots);
+
+// Copy a same-category business's (or category template's) flow + service form into :id.
+// Body { source, include, dryRun } — dry run unless dryRun:false.
+router.post('/businesses/:id/copy-setup',              copySetupController.copySetup);
 
 // Manual preview-credit grants (additive - tops up previewCreditsPurchased)
 router.put('/businesses/:id/preview-credits',          grantPreviewCredits);

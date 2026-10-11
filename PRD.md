@@ -288,6 +288,32 @@ Row counts are not tracked here (the old "table is empty as of
 2026-09-02" note was stale — e.g. CareWell Clinic has had a personal
 snapshot since 2026-09-29's AI-flow test). Query `flow_snapshots` directly.
 
+### Copy setup (SuperAdmin, built 2026-10-11)
+
+`POST /api/admin/businesses/:id/copy-setup` `{ source: { type: 'business'|'template', id }, include: { flow, serviceForm }, dryRun }`
+copies a same-category business's (or an active category template's) auto-reply
+flow and/or service form (`businesses.flow_fields`) into business `:id`. Cross-category,
+same source/target and inactive templates are rejected. **`dryRun` defaults to true** —
+only an explicit `dryRun:false` writes; the dry run returns `{ source, target, willCopy,
+warnings }` and the apply adds `applied: true`.
+
+- **Copies:** all nodes/edges (fresh ids, `trigger_count` 0, per-node `form_fields` kept)
+  and, for a business source, `flow_fields`. A template has no service form: that part is
+  skipped with a warning.
+- **Clears:** per-node location override (`latitude/longitude/location_name/address`),
+  `media_id`, `image_url` when it is one of our R2 files, `image_removed_at`. Those images
+  must be re-uploaded in the target.
+- **Warns, never auto-fixes:** source business name hard-coded in node labels, and source
+  vehicles/fares/rental packages/courses/Bot Builder/travel settings that are not copied.
+- **Restore point:** if the target has a flow, a "Before copy from <source> — <date>"
+  snapshot is saved first; after the swap a "Copied from <source> — <date>" snapshot
+  becomes active. A failure after the delete returns 500 pointing at the restore point (no
+  JS-side rollback). The service form has no restore point. Only the `flow:<businessId>`
+  rules cache is flushed (`flow_fields` is read from the DB, not the tenant cache).
+- Code: `utils/copySetup.js` (pure, tested), `services/copySetup.service.js`,
+  `controllers/copySetup.controller.js`. The snapshot cap/active helpers moved into
+  `flowSnapshot.service.js`. Not yet exercised against a real database.
+
 ### AI flow generation, Phase 1 (`/api/flow-graph/ai`) — built, OFF by default
 
 Questionnaire answers or a FlowSpec → a complete reply/booking graph,
