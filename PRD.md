@@ -1097,6 +1097,7 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
   must be in the newest constraint migration), `categoryFeature.middleware.test.js`,
   `broadcast.routes.feature.test.js`, `staff.routes.feature.test.js`, `auth.staffSwitchOff.test.js`,
   `features.routes.test.js`. `broadcastTemplate.roles.test.js` gained a pass-through stub for the guard.
+- **FEATURE_DISABLED code.** A switched-off feature's 404 from `requireCategoryFeature` carries `errors: { code: 'FEATURE_DISABLED' }` (status and "Not found" unchanged), so clients can tell it from a missing route; a missing business is a plain 404 without the code.
 - **Open items for the clients (not done).** The web sidebar (`apnabot-web` `src/app/(app)/layout.tsx`) and
   the Flutter drawer (`drawer_items.dart`) still show Broadcasts and Staff to everyone (`return true` /
   `_ => true`), so a business with a switch off sees the item and gets a 404. Both should read

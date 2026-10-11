@@ -51,15 +51,17 @@ test('on: passes through, asking for this feature, category and business', async
   assert.equal(out.next, 1);
   assert.equal(out.nextArg, undefined);
   assert.equal(out.status, null);
+  assert.equal(out.body, null);
   assert.deepEqual(lookups, [['businesses', 'id', 'b1']]);
   assert.deepEqual(asked, [['travels', 'broadcasts', 'b1']]);
 });
 
-test('off: 404 Not found, next is not called', async () => {
+test('off: 404 Not found with errors.code FEATURE_DISABLED, next is not called', async () => {
   enabled = false;
   const out = await run();
   assert.equal(out.status, 404);
   assert.equal(out.body.message, 'Not found');
+  assert.deepEqual(out.body.errors, { code: 'FEATURE_DISABLED' });
   assert.equal(out.next, 0);
 });
 
@@ -67,6 +69,7 @@ test('business not found: 404 without consulting the switch', async () => {
   business = null;
   const out = await run();
   assert.equal(out.status, 404);
+  assert.equal(out.body.errors, null);
   assert.equal(out.next, 0);
   assert.equal(asked.length, 0);
 });
