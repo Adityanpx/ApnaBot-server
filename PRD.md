@@ -1188,6 +1188,29 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
   Tests: `replyMediaLimits.test.js`, `flowGraph.replyMedia.test.js`, `webhook.replyMedia.test.js`,
   `businessMedia.replyMedia.test.js`, plus additions to the worker, copySetup, inventory and sweeper tests.
 
+## Mobile app version gate (built 2026-10-18, migration `20261018120000_app_config.sql`)
+
+Tells the Flutter app which versions to accept. **Server only - no client reads it yet**, so
+`force_update` / `maintenance_mode` change nothing for users until a Flutter build consumes the endpoint.
+- **Table `app_config`** (`key` pk, `value` text, `updated_at`, `updated_by` -> `users`, RLS on, no
+  policies; separate from `platform_settings`). Keys: `android_min_version`, `android_latest_version`
+  (x.y.z), `force_update`, `maintenance_mode` (`'true'`/`'false'`), `play_store_url`.
+- **Public `GET /api/app/version`** (no auth): `data: { minimumVersion, latestVersion, forceUpdate,
+  maintenanceMode, storeUrl }`, `Cache-Control: public, max-age=60` plus a 60s in-process cache. Fails
+  open: a missing/malformed key or a DB error serves 1.0.0 / false / the Play Store URL (a fallback is
+  `no-store` and never cached). It is not behind any maintenance gate (none exists); a future one must
+  exempt this route (comment in `routes/appVersion.routes.js`).
+- **Superadmin `GET` / `PUT /api/admin/app-config`**: partial body of `androidMinVersion`,
+  `androidLatestVersion`, `forceUpdate`, `maintenanceMode`, `playStoreUrl` (https only); min must be <=
+  latest. Returns the five values, top-level `updatedAt` / `updatedBy` (display name, else email, of the
+  latest change by a user; both null if never changed) and per-key `keys.<field>.{updatedAt, updatedBy}`.
+  A PUT clears the cache and logs `App config changed by superadmin` with old -> new. Unchanged values
+  are not rewritten. Caveat: if the changing user is later deleted, `updated_by` goes NULL and that
+  change reads as "never changed".
+- **Deploy: apply the migration first, then the server.** Additive, not a cutover; no webhook/booking
+  path touched (Search cab AI unaffected). Tests: `src/routes/appConfig.routes.test.js`. Code:
+  `appConfig.service.js` / `appConfig.controller.js`. Not built: a Super Admin UI for the endpoint.
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism
@@ -1282,6 +1305,9 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
    `sendRuleListMessage` ignore `imageUrl`.
 
 ## Session log (append here as major milestones land)
+- 2026-10-18: Mobile app version gate (see "Mobile app version gate"): `app_config` table, public
+  `GET /api/app/version`, superadmin `GET|PUT /api/admin/app-config`. Working tree only, not committed.
+  **Deploy: apply `20261018120000_app_config.sql` first, then the server.** Additive; no client reads it yet.
 - 2026-10-11: Staff & Broadcasts per-business switches (see "Staff & Broadcasts switches"): keys `staff` and
   `broadcasts`, off by default, route guards on `/api/staff` (management only; existing staff keep working)
   and `/api/broadcasts` (queued broadcasts finish sending), and `GET /api/features`. Commits 1e5c472,

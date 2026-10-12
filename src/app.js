@@ -47,6 +47,8 @@ const optInLinkRoutes = require('./routes/optInLink.routes');
 const contactImportRoutes = require('./routes/contactImport.routes');
 const contactGroupRoutes = require('./routes/contactGroup.routes');
 const featuresRoutes = require('./routes/features.routes');
+const appVersionRoutes = require('./routes/appVersion.routes');
+const appConfigAdminRoutes = require('./routes/appConfigAdmin.routes');
 
 const app = express();
 
@@ -130,6 +132,9 @@ app.use('/api/admin/course-catalog', courseCatalogRoutes);
 app.use('/api/admin/category-features', categoryFeatureRoutes);
 // Super Admin storage cleanup (R2) - superadmin only; above the /api/admin catch-all.
 app.use('/api/admin/storage-cleanup', storageCleanupRoutes);
+// Super Admin mobile-app version gate (app_config) - superadmin only; above the
+// /api/admin catch-all. The public read is /api/app/version below.
+app.use('/api/admin/app-config', appConfigAdminRoutes);
 app.use('/api/admin/rate-cards', rateCardRoutes);
 app.use('/api/admin/category-templates', categoryTemplateRoutes);
 app.use('/api/admin/whatsapp-flows', whatsappFlowRoutes);
@@ -177,6 +182,9 @@ app.use('/api/contacts/groups', contactGroupRoutes);
 // Which switchable features are on for the caller's business (the apps hide
 // screens from this). Any role; read-only.
 app.use('/api/features', featuresRoutes);
+// Mobile app version gate (min/latest version, force update, maintenance flag).
+// Public, no auth - see routes/appVersion.routes.js.
+app.use('/api/app', appVersionRoutes);
 
 // Error handler middleware
 app.use(errorHandler);
