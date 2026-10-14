@@ -1,6 +1,7 @@
 const supabase = require('../config/supabase');
 const redis = require('../config/redis');
 const logger = require('../utils/logger');
+const { getCurrentSubscriptionRow } = require('./currentSubscription.service');
 
 /**
  * Resolve business by phone number ID (used by webhook tenant resolution)
@@ -35,12 +36,8 @@ const resolveBusinessByPhoneNumberId = async (phoneNumberId) => {
     }
 
     // Step 3: Load active subscription for business
-    const { data: subscription, error: subErr } = await supabase
-      .from('subscriptions')
-      .select('*, plan:plans(*)')
-      .eq('business_id', business.id)
-      .eq('status', 'active')
-      .maybeSingle();
+    const { data: subscription, error: subErr } =
+      await getCurrentSubscriptionRow(business.id, { statuses: ['active'] });
     if (subErr) throw subErr;
 
     // Step 4: Build tenant object

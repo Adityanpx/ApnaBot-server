@@ -3,9 +3,12 @@ const redis = require('../config/redis');
 const subscriptionNotifications = require('./subscriptionNotifications.service');
 const tenantService = require('./tenant.service');
 const logger = require('../utils/logger');
+const { getCurrentSubscriptionRow } = require('./currentSubscription.service');
 
 const CACHE_KEY = (businessId) => `subscription:${businessId}`;
 const CACHE_TTL = 300; // 5 minutes
+// How long an unconfirmed autopay row lives before the daily cron expires it.
+const AUTOPAY_PENDING_WINDOW_MS = 48 * 60 * 60 * 1000;
 
 /**
  * Get active subscription for business with plan details.
@@ -17,25 +20,12 @@ const getActiveSubscription = async (businessId) => {
     const cached = await redis.get(cacheKey);
     if (cached) return JSON.parse(cached);
 
-    // Ordered multi-row select instead of .maybeSingle() — defense in
-    // depth. A write-path bug (or a manual DB edit, or a migration) could
-    // leave 2+ 'active' rows for a business; .maybeSingle() throws
-    // PGRST116 on that instead of returning one, which took down SG
-    // Travels' webhook on 2026-08-31. Take the most recent instead of
-    // failing, but log it so the underlying duplicate is still visible.
-    const { data: subs, error } = await supabase
-      .from('subscriptions')
-      .select('*, plan:plans(*)')
-      .eq('business_id', businessId)
-      .eq('status', 'active')
-      .order('created_at', { ascending: false });
+    // Shared pick rule (non-pending, latest end_date, latest created_at). A
+    // duplicate-active state (write-path bug, manual DB edit) must never throw
+    // PGRST116 — that took down SG Travels' webhook on 2026-08-31 — so the
+    // helper picks one and logs a warning.
+    const { data: sub, error } = await getCurrentSubscriptionRow(businessId, { statuses: ['active'] });
     if (error) throw error;
-
-    if (subs && subs.length > 1) {
-      logger.warn(`Business ${businessId} has ${subs.length} active subscriptions — using most recent (${subs[0].id}, created_at ${subs[0].created_at}). Duplicate-active-row state should be investigated.`);
-    }
-
-    const sub = subs && subs.length > 0 ? subs[0] : null;
 
     if (sub) await redis.set(cacheKey, JSON.stringify(sub), 'EX', CACHE_TTL);
     return sub;
@@ -132,11 +122,11 @@ const createSubscription = async (businessId, planId, options = {}) => {
 };
 
 /**
- * Create a subscription row in 'pending_start' state for an autopay flow.
- * The row is upgraded to 'active' by the subscription.activated webhook.
- * Does NOT cancel existing active subs (unlike createSubscription) — that
- * happens on webhook confirmation to avoid killing the current sub if the
- * customer abandons authorization.
+ * Create a subscription row for an autopay flow: 'pending_start' when the
+ * business already has a live subscription, 'active' only when it has none.
+ * The subscription.activated webhook activates it and cancels the business's
+ * other active/trial rows. Does NOT cancel existing subs here (unlike
+ * createSubscription) so abandoning authorization never kills the current one.
  *
  * opts:
  *   razorpaySubscriptionId (string) — required
@@ -157,22 +147,32 @@ const createAutopaySubscriptionRow = async (businessId, planId, opts) => {
 
     const now = new Date();
     const startDate = startAt || now;
-    // end_date is a placeholder; it will be updated by the subscription.charged
-    // webhook on every successful debit. For 'pending_start' rows it stays at
-    // start_date until activation.
-    const endDate = new Date(startDate);
+    // end_date is a short placeholder window, never == start_date: if checkout
+    // is abandoned the row ages out (runExpiryCheck expires stale pending_start
+    // autopay rows); if authorised, the activated/charged webhooks overwrite it
+    // with Razorpay's real current_end.
+    const endDate = new Date(startDate.getTime() + AUTOPAY_PENDING_WINDOW_MS);
+
+    // A business that already has a live subscription keeps it until Razorpay
+    // confirms the new mandate (subscription.activated supersedes it). Only a
+    // business with nothing live gets 'active' straight away, so tenant/feature
+    // gating works in the seconds before the webhook.
+    const { data: liveRows, error: liveErr } = await supabase
+      .from('subscriptions')
+      .select('id')
+      .eq('business_id', businessId)
+      .in('status', ['active', 'trial', 'past_due'])
+      .gt('end_date', now.toISOString())
+      .limit(1);
+    if (liveErr) throw liveErr;
+    const hasLive = (liveRows || []).length > 0;
 
     const { data: sub, error } = await supabase
       .from('subscriptions')
       .insert({
         business_id: businessId,
         plan_id: planId,
-        status: startAt ? 'pending_start' : 'active',
-        // ↑ 'active' is a placeholder — the webhook flips to 'active' on first
-        // charge. Using 'active' here (instead of e.g. 'trial') avoids breaking
-        // the tenant cache lookup during the ~5s window between subscribe and
-        // first webhook. If you want a distinct 'pending_activation' state,
-        // add it in a follow-up migration; leaving it out for this pass.
+        status: startAt || hasLive ? 'pending_start' : 'active',
         start_date: startDate.toISOString(),
         end_date: endDate.toISOString(),
         razorpay_subscription_id: razorpaySubscriptionId,
@@ -190,6 +190,23 @@ const createAutopaySubscriptionRow = async (businessId, planId, opts) => {
     logger.error('Error in createAutopaySubscriptionRow:', error);
     throw error;
   }
+};
+
+/**
+ * True if the business has an active/trial row other than `excludeId` whose
+ * period has not ended — the daily cron must not deactivate such a business.
+ */
+const hasOtherLiveSubscription = async (businessId, excludeId, nowIso) => {
+  const { data, error } = await supabase
+    .from('subscriptions')
+    .select('id')
+    .eq('business_id', businessId)
+    .in('status', ['active', 'trial'])
+    .neq('id', excludeId)
+    .gte('end_date', nowIso)
+    .limit(1);
+  if (error) throw error;
+  return (data || []).length > 0;
 };
 
 /**
@@ -216,9 +233,15 @@ const runExpiryCheck = async () => {
           .from('subscriptions').update({ status: 'expired' }).eq('id', sub.id);
         if (subErr) throw subErr;
 
-        const { error: bizErr } = await supabase
-          .from('businesses').update({ is_active: false }).eq('id', sub.business_id);
-        if (bizErr) throw bizErr;
+        // Another unexpired active/trial row (e.g. a newer plan) keeps the
+        // business live — only deactivate when nothing else covers it.
+        if (await hasOtherLiveSubscription(sub.business_id, sub.id, now)) {
+          logger.info(`Business ${sub.business_id} keeps running: another active/trial subscription covers it after ${sub.id} expired`);
+        } else {
+          const { error: bizErr } = await supabase
+            .from('businesses').update({ is_active: false }).eq('id', sub.business_id);
+          if (bizErr) throw bizErr;
+        }
 
         // Clear Redis caches
         await redis.del(CACHE_KEY(sub.business_id));
@@ -254,9 +277,13 @@ const runExpiryCheck = async () => {
           .from('subscriptions').update({ status: 'paused' }).eq('id', sub.id);
         if (subErr) throw subErr;
 
-        const { error: bizErr } = await supabase
-          .from('businesses').update({ is_active: false }).eq('id', sub.business_id);
-        if (bizErr) throw bizErr;
+        if (await hasOtherLiveSubscription(sub.business_id, sub.id, now)) {
+          logger.info(`Business ${sub.business_id} keeps running: another active/trial subscription covers it after ${sub.id} was paused`);
+        } else {
+          const { error: bizErr } = await supabase
+            .from('businesses').update({ is_active: false }).eq('id', sub.business_id);
+          if (bizErr) throw bizErr;
+        }
 
         await redis.del(CACHE_KEY(sub.business_id));
 
@@ -273,7 +300,21 @@ const runExpiryCheck = async () => {
       }
     }
 
-    return { expiredCount: expiredSubs.length, pausedCount: expiredGrace.length };
+    // ── Abandoned autopay checkouts — a pending_start autopay row whose short
+    // window has passed was never confirmed by Razorpay. Expire it; the
+    // business is untouched (the row never gated anything).
+    const { data: stalePending, error: staleErr } = await supabase
+      .from('subscriptions')
+      .update({ status: 'expired' })
+      .eq('status', 'pending_start')
+      .eq('is_autopay', true)
+      .lt('end_date', now)
+      .select('id');
+    if (staleErr) throw staleErr;
+
+    logger.info(`Expired ${(stalePending || []).length} stale pending_start autopay subscriptions`);
+
+    return { expiredCount: expiredSubs.length, pausedCount: expiredGrace.length, stalePendingCount: (stalePending || []).length };
   } catch (error) {
     logger.error('Error in runExpiryCheck:', error);
     throw error;

@@ -4,6 +4,7 @@ const supabase = require('../config/supabase');
 const subscriptionService = require('../services/subscription.service');
 const usageService = require('../services/usage.service');
 const razorpaySubscriptionsService = require('../services/razorpaySubscriptions.service');
+const { getCurrentSubscriptionRow, getHigherActiveSubscription } = require('../services/currentSubscription.service');
 const { successResponse, errorResponse } = require('../utils/response');
 const config = require('../config/env');
 const logger = require('../utils/logger');
@@ -23,12 +24,7 @@ const getCurrentSubscription = async (req, res, next) => {
     const businessId = req.user.businessId;
 
     const [subResult, usage] = await Promise.all([
-      supabase
-        .from('subscriptions')
-        .select('*, plan:plans(*)')
-        .eq('business_id', businessId)
-        .in('status', ['active', 'trial'])
-        .maybeSingle(),
+      getCurrentSubscriptionRow(businessId, { statuses: ['active', 'trial'] }),
       usageService.getUsageForBusiness(businessId)
     ]);
 
@@ -182,9 +178,9 @@ const cancelAutoRenew = async (req, res, next) => {
   try {
     const businessId = req.user.businessId;
 
-    const { data: sub } = await supabase
-      .from('subscriptions').select('*').eq('business_id', businessId)
-      .in('status', ['active', 'past_due']).maybeSingle();
+    const { data: sub, error: subLookupErr } =
+      await getCurrentSubscriptionRow(businessId, { statuses: ['active', 'past_due'] });
+    if (subLookupErr) throw subLookupErr;
     if (!sub) return errorResponse(res, 404, 'No active subscription found');
     if (!sub.auto_renew) return errorResponse(res, 400, 'Auto-renew is already disabled');
 
@@ -248,6 +244,18 @@ const createAutopaySubscription = async (req, res, next) => {
       return errorResponse(res, 400, 'Invalid monthly price on plan');
     }
 
+    // 0. Refuse a downgrade while a higher paid plan is still running — the
+    //    activation webhook would otherwise cancel it and forfeit paid time.
+    //    Same or higher price is allowed.
+    const higherSub = await getHigherActiveSubscription(businessId, plan);
+    if (higherSub) {
+      const until = new Date(higherSub.end_date).toLocaleDateString('en-IN', {
+        day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata'
+      });
+      return errorResponse(res, 409,
+        `Your ${higherSub.plan.display_name} plan is active until ${until}. You can switch to ${plan.display_name} after it ends.`);
+    }
+
     // 1. Get-or-create the Razorpay Plan for this (plan, price) combo.
     const razorpayPlanId = await razorpaySubscriptionsService
       .getOrCreateRazorpayPlan(plan, pricePaise);
@@ -264,10 +272,9 @@ const createAutopaySubscription = async (req, res, next) => {
       }
     });
 
-    // 3. Insert the pending DB row. We create as 'active' (not pending) so
-    //    tenant cache / feature gating already works in the ~seconds between
-    //    checkout completion and the webhook. The webhook will re-set the
-    //    correct end_date and status.
+    // 3. Insert the DB row: 'pending_start' if the business already has a live
+    //    subscription (it stays in force until the activated webhook), 'active'
+    //    only if it has none. The webhook sets the real end_date.
     const dbRow = await subscriptionService.createAutopaySubscriptionRow(
       businessId,
       planId,

@@ -13,10 +13,14 @@ const from = (table) => {
   const q = {
     select: () => q,
     eq: (c, v) => { filters.push(r => r[c] === v); return q; },
+    in: () => q,
     maybeSingle: async () => {
       if (table === 'businesses') return { data: businesses.filter(b => filters.every(f => f(b)))[0] || null, error: null };
-      return { data: null, error: null }; // no active subscription row
-    }
+      return { data: null, error: null };
+    },
+    // The subscription lookup is now a plain multi-row select (shared pick
+    // rule in currentSubscription.service); no rows = no active subscription.
+    then: (resolve) => resolve({ data: [], error: null })
   };
   return q;
 };

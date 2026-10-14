@@ -1,4 +1,4 @@
-const supabase = require('../config/supabase');
+const { getCurrentSubscriptionRow } = require('../services/currentSubscription.service');
 const { errorResponse } = require('../utils/response');
 const redis = require('../config/redis');
 
@@ -20,12 +20,7 @@ const requireFeature = (featureName) => {
         subscription = JSON.parse(subscription);
       } else {
         // Query DB if not in cache
-        const { data, error } = await supabase
-          .from('subscriptions')
-          .select('*, plan:plans(*)')
-          .eq('business_id', businessId)
-          .eq('status', 'active')
-          .maybeSingle();
+        const { data, error } = await getCurrentSubscriptionRow(businessId, { statuses: ['active'] });
         if (error) throw error;
         subscription = data;
 

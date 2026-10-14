@@ -99,6 +99,39 @@ const markEventProcessedOrSkip = async (eventId, eventType) => {
 };
 
 /**
+ * Mark the business's other active/trial rows 'cancelled' once `keepId` has
+ * been activated, and cancel their Razorpay autopay mandate (immediately — the
+ * new subscription replaces it) so the customer isn't billed twice. A Razorpay
+ * failure is logged loudly but does not stop the DB row being cancelled; the
+ * old mandate would then need cancelling by hand.
+ */
+const supersedeOtherSubscriptions = async (businessId, keepId) => {
+  const { data: others, error } = await supabase
+    .from('subscriptions').select('id, is_autopay, razorpay_subscription_id')
+    .eq('business_id', businessId)
+    .in('status', ['active', 'trial'])
+    .neq('id', keepId);
+  if (error) throw error;
+
+  for (const old of others || []) {
+    if (old.is_autopay && old.razorpay_subscription_id) {
+      try {
+        // Lazy: that module builds a Razorpay client at load, which throws
+        // without keys — and this file is imported by unrelated code and tests.
+        const razorpaySubscriptionsService = require('./razorpaySubscriptions.service');
+        await razorpaySubscriptionsService.cancelRazorpaySubscription(old.razorpay_subscription_id);
+      } catch (rzpErr) {
+        logger.error(`Could not cancel superseded Razorpay subscription ${old.razorpay_subscription_id} (db ${old.id}) — cancel it manually to stop billing:`, rzpErr);
+      }
+    }
+    const { error: cancelErr } = await supabase.from('subscriptions')
+      .update({ status: 'cancelled' }).eq('id', old.id);
+    if (cancelErr) throw cancelErr;
+    logger.info(`Subscription ${old.id} superseded by ${keepId} for business ${businessId}`);
+  }
+};
+
+/**
  * subscription.activated — fires once, the first time the mandate is
  * successfully charged. Flips the DB row from its 'active'-placeholder /
  * 'pending_start' state to a real 'active' with the correct end_date.
@@ -119,6 +152,15 @@ const handleSubscriptionActivated = async (payload, eventId) => {
   if (!dbSub) {
     logger.warn(`subscription.activated for unknown razorpay sub ${rzpSub.id}`);
     return;
+  }
+
+  // The new mandate is confirmed — retire the business's other live rows so
+  // only one stays active. Failures are logged, not thrown: the event is
+  // already marked processed, so a retry would be skipped.
+  try {
+    await supersedeOtherSubscriptions(dbSub.business_id, dbSub.id);
+  } catch (supersedeErr) {
+    logger.error(`Error superseding old subscriptions for business ${dbSub.business_id} after activating ${dbSub.id}:`, supersedeErr);
   }
 
   // Ensure business is active (activation of an upgrade from paused should re-enable)
