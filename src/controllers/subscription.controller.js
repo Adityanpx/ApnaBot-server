@@ -143,7 +143,7 @@ const verifyAndActivate = async (req, res, next) => {
     } = req.body;
     const businessId = req.user.businessId;
 
-    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature || !planId) {
+    if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
       return errorResponse(res, 400, 'Missing payment verification fields');
     }
 
@@ -158,12 +158,61 @@ const verifyAndActivate = async (req, res, next) => {
       return errorResponse(res, 400, 'Invalid payment signature');
     }
 
+    // The client's planId/durationMonths are not trusted: the plan, duration and
+    // owning business come from the order notes /create wrote (server-side, on
+    // Razorpay's order), so a cheap order can't be claimed as a pricier plan.
+    const order = await razorpay.orders.fetch(razorpay_order_id);
+    const notes = order?.notes || {};
+    if (!notes.businessId || String(notes.businessId) !== String(businessId)) {
+      logger.warn(`Payment verify: order ${razorpay_order_id} does not belong to business ${businessId}`);
+      return errorResponse(res, 403, 'This payment does not belong to your business.');
+    }
+    const orderPlanId = notes.planId;
+    const orderDurationMonths = Number(notes.durationMonths);
+    if (!orderPlanId || !Number.isInteger(orderDurationMonths) || orderDurationMonths < 1) {
+      logger.error(`Payment verify: order ${razorpay_order_id} (payment ${razorpay_payment_id}, business ${businessId}) has no usable plan/duration notes`);
+      return errorResponse(res, 400, 'This payment is not linked to a subscription plan. Contact support.');
+    }
+    if ((planId && String(planId) !== String(orderPlanId)) ||
+        (req.body.durationMonths !== undefined && Number(durationMonths) !== orderDurationMonths)) {
+      logger.warn(`Payment verify: plan/duration mismatch for order ${razorpay_order_id}, business ${businessId}: paid plan ${orderPlanId}/${orderDurationMonths}mo, claimed ${planId}/${durationMonths}mo`);
+      return errorResponse(res, 400, 'The plan or duration does not match what was paid for.');
+    }
+
+    // Idempotent: a retry/double-click of /verify for an order already activated
+    // returns that subscription instead of stacking another period.
+    const { data: already, error: alreadyErr } = await supabase
+      .from('subscriptions')
+      .select('*, plan:plans(*)')
+      .eq('business_id', businessId)
+      .eq('razorpay_subscription_id', razorpay_order_id)
+      .limit(1);
+    if (alreadyErr) throw alreadyErr;
+    if (already && already.length > 0) {
+      const row = already[0];
+      return successResponse(res, 200, { subscription: { ...toCamelCase(row), plan: toCamelCase(row.plan) } }, 'Subscription already activated');
+    }
+
+    const { data: plan } = await supabase.from('plans').select('*').eq('id', orderPlanId).maybeSingle();
+    if (!plan) {
+      logger.error(`Payment verify: PAID order ${razorpay_order_id} (payment ${razorpay_payment_id}, business ${businessId}) references missing plan ${orderPlanId} — manual fix/refund needed`);
+      return errorResponse(res, 404, 'Plan not found. Your payment was received — contact support.');
+    }
+
+    // Same downgrade guard as /create, re-checked: the business may have
+    // bought a higher plan between creating this order and paying it.
+    const higherSub = await getHigherActiveSubscription(businessId, plan);
+    if (higherSub) {
+      logger.error(`Payment verify: PAID order ${razorpay_order_id} (payment ${razorpay_payment_id}, business ${businessId}) rejected by downgrade guard (higher active sub ${higherSub.id}) — refund needed`);
+      return errorResponse(res, 409, `${downgradeBlockedMessage(higherSub, plan)} Your payment was received — contact support for a refund.`);
+    }
+
     // Activate subscription
-    const subscription = await subscriptionService.createSubscription(businessId, planId, {
+    const subscription = await subscriptionService.createSubscription(businessId, orderPlanId, {
       status: 'active',
       razorpayPaymentId: razorpay_payment_id,
       razorpaySubscriptionId: razorpay_order_id,
-      durationMonths
+      durationMonths: orderDurationMonths
     });
 
     const { data: populated, error } = await supabase
@@ -360,6 +409,39 @@ const verifyAutopayAuthorization = async (req, res, next) => {
   }
 };
 
+// Whitelisted fields of Razorpay Checkout's payment.failed `error` object, with
+// a per-field length cap. Anything else in the body is ignored, so no secret or
+// arbitrary payload can reach the logs.
+const PAYMENT_FAILED_FIELDS = {
+  code: 100, reason: 100, source: 100, step: 100, description: 300,
+  orderId: 100, paymentId: 100, flow: 20
+};
+// Strings only; control chars (incl. newlines) stripped so a client can't forge log lines.
+const cleanLogField = (value, max) =>
+  typeof value === 'string' ? value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, max) : undefined;
+
+/**
+ * POST /api/subscription/payment-failed
+ * Client reports a Razorpay Checkout payment.failed event. Logging only — the
+ * browser alert otherwise hides why the bank/Razorpay refused the payment.
+ * Body: { code, reason, source, step, description, orderId, paymentId, flow }
+ */
+const reportPaymentFailed = async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const details = {};
+    for (const [field, max] of Object.entries(PAYMENT_FAILED_FIELDS)) {
+      const value = cleanLogField(body[field], max);
+      if (value) details[field] = value;
+    }
+    logger.warn('Razorpay checkout payment.failed (client report)', { businessId: req.user.businessId, ...details });
+    return successResponse(res, 200, { logged: true });
+  } catch (error) {
+    logger.error('Error in reportPaymentFailed:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   getCurrentSubscription,
   getPlans,
@@ -367,5 +449,6 @@ module.exports = {
   verifyAndActivate,
   cancelAutoRenew,
   createAutopaySubscription,
-  verifyAutopayAuthorization
+  verifyAutopayAuthorization,
+  reportPaymentFailed
 };

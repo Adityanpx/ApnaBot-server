@@ -12,8 +12,9 @@ const {
   verifyAndActivate,
   cancelAutoRenew,
   createAutopaySubscription,
-  verifyAutopayAuthorization
-} = require('../controllers/subscription.controller');
+  verifyAutopayAuthorization,
+  reportPaymentFailed
+} =require('../controllers/subscription.controller');
 
 // Plan listing is public — no token, no business (signup / onboarding screens
 // show it before login). Must stay above router.use(protect).
@@ -30,5 +31,6 @@ router.post('/verify', verifyAndActivate);
 router.post('/cancel', cancelAutoRenew);
 router.post('/autopay/create', createAutopaySubscription);
 router.post('/autopay/verify', verifyAutopayAuthorization);
+router.post('/payment-failed', reportPaymentFailed);
 
 module.exports = router;

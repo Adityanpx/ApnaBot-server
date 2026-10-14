@@ -4,6 +4,7 @@ const subscriptionNotifications = require('./subscriptionNotifications.service')
 const tenantService = require('./tenant.service');
 const logger = require('../utils/logger');
 const { getCurrentSubscriptionRow } = require('./currentSubscription.service');
+const { supersedeOtherSubscriptions } = require('./supersedeSubscriptions.service');
 
 const CACHE_KEY = (businessId) => `subscription:${businessId}`;
 const CACHE_TTL = 300; // 5 minutes
@@ -49,7 +50,7 @@ const invalidateSubscriptionCache = async (businessId) => {
 
 /**
  * Create a new subscription (trial or paid).
- * Cancels any existing active subscription first.
+ * Cancels the business's other live subscriptions first (and their autopay mandates).
  */
 const createSubscription = async (businessId, planId, options = {}) => {
   try {
@@ -67,13 +68,9 @@ const createSubscription = async (businessId, planId, options = {}) => {
       ? new Date(existing.end_date)
       : null;
 
-    // Cancel existing active subscriptions
-    const { error: cancelErr } = await supabase
-      .from('subscriptions')
-      .update({ status: 'cancelled' })
-      .eq('business_id', businessId)
-      .eq('status', 'active');
-    if (cancelErr) throw cancelErr;
+    // Retire the business's other live rows, cancelling any autopay mandate at
+    // Razorpay so it stops charging (a Razorpay failure is logged, not thrown).
+    await supersedeOtherSubscriptions(businessId, { statuses: ['active', 'trial', 'past_due', 'pending_start'] });
 
     const durationMonths = options.durationMonths || 1;
     const startDate = new Date();
