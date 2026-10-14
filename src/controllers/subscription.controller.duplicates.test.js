@@ -8,7 +8,9 @@ const { createFakeSupabase, stub } = require('../testUtils/fakeSupabase');
 let fake;
 const created = [];
 const cancelled = [];
-stub('razorpay', function Razorpay() { return {}; }, __filename);
+stub('razorpay', function Razorpay() {
+  return { orders: { create: async (o) => ({ id: 'order1', amount: o.amount, currency: 'INR' }) } };
+}, __filename);
 stub('../config/env', { RAZORPAY_KEY_ID: 'rzp_test_x', RAZORPAY_KEY_SECRET: 's' }, __filename);
 stub('../config/supabase', { from: (t) => fake.from(t) }, __filename);
 stub('../utils/logger', { info: () => {}, error: () => {}, warn: () => {} }, __filename);
@@ -87,6 +89,59 @@ test('autopay create allows a higher plan', async () => {
   const out = await call(ctrl.createAutopaySubscription, { planId: 'biz' });
   assert.equal(out.status, 200);
   assert.equal(created.length, 1);
+});
+
+// ── one-time /create has the same downgrade guard ────────────────
+test('one-time create rejects a LOWER plan while a higher paid plan is active, with the same message', async () => {
+  fake = createFakeSupabase({ plans, subscriptions: [twoRows()[0]] });
+  const out = await call(ctrl.createSubscriptionOrder, { planId: 'basic', durationMonths: 1 });
+  assert.equal(out.status, 409);
+  assert.match(out.body.message, /^Your Business plan is active until 5 Feb 2027\. You can switch to Basic after it ends\.$/);
+});
+
+test('one-time create allows the same plan, a higher plan, and a lower plan once the higher one has ended', async () => {
+  fake = createFakeSupabase({ plans, subscriptions: [twoRows()[0]] });
+  assert.equal((await call(ctrl.createSubscriptionOrder, { planId: 'biz' })).status, 200);
+
+  fake = createFakeSupabase({ plans, subscriptions: [{ ...twoRows()[1], end_date: futureIso(10) }] });
+  assert.equal((await call(ctrl.createSubscriptionOrder, { planId: 'biz' })).status, 200);
+
+  fake = createFakeSupabase({ plans, subscriptions: [{ ...twoRows()[0], end_date: '2026-09-01T00:00:00Z' }] });
+  assert.equal((await call(ctrl.createSubscriptionOrder, { planId: 'basic' })).status, 200);
+});
+
+// ── public plans endpoint ────────────────────────────────────────
+test('GET /subscription/plans: active only, ordered by sortOrder then price, display fields in, razorpay ids out', async () => {
+  const mk = (id, price, extra) => ({
+    id, name: id, display_name: id, price, is_active: true, is_popular: false, features: ['f'], sort_order: 0,
+    duration_options: [{ months: 1, price }], razorpay_plan_id: 'plan_old', razorpay_plan_ids: { 'live:100': 'plan_x' }, ...extra
+  });
+  fake = createFakeSupabase({ plans: [
+    mk('c', 699, {}), mk('a', 199, {}), mk('z', 999, { sort_order: -1, is_popular: true }), mk('off', 1, { is_active: false })
+  ] });
+  const out = await call(ctrl.getPlans);
+  assert.equal(out.status, 200);
+  const list = out.body.data.plans;
+  assert.deepEqual(list.map(p => p.name), ['z', 'a', 'c']);
+  assert.equal(list[0].isPopular, true);
+  assert.deepEqual(list[0].features, ['f']);
+  assert.equal(list[0].sortOrder, -1);
+  assert.deepEqual(list[0].durationOptions, [{ months: 1, price: 999 }]);
+  for (const p of list) {
+    assert.equal('razorpayPlanId' in p, false);
+    assert.equal('razorpayPlanIds' in p, false);
+  }
+});
+
+test('an inactive plan is hidden from the public list but still resolves for its existing subscriber', async () => {
+  fake = createFakeSupabase({
+    plans: [{ id: 'old', name: 'old', display_name: 'Old', price: 99, is_active: false, duration_options: [{ months: 1, price: 99 }] }],
+    subscriptions: [{ id: 's1', business_id: 'b1', plan_id: 'old', status: 'active', end_date: futureIso(10), created_at: '2026-10-01T00:00:00Z' }]
+  });
+  assert.deepEqual((await call(ctrl.getPlans)).body.data.plans, []);
+  const mine = await call(ctrl.getCurrentSubscription);
+  assert.equal(mine.body.data.plan.name, 'old');
+  assert.equal(mine.body.data.isActive, true);
 });
 
 test('autopay create is not blocked by an ended higher plan', async () => {

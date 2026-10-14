@@ -1085,7 +1085,8 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
   (deactivate) in `staff.controller.js` (a Redis failure there is logged, not fatal). There is no
   password-change endpoint yet; call it from one when added.
 - **`GET /api/subscription/plans` is public** (no token), above `router.use(protect)`; everything else under
-  `/api/subscription` still needs login. It returns all `plans` columns (`select('*')`).
+  `/api/subscription` still needs login. It returns active plans only, camelCased, minus `razorpay_plan_id` /
+  `razorpay_plan_ids` (see "Plans managed from Super Admin").
 - **One-time cutover at deploy, no flag.** Existing refresh tokens have no `sid`, so every logged-in user
   (web, Super Admin, Flutter; Search cab AI's owner included) must log in once, within `JWT_EXPIRY` of the
   deploy as their access token lapses. WhatsApp traffic does not use these tokens. **Do not push until web,
@@ -1145,8 +1146,8 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
 ## Reply photo gallery + video (built 2026-10-16, migration `20261016120000_reply_media_gallery.sql`)
 
 - **Limits per plan.** `plans.images_per_reply` (integer 1-10, total photos per reply, photo #1 included) and
-  `plans.video_per_reply` (boolean). Basic 1/no video, Pro 3/no video, Business 10/video. `planSeed.js` matches;
-  the migration backfills by plan name. Admin create/update plan accept `imagesPerReply` / `videoPerReply`
+  `plans.video_per_reply` (boolean). Basic 1/no video, Pro 3/no video, Business 10/video. `planSeed.js` matches
+  (first-run defaults only, see below); the migration backfills by plan name. Admin create/update plan accept `imagesPerReply` / `videoPerReply`
   (integer 1..10, boolean). Plans endpoints return them camelCased.
 - **Columns.** `flow_nodes.gallery_media_ids` (jsonb array, default `[]`, ordered `business_media` ids of photos
   #2..N; jsonb because it must round-trip through `flow_snapshots` rows and is short) and
@@ -1236,6 +1237,53 @@ Tells the Flutter app which versions to accept. **Server only - no client reads 
   old bare-price keys (`19900`, `29900`) once Razorpay confirms them dead. Tests:
   `src/services/razorpaySubscriptions.service.test.js`.
 - `subscriptions.is_autopay=false` rows are the one-time Orders flow (`/create`, `/verify`), still live.
+
+## Plans managed from Super Admin (built 2026-10-19, migration `20261019120000_plans_popular_features_sort.sql`, uncommitted)
+
+Goal: a plan created or edited in Super Admin shows up in the web app and Flutter with no code change.
+
+- **New columns** (additive, defaulted): `plans.is_popular boolean` (false), `plans.features jsonb` (`[]`, array
+  of strings; check constraint), `plans.sort_order int` (0). Admin create/update accept `isPopular`,
+  `features` (max 30 strings, 200 chars each), `sortOrder`, `storageLimitMb` (non-negative integer; before this
+  a new plan always got the DB default 200 and storage was not editable), and create honours `isActive`.
+- **`plans.price` is the monthly price and the single source of truth.** `src/utils/planFields.js`
+  `buildDurationOptions(price, existing)` derives `duration_options`: Monthly = price (discount 0); 3/6/12
+  months = `Math.round(price x months x (1 - discount/100))`, discount from the tier's stored value, else
+  10/20/30 (Quarterly / Half-Yearly / Yearly). Custom extra tiers are kept and recomputed. Create and update
+  write `price` and `duration_options` in ONE statement (update re-derives whenever `price` or
+  `durationOptions` is sent). A supplied `durationOptions` with no Monthly tier, or whose Monthly price differs
+  from the plan price, is a 400; its non-Monthly amounts are ignored (only months/label/discount are used).
+- **Public `GET /api/subscription/plans`:** active plans, sorted `sort_order` then price (sorted in JS; the
+  table is tiny), all columns camelCased except the two Razorpay id columns, which are stripped. Admin
+  `GET /api/admin/plans` uses the same order and includes inactive plans (the authenticated
+  `GET /api/subscription` plan object still carries the Razorpay ids). **An inactive plan is hidden from new
+  purchases but still honoured for existing subscribers**: subscription reads join `plan:plans(*)` without an
+  `is_active` filter; only create/autopay/admin-assign reject an inactive plan.
+- **Seed is insert-only.** `npm run seed` creates missing basic/pro/business (tiers via `buildDurationOptions`)
+  and never touches an existing plan. Before this it overwrote price, limits, tiers and `is_active` of those
+  three on every run.
+- **Downgrade guard now on one-time `POST /api/subscription/create` too** (409, same message as autopay;
+  price-ordered via `getHigherActiveSubscription`). `/verify` is not guarded (payment already taken at order
+  time). Admin `changeBusinessPlan` / grant still bypass it by design.
+- **Video-limit error** (`PLAN_LIMIT_VIDEO`) names the cheapest active plan with `video_per_reply = true`, else
+  "Video in replies is not available on your plan."
+- **Script:** `src/scripts/recomputePlanDurationOptions.js` (dry run; `--confirm` writes) recomputes
+  `duration_options` for every plan from price + stored discounts and prints a before/after diff per tier. It
+  never writes `price`, and its update is guarded on the price it read.
+- **Still needs code for a new plan:** a brand-new kind of feature flag (`requireFeature` only knows
+  `paymentLink` / `staff` / `booking`). `rule_limit` and `customer_limit` are stored and shown but never
+  enforced. Revenue reports sum `plans.price` (monthly) whatever duration was bought, and no amount paid is
+  stored on `subscriptions`. `deletePlan` counts only `active` subscriptions (not trial / past_due).
+- **Deploy: apply the migration first, then the server** (the new code selects/writes the new columns). Not a
+  cutover and no webhook/booking path touched; Search cab AI is unaffected. Plan edits reach live tenants only
+  after the subscription (5 min) / tenant (1 h) caches expire. After deploy, run the recompute script as a dry
+  run, review the diff (rounding will change a few seeded amounts, e.g. Basic 6-month 954 -> 955), then
+  `--confirm`.
+- Tests: `utils/planFields.test.js`, `controllers/admin.plans.test.js`, `seeds/planSeed.test.js`,
+  `scripts/recomputePlanDurationOptions.test.js`, plus additions to
+  `subscription.controller.duplicates.test.js` and `flowGraph.replyMedia.test.js`.
+- **Pre-existing, unrelated:** `controllers/admin.chatMediaRetention.test.js` fails at load (Razorpay SDK
+  throws without a key id; the shared test harness config has none). Confirmed failing on the unmodified tree.
 
 ## Known gaps / deferred work
 

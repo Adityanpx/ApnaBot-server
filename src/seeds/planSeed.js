@@ -1,7 +1,8 @@
-// src/seeds/planSeed.js — REPLACE ENTIRE FILE
+// src/seeds/planSeed.js — first-run defaults only; never overwrites an existing plan.
 
 const supabase = require('../config/supabase');
 const logger = require('../utils/logger');
+const { buildDurationOptions } = require('../utils/planFields');
 
 const plans = [
   {
@@ -52,15 +53,17 @@ const seedPlans = async () => {
         .from('plans').select('id').eq('name', planData.name).maybeSingle();
       if (findErr) throw findErr;
 
-      if (!existing) {
-        const { error } = await supabase.from('plans').insert(planData);
-        if (error) throw error;
-        logger.info(`Plan created: ${planData.display_name}`);
-      } else {
-        const { error } = await supabase.from('plans').update(planData).eq('name', planData.name);
-        if (error) throw error;
-        logger.info(`Plan updated: ${planData.display_name}`);
+      // Insert-only: plans are managed from Super Admin, so an existing plan is never overwritten.
+      if (existing) {
+        logger.info(`Plan exists, left untouched: ${planData.display_name}`);
+        continue;
       }
+      const { error } = await supabase.from('plans').insert({
+        ...planData,
+        duration_options: buildDurationOptions(planData.price, planData.duration_options)
+      });
+      if (error) throw error;
+      logger.info(`Plan created: ${planData.display_name}`);
     }
     logger.info('Plan seeding complete');
   } catch (error) {

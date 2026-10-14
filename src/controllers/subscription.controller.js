@@ -9,11 +9,23 @@ const { successResponse, errorResponse } = require('../utils/response');
 const config = require('../config/env');
 const logger = require('../utils/logger');
 const { toCamelCase } = require('../utils/caseConvert');
+const { comparePlans } = require('../utils/planFields');
 
 const razorpay = new Razorpay({
   key_id: config.RAZORPAY_KEY_ID,
   key_secret: config.RAZORPAY_KEY_SECRET
 });
+
+// Public plans response: everything a client renders, minus internal Razorpay ids.
+const toPublicPlan = ({ razorpay_plan_id, razorpay_plan_ids, ...plan }) => toCamelCase(plan);
+
+// Same wording on every path that refuses a downgrade while a higher paid plan runs.
+const downgradeBlockedMessage = (higherSub, plan) => {
+  const until = new Date(higherSub.end_date).toLocaleDateString('en-IN', {
+    day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata'
+  });
+  return `Your ${higherSub.plan.display_name} plan is active until ${until}. You can switch to ${plan.display_name} after it ends.`;
+};
 
 /**
  * GET /api/subscription
@@ -54,10 +66,9 @@ const getPlans = async (req, res, next) => {
     const { data: plans, error } = await supabase
       .from('plans')
       .select('*')
-      .eq('is_active', true)
-      .order('price', { ascending: true });
+      .eq('is_active', true);
     if (error) throw error;
-    return successResponse(res, 200, { plans: (plans || []).map(toCamelCase) });
+    return successResponse(res, 200, { plans: (plans || []).sort(comparePlans).map(toPublicPlan) });
   } catch (error) {
     logger.error('Error in getPlans:', error);
     next(error);
@@ -80,6 +91,10 @@ const createSubscriptionOrder = async (req, res, next) => {
 
     const durationOption = (plan.duration_options || []).find(d => d.months === durationMonths);
     if (!durationOption) return errorResponse(res, 400, `Duration of ${durationMonths} months is not available for this plan`);
+
+    // Same downgrade guard as autopay: never let a purchase replace a higher paid plan that is still running.
+    const higherSub = await getHigherActiveSubscription(businessId, plan);
+    if (higherSub) return errorResponse(res, 409, downgradeBlockedMessage(higherSub, plan));
 
     const order = await razorpay.orders.create({
       amount: durationOption.price * 100, // paise
@@ -248,13 +263,7 @@ const createAutopaySubscription = async (req, res, next) => {
     //    activation webhook would otherwise cancel it and forfeit paid time.
     //    Same or higher price is allowed.
     const higherSub = await getHigherActiveSubscription(businessId, plan);
-    if (higherSub) {
-      const until = new Date(higherSub.end_date).toLocaleDateString('en-IN', {
-        day: 'numeric', month: 'short', year: 'numeric', timeZone: 'Asia/Kolkata'
-      });
-      return errorResponse(res, 409,
-        `Your ${higherSub.plan.display_name} plan is active until ${until}. You can switch to ${plan.display_name} after it ends.`);
-    }
+    if (higherSub) return errorResponse(res, 409, downgradeBlockedMessage(higherSub, plan));
 
     // 1. Get-or-create the Razorpay Plan for this (plan, price) combo.
     const razorpayPlanId = await razorpaySubscriptionsService

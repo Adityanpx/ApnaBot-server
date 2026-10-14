@@ -9,6 +9,16 @@ const fail = (status, message, errors = null) => ({ error: { status, message, er
 
 const photosLabel = (n) => `${n} photo${n === 1 ? '' : 's'}`;
 
+// Display name of the cheapest active plan that allows video in replies (null if none / lookup fails).
+const cheapestVideoPlanName = async () => {
+  const { data, error } = await supabase
+    .from('plans').select('name, display_name, price')
+    .eq('is_active', true).eq('video_per_reply', true)
+    .order('price', { ascending: true }).limit(1);
+  if (error || !data || data.length === 0) return null;
+  return data[0].display_name || data[0].name;
+};
+
 const isId = (v) => typeof v === 'string' && v.length > 0;
 
 /**
@@ -114,7 +124,8 @@ const prepareReplyMediaWrite = async ({ businessId, existing, galleryMediaIds, v
         { code: 'PLAN_LIMIT_PHOTOS', limit: limits.maxPhotos, plan: planName });
     }
     if (videoIncrease && !limits.videoAllowed) {
-      return fail(403, 'Video in replies is available on the Business plan.',
+      const videoPlan = await cheapestVideoPlanName();
+      return fail(403, videoPlan ? `Video in replies is available on the ${videoPlan} plan.` : 'Video in replies is not available on your plan.',
         { code: 'PLAN_LIMIT_VIDEO', limit: 0, plan: planName });
     }
   }

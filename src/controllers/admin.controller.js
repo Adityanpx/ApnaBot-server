@@ -10,6 +10,9 @@ const { invalidateRulesCache } = require('../services/chatbot.service');
 const { successResponse, errorResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
 const logger = require('../utils/logger');
+const {
+  isPrice, validateDurationOptions, buildDurationOptions, validatePlanExtras, cleanFeatures, comparePlans
+} = require('../utils/planFields');
 const razorpaySubscriptionsService = require('../services/razorpaySubscriptions.service');
 
 // Tables with business_id and ON DELETE CASCADE on the businesses FK (see
@@ -609,10 +612,9 @@ const getRevenueReport = async (req, res, next) => {
  */
 const getPlans = async (req, res, next) => {
   try {
-    const { data: plans, error } = await supabase
-      .from('plans').select('*').order('price', { ascending: true });
+    const { data: plans, error } = await supabase.from('plans').select('*');
     if (error) throw error;
-    return successResponse(res, 200, { plans: (plans || []).map(toCamelCase) });
+    return successResponse(res, 200, { plans: (plans || []).sort(comparePlans).map(toCamelCase) });
   } catch (error) {
     logger.error('Error in getPlans:', error);
     next(error);
@@ -639,20 +641,31 @@ const createPlan = async (req, res, next) => {
     const {
       name, displayName, price, msgLimit, ruleLimit,
       customerLimit, bookingEnabled, paymentLinkEnabled,
-      staffEnabled, maxStaff, durationOptions, imagesPerReply, videoPerReply
+      staffEnabled, maxStaff, durationOptions, imagesPerReply, videoPerReply,
+      isActive, isPopular, features, sortOrder, storageLimitMb
     } = req.body;
 
     if (!name || !displayName || price === undefined) {
       return errorResponse(res, 400, 'name, displayName, and price are required');
     }
+    if (!isPrice(price)) return errorResponse(res, 400, 'price must be a non-negative number');
+    if (isActive !== undefined && typeof isActive !== 'boolean') {
+      return errorResponse(res, 400, 'isActive must be true or false');
+    }
     const replyMediaError = validateReplyMediaPlanFields({ imagesPerReply, videoPerReply });
     if (replyMediaError) return errorResponse(res, 400, replyMediaError);
+    const extrasError = validatePlanExtras({ features, isPopular, sortOrder, storageLimitMb });
+    if (extrasError) return errorResponse(res, 400, extrasError);
+    if (durationOptions !== undefined) {
+      const durationError = validateDurationOptions(durationOptions, price);
+      if (durationError) return errorResponse(res, 400, durationError);
+    }
 
     const { data: existing } = await supabase
       .from('plans').select('id').eq('name', name).maybeSingle();
     if (existing) return errorResponse(res, 409, 'A plan with this name already exists');
 
-    const { data: plan, error } = await supabase.from('plans').insert({
+    const insertRow = {
       name, display_name: displayName, price,
       msg_limit: msgLimit ?? 500,
       rule_limit: ruleLimit ?? 10,
@@ -663,9 +676,16 @@ const createPlan = async (req, res, next) => {
       max_staff: maxStaff ?? 0,
       images_per_reply: imagesPerReply ?? 1,
       video_per_reply: videoPerReply ?? false,
-      is_active: true,
-      duration_options: durationOptions || [{ months: 1, price, label: 'Monthly', discount: 0 }]
-    }).select().single();
+      is_active: isActive ?? true,
+      is_popular: isPopular ?? false,
+      features: features ? cleanFeatures(features) : [],
+      sort_order: sortOrder ?? 0,
+      // price is the monthly price; every tier amount is derived from it
+      duration_options: buildDurationOptions(price, durationOptions)
+    };
+    // storage_limit_mb has a DB default; only send it when the admin set one
+    if (storageLimitMb !== undefined) insertRow.storage_limit_mb = storageLimitMb;
+    const { data: plan, error } = await supabase.from('plans').insert(insertRow).select().single();
     if (error) throw error;
 
     logger.info(`Plan ${plan.name} created by superadmin`);
@@ -684,28 +704,52 @@ const updatePlan = async (req, res, next) => {
   try {
     const { id } = req.params;
 
-    const { data: existingPlan } = await supabase.from('plans').select('id').eq('id', id).maybeSingle();
+    const { data: existingPlan } = await supabase.from('plans').select('*').eq('id', id).maybeSingle();
     if (!existingPlan) return errorResponse(res, 404, 'Plan not found');
 
     const allowedFields = [
       'displayName', 'price', 'msgLimit', 'ruleLimit', 'customerLimit',
       'bookingEnabled', 'paymentLinkEnabled', 'staffEnabled', 'maxStaff', 'isActive',
-      'durationOptions', 'imagesPerReply', 'videoPerReply'
+      'durationOptions', 'imagesPerReply', 'videoPerReply',
+      'isPopular', 'features', 'sortOrder', 'storageLimitMb'
     ];
     const fieldMap = {
       displayName: 'display_name', msgLimit: 'msg_limit', ruleLimit: 'rule_limit',
       customerLimit: 'customer_limit', bookingEnabled: 'booking_enabled',
       paymentLinkEnabled: 'payment_link_enabled', staffEnabled: 'staff_enabled',
       maxStaff: 'max_staff', isActive: 'is_active', price: 'price',
-      durationOptions: 'duration_options', imagesPerReply: 'images_per_reply', videoPerReply: 'video_per_reply'
+      durationOptions: 'duration_options', imagesPerReply: 'images_per_reply', videoPerReply: 'video_per_reply',
+      isPopular: 'is_popular', features: 'features', sortOrder: 'sort_order', storageLimitMb: 'storage_limit_mb'
     };
 
     const replyMediaError = validateReplyMediaPlanFields(req.body);
     if (replyMediaError) return errorResponse(res, 400, replyMediaError);
+    const extrasError = validatePlanExtras(req.body);
+    if (extrasError) return errorResponse(res, 400, extrasError);
+    if (req.body.isActive !== undefined && typeof req.body.isActive !== 'boolean') {
+      return errorResponse(res, 400, 'isActive must be true or false');
+    }
+    if (req.body.price !== undefined && !isPrice(req.body.price)) {
+      return errorResponse(res, 400, 'price must be a non-negative number');
+    }
 
     const updates = {};
     for (const field of allowedFields) {
       if (req.body[field] !== undefined) updates[fieldMap[field]] = req.body[field];
+    }
+    if (updates.features) updates.features = cleanFeatures(updates.features);
+
+    // price is the monthly price; duration_options is derived from it and written in the
+    // SAME update. A supplied Monthly tier that disagrees, or no Monthly tier, is a 400.
+    if (req.body.price !== undefined || req.body.durationOptions !== undefined) {
+      const effectivePrice = req.body.price !== undefined ? req.body.price : Number(existingPlan.price);
+      if (req.body.durationOptions !== undefined) {
+        const durationError = validateDurationOptions(req.body.durationOptions, effectivePrice);
+        if (durationError) return errorResponse(res, 400, durationError);
+      }
+      updates.duration_options = buildDurationOptions(
+        effectivePrice, req.body.durationOptions !== undefined ? req.body.durationOptions : existingPlan.duration_options
+      );
     }
 
     const { data: plan, error } = await supabase
