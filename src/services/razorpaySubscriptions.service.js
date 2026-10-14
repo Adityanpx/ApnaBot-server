@@ -10,17 +10,54 @@ const razorpay = new Razorpay({
 });
 
 /**
- * Look up plan.razorpay_plan_ids[pricePaise]; create + persist a new
- * Razorpay Plan if that price hasn't been mapped yet. Persist via the
- * set_razorpay_plan_id RPC (atomic jsonb merge against the live row) so a
+ * Razorpay keeps test-mode and live-mode objects in separate worlds: a plan id
+ * created under rzp_test_ keys 400s ("The ID provided is invalid or could not
+ * be found") under rzp_live_ keys and vice versa. Derive the mode from the key
+ * prefix so stored plan ids can be keyed by it.
+ */
+const getKeyMode = () => {
+  const keyId = config.RAZORPAY_KEY_ID || '';
+  if (keyId.startsWith('rzp_live_')) return 'live';
+  if (keyId.startsWith('rzp_test_')) return 'test';
+  return 'unknown';
+};
+
+// razorpay_plan_ids keys are "<mode>:<pricePaise>" (e.g. "live:19900").
+const planKey = (mode, pricePaise) => `${mode}:${pricePaise}`;
+
+const isRazorpay400 = (err) => err?.statusCode === 400;
+const rzpDescription = (err) => err?.error?.description || err?.message || String(err);
+
+/**
+ * Look up plan.razorpay_plan_ids["<mode>:<pricePaise>"]; create + persist a new
+ * Razorpay Plan if that price hasn't been mapped yet for this key mode. Persist
+ * via the set_razorpay_plan_id RPC (atomic jsonb merge against the live row) so a
  * concurrent request for the same (plan, price) pair never creates two
  * Razorpay Plans for it — supabase-js's .update() can't reference a
  * column's own current value, hence the RPC.
+ *
+ * A stored id is verified with a Razorpay fetch first. Only a 400 (id not
+ * found for these keys) triggers re-creation; any other failure (network, 401,
+ * 5xx) is rethrown, because creating a plan is permanent and must not happen
+ * on a transient error.
  */
 const getOrCreateRazorpayPlan = async (plan, pricePaise) => {
-  const priceKey = String(pricePaise);
+  const mode = getKeyMode();
+  if (mode === 'unknown') {
+    throw new Error('RAZORPAY_KEY_ID must start with rzp_live_ or rzp_test_');
+  }
+  const priceKey = planKey(mode, pricePaise);
   const existingId = plan.razorpay_plan_ids?.[priceKey];
-  if (existingId) return existingId;
+
+  if (existingId) {
+    try {
+      await razorpay.plans.fetch(existingId);
+      return existingId;
+    } catch (err) {
+      if (!isRazorpay400(err)) throw err;
+      logger.warn(`Stored Razorpay plan ${existingId} (${priceKey}) not found in ${mode} mode for plan ${plan.id} — creating a replacement. Razorpay: ${rzpDescription(err)}`);
+    }
+  }
 
   const created = await razorpay.plans.create({
     period: 'monthly',
@@ -33,7 +70,8 @@ const getOrCreateRazorpayPlan = async (plan, pricePaise) => {
     },
     notes: {
       apnabot_plan_id: plan.id,
-      price_paise: priceKey
+      price_paise: String(pricePaise),
+      key_mode: mode
     }
   });
 
@@ -44,7 +82,7 @@ const getOrCreateRazorpayPlan = async (plan, pricePaise) => {
   });
   if (error) throw error;
 
-  logger.info(`Created Razorpay plan ${created.id} for plan ${plan.id} at ${pricePaise} paise`);
+  logger.info(`Created Razorpay plan ${created.id} (mode=${mode}, price=${pricePaise} paise) for plan ${plan.id}${existingId ? `, replacing ${existingId}` : ''}`);
   return created.id;
 };
 
@@ -55,17 +93,75 @@ const getOrCreateRazorpayPlan = async (plan, pricePaise) => {
  * first-cycle start.
  */
 const createRazorpaySubscription = async ({ razorpayPlanId, totalCount, startAt, notes }) => {
-  const sub = await razorpay.subscriptions.create({
-    plan_id: razorpayPlanId,
-    total_count: totalCount,
-    quantity: 1,
-    customer_notify: 1,
-    start_at: startAt || undefined,
-    notes: notes || {}
-  });
+  const mode = getKeyMode();
+  logger.info(`Creating Razorpay subscription: key_mode=${mode}, plan_id=${razorpayPlanId}, total_count=${totalCount}`);
+  let sub;
+  try {
+    sub = await razorpay.subscriptions.create({
+      plan_id: razorpayPlanId,
+      total_count: totalCount,
+      quantity: 1,
+      customer_notify: 1,
+      start_at: startAt || undefined,
+      notes: notes || {}
+    });
+  } catch (err) {
+    logger.error(`Razorpay subscriptions.create failed: key_mode=${mode}, plan_id=${razorpayPlanId}, status=${err?.statusCode}, code=${err?.error?.code}, description=${rzpDescription(err)}`);
+    throw err;
+  }
 
   logger.info(`Created Razorpay subscription ${sub.id} for plan ${razorpayPlanId}`);
   return sub;
+};
+
+/**
+ * Fetch every mapped Razorpay plan id and report which exist in the current
+ * key mode. Read-only (GETs only). Keys of the other mode are listed but
+ * not fetched. Active plans with no current-mode
+ * mapping are listed in `unmappedPlans` (a plan is created on first use).
+ */
+const verifyRazorpayPlans = async () => {
+  const mode = getKeyMode();
+  const { data: plans, error } = await supabase
+    .from('plans').select('id, name, is_active, razorpay_plan_ids');
+  if (error) throw error;
+
+  const entries = [];
+  const unmappedPlans = [];
+  for (const plan of plans || []) {
+    const ids = plan.razorpay_plan_ids || {};
+    let hasCurrent = false;
+    for (const [key, rzpPlanId] of Object.entries(ids)) {
+      const entry = { planId: plan.id, planName: plan.name, key, razorpayPlanId: rzpPlanId };
+      if (!key.startsWith(`${mode}:`)) {
+        entries.push({ ...entry, status: 'other_mode' });
+      } else {
+        hasCurrent = true;
+        try {
+          await razorpay.plans.fetch(rzpPlanId);
+          entries.push({ ...entry, status: 'ok' });
+        } catch (err) {
+          entries.push({
+            ...entry,
+            status: isRazorpay400(err) ? 'missing' : 'error',
+            detail: rzpDescription(err)
+          });
+        }
+      }
+    }
+    if (!hasCurrent && plan.is_active) unmappedPlans.push({ planId: plan.id, planName: plan.name });
+  }
+
+  const count = (status) => entries.filter(e => e.status === status).length;
+  return {
+    keyMode: mode,
+    summary: {
+      ok: count('ok'), missing: count('missing'), error: count('error'),
+      otherMode: count('other_mode')
+    },
+    entries,
+    unmappedPlans
+  };
 };
 
 /**
@@ -103,7 +199,9 @@ const fetchRazorpaySubscription = async (razorpaySubscriptionId) => {
 };
 
 module.exports = {
+  getKeyMode,
   getOrCreateRazorpayPlan,
+  verifyRazorpayPlans,
   createRazorpaySubscription,
   cancelRazorpaySubscription,
   fetchRazorpaySubscription

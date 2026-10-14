@@ -20,7 +20,8 @@ const {
   getPlans,
   createPlan,
   updatePlan,
-  deletePlan
+  deletePlan,
+  checkRazorpayPlans
 } = require('../controllers/admin.controller');
 const categoryFeatureController = require('../controllers/categoryFeature.controller');
 const ownerMediaController = require('../controllers/ownerMedia.controller');
@@ -69,5 +70,8 @@ router.get('/plans',                getPlans);
 router.post('/plans',               createPlan);
 router.put('/plans/:id',            updatePlan);
 router.delete('/plans/:id',         deletePlan);
+
+// Razorpay autopay plan ids: which stored ids exist in the current key mode (read-only)
+router.get('/razorpay/plans-check', checkRazorpayPlans);
 
 module.exports = router;

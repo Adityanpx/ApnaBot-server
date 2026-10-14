@@ -1211,6 +1211,32 @@ Tells the Flutter app which versions to accept. **Server only - no client reads 
   path touched (Search cab AI unaffected). Tests: `src/routes/appConfig.routes.test.js`. Code:
   `appConfig.service.js` / `appConfig.controller.js`. Not built: a Super Admin UI for the endpoint.
 
+## Razorpay autopay subscriptions (plan ids mode-keyed 2026-10-14)
+
+- `POST /api/subscription/autopay/create` get-or-creates a Razorpay Plan for (plan, monthly price), then
+  creates the Razorpay Subscription. Code: `razorpaySubscriptions.service.js`.
+- **`plans.razorpay_plan_ids` is keyed by Razorpay key mode: `live:<paise>` / `test:<paise>`**, e.g.
+  `live:19900`. The mode comes from the `RAZORPAY_KEY_ID` prefix (`rzp_live_` / `rzp_test_`); any other
+  prefix makes plan lookup/creation throw. Test and live plan ids are separate worlds in Razorpay, so a
+  stored id from the other mode would 400 ("The ID provided is invalid or could not be found").
+- **Self-heal:** a stored id is verified with a Razorpay fetch before use. Only a 400 creates a
+  replacement; any other failure (network, 401, 5xx) is rethrown and creates nothing. Creating a
+  Razorpay Plan is permanent (no edit/delete), so every creation is logged (mode, price, new and
+  replaced plan id).
+- **Plan check:** `GET /api/admin/razorpay/plans-check` (superadmin, read-only) fetches each mapped id for
+  the current mode and reports `ok` / `missing` / `error` / `other_mode` plus active plans with no
+  current-mode mapping (`unmappedPlans`; created on first use). The same check runs once at startup,
+  non-blocking, and logs a warning if anything is missing or unverifiable.
+- **Client errors:** `errorHandler.middleware.js` turns Razorpay SDK errors into a generic 400 (Razorpay
+  4xx) or 502 (401/5xx) message; the raw description is logged only. This covers every route that
+  surfaces a Razorpay SDK error (the one-time order endpoints too).
+- **Cutover:** the first autopay create after deploy creates a new permanent `live:` plan in the account
+  the Render key belongs to. No feature flag.
+- Cleanup: `src/scripts/cleanupBarePriceRazorpayPlanKeys.js` (dry run; `--confirm` to write) removes the
+  old bare-price keys (`19900`, `29900`) once Razorpay confirms them dead. Tests:
+  `src/services/razorpaySubscriptions.service.test.js`.
+- `subscriptions.is_autopay=false` rows are the one-time Orders flow (`/create`, `/verify`), still live.
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism

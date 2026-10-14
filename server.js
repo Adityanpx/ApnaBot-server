@@ -128,6 +128,19 @@ if (config.ENABLE_STORAGE_SWEEPER) {
   logger.info('Storage cleanup sweeper scheduled (first run in 2 min, then every 15 min)');
 }
 
+// ── Razorpay plan check (startup, non-blocking) ───────────────────────────
+// Read-only. Warns if a stored autopay plan id doesn't exist for the current
+// key mode, instead of letting the first customer hit the 400. Never blocks boot.
+require('./src/services/razorpaySubscriptions.service').verifyRazorpayPlans()
+  .then((r) => {
+    if (r.summary.missing || r.summary.error) {
+      logger.warn(`Razorpay plan check (${r.keyMode} mode): ${r.summary.missing} missing, ${r.summary.error} unverifiable — see GET /api/admin/razorpay/plans-check`);
+    } else {
+      logger.info(`Razorpay plan check (${r.keyMode} mode): ${r.summary.ok} ok, ${r.summary.otherMode} other-mode, ${r.unmappedPlans.length} plans unmapped`);
+    }
+  })
+  .catch((err) => logger.warn('Razorpay plan check failed:', err.message));
+
 // Handle unhandled promise rejections
 process.on('unhandledRejection', (err) => {
   logger.error('Unhandled Rejection:', err);

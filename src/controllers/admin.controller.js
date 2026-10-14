@@ -10,6 +10,7 @@ const { invalidateRulesCache } = require('../services/chatbot.service');
 const { successResponse, errorResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
 const logger = require('../utils/logger');
+const razorpaySubscriptionsService = require('../services/razorpaySubscriptions.service');
 
 // Tables with business_id and ON DELETE CASCADE on the businesses FK (see
 // supabase/migrations/20260819213717_init_schema.sql and
@@ -751,7 +752,23 @@ const deletePlan = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/admin/razorpay/plans-check
+ * Read-only: fetches each Razorpay plan id mapped for the current key mode and
+ * reports which are missing. Creates nothing.
+ */
+const checkRazorpayPlans = async (req, res, next) => {
+  try {
+    const report = await razorpaySubscriptionsService.verifyRazorpayPlans();
+    return successResponse(res, 200, report);
+  } catch (error) {
+    logger.error('Error in checkRazorpayPlans:', error);
+    next(error);
+  }
+};
+
 module.exports = {
+  checkRazorpayPlans,
   getBusinesses,
   getBusinessById,
   toggleBusiness,

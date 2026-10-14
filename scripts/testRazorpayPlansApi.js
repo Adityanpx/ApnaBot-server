@@ -1,7 +1,9 @@
 // scripts/testRazorpayPlansApi.js
 //
 // Manual REPL check for getOrCreateRazorpayPlan (razorpaySubscriptions.service.js).
-// Not wired into npm scripts — run ad-hoc in Razorpay TEST MODE only.
+// Not wired into npm scripts — run ad-hoc. Prefer Razorpay TEST MODE keys: it
+// operates in whichever mode RAZORPAY_KEY_ID is (plan ids are keyed
+// "<mode>:<paise>"), and with a rzp_live_ key --confirm creates a real live plan.
 //
 // Creating a Razorpay Plan is irreversible (Razorpay does not support
 // editing or deleting Plans), and this writes to a real `plans` row's
@@ -44,7 +46,9 @@ async function main() {
     process.exit(1);
   }
 
-  const priceKey = String(TEST_PRICE_PAISE);
+  const mode = razorpaySubscriptionsService.getKeyMode();
+  const priceKey = `${mode}:${TEST_PRICE_PAISE}`;
+  console.log(`Razorpay key mode: ${mode}`);
   console.log('Target plan:');
   console.log(`  id:                ${plan.id}`);
   console.log(`  name:              ${plan.name}`);
