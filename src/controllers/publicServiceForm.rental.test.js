@@ -161,3 +161,23 @@ test('submit one way: a required drop field left empty is still a 400', async ()
   assert.match(out.body.message, /Drop Location/);
   assert.equal(created, null);
 });
+
+const oneWayValues = (vehicle) => ({
+  trip_type: 'One Way', pickup_location: address('Pune'), drop_location: address('Mumbai'), choose_a_vehicle: vehicle
+});
+
+test('submit one way, distance fares off (no quotes): booked with no fare, plain vehicle name', async () => {
+  bookingService.findDistanceBasedVehicleOptions = async (...args) => { distanceCalls.push(args); return []; };
+  const out = await submit(oneWayValues('Swift Dzire'));
+  assert.equal(out.status, 200);
+  const c = collectedOf();
+  for (const key of ['vehicleFare', 'fareSource', 'distanceKm', 'driverDaTotal']) assert.ok(!(key in c), key);
+  assert.equal(c.choose_a_vehicle, 'Swift Dzire');
+  assert.doesNotMatch(summaryOf(), /Fare|भाडे|अंतर|टोल/);
+});
+
+test('submit one way, distance fares on but the vehicle is not in the quote: still a 400', async () => {
+  const out = await submit(oneWayValues('Not A Vehicle'));
+  assert.equal(out.status, 400);
+  assert.equal(created, null);
+});

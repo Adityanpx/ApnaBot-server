@@ -229,6 +229,45 @@ const loadPublishedBotSettings = async (businessId) => {
 const hasPublishedBotSettings = async (businessId) => !!(await loadPublishedBotSettings(businessId));
 
 /**
+ * Finds the fields the travel fare logic needs. A form built in the form
+ * builder (not from the starter template) has no `role`s, so each field falls
+ * back to a name / options / visibleWhen heuristic after its explicit role:
+ *  - tripTypeField: role 'tripType', else name trip_type / tripType, else the
+ *    first radio/dropdown with a local-rental option (options may be strings
+ *    or { value, label });
+ *  - rentalPackageField: role 'rentalPackage', else name 'rental_package',
+ *    else a dropdown/radio shown only for a local-rental trip type, else a
+ *    dropdown whose name or label contains 'package';
+ *  - pickupField / dropField: role, else an address_autocomplete whose name
+ *    contains 'pickup' / 'drop';
+ *  - vehicleField / numberOfDaysField: as before.
+ * Any of them may be undefined.
+ */
+const resolveTravelFields = (flowFields) => {
+  const isChoice = (f) => f.type === 'radio' || f.type === 'dropdown';
+  const optionText = (opt) => (opt && typeof opt === 'object' ? opt.value ?? opt.label : opt);
+  const tripTypeField = flowFields.find(f => f.role === 'tripType') ||
+    flowFields.find(f => f.name === 'trip_type' || f.name === 'tripType') ||
+    flowFields.find(f => isChoice(f) && Array.isArray(f.options) &&
+      f.options.some(opt => bookingService.isLocalRentalTrip(optionText(opt))));
+  const rentalPackageField = flowFields.find(f => f.role === 'rentalPackage') ||
+    flowFields.find(f => f.name === 'rental_package') ||
+    flowFields.find(f => isChoice(f) && f.visibleWhen && tripTypeField &&
+      f.visibleWhen.field === tripTypeField.name && bookingService.isLocalRentalTrip(f.visibleWhen.equals)) ||
+    flowFields.find(f => f.type === 'dropdown' && /package/i.test(`${f.name} ${f.label}`));
+  const addressField = (role, word) => flowFields.find(f => f.role === role) ||
+    flowFields.find(f => f.type === 'address_autocomplete' && String(f.name).toLowerCase().includes(word));
+  return {
+    tripTypeField,
+    rentalPackageField,
+    pickupField: addressField('pickup', 'pickup'),
+    dropField: addressField('drop', 'drop'),
+    vehicleField: flowFields.find(f => f.type === 'icon_select' && f.source === 'vehicle_catalog'),
+    numberOfDaysField: flowFields.find(f => f.role === 'numberOfDays')
+  };
+};
+
+/**
  * GET /api/public/service-form/:token
  * Returns just enough to render the form: the business's name and its
  * configured fields (node-scoped form_fields when the token's flow node has
@@ -275,6 +314,17 @@ const getServiceForm = async (req, res, next) => {
       logger.error('Error resolving service form title:', titleError);
     }
 
+    // Forms built without roles: tell the website which field is which (response only, never saved).
+    const detected = resolveTravelFields(flowFields);
+    const withDetectedRoles = flowFields.map((field) => {
+      if (field.role) return field;
+      const role = field === detected.tripTypeField ? 'tripType'
+        : field === detected.rentalPackageField ? 'rentalPackage'
+          : field === detected.pickupField ? 'pickup'
+            : field === detected.dropField ? 'drop' : null;
+      return role ? { ...field, role } : field;
+    });
+
     return successResponse(res, 200, {
       businessName: business.name,
       // Lets the public form page keep its travel wording ("Book your ride",
@@ -284,7 +334,7 @@ const getServiceForm = async (req, res, next) => {
       // The customer's chosen language ('en' | 'hi' | 'mr') — the page's own
       // wording follows it; fields come already in it where translated.
       language: language || 'en',
-      flowFields: localizeFields(flowFields, language),
+      flowFields: localizeFields(withDetectedRoles, language),
       // Additive, only when non-empty: starting values, e.g.
       // { course: 'Abacus' } — see resolvePrefill.
       ...(Object.keys(prefill).length > 0 ? { prefill } : {}),
@@ -351,12 +401,12 @@ const submitServiceForm = async (req, res, next) => {
       !field.visibleWhen || values[field.visibleWhen.field] === field.visibleWhen.equals;
 
     // A local rental has no drop: the drop field is never required then (only that field).
-    const tripTypeField = flowFields.find(f => f.role === 'tripType');
+    const { tripTypeField, rentalPackageField, pickupField, dropField, vehicleField, numberOfDaysField } = resolveTravelFields(flowFields);
     const isLocalRentalSubmit = !!tripTypeField && bookingService.isLocalRentalTrip(values[tripTypeField.name]);
 
     const missingLabels = flowFields
       .filter(field => field.type !== 'display_text' && isFieldApplicable(field, values) &&
-        field.required && !(isLocalRentalSubmit && field.role === 'drop') &&
+        field.required && !(isLocalRentalSubmit && field === dropField) &&
         (values[field.name] === undefined || values[field.name] === null || String(values[field.name]).trim() === ''))
       .map(field => field.label);
     if (missingLabels.length > 0) {
@@ -407,16 +457,9 @@ const submitServiceForm = async (req, res, next) => {
     // live route/vehicle data instead of trusting whatever the client
     // submitted — the client never sends a fare at all in this flow, only
     // field values, so this is where the fare enters `collected` at all.
-    const vehicleField = flowFields.find(f => f.type === 'icon_select' && f.source === 'vehicle_catalog');
-    const pickupField = flowFields.find(f => f.role === 'pickup');
-    const dropField = flowFields.find(f => f.role === 'drop');
     if (vehicleField && pickupField && dropField && isLocalRentalSubmit) {
       // Local rental: priced from rental_packages only, never by distance. A
       // vehicle with no matching package is still bookable, just with no fare.
-      const rentalPackageField = flowFields.find(f => f.role === 'rentalPackage') ||
-        flowFields.find(f => f.name === 'rental_package') ||
-        flowFields.find(f => (f.type === 'dropdown' || f.type === 'radio') && f.visibleWhen &&
-          f.visibleWhen.field === tripTypeField.name && bookingService.isLocalRentalTrip(f.visibleWhen.equals));
       const quotes = await bookingService.findRentalQuotesForForm(
         formToken.businessId,
         rentalPackageField ? collected[rentalPackageField.name] : undefined
@@ -439,7 +482,6 @@ const submitServiceForm = async (req, res, next) => {
       }
       collected[vehicleField.name] = matchedQuote.name;
     } else if (vehicleField && pickupField && dropField) {
-      const numberOfDaysField = flowFields.find(f => f.role === 'numberOfDays');
 
       const options = await bookingService.findDistanceBasedVehicleOptions(
         formToken.businessId,
@@ -449,29 +491,36 @@ const submitServiceForm = async (req, res, next) => {
         numberOfDaysField ? collected[numberOfDaysField.name] : undefined
       );
       const matchedOption = options.find(opt => opt.name === collected[vehicleField.name]);
-      if (!matchedOption) {
+      if (options.length === 0) {
+        // Distance fares off for this business (or the distance lookup failed): no quote was
+        // ever shown, so there is no stale quote to reject. Book without a fare.
+        logger.info('No distance quote available at submit; booking saved without a fare', {
+          businessId: formToken.businessId,
+          submittedVehicle: collected[vehicleField.name]
+        });
+      } else if (!matchedOption) {
         logger.warn('Vehicle-quote re-verification failed at submit', {
           businessId: formToken.businessId,
           submittedVehicle: collected[vehicleField.name],
           availableVehicles: options.map(opt => opt.name)
         });
         return errorResponse(res, 400, 'Could not verify a fare for the selected vehicle. Please go back and choose again.');
+      } else {
+        collected.vehicleFare = matchedOption.fare;
+        collected.fareSource = 'distance_estimate';
+        collected.distanceKm = matchedOption.distanceKm;
+        if (matchedOption.driverDaTotal) {
+          collected.driverDaTotal = matchedOption.driverDaTotal;
+          collected.driverDaDays = matchedOption.driverDaDays;
+          collected.driverDaPerDay = matchedOption.driverDaPerDay;
+        }
+        // Decorate the vehicle field's own display value with its per-km rate
+        // (e.g. "Swift Dzire (₹13/km)") rather than adding a separate line —
+        // buildBookingSummaryBody renders orderedFields verbatim, one line per
+        // field, so this is the one place that string can be attached to the
+        // vehicle's line specifically.
+        collected[vehicleField.name] = `${matchedOption.name} (₹${matchedOption.perKmRate}/km)`;
       }
-
-      collected.vehicleFare = matchedOption.fare;
-      collected.fareSource = 'distance_estimate';
-      collected.distanceKm = matchedOption.distanceKm;
-      if (matchedOption.driverDaTotal) {
-        collected.driverDaTotal = matchedOption.driverDaTotal;
-        collected.driverDaDays = matchedOption.driverDaDays;
-        collected.driverDaPerDay = matchedOption.driverDaPerDay;
-      }
-      // Decorate the vehicle field's own display value with its per-km rate
-      // (e.g. "Swift Dzire (₹13/km)") rather than adding a separate line —
-      // buildBookingSummaryBody renders orderedFields verbatim, one line per
-      // field, so this is the one place that string can be attached to the
-      // vehicle's line specifically.
-      collected[vehicleField.name] = `${matchedOption.name} (₹${matchedOption.perKmRate}/km)`;
     }
 
     // Saved on the booking: which Bot Builder form this was (Free demo /

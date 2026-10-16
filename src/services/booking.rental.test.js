@@ -86,3 +86,29 @@ test('findDistanceBasedVehicleOptions: a local rental is never distance-priced',
   seed();
   assert.deepEqual(await bookingService.findDistanceBasedVehicleOptions(B1, 'Pune', 'Mumbai', 'Local rental'), []);
 });
+
+// ---- label matching fallback (numbers) ----------------------------------------------------------
+
+const priceFor = async (storedLabel, requestedLabel) => {
+  const db = h.reset();
+  db.vehicles = [{ id: DZIRE, business_id: B1, is_active: true, custom_name: 'Swift Dzire', catalog: { name: 'Dzire', photo_url: null, seats: 4 } }];
+  db.rental_packages = [{ id: 'rp1', business_id: B1, vehicle_id: DZIRE, package_key: 'k', label: storedLabel, price: 1500, extra_km_rate: 12, extra_hr_rate: 150, is_active: true }];
+  return (await bookingService.findRentalQuotesForForm(B1, requestedLabel))[0].fare;
+};
+
+test('package label: hours and km numbers match across wording', async () => {
+  assert.equal(await priceFor('6 HRs / 60 KMs', '6 hours 60 km'), 1500);
+  assert.equal(await priceFor('6 HRs / 60 KMs', '8hr/80km'), null);
+  assert.equal(await priceFor('8 HRs / 80 KMs', '8hr/80km'), 1500);
+  assert.equal(await priceFor('8hr/80km', '8 HRs / 80 KMs'), 1500);
+});
+
+test('package label: different numbers never match', async () => {
+  assert.equal(await priceFor('8 HRs / 80 KMs', '6 HRs / 60 KMs'), null);
+  assert.equal(await priceFor('6 HRs / 80 KMs', '6 HRs / 60 KMs'), null);
+});
+
+test('package label: labels without numbers match by text only', async () => {
+  assert.equal(await priceFor('Full Day', 'full day'), 1500);
+  assert.equal(await priceFor('Full Day', 'Half Day'), null);
+});

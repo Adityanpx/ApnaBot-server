@@ -335,6 +335,26 @@ const findRentalVehicleCarouselOptions = async (businessId, packageKey) => {
 const normalizePackageLabel = (label) => String(label ?? '').toLowerCase()
   .replace(/[\s.]/g, '').replace(/hrs/g, 'hr').replace(/kms/g, 'km');
 
+/** { hours, km } numbers in a rental label ('6 hours 60 km', '8hr/80km', '६ तास'); null when absent. */
+const packageLabelNumbers = (label) => {
+  const text = String(label ?? '').toLowerCase();
+  const hours = text.match(/(\d+(?:\.\d+)?)\s*(?:hours?|hrs?|h|तास|घंटे)/);
+  const km = text.match(/(\d+(?:\.\d+)?)\s*(?:kilometers?|kms?|किमी)/);
+  return { hours: hours ? Number(hours[1]) : null, km: km ? Number(km[1]) : null };
+};
+
+/**
+ * Same package? Normalized text first; failing that, both labels must state
+ * hours and km and the numbers must be equal. Labels without numbers match by
+ * text only.
+ */
+const packageLabelsMatch = (a, b) => {
+  if (normalizePackageLabel(a) === normalizePackageLabel(b)) return true;
+  const x = packageLabelNumbers(a);
+  const y = packageLabelNumbers(b);
+  return x.hours !== null && x.km !== null && x.hours === y.hours && x.km === y.km;
+};
+
 /**
  * Rental fares for the web form: one entry per active vehicle of the business,
  * priced from the ACTIVE rental package whose label matches packageLabel
@@ -358,7 +378,7 @@ const findRentalQuotesForForm = async (businessId, packageLabel) => {
       const { data: pkgData, error: pkgError } = await supabase
         .from('rental_packages').select('*').eq('business_id', businessId).eq('is_active', true);
       if (pkgError) throw pkgError;
-      packages = (pkgData || []).filter(rp => normalizePackageLabel(rp.label) === wanted);
+      packages = (pkgData || []).filter(rp => packageLabelsMatch(rp.label, packageLabel));
     }
 
     return (vehicles || []).map((vehicle, idx) => {
