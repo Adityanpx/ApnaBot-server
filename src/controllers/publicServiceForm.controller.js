@@ -350,8 +350,13 @@ const submitServiceForm = async (req, res, next) => {
     const isFieldApplicable = (field, values) =>
       !field.visibleWhen || values[field.visibleWhen.field] === field.visibleWhen.equals;
 
+    // A local rental has no drop: the drop field is never required then (only that field).
+    const tripTypeField = flowFields.find(f => f.role === 'tripType');
+    const isLocalRentalSubmit = !!tripTypeField && bookingService.isLocalRentalTrip(values[tripTypeField.name]);
+
     const missingLabels = flowFields
-      .filter(field => field.type !== 'display_text' && isFieldApplicable(field, values) && field.required &&
+      .filter(field => field.type !== 'display_text' && isFieldApplicable(field, values) &&
+        field.required && !(isLocalRentalSubmit && field.role === 'drop') &&
         (values[field.name] === undefined || values[field.name] === null || String(values[field.name]).trim() === ''))
       .map(field => field.label);
     if (missingLabels.length > 0) {
@@ -405,8 +410,35 @@ const submitServiceForm = async (req, res, next) => {
     const vehicleField = flowFields.find(f => f.type === 'icon_select' && f.source === 'vehicle_catalog');
     const pickupField = flowFields.find(f => f.role === 'pickup');
     const dropField = flowFields.find(f => f.role === 'drop');
-    if (vehicleField && pickupField && dropField) {
-      const tripTypeField = flowFields.find(f => f.role === 'tripType');
+    if (vehicleField && pickupField && dropField && isLocalRentalSubmit) {
+      // Local rental: priced from rental_packages only, never by distance. A
+      // vehicle with no matching package is still bookable, just with no fare.
+      const rentalPackageField = flowFields.find(f => f.role === 'rentalPackage') ||
+        flowFields.find(f => f.name === 'rental_package') ||
+        flowFields.find(f => (f.type === 'dropdown' || f.type === 'radio') && f.visibleWhen &&
+          f.visibleWhen.field === tripTypeField.name && bookingService.isLocalRentalTrip(f.visibleWhen.equals));
+      const quotes = await bookingService.findRentalQuotesForForm(
+        formToken.businessId,
+        rentalPackageField ? collected[rentalPackageField.name] : undefined
+      );
+      const matchedQuote = quotes.find(q => q.name === collected[vehicleField.name]);
+      if (!matchedQuote) {
+        logger.warn('Rental vehicle re-verification failed at submit', {
+          businessId: formToken.businessId,
+          submittedVehicle: collected[vehicleField.name],
+          availableVehicles: quotes.map(q => q.name)
+        });
+        return errorResponse(res, 400, 'Could not verify a fare for the selected vehicle. Please go back and choose again.');
+      }
+      if (matchedQuote.fare !== null && matchedQuote.fare !== undefined) {
+        collected.vehicleFare = matchedQuote.fare;
+        collected.fareSource = 'rental_package';
+        collected.rentalPackageId = matchedQuote.rentalPackageId;
+        collected.extraKmRate = matchedQuote.extraKmRate;
+        collected.extraHrRate = matchedQuote.extraHrRate;
+      }
+      collected[vehicleField.name] = matchedQuote.name;
+    } else if (vehicleField && pickupField && dropField) {
       const numberOfDaysField = flowFields.find(f => f.role === 'numberOfDays');
 
       const options = await bookingService.findDistanceBasedVehicleOptions(
@@ -453,6 +485,7 @@ const submitServiceForm = async (req, res, next) => {
       logger.error('Error resolving service form request type:', formRequestError);
     }
     const formMeta = {
+      isLocalRental: isLocalRentalSubmit,
       formKey: formRequest ? formRequest.key : null,
       formTitle: formRequest ? formRequest.title : bookingFormTitle(formNode),
       fieldLabels: Object.fromEntries(orderedFields.map(f => [f.fieldKey, f.label])),
@@ -667,8 +700,10 @@ const placeDetails = async (req, res, next) => {
 
 /**
  * POST /api/public/service-form/:token/vehicle-quote
- * Body: { pickupDescription, dropDescription, tripType, numberOfDays }
- * Delegates to booking.service.js's findDistanceBasedVehicleOptions — the
+ * Body: { pickupDescription, dropDescription, tripType, numberOfDays, rentalPackage? }
+ * Local rental trips skip all of that: no drop/distance, quotes come from the
+ * matching rental package (findRentalQuotesForForm; fare null = none).
+ * Otherwise delegates to booking.service.js's findDistanceBasedVehicleOptions — the
  * same distance-fare logic the graph/WhatsApp engine uses — instead of
  * hand-rolling fare math a second time, so Round Trip's day-based distance
  * estimate, driver DA, and real per_km_rate values all come from one place.
@@ -691,7 +726,22 @@ const getVehicleQuote = async (req, res, next) => {
       return errorResponse(res, 410, 'This booking link has already been used.');
     }
 
-    const { pickupDescription, dropDescription, tripType, numberOfDays } = req.body || {};
+    const { pickupDescription, dropDescription, tripType, numberOfDays, rentalPackage } = req.body || {};
+
+    // Local rental: priced per rental package, so there is no drop and no
+    // distance — never call the distance service / Google for it.
+    if (bookingService.isLocalRentalTrip(tripType)) {
+      const quotes = await bookingService.findRentalQuotesForForm(formToken.businessId, rentalPackage);
+      const vehicleQuotes = quotes.map((quote) => ({
+        id: quote.vehicleId,
+        name: quote.name,
+        imageUrl: quote.photoUrl,
+        estimatedFare: quote.fare,
+        perKmRate: null
+      }));
+      return successResponse(res, 200, { distanceKm: null, vehicleQuotes });
+    }
+
     if (typeof pickupDescription !== 'string' || !pickupDescription.trim() ||
         typeof dropDescription !== 'string' || !dropDescription.trim()) {
       return errorResponse(res, 400, 'pickupDescription and dropDescription must be non-empty strings');

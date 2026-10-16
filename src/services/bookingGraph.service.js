@@ -273,7 +273,7 @@ const resolvePrimarySibling = (nodes, fieldKey) => {
  */
 const computeLiveOptionsForNode = async (businessId, node, session) => {
   if (node.nodeType === 'vehicle_carousel') {
-    if (session.collected.tripType === 'Local Rental') {
+    if (bookingService.isLocalRentalTrip(session.collected.tripType) || session.collected.rentalPackage != null) {
       if (session.localRentalUnconfigured) return [];
       const packageKey = session.rentalPackageKeyByLabel && session.rentalPackageKeyByLabel[session.collected.rentalPackage];
       return packageKey ? bookingService.findRentalVehicleCarouselOptions(businessId, packageKey) : [];

@@ -985,7 +985,7 @@ const FLOW_FIELDS_STARTER_TEMPLATES = {
     },
     {
       // No role: utils/flowFieldsValidation.js's ROLE_ALLOWED_TYPES only
-      // recognizes pickup/drop/tripType/numberOfDays, and nothing
+      // recognizes pickup/drop/tripType/numberOfDays/rentalPackage, and nothing
       // server-side reads a travelDate/returnDate role today — adding one
       // here would just fail validateFlowFields the moment this template is
       // PUT back.
@@ -1004,6 +1004,7 @@ const FLOW_FIELDS_STARTER_TEMPLATES = {
       type: 'dropdown',
       label: 'Rental Package',
       options: ['4 Hrs / 40 KM', '8 Hrs / 80 KM', '12 Hrs / 120 KM', 'Full Day (24 Hrs)', 'Custom'],
+      role: 'rentalPackage',
       visibleWhen: { field: 'trip_type', equals: 'Local Rental' },
       required: true
     },

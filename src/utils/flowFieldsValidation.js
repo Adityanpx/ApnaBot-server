@@ -29,7 +29,8 @@ const ROLE_ALLOWED_TYPES = {
   pickup: ['address_autocomplete'],
   drop: ['address_autocomplete'],
   tripType: ['dropdown', 'radio'],
-  numberOfDays: ['text', 'textarea']
+  numberOfDays: ['text', 'textarea'],
+  rentalPackage: ['dropdown', 'radio']
 };
 
 /**
@@ -54,10 +55,12 @@ const ROLE_ALLOWED_TYPES = {
  * - Any field may also carry an optional role, used by the vehicle-quote
  *   flow to find the fields it needs without guessing by name: 'pickup'|
  *   'drop' (address_autocomplete only), 'tripType' (dropdown|radio only —
- *   its options should include booking.service.js's tripTypeMap values,
- *   e.g. 'One Way'/'Round Trip', for the round-trip day-based fare
- *   estimate to kick in; not enforced here), 'numberOfDays' (text|textarea
- *   only). At most one field per role across the whole array.
+ *   its options are read by booking.service.js's normalizeTripType, e.g.
+ *   'One Way'/'Round Trip'/'Local rental', for the round-trip day-based fare
+ *   estimate and the rental pricing to kick in; not enforced here),
+ *   'numberOfDays' (text|textarea only), 'rentalPackage' (dropdown|radio
+ *   only — its picked label is matched against the business's rental
+ *   packages for a Local rental trip's fare). At most one field per role across the whole array.
  * - visibleWhen.field must reference an EARLIER field in the array (by
  *   name) — never itself, never a field defined later — since the form
  *   renders fields top-to-bottom and a later/self reference could never

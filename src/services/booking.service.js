@@ -15,13 +15,28 @@ const distanceMatrixService = require('./distanceMatrix.service');
 const logger = require('../utils/logger');
 const { isTravelFeaturedCategory } = require('../config/categoryFeatures');
 
-const tripTypeMap = { 'One Way': 'oneway', 'Round Trip': 'round_trip', 'Local Rental': 'local' };
+/**
+ * Map a trip-type answer to 'oneway' | 'round_trip' | 'local'. Tolerant of
+ * case, spacing, '-'/'_' and Hindi/Marathi wording, because the value comes
+ * from owner-typed form options (web form: 'Local rental') as well as the
+ * chat engine's seeded 'Local Rental'. Anything unrecognised (incl. empty)
+ * is 'oneway', as before.
+ */
+const normalizeTripType = (value) => {
+  const text = String(value ?? '').trim().toLowerCase().replace(/[-_]/g, '').replace(/\s+/g, ' ');
+  if (['local rental', 'localrental', 'local', 'rental'].includes(text) ||
+      /लोकल|रेंटल|भाड्याने/.test(text)) return 'local';
+  if (text === 'round trip' || text === 'roundtrip' || /राउंड|राऊंड/.test(text)) return 'round_trip';
+  return 'oneway';
+};
+
+const isLocalRentalTrip = (value) => normalizeTripType(value) === 'local';
 
 /**
  * Normalize a 'buttons'/'list' field's option entry to a {value, label,
  * labelTranslations} shape. Plain strings (every seeded row today) become
  * their own value and label. VALUE is what gets written into
- * session.collected (and so must stay English — tripTypeMap and the other
+ * session.collected (and so must stay English — normalizeTripType and the other
  * 'Other'/'Other date'/'Other time' sentinel checks key off it); LABEL is
  * what gets rendered into buttons/list rows shown to the customer.
  */
@@ -93,7 +108,7 @@ const FREE_MONTHLY_PREVIEW_CREDITS = 20;
  * @returns {Promise<Array>} Populated RouteFare docs (vehicleId + catalogId populated), or [] if none/invalid input
  */
 const findMatchingVehicleOptions = async (businessId, pickupLocation, dropLocation, tripType) => {
-  const mappedTripType = tripTypeMap[tripType] || 'oneway';
+  const mappedTripType = normalizeTripType(tripType);
   const fromCity = (pickupLocation || '').toLowerCase().trim();
   const toCity = (dropLocation || '').toLowerCase().trim();
   if (!fromCity || !toCity) return [];
@@ -142,6 +157,11 @@ const buildVehicleCarouselOptions = (routeFares) => routeFares.map((rf, idx) => 
  * @returns {Promise<Array>} Carousel-shaped options with source: 'distance_estimate', or []
  */
 const findDistanceBasedVehicleOptions = async (businessId, pickupLocation, dropLocation, tripType, numberOfDays) => {
+  if (isLocalRentalTrip(tripType)) {
+    // A rental is priced from rental_packages, never by distance.
+    logger.info('Distance fares lookup skipped: local rental trip', { businessId });
+    return [];
+  }
   const business = await businessService.getBusinessById(businessId);
   const travelSettings = business?.travelSettings;
   if (!business || travelSettings?.enableDistanceFares !== true) {
@@ -149,7 +169,7 @@ const findDistanceBasedVehicleOptions = async (businessId, pickupLocation, dropL
     return [];
   }
 
-  const mappedTripType = tripTypeMap[tripType] || 'oneway';
+  const mappedTripType = normalizeTripType(tripType);
   const days = Number(numberOfDays);
   const useDayBasedEstimate = mappedTripType === 'round_trip' && Number.isFinite(days) && days > 0;
 
@@ -307,6 +327,56 @@ const findRentalVehicleCarouselOptions = async (businessId, packageKey) => {
       }));
   } catch (error) {
     logger.error('Error finding rental vehicle carousel options:', error);
+    return [];
+  }
+};
+
+/** Loose rental-label comparison key: '6 HRs / 60 KMs' and '6 hr/60 km' both → '6hr/60km'. */
+const normalizePackageLabel = (label) => String(label ?? '').toLowerCase()
+  .replace(/[\s.]/g, '').replace(/hrs/g, 'hr').replace(/kms/g, 'km');
+
+/**
+ * Rental fares for the web form: one entry per active vehicle of the business,
+ * priced from the ACTIVE rental package whose label matches packageLabel
+ * (normalizePackageLabel), or fare: null / source: null when that vehicle has
+ * no such package (or no packageLabel was given). Same vehicle select and
+ * name/photo/seats rules as findDistanceBasedVehicleOptions, minus its
+ * per_km_rate filter.
+ * @returns {Promise<Array>} [] on a DB error
+ */
+const findRentalQuotesForForm = async (businessId, packageLabel) => {
+  try {
+    const { data: vehicles, error } = await supabase
+      .from('vehicles')
+      .select('*, catalog:vehicle_type_catalog(name, photo_url, seats)')
+      .eq('business_id', businessId).eq('is_active', true);
+    if (error) throw error;
+
+    const wanted = normalizePackageLabel(packageLabel);
+    let packages = [];
+    if (wanted) {
+      const { data: pkgData, error: pkgError } = await supabase
+        .from('rental_packages').select('*').eq('business_id', businessId).eq('is_active', true);
+      if (pkgError) throw pkgError;
+      packages = (pkgData || []).filter(rp => normalizePackageLabel(rp.label) === wanted);
+    }
+
+    return (vehicles || []).map((vehicle, idx) => {
+      const pkg = packages.find(rp => rp.vehicle_id === vehicle.id);
+      const base = {
+        index: idx,
+        vehicleId: vehicle.id,
+        name: vehicle.custom_name || vehicle.catalog.name,
+        photoUrl: vehicle.custom_photo_url || vehicle.catalog.photo_url || null,
+        seats: vehicle.catalog.seats || null
+      };
+      return pkg
+        ? { ...base, fare: pkg.price, source: 'rental_package', rentalPackageId: pkg.id,
+            extraKmRate: pkg.extra_km_rate, extraHrRate: pkg.extra_hr_rate }
+        : { ...base, fare: null, source: null };
+    });
+  } catch (error) {
+    logger.error('Error finding rental quotes for form:', error);
     return [];
   }
 };
@@ -541,9 +611,13 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
   } else if (business?.requireAdvancePayment) {
     if (business.advancePaymentType === 'percentage') {
       if (collected.vehicleFare === undefined || collected.vehicleFare === null) {
-        logger.error('Cannot compute percentage advance payment: booking has no vehicleFare', {
-          businessId, customerNumber, advancePaymentValue: business.advancePaymentValue
-        });
+        const logContext = { businessId, customerNumber, advancePaymentValue: business.advancePaymentValue };
+        if (isLocalRentalTrip(collected.tripType) || (formMeta && formMeta.isLocalRental)) {
+          // A local rental without a package has no fare yet (the team quotes it): expected, not an error.
+          logger.info('Local rental has no fare yet, percentage advance skipped', logContext);
+        } else {
+          logger.error('Cannot compute percentage advance payment: booking has no vehicleFare', logContext);
+        }
       } else {
         advanceAmount = Math.round(collected.vehicleFare * (business.advancePaymentValue / 100) * 100) / 100;
       }
@@ -795,6 +869,9 @@ module.exports = {
   findBestVehicleCarouselOptions,
   findRentalVehicleCarouselOptions,
   groupRentalPackagesByKey,
+  normalizeTripType,
+  isLocalRentalTrip,
+  findRentalQuotesForForm,
   resolveTravelDateOption,
   // Booking-completion tail for the graph engine (Step 12 wiring) — see the
   // function's own doc comment for why this lives here instead of in
