@@ -100,7 +100,15 @@ test('submit local rental, vehicle with a package: rental fare, extra rates, no 
   assert.doesNotMatch(text, /अंतर:/);
 });
 
-test('submit local rental, vehicle without a package: no fare, no distance, no fare/toll lines', async () => {
+test('submit local rental, vehicle without the chosen package (business has packages): 400', async () => {
+  const out = await submit(rentalValues('Toyota Innova Crysta'));
+  assert.equal(out.status, 400);
+  assert.equal(out.body.message, 'This vehicle is not available for the selected rental package. Please go back and choose again.');
+  assert.equal(created, null);
+});
+
+test('submit local rental, business has no packages: booked with no fare, no distance, no fare/toll lines', async () => {
+  db.rental_packages = [];
   const out = await submit(rentalValues('Toyota Innova Crysta'));
   assert.equal(out.status, 200);
   const c = collectedOf();
@@ -131,15 +139,52 @@ test('submit one way: unchanged distance behaviour', async () => {
   assert.equal(c.choose_a_vehicle, 'Swift Dzire (₹23/km)');
 });
 
-test('vehicle-quote local rental with no drop: 200, distanceKm null, distance service not called', async () => {
+test('vehicle-quote local rental with no drop: only the vehicle with the package, distance service not called', async () => {
   const out = await call(controller.getVehicleQuote, { pickupDescription: 'Pune Station', tripType: 'Local rental', rentalPackage: '6 HRs / 60 KMs' });
   assert.equal(out.status, 200);
   assert.equal(out.body.data.distanceKm, null);
   assert.equal(distanceCalls.length, 0);
-  const byName = Object.fromEntries(out.body.data.vehicleQuotes.map(q => [q.name, q]));
-  assert.equal(byName['Swift Dzire'].estimatedFare, 1500);
-  assert.equal(byName['Swift Dzire'].perKmRate, null);
-  assert.equal(byName['Toyota Innova Crysta'].estimatedFare, null);
+  assert.deepEqual(out.body.data.vehicleQuotes.map(q => [q.name, q.estimatedFare, q.perKmRate]), [['Swift Dzire', 1500, null]]);
+});
+
+test('vehicle-quote: only vehicles with the package (Ertiga and Innova excluded)', async () => {
+  db.vehicles.push({ id: uuid(3), business_id: B1, is_active: true, custom_name: 'Ertiga', catalog: { name: 'Ertiga', photo_url: null, seats: 6 } });
+  const out = await call(controller.getVehicleQuote, { tripType: 'Local rental', rentalPackage: '6 HRs / 60 KMs' });
+  assert.deepEqual(out.body.data.vehicleQuotes.map(q => [q.name, q.estimatedFare]), [['Swift Dzire', 1500]]);
+});
+
+test('vehicle-quote: a package no vehicle has returns []', async () => {
+  const out = await call(controller.getVehicleQuote, { tripType: 'Local rental', rentalPackage: '12 HRs / 120 KMs' });
+  assert.equal(out.status, 200);
+  assert.deepEqual(out.body.data.vehicleQuotes, []);
+});
+
+test('vehicle-quote: a business with no packages returns all vehicles with fare null', async () => {
+  db.rental_packages = [];
+  const out = await call(controller.getVehicleQuote, { tripType: 'Local rental', rentalPackage: '6 HRs / 60 KMs' });
+  assert.deepEqual(out.body.data.vehicleQuotes.map(q => [q.name, q.estimatedFare]), [['Toyota Innova Crysta', null], ['Swift Dzire', null]]);
+});
+
+test('GET form: rental package options come from Fleet (ordered), response only', async () => {
+  db.rental_packages.push(
+    { id: 'rp2', business_id: B1, vehicle_id: INNOVA, package_key: '8hr_80km', label: '8 HRs / 80 KMs', price: 2500, is_active: true },
+    { id: 'rp3', business_id: B1, vehicle_id: INNOVA, package_key: '6hr_60km', label: '6 hr/60 km', price: 2000, is_active: true },
+    { id: 'rp4', business_id: B1, vehicle_id: INNOVA, package_key: '4hr_40km', label: '4 HRs / 40 KMs', price: 900, is_active: false }
+  );
+  const out = await call(controller.getServiceForm);
+  assert.equal(out.status, 200);
+  const field = out.body.data.flowFields.find(f => f.name === 'rental_package');
+  assert.deepEqual(field.options, ['6 hr/60 km', '8 HRs / 80 KMs']);
+  assert.equal(field.role, 'rentalPackage');
+  assert.deepEqual(field.visibleWhen, { field: 'trip_type', equals: 'Local rental' });
+  assert.deepEqual(db.flow_nodes[0].form_fields.find(f => f.name === 'rental_package').options, ['6 HRs / 60 KMs', '8 HRs / 80 KMs']);
+});
+
+test('GET form: a business with no active packages keeps the form options', async () => {
+  db.rental_packages = [];
+  const out = await call(controller.getServiceForm);
+  const field = out.body.data.flowFields.find(f => f.name === 'rental_package');
+  assert.deepEqual(field.options, ['6 HRs / 60 KMs', '8 HRs / 80 KMs']);
 });
 
 test('vehicle-quote one way without a drop is still a 400', async () => {

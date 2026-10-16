@@ -106,7 +106,14 @@ test('submit local rental + vehicle with package → package fare (required drop
   assert.equal(distanceCalls.length, 0);
 });
 
-test('submit local rental + vehicle without package → no fare, no distance', async () => {
+test('submit local rental + vehicle without the chosen package (business has packages) → 400', async () => {
+  const out = await submit(rentalValues('Toyota Innova Crysta'));
+  assert.equal(out.status, 400);
+  assert.equal(created, null);
+});
+
+test('submit local rental, business with no packages → no fare, no distance', async () => {
+  db.rental_packages = [];
   const out = await submit(rentalValues('Toyota Innova Crysta'));
   assert.equal(out.status, 200);
   for (const key of ['vehicleFare', 'fareSource', 'distanceKm']) assert.ok(!(key in created[2]), key);

@@ -325,6 +325,17 @@ const getServiceForm = async (req, res, next) => {
       return role ? { ...field, role } : field;
     });
 
+    // Rental package dropdown: list the packages set up in Fleet (response only,
+    // never saved). A business with no active packages keeps the form's own options.
+    let responseFields = withDetectedRoles;
+    if (detected.rentalPackageField) {
+      const packageLabels = await bookingService.listActiveRentalPackageLabels(formToken.businessId);
+      if (packageLabels.length > 0) {
+        responseFields = withDetectedRoles.map(field =>
+          (field.name === detected.rentalPackageField.name ? { ...field, options: packageLabels } : field));
+      }
+    }
+
     return successResponse(res, 200, {
       businessName: business.name,
       // Lets the public form page keep its travel wording ("Book your ride",
@@ -334,7 +345,7 @@ const getServiceForm = async (req, res, next) => {
       // The customer's chosen language ('en' | 'hi' | 'mr') — the page's own
       // wording follows it; fields come already in it where translated.
       language: language || 'en',
-      flowFields: localizeFields(withDetectedRoles, language),
+      flowFields: localizeFields(responseFields, language),
       // Additive, only when non-empty: starting values, e.g.
       // { course: 'Abacus' } — see resolvePrefill.
       ...(Object.keys(prefill).length > 0 ? { prefill } : {}),
@@ -458,13 +469,18 @@ const submitServiceForm = async (req, res, next) => {
     // submitted — the client never sends a fare at all in this flow, only
     // field values, so this is where the fare enters `collected` at all.
     if (vehicleField && pickupField && dropField && isLocalRentalSubmit) {
-      // Local rental: priced from rental_packages only, never by distance. A
-      // vehicle with no matching package is still bookable, just with no fare.
+      // Local rental: priced from rental_packages only, never by distance. When the
+      // business has packages, the vehicle must have the chosen one; a business with
+      // none books with no fare (the team confirms the price).
       const quotes = await bookingService.findRentalQuotesForForm(
         formToken.businessId,
         rentalPackageField ? collected[rentalPackageField.name] : undefined
       );
+      const businessHasPackages = (await bookingService.listActiveRentalPackageLabels(formToken.businessId)).length > 0;
       const matchedQuote = quotes.find(q => q.name === collected[vehicleField.name]);
+      if (matchedQuote && businessHasPackages && (matchedQuote.fare === null || matchedQuote.fare === undefined)) {
+        return errorResponse(res, 400, 'This vehicle is not available for the selected rental package. Please go back and choose again.');
+      }
       if (!matchedQuote) {
         logger.warn('Rental vehicle re-verification failed at submit', {
           businessId: formToken.businessId,
@@ -780,7 +796,11 @@ const getVehicleQuote = async (req, res, next) => {
     // Local rental: priced per rental package, so there is no drop and no
     // distance — never call the distance service / Google for it.
     if (bookingService.isLocalRentalTrip(tripType)) {
-      const quotes = await bookingService.findRentalQuotesForForm(formToken.businessId, rentalPackage);
+      // A business with packages lists only the vehicles that have the chosen one
+      // (possibly none); a business with none lists all, fare null.
+      const allQuotes = await bookingService.findRentalQuotesForForm(formToken.businessId, rentalPackage);
+      const businessHasPackages = (await bookingService.listActiveRentalPackageLabels(formToken.businessId)).length > 0;
+      const quotes = businessHasPackages ? allQuotes.filter(quote => quote.fare !== null && quote.fare !== undefined) : allQuotes;
       const vehicleQuotes = quotes.map((quote) => ({
         id: quote.vehicleId,
         name: quote.name,

@@ -402,6 +402,36 @@ const findRentalQuotesForForm = async (businessId, packageLabel) => {
 };
 
 /**
+ * Distinct labels of the business's active rental packages whose vehicle is
+ * also active, ordered by hours, then km (packageLabelNumbers; labels without
+ * numbers last), then alphabetically. Feeds the web form's package dropdown.
+ * @returns {Promise<string[]>} [] on a DB error
+ */
+const listActiveRentalPackageLabels = async (businessId) => {
+  try {
+    const { data: vehicles, error: vehicleError } = await supabase
+      .from('vehicles').select('id').eq('business_id', businessId).eq('is_active', true);
+    if (vehicleError) throw vehicleError;
+    const { data: packages, error: packageError } = await supabase
+      .from('rental_packages').select('vehicle_id, label').eq('business_id', businessId).eq('is_active', true);
+    if (packageError) throw packageError;
+
+    const activeVehicleIds = new Set((vehicles || []).map(v => v.id));
+    const labels = [...new Set((packages || [])
+      .filter(rp => activeVehicleIds.has(rp.vehicle_id) && String(rp.label ?? '').trim())
+      .map(rp => rp.label))];
+    const rank = (n) => (n === null ? Infinity : n);
+    return labels
+      .map(label => ({ label, ...packageLabelNumbers(label) }))
+      .sort((a, b) => (rank(a.hours) - rank(b.hours)) || (rank(a.km) - rank(b.km)) || a.label.localeCompare(b.label))
+      .map(entry => entry.label);
+  } catch (error) {
+    logger.error('Error listing active rental package labels:', error);
+    return [];
+  }
+};
+
+/**
  * Get Redis key for booking session
  */
 const getSessionKey = (businessId, customerNumber) => {
@@ -892,6 +922,7 @@ module.exports = {
   normalizeTripType,
   isLocalRentalTrip,
   findRentalQuotesForForm,
+  listActiveRentalPackageLabels,
   resolveTravelDateOption,
   // Booking-completion tail for the graph engine (Step 12 wiring) — see the
   // function's own doc comment for why this lives here instead of in
