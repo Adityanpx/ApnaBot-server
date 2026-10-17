@@ -42,13 +42,22 @@ try {
   logger.warn('Demo reminder BullMQ worker not started (Redis may not be available):', err.message);
 }
 
+try {
+  require('./src/queues/customerWaiting.worker');
+  logger.info('Customer waiting BullMQ worker started');
+} catch (err) {
+  logger.warn('Customer waiting BullMQ worker not started (Redis may not be available):', err.message);
+}
+
 // ── Subscription Expiry Cron (every 24 hours) ──────────────────────────────
 const subscriptionService = require('./src/services/subscription.service');
+const subscriptionNotifications = require('./src/services/subscriptionNotifications.service');
 
 const runDailyExpiryCheck = async () => {
   try {
     const count = await subscriptionService.runExpiryCheck();
     logger.info(`Expiry check complete. ${count.expiredCount} expired, ${count.pausedCount} paused.`);
+    await subscriptionNotifications.sendPlanExpiringNotices();
   } catch (err) {
     logger.error('Subscription expiry cron failed:', err);
   }

@@ -232,12 +232,14 @@ const runExpiryCheck = async () => {
 
         // Another unexpired active/trial row (e.g. a newer plan) keeps the
         // business live — only deactivate when nothing else covers it.
+        let leftWithoutCover = false;
         if (await hasOtherLiveSubscription(sub.business_id, sub.id, now)) {
           logger.info(`Business ${sub.business_id} keeps running: another active/trial subscription covers it after ${sub.id} expired`);
         } else {
           const { error: bizErr } = await supabase
             .from('businesses').update({ is_active: false }).eq('id', sub.business_id);
           if (bizErr) throw bizErr;
+          leftWithoutCover = true;
         }
 
         // Clear Redis caches
@@ -250,6 +252,8 @@ const runExpiryCheck = async () => {
         }
 
         logger.info(`Subscription expired for business ${sub.business_id}`);
+        // Critical push to the owner (fire and forget), only when the bot actually stopped.
+        if (leftWithoutCover) subscriptionNotifications.sendPlanExpiredNotice(sub.business_id, sub.id);
       } catch (err) {
         logger.error(`Error processing expiry for sub ${sub.id}:`, err);
       }

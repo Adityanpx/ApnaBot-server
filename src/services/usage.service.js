@@ -2,6 +2,7 @@ const redis = require('../config/redis');
 const supabase = require('../config/supabase');
 const logger = require('../utils/logger');
 const { istMonthKey, istMonthStart } = require('../utils/ist');
+const notificationService = require('./notification.service');
 
 /**
  * Get current month key in YYYY-MM format (India time — the server runs in
@@ -111,6 +112,9 @@ const checkUsageLimit = async (businessId, planMsgLimit) => {
 
     current = parseInt(current) || 0;
 
+    // Critical push at 90% / 100% of the plan (fire and forget, once per level per month).
+    checkUsageThresholds(businessId, current, planMsgLimit);
+
     if (current >= planMsgLimit) {
       return { allowed: false, current, limit: planMsgLimit };
     }
@@ -120,6 +124,39 @@ const checkUsageLimit = async (businessId, planMsgLimit) => {
     logger.error('Error in checkUsageLimit:', error);
     // On error, allow the request (fail open)
     return { allowed: true, current: 0, limit: planMsgLimit };
+  }
+};
+
+// Usage levels that trigger a critical push, highest first.
+const USAGE_ALERTS = [
+  { percent: 100, type: 'usage_100' },
+  { percent: 90, type: 'usage_90' }
+];
+
+/**
+ * Pushes a critical alert when this month's usage has reached 90% / 100% of the
+ * plan limit - once per level per month (Redis key, kept past the end of the
+ * month). Fire-and-forget: never throws. Reaching 100% also counts as 90%, but
+ * only the highest level reached is sent.
+ * @param {string} businessId
+ * @param {number} current messages used this month
+ * @param {number} limit plan message limit (-1 = unlimited)
+ */
+const checkUsageThresholds = async (businessId, current, limit) => {
+  try {
+    if (!limit || limit <= 0) return;
+    const percent = (current / limit) * 100;
+    const alert = USAGE_ALERTS.find((a) => percent >= a.percent);
+    if (!alert) return;
+    await notificationService.notifyOnce(
+      businessId,
+      alert.type,
+      {},
+      `${businessId}:${getCurrentMonthKey()}`,
+      35 * 24 * 60 * 60
+    );
+  } catch (error) {
+    logger.error('Error in checkUsageThresholds:', error);
   }
 };
 
@@ -213,5 +250,6 @@ module.exports = {
   checkUsageLimit,
   getUsageForBusiness,
   syncUsageToSupabase,
+  checkUsageThresholds,
   getCurrentMonthKey
 };

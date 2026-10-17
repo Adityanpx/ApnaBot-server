@@ -83,6 +83,10 @@ module.exports = {
   // and skips sending rather than blocking server startup.
   PLATFORM_WHATSAPP_PHONE_NUMBER_ID: process.env.PLATFORM_WHATSAPP_PHONE_NUMBER_ID,
   PLATFORM_WHATSAPP_ACCESS_TOKEN: process.env.PLATFORM_WHATSAPP_ACCESS_TOKEN,
+  // Firebase Admin service-account JSON, base64-encoded (project apnabot-8d029),
+  // for mobile push notifications (push.service.js). Optional: when missing or
+  // invalid every push send is a logged no-op. A secret - never log it.
+  FIREBASE_SERVICE_ACCOUNT_BASE64: process.env.FIREBASE_SERVICE_ACCOUNT_BASE64,
   // BullMQ key prefix for the whatsapp-outbound/broadcast-outbound queues.
   // Defaults to NODE_ENV so a local dev run can never join the same queue as
   // production even if REDIS_URL is accidentally pointed at the same Redis

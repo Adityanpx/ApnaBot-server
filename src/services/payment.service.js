@@ -6,6 +6,7 @@ const socketService = require('./socket.service');
 const subscriptionService = require('./subscription.service');
 const tenantService = require('./tenant.service');
 const subscriptionNotifications = require('./subscriptionNotifications.service');
+const notificationService = require('./notification.service');
 const { supersedeOtherSubscriptions } = require('./supersedeSubscriptions.service');
 const customerPipelineService = require('./customerPipeline.service');
 const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
@@ -405,9 +406,10 @@ const buildPaymentQrCaption = ({ amount, bookingCode, upiId, intro, languageCode
  * @param {string} businessId
  * @param {string} bookingId
  * @param {'paid'|'pending'} status
+ * @param {string} [actorUserId] who marked it; they are not sent the payment_received push
  * @returns {Promise<Object|null>} the updated camelCase booking, or null if not found
  */
-const setBookingPaymentStatus = async (businessId, bookingId, status) => {
+const setBookingPaymentStatus = async (businessId, bookingId, status, actorUserId) => {
   const { data: booking, error } = await supabase
     .from('bookings').select('*').eq('id', bookingId).eq('business_id', businessId).maybeSingle();
   if (error) throw error;
@@ -439,6 +441,26 @@ const setBookingPaymentStatus = async (businessId, bookingId, status) => {
     });
   } catch (socketError) {
     logger.error('Error emitting booking_updated socket event:', socketError);
+  }
+
+  // Push to the owner's / permitted staff's phones, only on the transition to paid
+  // (fire and forget). The Razorpay payment_link.paid webhook this replaced is gone.
+  // The person who marked it paid is left out; everyone else who may see payments gets it.
+  if (status === 'paid' && booking.payment_status !== 'paid') {
+    let customerName = null;
+    try {
+      const { data: payer } = await supabase.from('customers').select('name').eq('id', booking.customer_id).maybeSingle();
+      customerName = payer?.name || null;
+    } catch (nameError) {
+      logger.error('Error reading the customer name for the payment push:', nameError);
+    }
+    notificationService.notify(businessId, 'payment_received', {
+      bookingId: booking.id,
+      customerId: booking.customer_id,
+      customerName,
+      customerNumber: booking.customer_number,
+      amount: booking.payment_amount
+    }, { excludeUserId: actorUserId });
   }
 
   if (!confirmOnPaid) return updated;

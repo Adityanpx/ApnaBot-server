@@ -9,6 +9,7 @@
 // must never fail a send or a webhook.
 const supabase = require('../config/supabase');
 const logger = require('../utils/logger');
+const notificationService = require('./notification.service');
 
 const PAYMENT_ISSUE_CODE = 131042;
 
@@ -27,6 +28,9 @@ const recordPaymentIssue = async (businessId, at = new Date()) => {
       .eq('id', businessId)
       .is('payment_issue_at', null);
     if (error) logger.error(`Could not record the payment issue for business ${businessId}`, error);
+    // Critical push to the owner (fire and forget). Every failed send lands here, so it is
+    // deduped to once per business per 24h.
+    else notificationService.notifyOnce(businessId, 'payment_issue', {}, businessId, 24 * 60 * 60);
   } catch (err) {
     logger.error(`Could not record the payment issue for business ${businessId}`, err);
   }

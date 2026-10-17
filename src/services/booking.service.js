@@ -10,6 +10,7 @@ const paymentService = require('./payment.service');
 const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
 const { addToSessionTimeoutQueue } = require('../queues/sessionTimeout.queue');
 const usageService = require('./usage.service');
+const notificationService = require('./notification.service');
 const socketService = require('./socket.service');
 const distanceMatrixService = require('./distanceMatrix.service');
 const logger = require('../utils/logger');
@@ -711,6 +712,16 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
   usageService.incrementUsage(businessId, 'booking').catch(err =>
     logger.error('Error incrementing booking usage:', err)
   );
+
+  // Push to the owner's phone (fire and forget; covers chat and web-form bookings).
+  notificationService.notify(businessId, 'booking_new', {
+    bookingId: booking.id,
+    customerId: customer.id,
+    customerName: customer.name,
+    customerNumber,
+    summary: collected.vehicleName || collected.service || (formMeta && formMeta.formTitle) || collected.tripType || null,
+    date: collected.travelDate || null
+  });
 
   if (advanceAmount !== null) {
     // Booking isn't confirmed yet — skip the normal fieldLines/fare summary

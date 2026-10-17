@@ -17,6 +17,7 @@ const config = require('../config/env');
 const logger = require('../utils/logger');
 const socketService = require('./socket.service');
 const tenantService = require('./tenant.service');
+const notificationService = require('./notification.service');
 const customerPipelineService = require('./customerPipeline.service');
 const { echoMediaOf, isOwnerMediaEnabled, storeEchoMedia } = require('./echoMedia.service');
 const { toCamelCase } = require('../utils/caseConvert');
@@ -489,6 +490,8 @@ const handleAccountUpdate = async (entry, value) => {
   if (business.phone_number_id) await tenantService.invalidateTenantCache(business.phone_number_id);
 
   logger.warn(`account_update: ${event} - business ${business.id} marked ${target ? 'connected' : 'disconnected'}`, { disconnectionInfo: info });
+  // Critical push to the owner (fire and forget); Meta can repeat the event, so once per 24h.
+  if (!target) notificationService.notifyOnce(business.id, 'whatsapp_disconnected', {}, business.id, 24 * 60 * 60);
   return { action: target ? 'connected' : 'disconnected' };
 };
 

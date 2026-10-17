@@ -179,7 +179,7 @@ const updateBookingPayment = async (req, res, next) => {
       return errorResponse(res, 400, "Invalid payment status. Must be 'paid' or 'pending'");
     }
 
-    const booking = await paymentService.setBookingPaymentStatus(businessId, id, status);
+    const booking = await paymentService.setBookingPaymentStatus(businessId, id, status, req.user.userId);
     if (!booking) {
       return errorResponse(res, 404, 'Booking not found');
     }

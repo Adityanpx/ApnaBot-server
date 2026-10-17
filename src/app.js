@@ -49,6 +49,7 @@ const contactGroupRoutes = require('./routes/contactGroup.routes');
 const featuresRoutes = require('./routes/features.routes');
 const appVersionRoutes = require('./routes/appVersion.routes');
 const appConfigAdminRoutes = require('./routes/appConfigAdmin.routes');
+const notificationRoutes = require('./routes/notification.routes');
 
 const app = express();
 
@@ -185,6 +186,8 @@ app.use('/api/features', featuresRoutes);
 // Mobile app version gate (min/latest version, force update, maintenance flag).
 // Public, no auth - see routes/appVersion.routes.js.
 app.use('/api/app', appVersionRoutes);
+// Mobile push (FCM): device tokens, per-user preferences, test send.
+app.use('/api/notifications', notificationRoutes);
 
 // Error handler middleware
 app.use(errorHandler);

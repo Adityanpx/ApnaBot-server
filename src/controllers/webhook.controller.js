@@ -4,6 +4,7 @@ const tenantService = require('../services/tenant.service');
 const chatbotService = require('../services/chatbot.service');
 const smartFallbackService = require('../services/smartFallback.service');
 const usageService = require('../services/usage.service');
+const notificationService = require('../services/notification.service');
 const bookingService = require('../services/booking.service');
 const bookingGraphService = require('../services/bookingGraph.service');
 const socketService = require('../services/socket.service');
@@ -61,6 +62,10 @@ const ESCAPE_KEYWORDS = new Set(['menu', 'cancel', 'exit', 'restart']);
 // 'exit'/'restart' for the same reason ESCAPE_KEYWORDS keeps them separate.
 const STOP_KEYWORDS = new Set(['stop', 'unsubscribe']);
 const START_KEYWORDS = new Set(['start']);
+
+// A customer who wrote nothing for longer than this and now writes again is
+// pushed to the owner as a new enquiry (notification.service.js).
+const ENQUIRY_GAP_MS = 24 * 60 * 60 * 1000;
 
 // replyKind values that trigger their own dedicated branch below. Any other
 // value on a matched 'reply' node (including null/undefined from bad data)
@@ -246,9 +251,12 @@ const sendReplyExtraMedia = async (ctx, node) => {
  * @param {string} businessId
  * @param {string} customerNumber
  * @param {string} [profileName] - WhatsApp profile name from the webhook's contacts array
+ * @param {{isNew?: boolean, previousInboundAt?: (string|null)}} [info] - filled in for the
+ *   caller (push: "new enquiry"): whether the row was just created, and the customer's
+ *   last inbound message time before this one (null = never messaged)
  * @returns {Promise<Object>} camelCase customer row
  */
-const upsertCustomerForInboundMessage = async (businessId, customerNumber, profileName) => {
+const upsertCustomerForInboundMessage = async (businessId, customerNumber, profileName, info = {}) => {
   const findCustomer = async () => {
     const { data, error } = await supabase
       .from('customers').select('*')
@@ -260,6 +268,8 @@ const upsertCustomerForInboundMessage = async (businessId, customerNumber, profi
   const nowIso = new Date().toISOString();
 
   const bumpExisting = async (existing) => {
+    info.isNew = false;
+    info.previousInboundAt = existing.last_message_at || null;
     const updateFields = {
       last_message_at: nowIso,
       last_activity_at: nowIso,
@@ -297,6 +307,8 @@ const upsertCustomerForInboundMessage = async (businessId, customerNumber, profi
     }
   }
   if (error) throw error;
+  info.isNew = true;
+  info.previousInboundAt = null;
   return toCamelCase(data);
 };
 
@@ -1145,9 +1157,10 @@ const processWebhookChange = async (entry, changes) => {
     const usageCheck = await usageService.checkUsageLimit(tenant.businessId, msgLimit);
 
     // Step 8 - Upsert customer
+    const customerInfo = {};
     const customer = replacedMsg
       ? await touchCustomerForReplacedMessage(tenant.businessId, replacedMsg.customerId)
-      : await upsertCustomerForInboundMessage(tenant.businessId, customerNumber, profileName);
+      : await upsertCustomerForInboundMessage(tenant.businessId, customerNumber, profileName, customerInfo);
 
     if (customer.isBlocked) {
       logger.warn(`Blocked customer ${customerNumber}`);
@@ -1187,6 +1200,25 @@ const processWebhookChange = async (entry, changes) => {
       }
       inboundMsg = toCamelCase(saved.message);
       if (saved.action === 'replace') replacedMsg = inboundMsg;
+    }
+
+    // Push to the owner's phone (fire and forget). A new customer, or one whose last
+    // message was over 24h ago, is a new enquiry; any other message while the bot is
+    // paused for this customer is a plain new_message (throttled). Not for a message
+    // that replaced an earlier 'unsupported' row: that row already notified.
+    if (!replacedMsg) {
+      const pushPayload = {
+        customerId: customer.id,
+        customerName: customer.name,
+        customerNumber,
+        preview: displayContent ? String(displayContent).slice(0, 80) : null
+      };
+      const lastInboundMs = customerInfo.previousInboundAt ? new Date(customerInfo.previousInboundAt).getTime() : null;
+      if (customerInfo.isNew || lastInboundMs === null || Date.now() - lastInboundMs > ENQUIRY_GAP_MS) {
+        notificationService.notify(tenant.businessId, 'enquiry_new', pushPayload);
+      } else if (isBotPaused) {
+        notificationService.notifyNewMessage(tenant.businessId, pushPayload);
+      }
     }
 
     // Customer photos (payment screenshots etc.) → R2, in the background.
@@ -1389,6 +1421,26 @@ const processWebhookChange = async (entry, changes) => {
     if (isBotPaused) {
       logger.info(`Bot paused for ${customerNumber} until ${customer.botPausedUntil}, skipping reply`);
       return;
+    }
+
+    // human_needed push (fire and forget, at most once per customer per 5 minutes - shared with
+    // the no-rule-matched fallback below). An explicit request for a person is raised here,
+    // whether or not a rule matches; the bot's reply is not changed.
+    const notifyHumanNeeded = () => notificationService.notifyOnce(tenant.businessId, 'human_needed', {
+      customerId: customer.id,
+      customerName: customer.name,
+      customerNumber
+    }, `${tenant.businessId}:${customer.id}`, 5 * 60);
+    // Only typed free text counts: not a button / list tap, and not an answer to a booking question
+    // (the session is read only when the text matches, which is rare).
+    if (messageType === 'text' && notificationService.asksForHuman(messageText)) {
+      let inBookingSession = true; // if the session can't be read, stay quiet
+      try {
+        inBookingSession = !!(await bookingService.getBookingSession(tenant.businessId, customerNumber));
+      } catch (sessionError) {
+        logger.error('Error reading the booking session for the human_needed check:', sessionError);
+      }
+      if (!inBookingSession) notifyHumanNeeded();
     }
 
     // Step 11.5 - Change-language keyword: lets a customer who already has a
@@ -2461,6 +2513,11 @@ const processWebhookChange = async (entry, changes) => {
       }
 
       replyText = smartReply || applyMessageTemplate(tenant.fallbackReply, tenant, customer) || getSystemMessage('genericFallbackReply', customer.preferredLanguage);
+
+      // The bot had no rule for this message (even if the AI fallback answered): tell the
+      // owner a person may be needed. At most once per customer per 5 minutes (fire and forget).
+      // A bare "ok" / "thanks" / 👍 needs no person.
+      if (!notificationService.isAcknowledgement(messageText)) notifyHumanNeeded();
 
       // Attach the business's greeting/menu buttons (if one is configured)
       // so the customer has a tappable way forward instead of a dead-end

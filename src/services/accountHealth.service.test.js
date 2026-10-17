@@ -28,6 +28,8 @@ const from = (table) => {
 const stub = (rel, exports) => { const p = require.resolve(rel); require.cache[p] = { id: p, filename: p, loaded: true, exports }; };
 stub('../config/supabase', { from });
 stub('../utils/logger', { info: () => {}, warn: () => {}, error: () => {} });
+// recordPaymentIssue also raises a push (notification.service.js); it is covered in notification.hooks.test.js.
+stub('./notification.service', { notifyOnce: async () => {} });
 
 const svc = require('./accountHealth.service');
 

@@ -4,6 +4,7 @@ const config = require('../config/env');
 const { encrypt } = require('../utils/crypto');
 const whatsappService = require('./whatsapp.service');
 const logger = require('../utils/logger');
+const notificationService = require('./notification.service');
 
 /**
  * Sends from ApnaBot's own platform WhatsApp number (PLATFORM_WHATSAPP_*)
@@ -61,7 +62,51 @@ const sendSubscriptionPausedNotice = async (businessId) => {
   await sendToOwner(businessId, message);
 };
 
+// ── Mobile push (critical, owner only; notification.service.js) ─────────────
+const PLAN_EXPIRING_DAYS = 3;
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Pushes "your plan ends in N days" once per subscription. Run by the daily
+ * expiry cron. Skips autopay subscriptions (they renew themselves) and
+ * businesses that have another active/trial subscription ending later.
+ * Swallows all errors (logs only, never throws).
+ */
+const sendPlanExpiringNotices = async () => {
+  try {
+    const now = new Date();
+    const horizon = new Date(now.getTime() + PLAN_EXPIRING_DAYS * DAY_MS);
+    const { data: ending, error } = await supabase
+      .from('subscriptions').select('id, business_id, end_date')
+      .eq('status', 'active').eq('is_autopay', false)
+      .gt('end_date', now.toISOString()).lte('end_date', horizon.toISOString());
+    if (error) throw error;
+    if (!ending || ending.length === 0) return;
+
+    const { data: later, error: laterErr } = await supabase
+      .from('subscriptions').select('business_id')
+      .in('status', ['active', 'trial']).in('business_id', ending.map((s) => s.business_id))
+      .gt('end_date', horizon.toISOString());
+    if (laterErr) throw laterErr;
+    const covered = new Set((later || []).map((s) => s.business_id));
+
+    for (const sub of ending) {
+      if (covered.has(sub.business_id)) continue;
+      const days = Math.max(1, Math.ceil((new Date(sub.end_date).getTime() - now.getTime()) / DAY_MS));
+      await notificationService.notifyOnce(sub.business_id, 'plan_expiring', { days }, sub.id, (PLAN_EXPIRING_DAYS + 1) * 86400);
+    }
+  } catch (error) {
+    logger.error('Error sending plan-expiring push notifications:', error);
+  }
+};
+
+/** Pushes "your plan expired" once per subscription (fire and forget). */
+const sendPlanExpiredNotice = (businessId, subscriptionId) =>
+  notificationService.notifyOnce(businessId, 'plan_expired', {}, subscriptionId, 7 * 86400);
+
 module.exports = {
   sendPaymentFailedNudge,
-  sendSubscriptionPausedNotice
+  sendSubscriptionPausedNotice,
+  sendPlanExpiringNotices,
+  sendPlanExpiredNotice
 };
