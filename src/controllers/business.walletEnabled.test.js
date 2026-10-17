@@ -24,6 +24,8 @@ stub('../services/businessCategory.service', {});
 stub('../services/auth.service', { generateTokens: () => ({}), saveTokenToRedis: async () => {} });
 stub('../services/r2.service', {});
 stub('../services/templateSync.service', {});
+stub('../services/trial.service', {});
+stub('../services/defaultSetup.service', { applyDefaultSetup: async () => ({}) });
 stub('axios', {});
 
 const { getBusiness } = require('./business.controller');

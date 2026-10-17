@@ -20,7 +20,7 @@ const requireFeature = (featureName) => {
         subscription = JSON.parse(subscription);
       } else {
         // Query DB if not in cache
-        const { data, error } = await getCurrentSubscriptionRow(businessId, { statuses: ['active'] });
+        const { data, error } = await getCurrentSubscriptionRow(businessId, { statuses: ['active', 'trial'] });
         if (error) throw error;
         subscription = data;
 
@@ -31,7 +31,7 @@ const requireFeature = (featureName) => {
       }
 
       // Check if subscription exists and is active
-      if (!subscription || subscription.status !== 'active') {
+      if (!subscription || !['active', 'trial'].includes(subscription.status)) {
         return errorResponse(res, 403, 'No active subscription. Please subscribe to continue.');
       }
 

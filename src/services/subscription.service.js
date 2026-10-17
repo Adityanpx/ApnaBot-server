@@ -25,7 +25,7 @@ const getActiveSubscription = async (businessId) => {
     // duplicate-active state (write-path bug, manual DB edit) must never throw
     // PGRST116 — that took down SG Travels' webhook on 2026-08-31 — so the
     // helper picks one and logs a warning.
-    const { data: sub, error } = await getCurrentSubscriptionRow(businessId, { statuses: ['active'] });
+    const { data: sub, error } = await getCurrentSubscriptionRow(businessId, { statuses: ['active', 'trial'] });
     if (error) throw error;
 
     if (sub) await redis.set(cacheKey, JSON.stringify(sub), 'EX', CACHE_TTL);
@@ -75,7 +75,8 @@ const createSubscription = async (businessId, planId, options = {}) => {
     const durationMonths = options.durationMonths || 1;
     const startDate = new Date();
     const endDate = renewFrom ? new Date(renewFrom) : new Date();
-    endDate.setMonth(endDate.getMonth() + durationMonths);
+    if (options.durationDays) endDate.setDate(endDate.getDate() + options.durationDays);
+    else endDate.setMonth(endDate.getMonth() + durationMonths);
 
     const { data: sub, error } = await supabase
       .from('subscriptions')
@@ -218,7 +219,7 @@ const runExpiryCheck = async () => {
     const { data: expiredSubs, error } = await supabase
       .from('subscriptions')
       .select('*')
-      .eq('status', 'active')
+      .in('status', ['active', 'trial'])
       .lt('end_date', now);
     if (error) throw error;
 

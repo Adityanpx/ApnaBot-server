@@ -196,14 +196,15 @@ const createBusiness = async (ownerUserId, data) => {
       }).select().single();
     if (travelSettingsErr) throw travelSettingsErr;
 
-    // Deliberately NOT auto-seeding from a category template anymore. Every
-    // new business starts with a literal empty graph — no flow_nodes/
-    // flow_edges rows at all. Category templates still exist and are still
-    // useful, but only as an explicit, owner-initiated action from the
-    // Versions tab ("Import starter template", flowSnapshot.controller.js
-    // #importCategoryTemplate) — never something applied silently at
-    // signup. See business.service.js history for the prior auto-seed
-    // behavior this replaces.
+    // The business row is created with a literal empty graph (no flow_nodes/
+    // flow_edges rows). Right after this returns, business.controller.js
+    // #createBusiness calls defaultSetup.service.js#applyDefaultSetup, which
+    // seeds the business from its category's DEFAULT template (flow_snapshots
+    // is_default, set by Super Admin), falling back to the 'general' default,
+    // and copies the category's booking-form flow_fields. It is best-effort
+    // and never overwrites: if no default exists the business simply stays
+    // empty, and the owner can still import any starter template from the
+    // Versions tab (flowSnapshot.controller.js#importCategoryTemplate).
     const camelBusiness = toCamelCase(business);
     if (isTravelFeaturedCategory(businessCategory, subCategories)) {
       camelBusiness.travelSettings = toCamelCase(travelSettings);

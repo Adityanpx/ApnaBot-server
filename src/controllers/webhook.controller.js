@@ -1127,7 +1127,7 @@ const processWebhookChange = async (entry, changes) => {
     }
 
     // Step 6 - Check subscription
-    if (!tenant.subscription || tenant.subscription.status !== 'active') {
+    if (!tenant.subscription || !['active', 'trial'].includes(tenant.subscription.status)) {
       logger.warn(`Business ${tenant.businessId} has no active subscription`);
       return;
     }

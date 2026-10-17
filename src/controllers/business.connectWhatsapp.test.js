@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const BIZ = 'b1';
 
 let config; let metaCalls; let node; let registerError; let syncFails; let previous; let otherOwner;
-let saved; let invalidated; let marked; let pinRows;
+let saved; let invalidated; let marked; let pinRows; let trialCalls; let trialResult;
 
 const stub = (rel, exports) => { const p = require.resolve(rel); require.cache[p] = { id: p, filename: p, loaded: true, exports }; };
 
@@ -71,6 +71,8 @@ stub('../services/businessCategory.service', {});
 stub('../services/auth.service', { generateTokens: () => ({}), saveTokenToRedis: async () => {} });
 stub('../services/r2.service', {});
 stub('../services/templateSync.service', { runSync: async () => {} });
+stub('../services/trial.service', { grantTrialOnFirstConnect: async (args) => { trialCalls.push(args); return trialResult; } });
+stub('../services/defaultSetup.service', { applyDefaultSetup: async () => ({}) });
 
 const { connectWhatsapp } = require('./business.controller');
 
@@ -93,6 +95,7 @@ const route = (n) => { node = n; };
 test.beforeEach(() => {
   config = { META_APP_ID: 'app', META_APP_SECRET: 'secret', COEXISTENCE_SYNC_ENABLED: false };
   metaCalls = []; node = NODE_A; registerError = null; syncFails = false; previous = { id: BIZ, phoneNumberId: null, isWhatsappConnected: false };
+  trialCalls = []; trialResult = { granted: true, endsAt: '2026-10-24T00:00:00.000Z' };
   otherOwner = null; saved = null; invalidated = []; marked = null; pinRows = [{ id: BIZ, whatsapp_register_pin: null }];
 });
 
@@ -237,4 +240,36 @@ test('a number already connected to another business -> 409 before Meta is calle
   const res = await call(NUMERIC);
   assert.equal(res.code, 409);
   assert.equal(metaCalls.length, 0);
+});
+
+test('a successful connect reports the trial outcome, with the normalised-number inputs, after the connection is saved', async () => {
+  route(NODE_A);
+  const res = await call(NUMERIC);
+  assert.deepEqual(res.body.data.trial, { granted: true, endsAt: '2026-10-24T00:00:00.000Z' });
+  assert.equal(trialCalls.length, 1);
+  assert.deepEqual(trialCalls[0], { businessId: BIZ, userId: undefined, whatsappNumber: '919876543210', wabaId: '111', phoneNumberId: '222' });
+  assert.ok(saved, 'the connection was saved before the trial step');
+});
+
+test('a number that already used its trial still connects, and the response says why there is no trial', async () => {
+  route(NODE_A);
+  trialResult = { granted: false, reason: 'number_already_used' };
+  const res = await call(NUMERIC);
+  assert.equal(res.code, 200);
+  assert.deepEqual(res.body.data.trial, { granted: false, reason: 'number_already_used' });
+  assert.equal(res.body.data.onboarding_type, 'cloud_api');
+});
+
+test('a connect that fails never reaches the trial step (no claim is created)', async () => {
+  route(NODE_A);
+  registerError = { code: 133005, message: 'PIN incorrect' };
+  const res = await call(NUMERIC);
+  assert.notEqual(res.code, 200);
+  assert.equal(trialCalls.length, 0);
+  assert.equal(saved, null);
+
+  registerError = null; otherOwner = { id: 'someone-else' };
+  const conflict = await call(NUMERIC);
+  assert.equal(conflict.code, 409);
+  assert.equal(trialCalls.length, 0);
 });

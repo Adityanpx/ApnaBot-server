@@ -35,9 +35,9 @@ const resolveBusinessByPhoneNumberId = async (phoneNumberId) => {
       return null;
     }
 
-    // Step 3: Load active subscription for business
+    // Step 3: Load the live (active or trial) subscription for business
     const { data: subscription, error: subErr } =
-      await getCurrentSubscriptionRow(business.id, { statuses: ['active'] });
+      await getCurrentSubscriptionRow(business.id, { statuses: ['active', 'trial'] });
     if (subErr) throw subErr;
 
     // Step 4: Build tenant object

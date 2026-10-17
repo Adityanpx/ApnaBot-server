@@ -29,6 +29,7 @@ const getPlatformStats = async () => {
       activeBusinesses,
       totalUsers,
       activeSubscriptions,
+      trialSubscriptions,
       totalMessagesThisMonth,
       totalBookingsThisMonth,
       revenueSubs
@@ -38,6 +39,7 @@ const getPlatformStats = async () => {
       supabase.from('users').select('*', { count: 'exact', head: true }).in('role', ['owner', 'staff'])
         .then(({ count, error }) => { if (error) throw error; return count || 0; }),
       countRows('subscriptions', { eq: { status: 'active' } }),
+      countRows('subscriptions', { eq: { status: 'trial' } }),
       countRows('messages', { gteColumn: 'created_at', gteValue: startOfMonth.toISOString() }),
       countRows('bookings', { gteColumn: 'created_at', gteValue: startOfMonth.toISOString() }),
       supabase.from('subscriptions').select('plan:plans(price)')
@@ -51,6 +53,7 @@ const getPlatformStats = async () => {
       inactiveBusinesses: totalBusinesses - activeBusinesses,
       totalUsers,
       activeSubscriptions,
+      trialSubscriptions,
       totalMessagesThisMonth,
       totalBookingsThisMonth,
       revenueThisMonth: sumPlanPrice(revenueSubs),

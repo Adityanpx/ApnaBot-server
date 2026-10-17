@@ -78,7 +78,7 @@ const sendPlanExpiringNotices = async () => {
     const horizon = new Date(now.getTime() + PLAN_EXPIRING_DAYS * DAY_MS);
     const { data: ending, error } = await supabase
       .from('subscriptions').select('id, business_id, end_date')
-      .eq('status', 'active').eq('is_autopay', false)
+      .in('status', ['active', 'trial']).eq('is_autopay', false)
       .gt('end_date', now.toISOString()).lte('end_date', horizon.toISOString());
     if (error) throw error;
     if (!ending || ending.length === 0) return;

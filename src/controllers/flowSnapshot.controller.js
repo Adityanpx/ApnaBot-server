@@ -13,8 +13,7 @@ const {
 } = require('../services/flowSnapshot.service');
 const businessCategoryService = require('../services/businessCategory.service');
 const logger = require('../utils/logger');
-const { r2KeyFromUrl } = require('../utils/r2Key');
-const { transformNodesForCopy } = require('../utils/copySetup');
+const { importTemplateIntoBusiness } = require('../services/categoryTemplateImport.service');
 
 /**
  * POST /api/flow-graph/snapshots
@@ -222,37 +221,20 @@ const importCategoryTemplate = async (req, res, next) => {
       return errorResponse(res, 404, 'Template not found');
     }
 
-    // Templates saved before cloneFromBusiness cleaned its input may still carry the source
-    // business's media_id / R2 image_url / location pins — strip them on the way in.
-    const { nodes: cleanNodes } = transformNodesForCopy(template.nodes, { isStorageUrl: (url) => !!r2KeyFromUrl(url) });
-
-    await deleteBusinessGraphRows(businessId);
-    await writeBusinessGraphRows(businessId, cleanNodes, template.edges, {
-      reuseIds: false,
-      resetTriggerCount: true
-    });
-    await invalidateRulesCache(businessId);
-
+    // The label lookup used to sit inside the snapshot try/catch, so a failure
+    // here only cost the restore point; keep it non-fatal.
+    let categoryLabel = template.category;
     try {
       const categories = await businessCategoryService.getAllCategories();
-      const categoryLabel = categories.find((c) => c.value === template.category)?.label || template.category;
-      const formattedDate = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
-
-      const { data: newSnapshot, error: snapshotErr } = await supabase.from('flow_snapshots').insert({
-        business_id: businessId,
-        name: `Imported ${categoryLabel} template — ${formattedDate}`,
-        nodes: cleanNodes,
-        edges: template.edges,
-        is_category_template: false,
-        is_active: true
-      }).select('id').single();
-      if (snapshotErr) throw snapshotErr;
-
-      await setActiveSnapshot(businessId, newSnapshot.id);
-      await enforceSnapshotCap(businessId);
-    } catch (snapshotError) {
-      logger.error('Error auto-snapshotting imported category template:', snapshotError);
+      categoryLabel = categories.find((c) => c.value === template.category)?.label || template.category;
+    } catch (labelError) {
+      logger.error('Error resolving category label for imported template:', labelError);
     }
+    const formattedDate = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+
+    await importTemplateIntoBusiness(businessId, template, {
+      snapshotName: `Imported ${categoryLabel} template — ${formattedDate}`
+    });
 
     return successResponse(res, 200, null, 'Category template imported successfully');
   } catch (error) {

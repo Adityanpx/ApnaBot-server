@@ -26,6 +26,7 @@ const {
 const categoryFeatureController = require('../controllers/categoryFeature.controller');
 const ownerMediaController = require('../controllers/ownerMedia.controller');
 const copySetupController = require('../controllers/copySetup.controller');
+const trialController = require('../controllers/trial.controller');
 
 // All admin routes — superadmin only
 router.use(protect, requireRole('superadmin'));
@@ -37,6 +38,12 @@ router.put('/businesses/:id/toggle',     toggleBusiness);
 router.delete('/businesses/:id',         deleteBusiness);
 router.put('/businesses/:id/plan',       changeBusinessPlan);
 router.put('/businesses/:id/extend',     extendSubscription);
+
+// Free trial: settings (app_config) and the once-per-WhatsApp-number claims
+router.get('/trial-settings',                          trialController.getSettings);
+router.put('/trial-settings',                          trialController.updateSettings);
+router.get('/trial-claims',                            trialController.listClaims);
+router.delete('/trial-claims/:id',                     trialController.deleteClaim);
 
 // Manual subscription grants (superadmin override — bypasses payment)
 router.post('/businesses/:id/grant-subscription',     grantSubscription);

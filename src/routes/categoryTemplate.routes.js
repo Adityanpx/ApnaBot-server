@@ -12,5 +12,9 @@ router.post('/clone-from-business', categoryTemplateController.cloneFromBusiness
 router.post('/import-json', categoryTemplateController.importTemplateJson);
 router.delete('/:id', categoryTemplateController.deleteCategoryTemplate);
 router.get('/:id/export', categoryTemplateController.exportTemplateJson);
+router.get('/:id', categoryTemplateController.getCategoryTemplate);
+router.post('/:id/set-default', categoryTemplateController.setDefaultTemplate);
+router.post('/:id/unset-default', categoryTemplateController.unsetDefaultTemplate);
+router.patch('/:id/node-texts', categoryTemplateController.updateTemplateNodeTexts);
 
 module.exports = router;

@@ -6,6 +6,7 @@ const businessCategoryService = require('../services/businessCategory.service');
 const logger = require('../utils/logger');
 const { r2KeyFromUrl } = require('../utils/r2Key');
 const { transformNodesForCopy } = require('../utils/copySetup');
+const { isValidLanguageCode } = require('../utils/languageCatalog');
 
 /**
  * GET /api/admin/category-templates
@@ -19,7 +20,7 @@ const getCategoryTemplates = async (req, res, next) => {
   try {
     const { data, error } = await supabase
       .from('flow_snapshots')
-      .select('id, category, name, description, created_at, updated_at')
+      .select('id, category, name, description, is_default, is_active, created_at, updated_at')
       .eq('is_category_template', true)
       .order('category', { ascending: true });
     if (error) throw error;
@@ -29,6 +30,30 @@ const getCategoryTemplates = async (req, res, next) => {
     logger.error('Error in getCategoryTemplates:', error);
     next(error);
   }
+};
+
+const MIN_NAME_LENGTH = 3;
+
+/**
+ * Nodes whose text (label or any translation) contains one of the given business
+ * names, case-insensitively - so Super Admin can swap it for {{businessName}}
+ * before the template is copied into other businesses. Names shorter than
+ * MIN_NAME_LENGTH are ignored (they'd match inside ordinary words).
+ * @returns {{nodeId:string, key:string, matched:string}[]} key = keyword / field_key / id
+ */
+const findBusinessNameWarnings = (nodes, names) => {
+  const needles = [...new Set((names || [])
+    .filter((n) => typeof n === 'string')
+    .map((n) => n.trim())
+    .filter((n) => n.length >= MIN_NAME_LENGTH))];
+  const warnings = [];
+  for (const node of nodes || []) {
+    const texts = [node.label, ...Object.values(node.label_translations || {})]
+      .filter((t) => typeof t === 'string').map((t) => t.toLowerCase());
+    const matched = needles.find((needle) => texts.some((t) => t.includes(needle.toLowerCase())));
+    if (matched) warnings.push({ nodeId: node.id, key: node.keyword || node.field_key || node.id, matched });
+  }
+  return warnings;
 };
 
 /**
@@ -62,7 +87,7 @@ const cloneFromBusiness = async (req, res, next) => {
     }
 
     const { data: business, error: businessErr } = await supabase
-      .from('businesses').select('id').eq('id', businessId).maybeSingle();
+      .from('businesses').select('id, name, display_name').eq('id', businessId).maybeSingle();
     if (businessErr) throw businessErr;
     if (!business) {
       return errorResponse(res, 404, 'Business not found');
@@ -99,7 +124,10 @@ const cloneFromBusiness = async (req, res, next) => {
     }).select('id, category, name, description, created_at, updated_at').single();
     if (insertErr) throw insertErr;
 
-    return successResponse(res, 201, toCamelCase(template));
+    // Text that still names the source business would reach every new business.
+    const warnings = findBusinessNameWarnings(cleanNodes, [business.name, business.display_name]);
+
+    return successResponse(res, 201, { ...toCamelCase(template), warnings });
   } catch (error) {
     logger.error('Error in cloneFromBusiness:', error);
     next(error);
@@ -228,7 +256,168 @@ const importTemplateJson = async (req, res, next) => {
   }
 };
 
+/**
+ * GET /api/admin/category-templates/:id
+ * The whole template (raw snake_case nodes/edges, original ids) for preview.
+ */
+const getCategoryTemplate = async (req, res, next) => {
+  try {
+    const { data: template, error } = await supabase
+      .from('flow_snapshots')
+      .select('id, category, name, description, is_default, is_active, nodes, edges, created_at, updated_at')
+      .eq('id', req.params.id).eq('is_category_template', true).maybeSingle();
+    if (error) throw error;
+    if (!template) {
+      return errorResponse(res, 404, 'Category template not found');
+    }
+
+    // toCamelCase would also rename keys inside the stored nodes/edges.
+    const { nodes, edges, ...rest } = template;
+    return successResponse(res, 200, { ...toCamelCase(rest), nodes, edges });
+  } catch (error) {
+    logger.error('Error in getCategoryTemplate:', error);
+    next(error);
+  }
+};
+
+/**
+ * POST /api/admin/category-templates/:id/set-default
+ * Makes this template the one new businesses of its category get at signup
+ * (defaultSetup.service.js). The previous default for the category is cleared
+ * in the same transaction (set_default_category_template RPC).
+ */
+const setDefaultTemplate = async (req, res, next) => {
+  try {
+    const { data: category, error } = await supabase.rpc('set_default_category_template', { p_template_id: req.params.id });
+    if (error) throw error;
+    if (!category) {
+      return errorResponse(res, 404, 'Active category template not found');
+    }
+
+    return successResponse(res, 200, { id: req.params.id, category, isDefault: true }, 'Default template set');
+  } catch (error) {
+    logger.error('Error in setDefaultTemplate:', error);
+    next(error);
+  }
+};
+
+/**
+ * POST /api/admin/category-templates/:id/unset-default
+ */
+const unsetDefaultTemplate = async (req, res, next) => {
+  try {
+    const { data, error } = await supabase
+      .from('flow_snapshots').update({ is_default: false })
+      .eq('id', req.params.id).eq('is_category_template', true)
+      .select('id, category');
+    if (error) throw error;
+    if (!data || data.length === 0) {
+      return errorResponse(res, 404, 'Category template not found');
+    }
+
+    return successResponse(res, 200, { id: data[0].id, category: data[0].category, isDefault: false }, 'Default template cleared');
+  } catch (error) {
+    logger.error('Error in unsetDefaultTemplate:', error);
+    next(error);
+  }
+};
+
+const MAX_NODE_TEXT_UPDATES = 500;
+const MAX_NODE_TEXT_LENGTH = 4096;
+
+// Validates one translations object ({ hi: 'text', ... }) or null; returns an error string or null.
+const translationsError = (value) => {
+  if (value === null) return null;
+  if (typeof value !== 'object' || Array.isArray(value)) return 'must be an object or null';
+  for (const [lang, text] of Object.entries(value)) {
+    if (!isValidLanguageCode(lang)) return `unknown language "${lang}"`;
+    if (typeof text !== 'string' || text.length > MAX_NODE_TEXT_LENGTH) return `"${lang}" must be text up to ${MAX_NODE_TEXT_LENGTH} characters`;
+  }
+  return null;
+};
+
+const translationsOf = (u) => (u.labelTranslations !== undefined ? u.labelTranslations : u.label_translations);
+
+/**
+ * PATCH /api/admin/category-templates/:id/node-texts
+ * Body: { nodes: [{ id, label?, labelTranslations? }] } - `id` is the node's id
+ * inside the template (the id GET /:id and /export show; nodes have no other
+ * unique key). Updates ONLY label (the reply / question text) and
+ * label_translations; every other column, the node order and the edges are left
+ * exactly as stored, so this can never change the template's structure.
+ * Businesses that already imported the template are unaffected.
+ */
+const updateTemplateNodeTexts = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const updates = req.body && req.body.nodes;
+    if (!Array.isArray(updates) || updates.length === 0 || updates.length > MAX_NODE_TEXT_UPDATES) {
+      return errorResponse(res, 400, `nodes must be an array of 1 to ${MAX_NODE_TEXT_UPDATES} items`);
+    }
+
+    const seen = new Set();
+    for (let i = 0; i < updates.length; i++) {
+      const u = updates[i];
+      if (!u || typeof u !== 'object' || typeof u.id !== 'string') {
+        return errorResponse(res, 400, `nodes[${i}]: id is required`);
+      }
+      if (seen.has(u.id)) return errorResponse(res, 400, `nodes[${i}]: duplicate id`);
+      seen.add(u.id);
+      const translations = translationsOf(u);
+      if (u.label === undefined && translations === undefined) {
+        return errorResponse(res, 400, `nodes[${i}]: provide label and/or labelTranslations`);
+      }
+      if (u.label !== undefined && (typeof u.label !== 'string' || !u.label.trim() || u.label.length > MAX_NODE_TEXT_LENGTH)) {
+        return errorResponse(res, 400, `nodes[${i}]: label must be non-empty text up to ${MAX_NODE_TEXT_LENGTH} characters`);
+      }
+      if (translations !== undefined) {
+        const problem = translationsError(translations);
+        if (problem) return errorResponse(res, 400, `nodes[${i}]: labelTranslations ${problem}`);
+      }
+    }
+
+    const { data: template, error: findErr } = await supabase
+      .from('flow_snapshots').select('nodes').eq('id', id).eq('is_category_template', true).maybeSingle();
+    if (findErr) throw findErr;
+    if (!template) {
+      return errorResponse(res, 404, 'Category template not found');
+    }
+
+    const known = new Set((template.nodes || []).map((n) => n.id));
+    const missing = updates.filter((u) => !known.has(u.id)).map((u) => u.id);
+    if (missing.length > 0) {
+      return errorResponse(res, 400, `Unknown node id(s): ${missing.join(', ')}`);
+    }
+
+    const byId = new Map(updates.map((u) => [u.id, u]));
+    const nodes = (template.nodes || []).map((n) => {
+      const u = byId.get(n.id);
+      if (!u) return n;
+      const translations = translationsOf(u);
+      return {
+        ...n,
+        ...(u.label !== undefined ? { label: u.label.trim() } : {}),
+        ...(translations !== undefined ? { label_translations: translations } : {})
+      };
+    });
+
+    const { error: updateErr } = await supabase
+      .from('flow_snapshots').update({ nodes }).eq('id', id).eq('is_category_template', true);
+    if (updateErr) throw updateErr;
+
+    return successResponse(res, 200, { id, updated: updates.length }, 'Template texts updated');
+  } catch (error) {
+    logger.error('Error in updateTemplateNodeTexts:', error);
+    next(error);
+  }
+};
+
 module.exports = {
+  findBusinessNameWarnings,
+  getCategoryTemplate,
+  setDefaultTemplate,
+  unsetDefaultTemplate,
+  updateTemplateNodeTexts,
   getCategoryTemplates,
   cloneFromBusiness,
   deleteCategoryTemplate,

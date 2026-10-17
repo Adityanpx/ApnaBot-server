@@ -25,6 +25,8 @@ stub('../services/businessCategory.service', { isEnabledCategory: async () => tr
 stub('../services/auth.service', { generateTokens: async () => ({ accessToken: 'a', refreshToken: 'r' }), saveTokenToRedis: async () => {} });
 stub('../services/r2.service', {});
 stub('../services/templateSync.service', {});
+stub('../services/trial.service', {});
+stub('../services/defaultSetup.service', { applyDefaultSetup: async () => ({}) });
 stub('../services/accountHealth.service', { withPaymentIssue: (b) => b, dismissPaymentIssue: async () => {} });
 stub('axios', {});
 

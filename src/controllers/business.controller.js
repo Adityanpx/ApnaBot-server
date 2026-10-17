@@ -2,6 +2,8 @@ const axios = require('axios');
 const businessService = require('../services/business.service');
 const tenantService = require('../services/tenant.service');
 const subscriptionService = require('../services/subscription.service');
+const trialService = require('../services/trial.service');
+const { applyDefaultSetup } = require('../services/defaultSetup.service');
 const bookingService = require('../services/booking.service');
 const businessCategoryService = require('../services/businessCategory.service');
 const supabase = require('../config/supabase');
@@ -178,6 +180,10 @@ const createBusiness = async (req, res, next) => {
       }
       throw createErr;
     }
+
+    // Seed the category's default flow + form fields (best effort; never throws,
+    // so a failure only leaves the business empty as before).
+    await applyDefaultSetup(business.id);
 
     // Generate new tokens with businessId
     const userPayload = {
@@ -657,6 +663,17 @@ const connectWhatsapp = async (req, res, next) => {
       await tenantService.invalidateTenantCache(previousPhoneNumberId);
     }
 
+    // One-time free trial for a number that has never had one (trial.service.js).
+    // After the connection is saved; never throws, so it can never fail or undo
+    // the connect - the outcome is only reported back to the app.
+    const trial = await trialService.grantTrialOnFirstConnect({
+      businessId,
+      userId: req.user.userId,
+      whatsappNumber,
+      wabaId,
+      phoneNumberId
+    });
+
     // Path B: the one-time contacts + history syncs (see decideSyncs). After the
     // connection is saved, so a failed save can never spend them. Never fails
     // the onboarding.
@@ -707,7 +724,8 @@ const connectWhatsapp = async (req, res, next) => {
       onboarding_type: onboardingType,
       display_phone_number: phoneNode.display_phone_number,
       verified_name: phoneNode.verified_name,
-      name_status: phoneNode.name_status
+      name_status: phoneNode.name_status,
+      trial
     }, 'WhatsApp connected successfully');
   } catch (error) {
     logger.error('Error in connectWhatsapp:', {
