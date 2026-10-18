@@ -23,6 +23,14 @@ const getReplyMediaLimits = (plan) => {
   };
 };
 
+// Cards one carousel reply may carry (plans.carousel_max_cards, 2..10). No plan / no active
+// subscription -> the Basic default, same as the photo limits above.
+const BASIC_CAROUSEL_MAX_CARDS = 3;
+const getCarouselMaxCards = (plan) => {
+  const max = plan ? Number.parseInt(plan.carousel_max_cards, 10) : NaN;
+  return Number.isFinite(max) ? Math.min(10, Math.max(2, max)) : BASIC_CAROUSEL_MAX_CARDS;
+};
+
 const galleryOf = (node) => {
   const list = node && (node.gallery_media_ids ?? node.galleryMediaIds);
   return Array.isArray(list) ? list : [];
@@ -63,6 +71,7 @@ module.exports = {
   BASIC_LIMITS,
   MAX_REPLY_VIDEO_BYTES,
   getReplyMediaLimits,
+  getCarouselMaxCards,
   countPhotos,
   planReplyMediaSend
 };

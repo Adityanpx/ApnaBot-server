@@ -1,7 +1,7 @@
 // What the customer saw for an interactive WhatsApp message, as the object kept in
 // messages.interactive_payload (migration 20261014140000) so the chat can draw the
 // list / buttons / link instead of only the body text:
-//   { kind: 'list' | 'buttons' | 'cta_url' | 'location_request', body,
+//   { kind: 'list' | 'buttons' | 'cta_url' | 'location_request' | 'carousel', body,
 //     buttonText?, options?: [{ id, title, description? }], label?, imageUrl? }
 //   A cta_url payload keeps its label but NOT the link: the booking-form link carries a
 //   single-use token, which has no business in the chat history.
@@ -16,6 +16,7 @@
 // location pin and a template get null (the row stays plain text). No requires
 // outside utils, so it loads in tests without any config.
 const { LIMITS, truncate } = require('./textLimits');
+const { summarizeCarousel } = require('./carouselPayload');
 
 // Same default as localization.js (DEFAULT_LIST_BUTTON_LABEL), not imported: that
 // module pulls in more than this needs.
@@ -47,13 +48,17 @@ const buildInteractivePayload = (job) => {
   const {
     message, imageUrl = null, buttons, listOptions, interactiveButtons, interactiveList,
     listButtonLabel = DEFAULT_LIST_BUTTON_LABEL, step = null, ctaButton = null,
-    locationRequest = false, location = null
+    locationRequest = false, location = null, carouselCards = null
   } = job || {};
 
   if (location) return null;
   if (locationRequest) return { kind: 'location_request', body: truncate(message, LIMITS.TEXT_BODY) };
 
   const body = truncate(message, LIMITS.INTERACTIVE_BODY);
+
+  // A carousel reply: the body plus a summary of each card (media, text, button labels). Sent natively
+  // or as the sequential fallback, the customer saw the same content.
+  if (hasItems(carouselCards)) return summarizeCarousel(message, carouselCards);
 
   if (ctaButton) {
     return { kind: 'cta_url', body, label: truncate(ctaButton.buttonText, LIMITS.BUTTON_TITLE) };

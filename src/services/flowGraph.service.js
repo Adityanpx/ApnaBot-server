@@ -24,10 +24,13 @@ const { toCamelCase } = require('../utils/caseConvert');
 const { isValidLanguageCode } = require('../utils/languageCatalog');
 const { validateEdgeCopy, validateButtonText } = require('../utils/textLimits');
 const { FORM_TITLE_MAX } = require('../utils/formTitle');
+const { prepareCarouselWrite, carouselBodyError, carouselParityError } = require('./carouselNode.service');
 const logger = require('../utils/logger');
 
 const VALID_MATCH_TYPES = ['exact', 'contains', 'startsWith'];
-const VALID_CONTENT_TYPES = ['text', 'buttons', 'list', 'location', 'location_request'];
+const VALID_CONTENT_TYPES = ['text', 'buttons', 'list', 'location', 'location_request', 'carousel'];
+// Question nodes (booking fields) never send a carousel.
+const VALID_QUESTION_CONTENT_TYPES = VALID_CONTENT_TYPES.filter(t => t !== 'carousel');
 const VALID_REPLY_KINDS = ['text', 'booking_trigger', 'payment_trigger', 'web_form_trigger'];
 // 'rentalPackage' deliberately excluded — still engine-internal/migration-only,
 // per PRD.md's "NOT done yet" note. Only vehicle_carousel has a create path.
@@ -204,6 +207,10 @@ const prepareFormTitleWrite = ({ formTitle, formTitleTranslations } = {}, replyK
   return { updates };
 };
 
+// A carousel reply holds its media in the cards: gallery photos / a video next to it are refused.
+const carouselHasExtraMedia = (node) => !!node
+  && ((Array.isArray(node.gallery_media_ids) && node.gallery_media_ids.length > 0) || !!node.video_media_id);
+
 /**
  * Per-node location-override validation for reply nodes (contentType=
  * 'location'). latitude/longitude are otherwise unconstrained at the DB
@@ -331,6 +338,7 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
   const nodeUpserts = [];         // snake_case rows for the RPC
   const proposedNodes = [];       // camelCase {id, nodeType, fieldKey, replyKind} for validation
 
+  const carouselNodeCards = new Map();      // reply node id -> its carousel_cards after this save
   const replyContentTypeById = new Map(); // final content_type of each reply node in this save, for the edge copy limits
   const seenKeywords = new Set();
   for (let i = 0; i < replyNodes.length; i++) {
@@ -408,12 +416,26 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
     const formTitleTranslations = 'form_title_translations' in formTitleWrite.updates
       ? formTitleWrite.updates.form_title_translations : (existing ? existing.form_title_translations ?? null : null);
 
+    // carouselCards: preserve-on-omit like the fields above. A supplied key is validated against the node as
+    // it will be after this save (cards left exactly as stored are not re-validated).
+    const carouselWrite = await prepareCarouselWrite({
+      businessId, existing: existing || null, carouselCards: item.carouselCards, contentTypeAfter: contentType,
+      replyKindAfter: replyKind, hasExtraMedia: carouselHasExtraMedia(existing)
+    });
+    if (carouselWrite.error) return { error: `replyNodes[${i}]: ${carouselWrite.error.message}` };
+    const carouselCards = 'carousel_cards' in carouselWrite.updates
+      ? carouselWrite.updates.carousel_cards : (existing ? existing.carousel_cards ?? null : null);
+
     if (replyKind === 'payment_trigger' && !label) label = 'Please complete your payment.';
     if (replyKind === 'booking_trigger' && !label) label = 'Great! Let me collect your details.';
     if (!label && !resolvedImageUrl && contentType !== 'location') {
       return { error: `replyNodes[${i}]: label is required (unless imageUrl/mediaId is provided, or contentType is "location")` };
     }
     if (!label) label = '';
+    if (contentType === 'carousel') {
+      const bodyError = carouselBodyError(label);
+      if (bodyError) return { error: `replyNodes[${i}]: ${bodyError}` };
+    }
 
     const normalizedKeyword = keyword.toLowerCase().trim();
     if (seenKeywords.has(normalizedKeyword)) {
@@ -437,8 +459,10 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
       button_text: buttonText ?? null, button_text_translations: buttonTextTranslations || null,
       form_fields: formFields ?? null, latitude: latitude ?? null, longitude: longitude ?? null,
       location_name: locationName || null, address: address || null,
-      form_title: formTitle, form_title_translations: formTitleTranslations
+      form_title: formTitle, form_title_translations: formTitleTranslations,
+      carousel_cards: carouselCards
     });
+    carouselNodeCards.set(id, carouselCards);
     proposedNodes.push({ id, nodeType: 'reply', replyKind, fieldKey: null });
   }
 
@@ -499,8 +523,8 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
           `questionNodes[${i}]: options must not be provided for a vehicle_carousel node.` };
       }
     } else {
-      if (!VALID_CONTENT_TYPES.includes(contentType)) {
-        return { error: `questionNodes[${i}]: contentType must be one of: ${VALID_CONTENT_TYPES.join(', ')}` };
+      if (!VALID_QUESTION_CONTENT_TYPES.includes(contentType)) {
+        return { error: `questionNodes[${i}]: contentType must be one of: ${VALID_QUESTION_CONTENT_TYPES.join(', ')}` };
       }
       if ((contentType === 'buttons' || contentType === 'list') && (!Array.isArray(options) || options.length === 0)) {
         return { error: `questionNodes[${i}]: options must have at least one entry for contentType "${contentType}"` };
@@ -537,7 +561,8 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
       location_name: existing ? existing.location_name : null,
       address: existing ? existing.address : null,
       form_title: existing ? existing.form_title ?? null : null,
-      form_title_translations: existing ? existing.form_title_translations ?? null : null
+      form_title_translations: existing ? existing.form_title_translations ?? null : null,
+      carousel_cards: existing ? existing.carousel_cards ?? null : null
     });
     proposedNodes.push({ id, nodeType, replyKind: null, fieldKey });
   }
@@ -551,6 +576,7 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
 
   const edgeUpserts = [];
   const proposedEdges = [];
+  const proposedCardEdges = [];  // { id, fromNodeId, cardIndex } for the carousel checks below
   const resolveNodeRef = (rawId) => {
     if (idMap.has(rawId)) return idMap.get(rawId);
     if (keepNodeIds.has(rawId)) return rawId;
@@ -577,6 +603,7 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
     const descriptionTranslations = pickEdgeField('descriptionTranslations', 'description_translations');
     const condition = pickEdgeField('condition', 'condition');
     const preset = pickEdgeField('preset', 'preset');
+    let cardIndex = pickEdgeField('cardIndex', 'card_index') ?? null;
 
     if (!rawFrom || !rawTo) {
       return { error: `edges[${i}]: fromNodeId and toNodeId are required` };
@@ -627,6 +654,21 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
       return { error: `edges[${i}]: displayOrder must be a number` };
     }
 
+    if (cardIndex !== null) {
+      if (!Number.isInteger(cardIndex) || cardIndex < 0 || cardIndex > 9) {
+        return { error: `edges[${i}]: cardIndex must be an integer from 0 to 9` };
+      }
+      if (replyContentTypeById.get(fromNodeId) !== 'carousel') {
+        // The node is being switched away from carousel in this save: its buttons lose their card (a client
+        // echoing the old cardIndex is not an error). Any other node must not carry one.
+        const switchedAway = currentNodeById.get(fromNodeId)?.content_type === 'carousel';
+        if (!switchedAway) {
+          return { error: `edges[${i}]: cardIndex only applies to buttons of a carousel reply (contentType "carousel").` };
+        }
+        cardIndex = null;
+      }
+    }
+
     const id = existingEdge ? existingEdge.id : crypto.randomUUID();
 
     edgeUpserts.push({
@@ -634,9 +676,33 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
       label_translations: labelTranslations || null, description,
       description_translations: descriptionTranslations || null,
       condition: condition || null, preset: preset || null,
-      display_order: displayOrder !== undefined ? displayOrder : 0
+      display_order: displayOrder !== undefined ? displayOrder : 0,
+      card_index: cardIndex
     });
+    proposedCardEdges.push({ id, fromNodeId, cardIndex });
     proposedEdges.push({ id, fromNodeId, toNodeId, condition: condition || null });
+  }
+
+  // ---- carousel nodes: every button belongs to a card; cards have equal button counts ----------
+  // An edge on a non-carousel parent must not carry a cardIndex. A carousel node whose cards and
+  // buttons are exactly as already stored is not re-checked, so a half-finished carousel (or one cloned
+  // from a template) never blocks an unrelated canvas save.
+  for (const [nodeId, cards] of carouselNodeCards) {
+    const isCarousel = replyContentTypeById.get(nodeId) === 'carousel';
+    // Buttons with no card yet (e.g. a buttons reply just switched to carousel) are "unassigned": kept as they
+    // are, ignored by the send path, and not part of the parity check.
+    const ownAll = proposedCardEdges.filter(e => e.fromNodeId === nodeId);
+    const own = ownAll.filter(e => e.cardIndex !== null);
+    if (!isCarousel) continue;
+    const current = currentNodeById.get(nodeId);
+    const currentOwn = [...currentEdgeById.values()].filter(e => e.from_node_id === nodeId);
+    const signature = (list, idOf, indexOf) => JSON.stringify(list.map(e => `${idOf(e)}:${indexOf(e)}`).sort());
+    const unchanged = current && current.content_type === 'carousel'
+      && JSON.stringify(current.carousel_cards ?? null) === JSON.stringify(cards ?? null)
+      && signature(currentOwn, e => e.id, e => e.card_index ?? '') === signature(ownAll, e => e.id, e => e.cardIndex ?? '');
+    if (unchanged) continue;
+    const parityError = carouselParityError((cards || []).length, own);
+    if (parityError) return { error: parityError };
   }
 
   // ---- deletes: every current row not named anywhere in the payload ----
@@ -734,6 +800,7 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
 module.exports = {
   VALID_MATCH_TYPES,
   VALID_CONTENT_TYPES,
+  VALID_QUESTION_CONTENT_TYPES,
   VALID_REPLY_KINDS,
   VALID_QUESTION_NODE_TYPES,
   TRAVEL_CATEGORIES_WITH_RESERVED_FIELDS,

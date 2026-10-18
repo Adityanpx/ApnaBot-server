@@ -1189,6 +1189,73 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
   Tests: `replyMediaLimits.test.js`, `flowGraph.replyMedia.test.js`, `webhook.replyMedia.test.js`,
   `businessMedia.replyMedia.test.js`, plus additions to the worker, copySetup, inventory and sweeper tests.
 
+## Reply carousel node + media usage (built 2026-10-22, migration `20261022120000_reply_carousel.sql`, uncommitted)
+
+A reply node with `content_type = 'carousel'` sends WhatsApp's native interactive media carousel (session message,
+free inside the 24h window): 2..N cards, each = image (or video) + optional card text (<= 160 chars, <= 2 line
+breaks) + 1-2 quick-reply buttons (<= 20 chars), under a required main message (<= 1024). v1 = quick-reply cards only.
+
+- **Columns.** `flow_nodes.carousel_cards` (jsonb array, null by default: `{ media_id, media_type: 'image'|'video', body,
+  body_translations }`; kept snake_case inside the JSON, `toCamelCase` is shallow), `flow_edges.card_index` (smallint 0..9,
+  which card a button edge belongs to; the edge id is the quick-reply id, so taps route through the existing
+  `resolveTappedEdge` unchanged), `plans.carousel_max_cards` (2..10, default 3; basic 3, pro 10, business 10). The
+  `content_type` check constraint now allows `'carousel'`. Plan reads are `select('*')`, so `carouselMaxCards` appears
+  wherever `imagesPerReply` does; admin create/update accept `carouselMaxCards` (integer 2..10).
+- **ROLLBACK WARNING - `save_flow_graph_full`.** The migration re-creates the RPC with `carousel_cards` and `card_index`
+  in both its INSERT list and UPDATE SET. `flowGraph.service.js#saveFullGraph` therefore sends both keys on EVERY node /
+  edge row (reply nodes and edges: preserve-on-omit; question / computed nodes: the stored value). A server build that
+  predates this change, or re-applying the previous RPC definition, would NULL `carousel_cards` / `card_index` on the
+  next canvas save. Deploy order: migration first, then the server; do not roll the server back without also
+  restoring the RPC from `20261017120000` AND accepting that cards are lost on the next canvas save.
+- **Write path** (`services/carouselNode.service.js`, used by `POST/PUT /api/flow-graph/reply-nodes`, `POST/PUT /edges`
+  and the canvas batch save). Request cards use `carouselCards: [{ mediaId, mediaType, body, bodyTranslations }]` (snake_case
+  also accepted), stored snake_case. Rules: reply node with `replyKind 'text'`, no gallery/video; 2..10 cards; each `mediaId` a
+  `business_media` row of this business with the declared type; video only if the plan allows it; card text 160 chars / 2
+  line breaks (translations too); message (`label`) required <= 1024. The plan card cap and the video permission are checked
+  **only when the write increases** the count / adds a video (a downgraded owner can still edit). Cards left exactly as stored
+  are not re-validated (a client may echo back cards cloned without media). Switching away from carousel clears the cards.
+  Edges: a carousel button needs `cardIndex` within the cards, max 2 per card, label <= 20; any other parent must not carry
+  `cardIndex`. Whole-carousel parity (every card the same 1 or 2 buttons, every button on a real card) is enforced in the
+  canvas batch save only (edges arrive one at a time on the single-edge routes), and skipped for a carousel that is exactly
+  as stored. Question nodes can never be carousels.
+  **Content-type switches.** carousel -> anything else clears `carousel_cards` AND sets `card_index = null` on the node's
+  outgoing edges (single-node PUT, and the canvas save, which also nulls a cardIndex the client echoes back). Anything ->
+  carousel leaves existing buttons untouched: with `card_index` null they are *unassigned* - kept, ignored by the send path
+  (info log `ignoredButtonsWithoutCard`), and excluded from the canvas parity check (which still requires every card to
+  have its own 1-2 assigned buttons). The single-node PUT is not atomic across the node and its edges.
+- **Send path** (`buildCarouselSend` in webhook.controller.js, `utils/carouselPayload.js#planCarouselSend`). Cards beyond the
+  CURRENT plan's `carousel_max_cards` are skipped. **Native** (one Meta carousel) only when 2+ cards have resolvable media (a
+  card whose media was deleted / foreign / wrong type / video-not-allowed counts as having none and is dropped) and all of
+  those have the same 1-2 buttons. Otherwise the **text fallback**: the body, then one message per card (image header where
+  the card has one, card text, its quick-reply buttons), all cards kept so every button still routes. This is what a clone
+  from a Super Admin category template gets (copy/import drops the SOURCE business's media ids, `transformNodesForCopy`, but
+  keeps card text and the card buttons). It is ONE queue job and ONE outbound `messages` row (`type 'text'`,
+  `interactive_payload.kind = 'carousel'`), usage counted once. The worker (`whatsapp.worker.js`, `type: 'carousel'`) sends the
+  native carousel; on a Meta **4xx (not 429)** it sends the same fallback instead and does not retry; 5xx / network errors throw
+  so the queue retries as before - but only for the FIRST send (the native carousel, or the fallback's body). Once the
+  fallback's body has gone out, a card message failing with 5xx / network is logged at warn and skipped, the remaining
+  cards still go, and the job does not throw (a retry would resend the body).
+- **Tap routing.** Meta does not document how a card button tap reaches the webhook. `interactive.button_reply.id` (= edge id)
+  needs no change. If it arrives as `type: 'button'` (like a template quick-reply), `chatbot.service.js#resolveCarouselTap`
+  claims it only when the payload is a UUID that is an edge of THIS business whose from-node is a carousel; every other
+  `button` message goes to the template-button handling exactly as before. The first carousel tap a process sees logs its raw
+  shape once (`First carousel button tap seen, raw shape`, info, no customer data). **Unverified against a live send: confirm
+  with a real carousel on a test number and read that log line.**
+- **Media usage / replace cleanup (all reply media, not only carousels).** `services/mediaUsage.service.js` is the single
+  source of truth for "where is this file used": reply photo #1, gallery, video, carousel cards, template headers, courses
+  (`business_courses.image_media_id`) and vehicles (`vehicles.custom_photo_url` = the file's url). `GET
+  /api/business/media/:id/usage` (owner) returns it and `DELETE /api/business/media/:id` refuses on the same check (before
+  this, DELETE did not check courses or vehicles: the course FK silently nulled, a vehicle kept a dead url). The storage
+  inventory counts card media as a reference (never protected), and the sweeper clears a purged file from live carousel cards
+  (media_id -> null, no DB trigger for these jsonb objects) and from snapshots' cards.
+- **Not done / follow-ups.** `src/scripts/verifyBookingGraph.js` crashes on a business with no `booking_trigger` node (SG Travels:
+  "No booking_trigger reply node found") and assumes exactly one (Hotel Demo has 3: PGRST116 from `.single()`); run it
+  against CareWell Clinic, or fix the script to pick/loop over entry nodes. No Test-tab preview of a carousel; URL (CTA) cards; the Flutter / web editors. The gallery
+  trigger does not strip card references (by design: the API refuses to delete used media; send skips what no longer
+  resolves). Tests: `utils/carouselPayload.test.js`, `controllers/flowGraph.carousel.test.js`, `services/flowGraph.carousel.test.js`,
+  `controllers/webhook.carousel.test.js`, `services/mediaUsage.test.js`, `services/flowSnapshot.carousel.test.js`, plus additions to
+  the worker, inventory, sweeper, admin-plans and replyMediaLimits tests.
+
 ## Mobile app version gate (built 2026-10-18, migration `20261018120000_app_config.sql`)
 
 Tells the Flutter app which versions to accept. **Server only - no client reads it yet**, so

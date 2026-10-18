@@ -10,17 +10,62 @@ const { fromSendError } = require('../utils/whatsappErrors');
 // Must match the prefix used by whatsapp.queue.js - see comment there.
 const prefix = `apnabot:${config.QUEUE_NAMESPACE}`;
 
+// A carousel reply (webhook.controller.js, content_type 'carousel'). carouselNative = the cards are
+// eligible for Meta's native carousel; otherwise (no photos, fewer than 2 with photos, uneven buttons)
+// or when Meta REJECTS the carousel with a 4xx, the sequential fallback goes out instead: the body, then
+// one message per card - its image if it has one, its text and its quick-reply buttons - so every
+// button still routes. A rejection is not retried (it would fail the same way). A 5xx / network error on
+// the FIRST send (the native carousel, or the body when there was no native attempt) throws so the queue
+// retries as usual; once the fallback's body has gone out, a failing card message is logged at warn and
+// the remaining cards still go - throwing would retry the whole sequence and send the body twice.
+// Returns the first message's send result (the row's wamid).
+const sendCarouselReply = async ({ phoneNumberId, encryptedAccessToken, to, message, carouselCards, carouselNative, businessId }) => {
+  if (carouselNative) {
+    try {
+      return await whatsappService.sendCarouselMessage(phoneNumberId, encryptedAccessToken, to, message, carouselCards);
+    } catch (error) {
+      const status = error.response?.status;
+      if (!(status >= 400 && status < 500 && status !== 429)) throw error;
+      logger.info('Meta rejected a carousel, sending the sequential fallback', {
+        businessId, status, error: error.response?.data?.error?.message || error.message
+      });
+    }
+  }
+
+  const first = await whatsappService.sendTextMessage(phoneNumberId, encryptedAccessToken, to, message);
+  for (const card of carouselCards) {
+    const text = card.text || message;
+    try {
+      if (Array.isArray(card.buttons) && card.buttons.length > 0) {
+        await whatsappService.sendInteractiveButtons(phoneNumberId, encryptedAccessToken, to, text, card.buttons, card.mediaType === 'image' ? card.mediaUrl : null);
+      } else if (card.mediaType === 'image' && card.mediaUrl) {
+        await whatsappService.sendImageMessage(phoneNumberId, encryptedAccessToken, to, card.mediaUrl, card.text || undefined);
+      } else if (card.text) {
+        await whatsappService.sendTextMessage(phoneNumberId, encryptedAccessToken, to, card.text);
+      }
+    } catch (error) {
+      logger.warn('Carousel fallback: a card message failed, continuing with the rest', {
+        businessId, cardIndex: card.index, status: error.response?.status || null, error: error.response?.data?.error?.message || error.message
+      });
+    }
+  }
+  return first;
+};
+
 const worker = new Worker('whatsapp-outbound', async (job) => {
   const { businessId, phoneNumberId, encryptedAccessToken, to, message, messageId,
           type = 'text', imageUrl = null, videoUrl = null, buttons = [], listOptions = [],
           interactiveButtons = null, interactiveList = null, listButtonLabel = 'Choose',
-          step = null, location = null, locationRequest = false, ctaButton = null } = job.data;
+          step = null, location = null, locationRequest = false, ctaButton = null,
+          carouselCards = null, carouselNative = false } = job.data;
 
   // Meta's send response ({ messages: [{ id }] }), whichever branch sends.
   let sendResult = null;
 
   try {
-    if (location) {
+    if (type === 'carousel' && Array.isArray(carouselCards) && carouselCards.length > 0) {
+      sendResult = await sendCarouselReply({ phoneNumberId, encryptedAccessToken, to, message, carouselCards, carouselNative, businessId });
+    } else if (location) {
       // Business's own coordinates, sent as a map pin (see webhook.controller.js's
       // location-content-type branches). Distinct payload shape, so checked
       // before the message/imageUrl-based dispatch below.

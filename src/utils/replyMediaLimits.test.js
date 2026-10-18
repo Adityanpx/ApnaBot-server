@@ -66,3 +66,13 @@ test('send plan: a list reply carries no extra media; snake_case rows work too',
   assert.deepEqual(planReplyMediaSend(snake, { maxPhotos: 5, videoAllowed: true }),
     { photoIds: ['a'], videoId: 'v', skippedPhotos: 0, skippedVideo: false });
 });
+
+test('getCarouselMaxCards: the plan\'s carousel_max_cards (2..10), Basic default 3 without a plan or a usable value', () => {
+  const { getCarouselMaxCards } = require('./replyMediaLimits');
+  assert.equal(getCarouselMaxCards({ carousel_max_cards: 10 }), 10);
+  assert.equal(getCarouselMaxCards({ carousel_max_cards: '7' }), 7);
+  assert.equal(getCarouselMaxCards({ carousel_max_cards: 99 }), 10);
+  assert.equal(getCarouselMaxCards({ carousel_max_cards: 1 }), 2);
+  assert.equal(getCarouselMaxCards(null), 3);
+  assert.equal(getCarouselMaxCards({}), 3);
+});

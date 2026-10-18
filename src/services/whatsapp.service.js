@@ -3,6 +3,7 @@ const { decrypt } = require('../utils/crypto');
 const logger = require('../utils/logger');
 const config = require('../config/env');
 const { LIMITS, truncate } = require('../utils/textLimits');
+const { buildCarouselPayload } = require('../utils/carouselPayload');
 
 // Every Graph API call in the server builds on this (one version, set by
 // GRAPH_API_VERSION — see config/graphApiVersion.js).
@@ -219,6 +220,29 @@ const sendInteractiveButtons = async (phoneNumberId, encryptedAccessToken, to, b
     logger.error('Error sending interactive buttons:', { phoneNumberId, to, error: error.response?.data || error.message });
     throw error;
   }
+};
+
+/**
+ * Send a native interactive media carousel (a session message: free inside the 24h window).
+ * Cards come from carouselPayload.planCarouselSend ({ mediaType, mediaUrl, text, buttons:
+ * [{ nextKeyword, title }] }); each button id is the flow edge's id, so a tap routes like any reply
+ * button. Does NOT log a failure: Meta rejecting a carousel is an expected case the worker recovers
+ * from with the sequential fallback (it logs at info), so only the caller decides how loud it is.
+ * @param {string} phoneNumberId - The WhatsApp phone number ID
+ * @param {string} encryptedAccessToken - Encrypted Meta access token
+ * @param {string} to - Recipient phone number
+ * @param {string} bodyText - Main message text (required, <= 1024)
+ * @param {Array} cards - 2..10 cards, all with media and the same 1-2 buttons
+ * @returns {Promise<Object>}
+ */
+const sendCarouselMessage = async (phoneNumberId, encryptedAccessToken, to, bodyText, cards) => {
+  const accessToken = decrypt(encryptedAccessToken);
+  const response = await axios.post(
+    `${META_API_BASE}/${phoneNumberId}/messages`,
+    { messaging_product: 'whatsapp', recipient_type: 'individual', to, type: 'interactive', interactive: buildCarouselPayload(bodyText, cards) },
+    { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } }
+  );
+  return response.data;
 };
 
 /**
@@ -473,6 +497,7 @@ module.exports = {
   sendLocationMessage,
   sendLocationRequest,
   sendInteractiveButtons,
+  sendCarouselMessage,
   sendListMessage,
   sendRuleListMessage,
   sendCtaUrlButton,

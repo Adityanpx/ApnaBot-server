@@ -269,3 +269,19 @@ test('summarize: chatMediaBytes per business counts chat_inbound + chat_echo onl
   ], new Map([[B1, { name: 'SG Travels' }], [B2, { name: 'Averix' }]]));
   assert.deepEqual(s.byBusiness.map(b => [b.name, b.bytes, b.chatMediaBytes]), [['SG Travels', 447, 140], ['Averix', 50, 0]]);
 });
+
+test('a file used only by a carousel card (live node or snapshot) is in use and never protected', async () => {
+  const kLive = libFile(1);
+  const kSnap = libFile(2);
+  // label empty: the image-only protection of photo #1 must not spread to carousel cards
+  db.flow_nodes = [{ id: uuid(200), business_id: B1, keyword: 'stay', label: '', image_url: null, media_id: null, gallery_media_ids: [], video_media_id: null,
+    carousel_cards: [{ media_id: uuid(101), media_type: 'image', body: 'A' }, { media_id: null, media_type: 'image', body: 'B' }] }];
+  db.flow_snapshots = [{ id: uuid(800), business_id: B1, name: 'v1', is_category_template: false,
+    nodes: [{ id: uuid(700), label: '', image_url: null, media_id: null, carousel_cards: [{ media_id: uuid(102), media_type: 'image', body: 'A' }] }] }];
+  const entries = await scan();
+  const live = find(entries, kLive);
+  assert.deepEqual([live.kind, live.inUse, live.protected], ['bot_node_image', true, false]);
+  assert.deepEqual(live.usedBy, [{ type: 'flow_node', id: uuid(200), label: 'stay' }]);
+  const snap = find(entries, kSnap);
+  assert.deepEqual([snap.inUse, snap.protected], [true, false]);
+});

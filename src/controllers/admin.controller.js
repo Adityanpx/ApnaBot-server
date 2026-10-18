@@ -622,7 +622,10 @@ const getPlans = async (req, res, next) => {
 };
 
 // Per-reply media caps (see utils/replyMediaLimits.js). Returns an error message or null.
-const validateReplyMediaPlanFields = ({ imagesPerReply, videoPerReply }) => {
+const validateReplyMediaPlanFields = ({ imagesPerReply, videoPerReply, carouselMaxCards }) => {
+  if (carouselMaxCards !== undefined && (!Number.isInteger(carouselMaxCards) || carouselMaxCards < 2 || carouselMaxCards > 10)) {
+    return 'carouselMaxCards must be an integer between 2 and 10';
+  }
   if (imagesPerReply !== undefined && (!Number.isInteger(imagesPerReply) || imagesPerReply < 1 || imagesPerReply > 10)) {
     return 'imagesPerReply must be an integer between 1 and 10';
   }
@@ -641,7 +644,7 @@ const createPlan = async (req, res, next) => {
     const {
       name, displayName, price, msgLimit, ruleLimit,
       customerLimit, bookingEnabled, paymentLinkEnabled,
-      staffEnabled, maxStaff, durationOptions, imagesPerReply, videoPerReply,
+      staffEnabled, maxStaff, durationOptions, imagesPerReply, videoPerReply, carouselMaxCards,
       isActive, isPopular, features, sortOrder, storageLimitMb
     } = req.body;
 
@@ -652,7 +655,7 @@ const createPlan = async (req, res, next) => {
     if (isActive !== undefined && typeof isActive !== 'boolean') {
       return errorResponse(res, 400, 'isActive must be true or false');
     }
-    const replyMediaError = validateReplyMediaPlanFields({ imagesPerReply, videoPerReply });
+    const replyMediaError = validateReplyMediaPlanFields({ imagesPerReply, videoPerReply, carouselMaxCards });
     if (replyMediaError) return errorResponse(res, 400, replyMediaError);
     const extrasError = validatePlanExtras({ features, isPopular, sortOrder, storageLimitMb });
     if (extrasError) return errorResponse(res, 400, extrasError);
@@ -676,6 +679,7 @@ const createPlan = async (req, res, next) => {
       max_staff: maxStaff ?? 0,
       images_per_reply: imagesPerReply ?? 1,
       video_per_reply: videoPerReply ?? false,
+      carousel_max_cards: carouselMaxCards ?? 3,
       is_active: isActive ?? true,
       is_popular: isPopular ?? false,
       features: features ? cleanFeatures(features) : [],
@@ -710,7 +714,7 @@ const updatePlan = async (req, res, next) => {
     const allowedFields = [
       'displayName', 'price', 'msgLimit', 'ruleLimit', 'customerLimit',
       'bookingEnabled', 'paymentLinkEnabled', 'staffEnabled', 'maxStaff', 'isActive',
-      'durationOptions', 'imagesPerReply', 'videoPerReply',
+      'durationOptions', 'imagesPerReply', 'videoPerReply', 'carouselMaxCards',
       'isPopular', 'features', 'sortOrder', 'storageLimitMb'
     ];
     const fieldMap = {
@@ -718,7 +722,7 @@ const updatePlan = async (req, res, next) => {
       customerLimit: 'customer_limit', bookingEnabled: 'booking_enabled',
       paymentLinkEnabled: 'payment_link_enabled', staffEnabled: 'staff_enabled',
       maxStaff: 'max_staff', isActive: 'is_active', price: 'price',
-      durationOptions: 'duration_options', imagesPerReply: 'images_per_reply', videoPerReply: 'video_per_reply',
+      durationOptions: 'duration_options', imagesPerReply: 'images_per_reply', videoPerReply: 'video_per_reply', carouselMaxCards: 'carousel_max_cards',
       isPopular: 'is_popular', features: 'features', sortOrder: 'sort_order', storageLimitMb: 'storage_limit_mb'
     };
 

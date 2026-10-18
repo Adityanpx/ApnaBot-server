@@ -44,7 +44,7 @@ const sendFn = (name) => async (...args) => { sends.push([name, args]); return s
 stub('../services/whatsapp.service', {
   sendTextMessage: sendFn('text'), sendImageMessage: sendFn('image'), sendVideoMessage: sendFn('video'), sendLocationMessage: sendFn('location'),
   sendLocationRequest: sendFn('locationRequest'), sendInteractiveButtons: sendFn('buttons'), sendListMessage: sendFn('list'),
-  sendRuleListMessage: sendFn('ruleList'), sendCtaUrlButton: sendFn('cta')
+  sendRuleListMessage: sendFn('ruleList'), sendCtaUrlButton: sendFn('cta'), sendCarouselMessage: sendFn('carousel')
 });
 require('./whatsapp.worker');
 
@@ -136,4 +136,104 @@ test('a final failure that is not a Meta rejection stores just the message, no c
   sendImpl = () => { throw new Error('socket hang up'); };
   await assert.rejects(() => processor(job({}, 2)), /socket/);
   assert.deepEqual([rows[0].status, rows[0].error_code, rows[0].error_title], ['failed', null, 'socket hang up']);
+});
+
+// ---- carousel reply (type 'carousel') ----
+const CARDS = [
+  { index: 0, mediaType: 'image', mediaUrl: 'https://r2.test/a.jpeg', text: 'Deluxe', buttons: [{ nextKeyword: 'e1', title: 'Book' }] },
+  { index: 1, mediaType: null, mediaUrl: null, text: 'Suite', buttons: [{ nextKeyword: 'e2', title: 'Book' }] }
+];
+const metaError = (status) => Object.assign(new Error(`Request failed with status code ${status}`), { response: { status, data: { error: { message: 'nope' } } } });
+const names = () => sends.map(([name]) => name);
+
+test('a native carousel is sent as ONE Meta message and the row gets its wamid', async () => {
+  await processor(job({ type: 'carousel', carouselNative: true, carouselCards: CARDS }));
+  assert.deepEqual(names(), ['carousel']);
+  assert.deepEqual(sends[0][1].slice(3), ['hi', CARDS]);
+  assert.deepEqual([rows[0].status, rows[0].meta_message_id], ['sent', 'wamid.OUT1']);
+});
+
+test('Meta rejects the carousel (4xx): the sequential fallback goes out, no retry, wamid of the first message', async () => {
+  let n = 0;
+  sendImpl = (name) => {
+    if (name === 'carousel') throw metaError(400);
+    return response(`wamid.F${++n}`);
+  };
+  await processor(job({ type: 'carousel', carouselNative: true, carouselCards: CARDS }));
+  // body text, then each card: buttons (image header only for a card that has an image), in order
+  assert.deepEqual(names(), ['carousel', 'text', 'buttons', 'buttons']);
+  assert.equal(sends[2][1][5], 'https://r2.test/a.jpeg');
+  assert.equal(sends[3][1][5], null, 'a card without media is text + buttons only');
+  assert.deepEqual(sends[3][1].slice(3, 5), ['Suite', [{ nextKeyword: 'e2', title: 'Book' }]]);
+  assert.equal(rows[0].meta_message_id, 'wamid.F1');
+  assert.equal(rows[0].status, 'sent');
+});
+
+test('Meta 5xx / network error on the carousel is thrown so the queue retries; no fallback yet', async () => {
+  sendImpl = () => { throw metaError(503); };
+  await assert.rejects(() => processor(job({ type: 'carousel', carouselNative: true, carouselCards: CARDS })), /503/);
+  assert.deepEqual(names(), ['carousel']);
+
+  sends = [];
+  sendImpl = () => { throw new Error('ECONNRESET'); };
+  await assert.rejects(() => processor(job({ type: 'carousel', carouselNative: true, carouselCards: CARDS })), /ECONNRESET/);
+  assert.deepEqual(names(), ['carousel']);
+});
+
+test('429 is a rate limit, not a rejection: retried, not turned into the fallback', async () => {
+  sendImpl = () => { throw metaError(429); };
+  await assert.rejects(() => processor(job({ type: 'carousel', carouselNative: true, carouselCards: CARDS })), /429/);
+  assert.deepEqual(names(), ['carousel']);
+});
+
+test('carouselNative false (no photos): straight to the fallback - body, then one message per card', async () => {
+  await processor(job({ type: 'carousel', carouselNative: false, carouselCards: CARDS }));
+  assert.deepEqual(names(), ['text', 'buttons', 'buttons']);
+});
+
+test('a fallback card with no buttons: its image with the text as caption, or just the text', async () => {
+  const cards = [
+    { index: 0, mediaType: 'image', mediaUrl: 'https://r2.test/a.jpeg', text: 'Deluxe', buttons: [] },
+    { index: 1, mediaType: null, mediaUrl: null, text: 'Suite', buttons: [] },
+    { index: 2, mediaType: null, mediaUrl: null, text: '', buttons: [] }
+  ];
+  await processor(job({ type: 'carousel', carouselNative: false, carouselCards: cards }));
+  assert.deepEqual(names(), ['text', 'image', 'text'], 'an empty card sends nothing');
+});
+
+test('once the fallback has started, a card message failing with 5xx / network is skipped (no throw, no whole-sequence retry)', async () => {
+  const cards = [
+    { index: 0, mediaType: null, mediaUrl: null, text: 'A', buttons: [{ nextKeyword: 'e1', title: 'Book' }] },
+    { index: 1, mediaType: null, mediaUrl: null, text: 'B', buttons: [{ nextKeyword: 'e2', title: 'Book' }] },
+    { index: 2, mediaType: null, mediaUrl: null, text: 'C', buttons: [{ nextKeyword: 'e3', title: 'Book' }] }
+  ];
+  let buttonCalls = 0;
+  sendImpl = (name) => {
+    if (name === 'buttons' && ++buttonCalls === 2) throw metaError(503);
+    return response(`wamid.G${buttonCalls}`);
+  };
+  await processor(job({ type: 'carousel', carouselNative: false, carouselCards: cards }));
+  assert.deepEqual(names(), ['text', 'buttons', 'buttons', 'buttons'], 'card 3 still goes out after card 2 failed');
+  assert.equal(rows[0].status, 'sent');
+
+  sends = []; buttonCalls = 0;
+  sendImpl = (name) => { if (name === 'buttons') throw new Error('ECONNRESET'); return response('wamid.G9'); };
+  await processor(job({ type: 'carousel', carouselNative: false, carouselCards: cards }));
+  assert.deepEqual(names(), ['text', 'buttons', 'buttons', 'buttons']);
+});
+
+test('after a native 4xx, the fallback keeps going past a failing card too; only the FIRST send keeps queue retry', async () => {
+  sendImpl = (name) => {
+    if (name === 'carousel') throw metaError(400);
+    if (name === 'buttons') throw metaError(500);
+    return response('wamid.H1');
+  };
+  await processor(job({ type: 'carousel', carouselNative: true, carouselCards: CARDS }));
+  assert.deepEqual(names(), ['carousel', 'text', 'buttons', 'buttons']);
+
+  // the fallback body failing still throws: nothing of it went out, so a retry duplicates nothing
+  sends = [];
+  sendImpl = (name) => { if (name === 'text') throw metaError(503); return response('wamid.H2'); };
+  await assert.rejects(() => processor(job({ type: 'carousel', carouselNative: false, carouselCards: CARDS })), /503/);
+  assert.deepEqual(names(), ['text']);
 });

@@ -1,4 +1,5 @@
 const businessMediaService = require('../services/businessMedia.service');
+const mediaUsageService = require('../services/mediaUsage.service');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
@@ -65,6 +66,26 @@ const deleteMedia = async (req, res, next) => {
 };
 
 /**
+ * GET /api/business/media/:id/usage
+ * Where a library file is used, so the app can offer "Delete the old photo too?" after a replace.
+ * Same check DELETE /media/:id enforces (mediaUsage.service.js), so inUse:false means DELETE is allowed.
+ * Data: { inUse, usedBy: [{ kind, nodeId?, id?, label, cardIndex? }], fileSizeBytes }.
+ */
+const getMediaUsage = async (req, res, next) => {
+  try {
+    const usage = await mediaUsageService.getMediaUsage(req.user.businessId, req.params.id);
+    if (!usage.found) {
+      return errorResponse(res, 404, 'Media not found');
+    }
+    const { inUse, usedBy, fileSizeBytes } = usage;
+    return successResponse(res, 200, { inUse, usedBy, fileSizeBytes });
+  } catch (error) {
+    logger.error('Error in getMediaUsage:', error);
+    next(error);
+  }
+};
+
+/**
  * GET /api/business/storage-status
  */
 const getStorageStatus = async (req, res, next) => {
@@ -84,5 +105,6 @@ module.exports = {
   uploadMedia,
   listMedia,
   deleteMedia,
+  getMediaUsage,
   getStorageStatus
 };
