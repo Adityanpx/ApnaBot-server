@@ -13,6 +13,7 @@ const { validateFlowFields } = require('../utils/flowFieldsValidation');
 const { successResponse, errorResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
 const { toCamelCase } = require('../utils/caseConvert');
+const carouselBundleService = require('../services/carouselBundle.service');
 const { prepareReplyMediaWrite } = require('../services/replyMedia.service');
 const { prepareCarouselWrite, carouselBodyError, carouselEdgeError } = require('../services/carouselNode.service');
 const { validateEdgeCopy, validateButtonText } = require('../utils/textLimits');
@@ -1067,6 +1068,24 @@ const saveFullGraph = async (req, res, next) => {
 };
 
 /**
+ * POST /api/flow-graph/carousel-bundle
+ * Creates a carousel reply node, the reply nodes its card buttons open and the edges, all-or-nothing
+ * (see services/carouselBundle.service.js). Responds 201 { carouselNodeId, nodes, edges }.
+ */
+const createCarouselBundle = async (req, res, next) => {
+  try {
+    const { error, data } = await carouselBundleService.createCarouselBundle({
+      businessId: req.user.businessId, body: req.body
+    });
+    if (error) return errorResponse(res, error.status, error.message, error.errors);
+    return successResponse(res, 201, data);
+  } catch (error) {
+    logger.error('Error in createCarouselBundle:', error);
+    next(error);
+  }
+};
+
+/**
  * GET /api/flow-graph/edges?fromNodeId=
  * Outgoing edges for one node, ordered by displayOrder.
  */
@@ -1442,6 +1461,7 @@ module.exports = {
   deleteQuestionNode,
   getFullGraph,
   saveFullGraph,
+  createCarouselBundle,
   getEdges,
   createEdge,
   updateEdge,

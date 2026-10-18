@@ -1256,6 +1256,37 @@ breaks) + 1-2 quick-reply buttons (<= 20 chars), under a required main message (
   `controllers/webhook.carousel.test.js`, `services/mediaUsage.test.js`, `services/flowSnapshot.carousel.test.js`, plus additions to
   the worker, inventory, sweeper, admin-plans and replyMediaLimits tests.
 
+## Carousel builder bundle + clothing categories (built 2026-10-23, migrations `20261023120000`, `20261023130000`, uncommitted)
+
+- **`POST /api/flow-graph/carousel-bundle` (owner only, like every flow write).** Creates a carousel reply, the
+  reply nodes its card buttons open and the edges, all-or-nothing, so the web "Carousel builder" makes a catalogue
+  in one call. Body `{ keyword, matchType?, hindiAliases?, text, textTranslations?, buttonsPerCard: 1|2, position?: {x,y},
+  cards: [{ mediaId, mediaType?, body, bodyTranslations?, buttons: [{ label, labelTranslations?, action }] }] }`; `action`
+  is `{ type: 'gallery', photoMediaIds, text, textTranslations? }` (new text reply, photo #1 = node media, rest =
+  `gallery_media_ids`), `{ type: 'text', text, textTranslations? }` (new text reply) or `{ type: 'existing', nodeId }` (any
+  reply node of this business, e.g. a `booking_trigger` "Start order"). Responds **201** `{ carouselNodeId, nodes, edges }`:
+  the CREATED rows only (carousel first), camelCase, each identical to its `GET /full` entry.
+- **Validation is the existing rules, not new ones:** `carouselNode.service.js#prepareCarouselWrite` (2..plan
+  `carousel_max_cards` cards, body <=160 chars / <=2 line breaks, media of this business, video only if the plan allows),
+  `replyMedia.service.js#prepareReplyMediaWrite` (1..plan `images_per_reply` photos), `validateEdgeCopy` (button labels
+  <=20), the same button count on every card. Errors: 400 validation, 403 `PLAN_LIMIT_CAROUSEL_CARDS` /
+  `PLAN_LIMIT_PHOTOS` / `PLAN_LIMIT_VIDEO`, 409 `KEYWORD_EXISTS`.
+- **Atomic via RPC `create_carousel_bundle`** (plpgsql = one transaction; per-business advisory lock because
+  `flow_nodes` has no unique index on keyword). Own RPC rather than `save_flow_graph_full`, which does not write
+  `gallery_media_ids`. Verify on a real DB with `supabase/verification/verify_carousel_bundle.sql` (test business only,
+  always rolls back). Generated target keywords: `<keyword>-<slug of the card text, first 3 words>-<n>` (fallback
+  `card<cardNo>`; `n` = running counter over generated nodes, bumped past any taken keyword), `exact` match, e.g.
+  `catalogue-red-kurta-1-1`. Canvas: carousel at `position` else max `position_x` of the graph + 450 (y 0); targets in one
+  column 450 right of it, 260 apart (`H_SPACING` / `V_SPACING` in `carouselBundle.service.js`). `invalidateRulesCache` once.
+  No cycle/reachability check: the new carousel has no incoming edges and no question nodes are added.
+- **Categories `menswear` ("Men's Wear", icon `shirt`, order 133) and `clothing_wholesaler` ("Clothing Wholesaler", icon
+  `warehouse`, order 136),** enabled, in the four category CHECK constraints (businesses, flow_snapshots,
+  category_whatsapp_flows, node_library_entries) and `categoryFeatures.js` (no features). Boutique is unchanged (women's
+  wear). No booking-form seed (default flows come via Super Admin import). **Apply order: 20261023120000, then
+  20261023130000, both BEFORE deploying the server code.** Neither touches Search cab AI (travels).
+- Tests: `services/carouselBundle.service.test.js` (the RPC is modelled in memory),
+  `config/categoryFeatures.newCategories.test.js`.
+
 ## Mobile app version gate (built 2026-10-18, migration `20261018120000_app_config.sql`)
 
 Tells the Flutter app which versions to accept. **Server only - no client reads it yet**, so
@@ -1444,6 +1475,8 @@ Goal: a plan created or edited in Super Admin shows up in the web app and Flutte
    the "📍 Location · name · address" text); outbound pin coordinates are not stored; the web inbox does not
    show `sentByName` yet; list messages have no header image because `sendListMessage` /
    `sendRuleListMessage` ignore `imageUrl`.
+21. **`plans.rule_limit` is seeded (10 / 50 / -1) and editable in Super Admin but never enforced** anywhere in
+   `src/`; there is no plan limit on the number of reply nodes (the carousel-bundle endpoint therefore has none either).
 
 ## Session log (append here as major milestones land)
 - 2026-10-18: Mobile app version gate (see "Mobile app version gate"): `app_config` table, public

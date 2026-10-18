@@ -56,6 +56,10 @@ router.get('/full', flowGraphController.getFullGraph);
 // as a whole before writing anything - see flowGraph.controller.js#saveFullGraph.
 router.put('/full', requireRole('owner'), flowGraphController.saveFullGraph);
 
+// POST /carousel-bundle - Create a carousel reply + the replies its card buttons open + the edges,
+// all-or-nothing (owner only, like every other flow write). See carouselBundle.service.js.
+router.post('/carousel-bundle', requireRole('owner'), flowGraphController.createCarouselBundle);
+
 // GET /edges?fromNodeId= - Outgoing edges for one node
 router.get('/edges', flowGraphController.getEdges);
 

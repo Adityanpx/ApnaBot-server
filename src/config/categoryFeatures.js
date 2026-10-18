@@ -42,7 +42,9 @@ const CATEGORY_DEFAULT_FEATURES = {
   software_it: [],
   maha_eseva_kendra: [],
   tax_consultant: [],
-  hotel: []
+  hotel: [],
+  clothing_wholesaler: [],
+  menswear: []
 };
 
 /**
