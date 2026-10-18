@@ -3,6 +3,7 @@ const supabase = require('../config/supabase');
 const r2 = require('./r2.service');
 const { getActiveSubscription } = require('./subscription.service');
 const { toCamelCase } = require('../utils/caseConvert');
+const { getMediaUsage, describeUsage } = require('./mediaUsage.service');
 const logger = require('../utils/logger');
 
 // mimetype -> business_media.media_type, kept in sync with
@@ -164,8 +165,8 @@ const listBusinessMedia = async (businessId, mediaType) => {
 
 /**
  * DELETE /api/business/media/:id
- * Refuses to delete a media row still referenced by a live flow_nodes row (media_id,
- * gallery_media_ids or video_media_id).
+ * Refuses to delete a media row that is still in use (mediaUsage.service.js: replies, carousel cards,
+ * template headers, courses, vehicles).
  */
 const deleteBusinessMedia = async (businessId, mediaId) => {
   const { data: media, error: findErr } = await supabase
@@ -177,33 +178,11 @@ const deleteBusinessMedia = async (businessId, mediaId) => {
     throw err;
   }
 
-  // photo #1 (media_id), an extra gallery photo, or the reply's video.
-  const [mainRefs, galleryRefs, videoRefs] = await Promise.all([
-    supabase.from('flow_nodes').select('id, label, keyword').eq('media_id', mediaId),
-    supabase.from('flow_nodes').select('id, label, keyword').contains('gallery_media_ids', [mediaId]),
-    supabase.from('flow_nodes').select('id, label, keyword').eq('video_media_id', mediaId)
-  ]);
-  for (const res of [mainRefs, galleryRefs, videoRefs]) {
-    if (res.error) throw res.error;
-  }
-  const referencingNodes = [...new Map(
-    [...mainRefs.data, ...galleryRefs.data, ...videoRefs.data].map(n => [n.id, n])
-  ).values()];
-
-  if ((referencingNodes || []).length > 0) {
-    const names = referencingNodes.map(n => n.keyword || n.label).join(', ');
-    const err = new Error(`Used by: ${names} — remove it from those replies first.`);
-    err.statusCode = 400;
-    throw err;
-  }
-
-  // A template header sends this file's public link, so deleting it would
-  // leave the template pointing at a dead URL.
-  const { data: referencingTemplates, error: tplRefErr } = await supabase
-    .from('message_templates').select('name').eq('header_media_id', mediaId);
-  if (tplRefErr) throw tplRefErr;
-  if ((referencingTemplates || []).length > 0) {
-    const err = new Error(`Used as the header of template: ${referencingTemplates.map(t => t.name).join(', ')} — attach other media to it first.`);
+  // One shared check with GET /media/:id/usage: replies (photo #1, gallery, video), carousel cards,
+  // template headers, courses and vehicles. A reference left behind would send a dead URL.
+  const usage = await getMediaUsage(businessId, mediaId);
+  if (usage.inUse) {
+    const err = new Error(describeUsage(usage.usedBy));
     err.statusCode = 400;
     throw err;
   }

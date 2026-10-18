@@ -31,7 +31,8 @@ const inboundMessageService = require('../services/inboundMessage.service');
 const { INBOUND_MESSAGE_TYPES, inboundMediaLabel } = require('../utils/inboundMessage');
 const { buildInteractivePayload } = require('../utils/interactivePayload');
 const { locationPinLabel } = require('../utils/locationLabel');
-const { getReplyMediaLimits, planReplyMediaSend } = require('../utils/replyMediaLimits');
+const { getReplyMediaLimits, getCarouselMaxCards, planReplyMediaSend } = require('../utils/replyMediaLimits');
+const { planCarouselSend, cardsOf } = require('../utils/carouselPayload');
 const { isBulkSyncBody } = require('../utils/coexistencePayload');
 const coexistenceService = require('../services/coexistence.service');
 const { buildStatusEvents, statusOnlySummary } = require('../utils/statusPayload');
@@ -151,6 +152,64 @@ const createMessageSoft = async (fields, context) => {
     return toCamelCase(fields);
   }
   return toCamelCase(data);
+};
+
+// Meta does not document how a tap on a carousel card's quick-reply button reaches the webhook. The first
+// one this process sees logs its message shape (types and key names only, nothing about the customer), so
+// the real format is on record after the first live carousel.
+let carouselTapShapeLogged = false;
+const logCarouselTapShapeOnce = (message) => {
+  if (carouselTapShapeLogged) return;
+  carouselTapShapeLogged = true;
+  logger.info('First carousel button tap seen, raw shape', {
+    messageType: message.type,
+    interactiveType: message.interactive?.type || null,
+    hasButtonReplyId: !!message.interactive?.button_reply?.id,
+    hasButtonPayload: !!message.button?.payload,
+    hasContext: !!message.context
+  });
+};
+
+/**
+ * Works out what to send for a carousel reply node (content_type 'carousel'): the cards in the customer's
+ * language with their media resolved from this business's library and their quick-reply buttons from the
+ * node's outgoing edges, limited by the CURRENT plan. See utils/carouselPayload.js#planCarouselSend: a native
+ * Meta carousel when 2+ cards have media and all have the same 1-2 buttons, otherwise the sequential
+ * fallback (body, then one message per card, buttons included) - also what the worker sends if Meta rejects
+ * the carousel. Never throws: null means "send the node as a plain reply".
+ * @returns {Promise<{ native: boolean, cards: Object[] }|null>}
+ */
+const buildCarouselSend = async ({ tenant, customer, node, edges }) => {
+  try {
+    const cardMediaIds = [...new Set(cardsOf(node).map(card => card && card.media_id).filter(Boolean))];
+    let mediaById = new Map();
+    if (cardMediaIds.length > 0) {
+      const { data: rows, error } = await supabase
+        .from('business_media').select('id, url, media_type').eq('business_id', tenant.businessId).in('id', cardMediaIds);
+      if (error) throw error;
+      mediaById = new Map((rows || []).map(r => [r.id, r]));
+    }
+
+    const plan = planCarouselSend({
+      node, edges, mediaById,
+      maxCards: getCarouselMaxCards(tenant.plan),
+      videoAllowed: getReplyMediaLimits(tenant.plan).videoAllowed,
+      localize: (record, field) => getLocalizedText(record, field, customer.preferredLanguage),
+      template: (text) => applyMessageTemplate(text, tenant, customer)
+    });
+    if (plan.skipped.overPlan > 0 || plan.reason || plan.skipped.unassignedButtons > 0) {
+      logger.info(`Carousel node ${node.id} (business ${tenant.businessId}): ${plan.native ? 'sending natively' : 'sending separate messages'}`, {
+        reason: plan.reason, skippedOverPlan: plan.skipped.overPlan, cardsWithoutMedia: plan.skipped.noMedia,
+        ignoredButtonsWithoutCard: plan.skipped.unassignedButtons
+      });
+    }
+    return plan.cards.length > 0 ? { native: plan.native, cards: plan.cards } : null;
+  } catch (error) {
+    logger.error(`Error preparing carousel node ${node.id} (business ${tenant.businessId}), sending it as a plain reply:`, {
+      message: error.message, stack: error.stack
+    });
+    return null;
+  }
 };
 
 /**
@@ -1089,7 +1148,7 @@ const processWebhookChange = async (entry, changes) => {
     // A tapped reply-button arrives as type 'interactive'. We stored the target
     // rule's keyword as the button id (see sendInteractiveButtons), so treat that
     // id as the incoming "text" and let the normal rule matcher chain the flow.
-    const buttonReplyId = message.interactive?.button_reply?.id || null;
+    let buttonReplyId = message.interactive?.button_reply?.id || null;
     // A tapped list-message row arrives as type 'interactive' too, with its
     // id in list_reply instead of button_reply (see sendListMessage).
     const listReplyId = message.interactive?.list_reply?.id || null;
@@ -1262,7 +1321,21 @@ const processWebhookChange = async (entry, changes) => {
     // STOP path below — even while paused or mid-booking. Any other tap is
     // routed after the pause check (see isRoutedButtonTap).
     let buttonTap = null;
+    // A quick-reply tap on a carousel card that Meta delivers as type 'button' (its payload = our edge id) is
+    // treated exactly like an interactive button tap on that edge; it never reaches the template-button handling.
     if (messageType === 'button') {
+      try {
+        const carouselTapEdgeId = await chatbotService.resolveCarouselTap(tenant.businessId, message.button?.payload);
+        if (carouselTapEdgeId) {
+          buttonReplyId = carouselTapEdgeId;
+          messageText = carouselTapEdgeId;
+          logCarouselTapShapeOnce(message);
+        }
+      } catch (carouselTapErr) {
+        logger.error('Error checking for a carousel button tap, treating it as a template tap:', carouselTapErr);
+      }
+    }
+    if (messageType === 'button' && !buttonReplyId) {
       try {
         buttonTap = await templateButtonTapService.resolveButtonTap(tenant.businessId, message.button);
       } catch (tapErr) {
@@ -2245,6 +2318,7 @@ const processWebhookChange = async (entry, changes) => {
     const tappedEdgeId = (buttonReplyId && !isSystemTapId(buttonReplyId)) ? buttonReplyId : listReplyId;
     if (tappedEdgeId) {
       const resolvedTap = await chatbotService.resolveTappedEdge(tenant.businessId, tappedEdgeId);
+      if (resolvedTap?.edge?.cardIndex !== null && resolvedTap?.edge?.cardIndex !== undefined) logCarouselTapShapeOnce(message);
       if (resolvedTap?.targetNode?.nodeType === 'question') {
         directBookingEntry = { nodeId: resolvedTap.targetNode.id, ruleId: resolvedTap.edge.fromNodeId, edge: resolvedTap.edge };
       } else if (resolvedTap?.targetNode?.nodeType === 'reply') {
@@ -2631,6 +2705,13 @@ const processWebhookChange = async (entry, changes) => {
       await sendReplyExtraMedia({ tenant, customer, customerNumber, triggeredRuleId }, matchedNode);
     }
 
+    // A carousel reply: native Meta carousel or the per-card fallback, as ONE outbound row / job (the worker
+    // sends the fallback itself if Meta rejects the carousel). Only for a plain text reply node.
+    const carouselSend = (matchedNode?.contentType === 'carousel' && !TRIGGER_REPLY_KINDS.has(matchedNode.replyKind) && replyText)
+      ? await buildCarouselSend({ tenant, customer, node: matchedNode, edges: matchedEdges })
+      : null;
+    if (carouselSend) interactiveJobFields.carouselCards = carouselSend.cards;
+
     const outboundMsg = await saveMessage({
       business_id: tenant.businessId,
       customer_id: customer.id,
@@ -2667,6 +2748,11 @@ const processWebhookChange = async (entry, changes) => {
       messageId: outboundMsg.id
     };
     Object.assign(outboundJobData, interactiveJobFields);
+    if (carouselSend) {
+      outboundJobData.type = 'carousel';
+      outboundJobData.imageUrl = null;
+      outboundJobData.carouselNative = carouselSend.native;
+    }
 
     if (matchedNode?.contentType === 'location') {
       // Reply node sends either its own per-node override coordinates (for a

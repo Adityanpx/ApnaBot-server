@@ -97,6 +97,9 @@ const findDanglingEdges = (nodes, edges) => {
  *   - image_removed_at -> null (the source's "removed by storage cleanup" marker)
  *   - gallery_media_ids -> [] and video_media_id -> null (same reason as media_id: library ids of the SOURCE
  *     business; photos beyond #1 and the video are plan-limited, the target re-adds its own)
+ *   - carousel_cards -> each card keeps its text and translations but media_id -> null (library ids of the
+ *     SOURCE business). The edges (card buttons) are copied as-is, so a carousel arriving without photos
+ *     still sends its message and per-card text + buttons as separate messages (carouselPayload.js)
  * form_fields (per-node service form) and everything else is left as-is. Node ids are NOT
  * touched here — writeBusinessGraphRows({ reuseIds:false }) mints fresh ones.
  *
@@ -109,7 +112,8 @@ const transformNodesForCopy = (nodes, { isStorageUrl }) => {
   const out = (nodes || []).map(n => {
     const dropUrl = !!n.image_url && isStorageUrl(n.image_url);
     const hadGallery = Array.isArray(n.gallery_media_ids) && n.gallery_media_ids.length > 0;
-    if (n.media_id != null || dropUrl || hadGallery || n.video_media_id != null) imagesDropped += 1;
+    const hadCardMedia = Array.isArray(n.carousel_cards) && n.carousel_cards.some(c => c && c.media_id != null);
+    if (n.media_id != null || dropUrl || hadGallery || n.video_media_id != null || hadCardMedia) imagesDropped += 1;
 
     const hadLocation = [n.latitude, n.longitude, n.location_name, n.address].some(v => v !== null && v !== undefined);
     if (hadLocation) locationsCleared += 1;
@@ -124,6 +128,7 @@ const transformNodesForCopy = (nodes, { isStorageUrl }) => {
       media_id: null,
       gallery_media_ids: [],
       video_media_id: null,
+      ...(Array.isArray(n.carousel_cards) ? { carousel_cards: n.carousel_cards.map(c => ({ ...c, media_id: null })) } : {}),
       image_url: dropUrl ? null : (n.image_url ?? null),
       image_removed_at: null
     };

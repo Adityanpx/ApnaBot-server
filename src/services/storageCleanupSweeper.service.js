@@ -87,6 +87,19 @@ const clearReferences = async (item, nowIso, ctx, snapshotIds = []) => {
     (nodes || []).forEach(n => ctx.touchedBusinesses.add(n.business_id));
   }
 
+  // Live carousel cards (no DB trigger cleans these jsonb objects, unlike gallery ids): the card keeps its
+  // text and buttons, only the media goes, so the reply falls back to per-card messages.
+  if (mediaId && media) {
+    const cardNodes = must(await supabase.from('flow_nodes').select('id, business_id, carousel_cards')
+      .eq('business_id', media.business_id).not('carousel_cards', 'is', null));
+    for (const node of cardNodes) {
+      if (!Array.isArray(node.carousel_cards) || !node.carousel_cards.some(c => c && c.media_id === mediaId)) continue;
+      const cards = node.carousel_cards.map(c => (c && c.media_id === mediaId ? { ...c, media_id: null } : c));
+      must(await supabase.from('flow_nodes').update({ carousel_cards: cards }).eq('id', node.id));
+      ctx.touchedBusinesses.add(node.business_id);
+    }
+  }
+
   // Saved flow versions (personal snapshots only; category templates are protected and never get
   // here): drop the image from their stored nodes too, or a restore would bring the dead URL back.
   for (const snapId of snapshotIds) {
@@ -96,11 +109,13 @@ const clearReferences = async (item, nowIso, ctx, snapshotIds = []) => {
     const nodes = snap.nodes.map((n) => {
       const inGallery = mediaId && Array.isArray(n.gallery_media_ids) && n.gallery_media_ids.includes(mediaId);
       const isVideo = mediaId && n.video_media_id === mediaId;
-      if (n.image_url !== url && !(mediaId && n.media_id === mediaId) && !inGallery && !isVideo) return n;
+      const inCards = mediaId && Array.isArray(n.carousel_cards) && n.carousel_cards.some(c => c && c.media_id === mediaId);
+      if (n.image_url !== url && !(mediaId && n.media_id === mediaId) && !inGallery && !isVideo && !inCards) return n;
       changed = true;
       const cleaned = (n.image_url === url || (mediaId && n.media_id === mediaId)) ? { ...n, image_url: null, media_id: null } : { ...n };
       if (inGallery) cleaned.gallery_media_ids = n.gallery_media_ids.filter(id => id !== mediaId);
       if (isVideo) cleaned.video_media_id = null;
+      if (inCards) cleaned.carousel_cards = n.carousel_cards.map(c => (c && c.media_id === mediaId ? { ...c, media_id: null } : c));
       return cleaned;
     });
     if (changed) must(await supabase.from('flow_snapshots').update({ nodes }).eq('id', snapId));

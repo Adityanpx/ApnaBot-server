@@ -48,11 +48,11 @@ const truncate = (value, max) => {
   return out;
 };
 
-/** Max row title for the edges leaving a reply node: 24 for a list, 20 for buttons, none otherwise. */
+/** Max row title for the edges leaving a reply node: 24 for a list, 20 for buttons / carousel cards, none otherwise. */
 const edgeLabelLimit = (parentNodeType, parentContentType) => {
   if (parentNodeType !== 'reply') return null;
   if (parentContentType === 'list') return LIMITS.LIST_ROW_TITLE;
-  if (parentContentType === 'buttons') return LIMITS.BUTTON_TITLE;
+  if (parentContentType === 'buttons' || parentContentType === 'carousel') return LIMITS.BUTTON_TITLE;
   return null;
 };
 

@@ -8,7 +8,7 @@ const plans = [
   {
     name: 'basic', display_name: 'Basic', price: 199,
     msg_limit: 500, rule_limit: 10, customer_limit: 100, storage_limit_mb: 150,
-    images_per_reply: 1, video_per_reply: false,
+    images_per_reply: 1, video_per_reply: false, carousel_max_cards: 3,
     booking_enabled: true, payment_link_enabled: false,
     staff_enabled: false, max_staff: 0, is_active: true,
     duration_options: [
@@ -21,7 +21,7 @@ const plans = [
   {
     name: 'pro', display_name: 'Pro', price: 399,
     msg_limit: 2000, rule_limit: 50, customer_limit: 500, storage_limit_mb: 300,
-    images_per_reply: 3, video_per_reply: false,
+    images_per_reply: 3, video_per_reply: false, carousel_max_cards: 10,
     booking_enabled: true, payment_link_enabled: true,
     staff_enabled: true, max_staff: 2, is_active: true,
     duration_options: [
@@ -34,7 +34,7 @@ const plans = [
   {
     name: 'business', display_name: 'Business', price: 699,
     msg_limit: -1, rule_limit: -1, customer_limit: -1, storage_limit_mb: 1000,
-    images_per_reply: 10, video_per_reply: true,
+    images_per_reply: 10, video_per_reply: true, carousel_max_cards: 10,
     booking_enabled: true, payment_link_enabled: true,
     staff_enabled: true, max_staff: 5, is_active: true,
     duration_options: [

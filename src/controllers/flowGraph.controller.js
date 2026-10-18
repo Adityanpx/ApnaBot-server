@@ -14,6 +14,7 @@ const { successResponse, errorResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
 const { toCamelCase } = require('../utils/caseConvert');
 const { prepareReplyMediaWrite } = require('../services/replyMedia.service');
+const { prepareCarouselWrite, carouselBodyError, carouselEdgeError } = require('../services/carouselNode.service');
 const { validateEdgeCopy, validateButtonText } = require('../utils/textLimits');
 const logger = require('../utils/logger');
 
@@ -22,6 +23,7 @@ const logger = require('../utils/logger');
 const {
   VALID_MATCH_TYPES,
   VALID_CONTENT_TYPES,
+  VALID_QUESTION_CONTENT_TYPES,
   VALID_REPLY_KINDS,
   VALID_QUESTION_NODE_TYPES,
   TRAVEL_CATEGORIES_WITH_RESERVED_FIELDS,
@@ -145,7 +147,7 @@ const createReplyNode = async (req, res, next) => {
       imageUrl = null, mediaId = null, hindiAliases = [], labelTranslations = null,
       buttonText = null, buttonTextTranslations = null, formFields,
       latitude = null, longitude = null, locationName = null, address = null,
-      formTitle, formTitleTranslations, galleryMediaIds, videoMediaId
+      formTitle, formTitleTranslations, galleryMediaIds, videoMediaId, carouselCards
     } = req.body;
     let { label } = req.body;
     const businessId = req.user.businessId;
@@ -219,6 +221,20 @@ const createReplyNode = async (req, res, next) => {
       return errorResponse(res, replyMedia.error.status, replyMedia.error.message, replyMedia.error.errors);
     }
 
+    // Carousel: message + cards (2..plan limit, media from this business's library, equal-length card text).
+    // Buttons are edges with a cardIndex, added afterwards via the edges endpoint.
+    if (contentType === 'carousel') {
+      const carouselBodyMsg = carouselBodyError(label);
+      if (carouselBodyMsg) return errorResponse(res, 400, carouselBodyMsg);
+    }
+    const carousel = await prepareCarouselWrite({
+      businessId, existing: null, carouselCards, contentTypeAfter: contentType, replyKindAfter: replyKind,
+      hasExtraMedia: (replyMedia.updates.gallery_media_ids || []).length > 0 || !!replyMedia.updates.video_media_id
+    });
+    if (carousel.error) {
+      return errorResponse(res, carousel.error.status, carousel.error.message, carousel.error.errors);
+    }
+
     const normalizedKeyword = keyword.toLowerCase().trim();
 
     const { data: existingNode, error: existingErr } = await supabase
@@ -246,6 +262,7 @@ const createReplyNode = async (req, res, next) => {
       image_url: resolvedImageUrl || null,
       media_id: mediaId || null,
       ...replyMedia.updates,
+      ...carousel.updates,
       latitude,
       longitude,
       location_name: locationName || null,
@@ -272,7 +289,7 @@ const createReplyNode = async (req, res, next) => {
 const updateReplyNode = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, mediaId, hindiAliases, label, labelTranslations, buttonText, buttonTextTranslations, formFields, latitude, longitude, locationName, address, formTitle, formTitleTranslations, galleryMediaIds, videoMediaId, force } = req.body || {};
+    const { keyword, matchType, replyKind, contentType, isActive, imageUrl, mediaId, hindiAliases, label, labelTranslations, buttonText, buttonTextTranslations, formFields, latitude, longitude, locationName, address, formTitle, formTitleTranslations, galleryMediaIds, videoMediaId, carouselCards, force } = req.body || {};
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
@@ -416,6 +433,25 @@ const updateReplyNode = async (req, res, next) => {
     }
     Object.assign(updateData, replyMedia.updates);
 
+    // Carousel cards, validated against the node as it will be after this write.
+    const contentTypeAfter = contentType !== undefined ? contentType : node.content_type;
+    const labelAfter = label !== undefined ? label : node.label;
+    if (contentTypeAfter === 'carousel' && (contentType !== undefined || label !== undefined)) {
+      const carouselBodyMsg = carouselBodyError(labelAfter);
+      if (carouselBodyMsg) return errorResponse(res, 400, carouselBodyMsg);
+    }
+    const galleryAfter = 'gallery_media_ids' in updateData ? updateData.gallery_media_ids : node.gallery_media_ids;
+    const videoAfter = 'video_media_id' in updateData ? updateData.video_media_id : node.video_media_id;
+    const carousel = await prepareCarouselWrite({
+      businessId, existing: node, carouselCards, contentTypeAfter,
+      replyKindAfter: replyKind !== undefined ? replyKind : node.reply_kind,
+      hasExtraMedia: (Array.isArray(galleryAfter) && galleryAfter.length > 0) || !!videoAfter
+    });
+    if (carousel.error) {
+      return errorResponse(res, carousel.error.status, carousel.error.message, carousel.error.errors);
+    }
+    Object.assign(updateData, carousel.updates);
+
     if (labelTranslations !== undefined) updateData.label_translations = labelTranslations || null;
     if (label !== undefined) updateData.label = label;
     if (buttonTextTranslations !== undefined) updateData.button_text_translations = buttonTextTranslations || null;
@@ -433,6 +469,14 @@ const updateReplyNode = async (req, res, next) => {
     const { data: updatedNode, error } = await supabase
       .from('flow_nodes').update(updateData).eq('id', id).select().single();
     if (error) throw error;
+
+    // No longer a carousel: its buttons no longer belong to a card. (Switching TO a carousel leaves the existing
+    // buttons alone; with no card yet they are "unassigned" and the send path ignores them.)
+    if (node.content_type === 'carousel' && contentTypeAfter !== 'carousel') {
+      const { error: unassignErr } = await supabase
+        .from('flow_edges').update({ card_index: null }).eq('from_node_id', id).eq('business_id', businessId);
+      if (unassignErr) throw unassignErr;
+    }
 
     await invalidateRulesCache(businessId);
 
@@ -640,8 +684,8 @@ const createQuestionNode = async (req, res, next) => {
           'options must not be provided for a vehicle_carousel node — its choices are computed live from route_fares/vehicles at runtime, never stored on the node.'
         );
       }
-    } else if (!VALID_CONTENT_TYPES.includes(contentType)) {
-      return errorResponse(res, 400, `contentType must be one of: ${VALID_CONTENT_TYPES.join(', ')}`);
+    } else if (!VALID_QUESTION_CONTENT_TYPES.includes(contentType)) {
+      return errorResponse(res, 400, `contentType must be one of: ${VALID_QUESTION_CONTENT_TYPES.join(', ')}`);
     }
     // Required at the API layer because flow_nodes.label is NOT NULL at the
     // DB level and (unlike reply nodes) question nodes have no image-only
@@ -723,8 +767,8 @@ const updateQuestionNode = async (req, res, next) => {
       return errorResponse(res, 404, 'Question node not found (vehicle_carousel/rentalPackage nodes cannot be edited through this endpoint)');
     }
 
-    if (contentType !== undefined && !VALID_CONTENT_TYPES.includes(contentType)) {
-      return errorResponse(res, 400, `contentType must be one of: ${VALID_CONTENT_TYPES.join(', ')}`);
+    if (contentType !== undefined && !VALID_QUESTION_CONTENT_TYPES.includes(contentType)) {
+      return errorResponse(res, 400, `contentType must be one of: ${VALID_QUESTION_CONTENT_TYPES.join(', ')}`);
     }
     if (required !== undefined && typeof required !== 'boolean') {
       return errorResponse(res, 400, 'required must be a boolean');
@@ -1068,7 +1112,7 @@ const createEdge = async (req, res, next) => {
   try {
     const {
       fromNodeId, toNodeId, label = null, labelTranslations = null,
-      description = null, descriptionTranslations = null, condition = null, preset = null, displayOrder, force
+      description = null, descriptionTranslations = null, condition = null, preset = null, displayOrder, cardIndex, force
     } = req.body || {};
     const businessId = req.user.businessId;
 
@@ -1077,7 +1121,7 @@ const createEdge = async (req, res, next) => {
     }
 
     const { data: endpointNodes, error: nodesErr } = await supabase
-      .from('flow_nodes').select('id, node_type, content_type').eq('business_id', businessId).in('id', [fromNodeId, toNodeId]);
+      .from('flow_nodes').select('id, node_type, content_type, carousel_cards').eq('business_id', businessId).in('id', [fromNodeId, toNodeId]);
     if (nodesErr) throw nodesErr;
     const fromNode = (endpointNodes || []).find(n => n.id === fromNodeId);
     if (!fromNode) {
@@ -1095,6 +1139,13 @@ const createEdge = async (req, res, next) => {
         'vehicle_carousel nodes cannot have outgoing edges — the post-selection flow is handled entirely in bookingGraph.service.js, not by edges.'
       );
     }
+
+    // A carousel button belongs to one card (cardIndex); no other parent takes a cardIndex.
+    const { data: siblingsForCard, error: siblingsErr } = await supabase
+      .from('flow_edges').select('id, card_index').eq('from_node_id', fromNodeId);
+    if (siblingsErr) throw siblingsErr;
+    const cardIndexError = carouselEdgeError({ parent: fromNode, cardIndex: cardIndex ?? null, siblings: siblingsForCard || [] });
+    if (cardIndexError) return errorResponse(res, 400, cardIndexError);
 
     const labelTranslationsError = validateTranslationsMap(labelTranslations, 'labelTranslations');
     if (labelTranslationsError) return errorResponse(res, 400, labelTranslationsError);
@@ -1150,7 +1201,8 @@ const createEdge = async (req, res, next) => {
       description_translations: descriptionTranslations || null,
       condition: condition || null,
       preset: preset || null,
-      display_order: effectiveDisplayOrder
+      display_order: effectiveDisplayOrder,
+      card_index: cardIndex ?? null
     }).select().single();
     if (error) throw error;
 
@@ -1180,7 +1232,7 @@ const createEdge = async (req, res, next) => {
 const updateEdge = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { toNodeId, label, labelTranslations, description, descriptionTranslations, condition, preset, displayOrder, force } = req.body || {};
+    const { toNodeId, label, labelTranslations, description, descriptionTranslations, condition, preset, displayOrder, cardIndex, force } = req.body || {};
     const businessId = req.user.businessId;
 
     const { data: edge, error: findErr } = await supabase
@@ -1223,6 +1275,17 @@ const updateEdge = async (req, res, next) => {
         label, labelTranslations, description, descriptionTranslations
       }, edge);
       if (edgeCopyError) return errorResponse(res, 400, edgeCopyError);
+    }
+    if (cardIndex !== undefined && cardIndex !== edge.card_index) {
+      const { data: parentForCard, error: parentCardErr } = await supabase
+        .from('flow_nodes').select('node_type, content_type, carousel_cards').eq('id', edge.from_node_id).eq('business_id', businessId).maybeSingle();
+      if (parentCardErr) throw parentCardErr;
+      const { data: siblingsForCard, error: siblingsErr } = await supabase
+        .from('flow_edges').select('id, card_index').eq('from_node_id', edge.from_node_id).neq('id', id);
+      if (siblingsErr) throw siblingsErr;
+      const cardIndexError = carouselEdgeError({ parent: parentForCard, cardIndex, siblings: siblingsForCard || [] });
+      if (cardIndexError) return errorResponse(res, 400, cardIndexError);
+      updateData.card_index = cardIndex;
     }
     if (label !== undefined) updateData.label = label;
     if (description !== undefined) updateData.description = description;

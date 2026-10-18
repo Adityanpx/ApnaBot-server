@@ -164,6 +164,29 @@ const resolveTappedEdge = async (businessId, edgeId) => {
 };
 
 /**
+ * A quick-reply tap on a carousel card, if `payload` is one. Meta documents the tap of a card button
+ * nowhere; if it ever arrives as a message of type 'button' (like a template quick-reply) instead of an
+ * interactive button_reply, its payload is the id we sent: the flow edge's id. Claimed ONLY when the
+ * payload is a UUID that is an edge of THIS business whose from-node is a carousel reply, so template
+ * quick-reply and opt-out taps (opaque payloads of their own) are never touched.
+ * @param {string} businessId
+ * @param {*} payload  message.button.payload
+ * @returns {Promise<string|null>} the edge id, or null when this is not a carousel tap
+ */
+const resolveCarouselTap = async (businessId, payload) => {
+  if (typeof payload !== 'string' || !EDGE_ID_PATTERN.test(payload)) return null;
+  const resolved = await resolveTappedEdge(businessId, payload);
+  if (!resolved) return null;
+  const { data: parent, error } = await supabase
+    .from('flow_nodes').select('content_type').eq('id', resolved.edge.fromNodeId).eq('business_id', businessId).maybeSingle();
+  if (error) {
+    logger.error('Error resolving carousel tap parent node:', error);
+    return null;
+  }
+  return parent && parent.content_type === 'carousel' ? payload : null;
+};
+
+/**
  * The keyword matching itself, with no DB access or side effects: which of
  * `nodes` (reply nodes, camelCase; inactive ones are skipped) a message
  * triggers, or null. findMatchingRule runs it against the business's live
@@ -303,5 +326,6 @@ module.exports = {
   matchNodeInList,
   findMatchingRule,
   getOutgoingEdges,
-  resolveTappedEdge
+  resolveTappedEdge,
+  resolveCarouselTap
 };

@@ -105,3 +105,22 @@ test('GET /admin/plans: ordered by sort_order then price, inactive included', as
   const out = await call(admin.getPlans);
   assert.deepEqual(out.body.data.plans.map(p => p.name), ['pro', 'basic']);
 });
+
+test('carouselMaxCards: create defaults to 3, update accepts 2..10, anything else is a 400 that writes nothing', async () => {
+  await call(admin.createPlan, { body: base });
+  assert.equal(row('gold').carousel_max_cards, 3);
+  const explicit = await call(admin.createPlan, { body: { ...base, name: 'plat', displayName: 'Plat', carouselMaxCards: 10 } });
+  assert.equal(explicit.status, 201);
+  assert.equal(row('plat').carousel_max_cards, 10);
+  assert.equal(explicit.body.data.carouselMaxCards, 10);
+
+  const ok = await call(admin.updatePlan, { params: { id: 'p-basic' }, body: { carouselMaxCards: 5 } });
+  assert.equal(ok.status, 200);
+  assert.equal(row('basic').carousel_max_cards, 5);
+  for (const bad of [1, 11, 2.5, '5', null]) {
+    const out = await call(admin.updatePlan, { params: { id: 'p-basic' }, body: { carouselMaxCards: bad } });
+    assert.equal(out.status, 400, String(bad));
+    assert.match(out.body.message, /carouselMaxCards must be an integer between 2 and 10/);
+  }
+  assert.equal(row('basic').carousel_max_cards, 5);
+});

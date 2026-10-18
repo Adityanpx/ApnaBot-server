@@ -359,3 +359,21 @@ test('re-check: a personal snapshot that adopted the image after marking makes i
   assert.deepEqual([res.purged, res.skipped], [0, 1]);
   assert.match(item(key).error, /in use since the run was marked/);
 });
+
+test('purging a file used by a carousel card clears just that card\'s media (text, buttons and the node stay), live and in snapshots', async () => {
+  const key = lib(1);
+  db.flow_nodes = [{ id: uuid(200), business_id: B1, node_type: 'reply', keyword: 'stay', label: 'Our rooms', image_url: null, media_id: null, content_type: 'carousel',
+    carousel_cards: [{ media_id: uuid(101), media_type: 'image', body: 'Deluxe' }, { media_id: uuid(150), media_type: 'image', body: 'Suite' }] }];
+  db.flow_snapshots = [{ id: uuid(800), business_id: B1, name: 'Before Diwali', is_category_template: false,
+    nodes: [{ id: uuid(700), label: 'Our rooms', image_url: null, media_id: null, carousel_cards: [{ media_id: uuid(101), media_type: 'image', body: 'Deluxe' }] }] }];
+  await markAndDue({ businessId: B1, includeInUse: true, confirmBusinessName: 'SG Travels' });
+  const res = await sweeper.runTick({ retention: false });
+  assert.equal(res.purged, 1);
+  assert.deepEqual(db.flow_nodes[0].carousel_cards, [
+    { media_id: null, media_type: 'image', body: 'Deluxe' }, { media_id: uuid(150), media_type: 'image', body: 'Suite' }
+  ]);
+  assert.equal(db.flow_nodes[0].label, 'Our rooms');
+  assert.deepEqual(db.flow_snapshots[0].nodes[0].carousel_cards, [{ media_id: null, media_type: 'image', body: 'Deluxe' }]);
+  assert.equal(h.state.bucket.has(key), false);
+  assert.ok(h.state.invalidated.includes(B1), 'flow cache flushed');
+});

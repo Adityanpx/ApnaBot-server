@@ -23,6 +23,7 @@ const { uploadSingle, uploadMediaSingle } = require('../middleware/upload.middle
 // POST   /upload-image        → protect, requireBusiness, requireRole('owner'), upload, business.controller.uploadProfileImage
 // POST   /media               → protect, requireBusiness, requireRole('owner'), businessMedia.controller.uploadMedia
 // GET    /media                → protect, requireBusiness, businessMedia.controller.listMedia
+// GET    /media/:id/usage      → protect, requireBusiness, requireRole('owner'), businessMedia.controller.getMediaUsage
 // DELETE /media/:id            → protect, requireBusiness, requireRole('owner'), businessMedia.controller.deleteMedia
 // GET    /storage-status       → protect, requireBusiness, businessMedia.controller.getStorageStatus
 
@@ -144,6 +145,15 @@ router.post(
 
 // GET /media - List this business's media library. Query: ?type=image|video|document
 router.get('/media', protect, requireBusiness, businessMediaController.listMedia);
+
+// GET /media/:id/usage - Where a media asset is used: { inUse, usedBy, fileSizeBytes }
+router.get(
+  '/media/:id/usage',
+  protect,
+  requireBusiness,
+  requireRole('owner'),
+  businessMediaController.getMediaUsage
+);
 
 // DELETE /media/:id - Delete a media library asset (rejected if a live
 // flow_nodes row still references it)
