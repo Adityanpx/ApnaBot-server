@@ -1289,21 +1289,21 @@ breaks) + 1-2 quick-reply buttons (<= 20 chars), under a required main message (
 
 ## Bot languages, language picker, auto-translate (built 2026-10-24, migrations `20261024120000`, `20261024130000`, uncommitted)
 
-Each business offers English + up to 3 Indian languages. **Cutover note:** a business created from now on gets a
+Each business offers English + up to 2 Indian languages (3 total; the cap was 4 until 2026-10-20). **Cutover note:** a business created from now on gets a
 state-based default (`en,hi` for most states) instead of `{en}`, so its customers see a language picker; existing
 businesses keep exactly what they have (Search cab AI is untouched: `["en","hi","mr"]`, picker output byte-identical,
 pinned by `webhook.interactiveSites.golden.json`).
 
 - **Catalog (`utils/languageCatalog.js`, single source of truth):** `en hi mr gu kn ta te ml bn pa or` with native name
   (`name`), `englishName`, `azure` code and `metaTemplate` locale (Odia has none: it is not on Meta's supported-languages
-  list, so message templates cannot be created in Odia). `validateEnabledLanguages`: 1..4 codes, 'en' required (moved first),
+  list, so message templates cannot be created in Odia). `validateEnabledLanguages`: 1..3 codes (`MAX_ENABLED_LANGUAGES`; error "You can choose up to 3 languages (English + 2 more)."), 'en' required (moved first),
   catalog codes, no duplicates. `STATE_LANGUAGES` / `suggestedLanguagesForState` hold the per-state defaults (Maharashtra
   en,hi,mr · Gujarat en,hi,gu · Karnataka en,hi,kn · Tamil Nadu en,ta · Telangana/Andhra en,hi,te · Kerala en,ml · West Bengal
   en,hi,bn · Punjab en,hi,pa · Odisha en,hi,or · every other state / UT / unknown en,hi). Every translation validator already
   accepted "any catalog code", so the new codes work in node / edge / option / carousel-card / form-field / follow-up translations.
   `utils/followup.js` now uses the catalog too. `utils/templateValidation.js` takes Meta template locales from the catalog
   (`en_US hi mr gu kn ta te ml bn pa`).
-- **Public API:** `GET /api/public/languages` -> `{ languages: [{ code, name, englishName }], maxEnabled: 4,
+- **Public API:** `GET /api/public/languages` -> `{ languages: [{ code, name, englishName }], maxEnabled: 3,
   defaultSuggested, states: [{ name, suggested }] }`; `GET /api/public/languages/suggested?state=` -> `{ state, suggested }`.
   Static data only - nothing from `app_config`.
 - **Columns:** `businesses.state` (validated against the 36 states / UTs), `businesses.language_picker` (jsonb, NULL =
@@ -1311,7 +1311,7 @@ pinned by `webhook.interactiveSites.golden.json`).
   `flow_edges.auto_translations`. `enabled_languages` unchanged. `POST /api/business` takes optional `state` and
   `enabledLanguages` (default from the state); `PUT /api/business` validates both.
 - **Picker (`services/languagePicker.service.js` + `sendLanguagePicker` in `webhook.controller.js`, replacing two duplicated
-  blocks):** 2-3 languages = reply buttons, 4 = a WhatsApp list (rows `lang_<code>`; a `lang_` list tap is mapped to the same
+  blocks):** 2-3 languages = reply buttons, 4 = a WhatsApp list (**unreachable since the cap is 3; code and tests kept in case it is raised**) (rows `lang_<code>`; a `lang_` list tap is mapped to the same
   system-tap handler, it never reaches the edge resolver). Titles use the grapheme-safe `truncate` (fixes gap 19 for the picker).
   Built-in prompt: the old "Choose your language / अपनी भाषा चुनें" for en/hi/mr businesses (unchanged), a composed line when
   another language is on (the non-Hindi/Marathi wordings are unreviewed - have a native speaker check them). Settings
@@ -1545,10 +1545,19 @@ Goal: a plan created or edited in Super Admin shows up in the web app and Flutte
 21. **`plans.rule_limit` is seeded (10 / 50 / -1) and editable in Super Admin but never enforced** anywhere in
    `src/`; there is no plan limit on the number of reply nodes (the carousel-bundle endpoint therefore has none either).
 
-22. **System texts for gu/kn/ta/te/ml/bn/pa/or (HIGH priority).** `utils/systemMessages.js` (about 100 customer-facing strings:
+22. **System texts for gu/kn/ta/te/ml/bn/pa/or (HIGH priority) - tooling built 2026-10-20, no reviewed text shipped yet.** `utils/systemMessages.js` (about 100 customer-facing strings:
    booking confirmation, payment, fallbacks...) only has `en`/`hi`/`mr`; the new languages get English for these. Plan: a
    reviewed static file (generated offline with a dry-run script, checked by a native speaker), not runtime machine translation.
    Same for the picker's "Choose your language" wording and the web booking-form strings in `apnabot-web`.
+   Built: `scripts/exportSystemMessagesForReview.js` (dry-run default; `--confirm` machine-translates via `translateTexts` scope
+   `system`, global Azure cap only, and writes `docs/translations-review/system-messages-<lang>.csv`: key, english,
+   machine_translation, reviewed_translation, notes; 46 messages = 45 system + the built-in `chooseLanguageLine`, ~3.5k chars x 8
+   languages) -> native reviewer fills `reviewed_translation` -> `scripts/importReviewedSystemMessages.js <csv>` (dry-run default;
+   only reviewed text, empty rows skipped, placeholder mismatch rejects the row) writes `src/i18n/systemMessages.<lang>.js`, which
+   `getSystemMessage` loads after `SYSTEM_MESSAGES` (hi/mr unchanged); missing keys/files = English. The picker's built-in line prefers
+   a reviewed `chooseLanguageLine`. Pure logic in `utils/systemMessagesReview.js`. Still open: the reviews themselves, the web strings.
+   Also `scripts/capBusinessLanguages.js` (dry-run default) trims any business left with >3 languages to en + first 2 and resets
+   customers on the removed ones; it never writes Search cab AI. Dry run 2026-10-20: no business is over 3.
 23. **Template `flow_fields` translation.** `POST /api/translate/flow` covers `businesses.flow_fields`;
    `business_category_templates.flow_fields` (what a new business is seeded with) is not covered by the Super Admin template
    translate, so a new business's booking-form labels are translated by the signup run, not pre-translated.

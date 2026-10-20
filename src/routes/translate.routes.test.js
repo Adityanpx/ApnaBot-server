@@ -116,7 +116,7 @@ test('GET /public/languages: the catalog, the cap of 4 and the state suggestions
   assert.deepEqual(Object.keys(data).sort(), ['defaultSuggested', 'languages', 'maxEnabled', 'states']);
   assert.equal(data.languages.length, 11);
   assert.deepEqual(data.languages[3], { code: 'gu', name: 'ગુજરાતી', englishName: 'Gujarati' });
-  assert.equal(data.maxEnabled, 4);
+  assert.equal(data.maxEnabled, 3);
   assert.deepEqual(data.states.find(s => s.name === 'Gujarat'), { name: 'Gujarat', suggested: ['en', 'hi', 'gu'] });
   assert.equal(JSON.stringify(data).includes('azure'), false);
 });
@@ -227,16 +227,16 @@ test('POST /admin/category-templates/:id/translate: superadmin only, any catalog
 });
 
 // ---- PUT /api/business
-test('PUT /business: enabledLanguages is validated (en first, max 4, catalog) and reordered', async () => {
-  assert.equal((await json('PUT', '/business', { enabledLanguages: ['en', 'hi', 'gu', 'ta', 'te'] })).status, 400);
+test('PUT /business: enabledLanguages is validated (en first, max 3, catalog) and reordered', async () => {
+  assert.equal((await json('PUT', '/business', { enabledLanguages: ['en', 'hi', 'gu', 'ta'] })).status, 400);
   assert.equal((await json('PUT', '/business', { enabledLanguages: ['en', 'zz'] })).status, 400);
   assert.equal((await json('PUT', '/business', { enabledLanguages: ['hi', 'gu'] })).status, 400);
   assert.equal((await json('PUT', '/business', { enabledLanguages: ['en', 'hi', 'hi'] })).status, 400);
   assert.equal(updated.length, 0);
 
-  const ok = await json('PUT', '/business', { enabledLanguages: ['gu', 'en', 'hi', 'ta'] });
+  const ok = await json('PUT', '/business', { enabledLanguages: ['gu', 'en', 'hi'] });
   assert.equal(ok.status, 200);
-  assert.deepEqual(updated[0].enabledLanguages, ['en', 'gu', 'hi', 'ta']);
+  assert.deepEqual(updated[0].enabledLanguages, ['en', 'gu', 'hi']);
 });
 
 test('PUT /business: switching a language off resets only those customers; stored translations are not touched', async () => {
@@ -246,7 +246,7 @@ test('PUT /business: switching a language off resets only those customers; store
   assert.equal(Object.keys(updated[0]).some(k => /ranslations/.test(k)), false);
 
   customerResets = [];
-  await json('PUT', '/business', { enabledLanguages: ['en', 'hi', 'gu', 'ta'] }); // only adds
+  await json('PUT', '/business', { enabledLanguages: ['en', 'hi', 'gu'] }); // only adds
   assert.deepEqual(customerResets, []);
 });
 

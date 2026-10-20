@@ -281,6 +281,32 @@ const SYSTEM_MESSAGES = {
 
 const fill = fillPlaceholders;
 
+// Built-in lines that are not SYSTEM_MESSAGES entries but go through the same native review
+// (the language picker's "Choose your language", services/languagePicker.service.js).
+const BUILT_IN_MESSAGES = {
+  chooseLanguageLine: 'Choose your language'
+};
+
+// Native-reviewed text for the languages SYSTEM_MESSAGES has no entry for. One generated file per
+// language (src/i18n/systemMessages.<lang>.js, written by scripts/importReviewedSystemMessages.js
+// from a reviewed CSV); no file or no key = English. Nothing unreviewed is ever loaded from here.
+const REVIEWED_MESSAGES = {};
+for (const lang of ['gu', 'kn', 'ta', 'te', 'ml', 'bn', 'pa', 'or']) {
+  try {
+    REVIEWED_MESSAGES[lang] = require(`../i18n/systemMessages.${lang}`);
+  } catch (error) {
+    if (error.code !== 'MODULE_NOT_FOUND' || !String(error.message).includes(`systemMessages.${lang}`)) throw error;
+  }
+}
+
+const usable = (text) => text !== undefined && text !== null && String(text).trim() !== '';
+
+/** The reviewed text for (key, language), or undefined (hi / mr / no file / no key). */
+const getReviewedMessage = (key, languageCode) => {
+  const text = languageCode && REVIEWED_MESSAGES[languageCode] ? REVIEWED_MESSAGES[languageCode][key] : undefined;
+  return usable(text) ? text : undefined;
+};
+
 /**
  * Look up a system-authored string by key, falling back to English when
  * languageCode is missing/invalid or has no translation for this key.
@@ -292,12 +318,10 @@ const getSystemMessage = (key, languageCode, vars) => {
   const entry = SYSTEM_MESSAGES[key];
   if (!entry) return undefined;
   if (languageCode) {
-    const translated = entry[languageCode];
-    if (translated !== undefined && translated !== null && String(translated).trim() !== '') {
-      return fill(translated, vars);
-    }
+    const translated = usable(entry[languageCode]) ? entry[languageCode] : getReviewedMessage(key, languageCode);
+    if (usable(translated)) return fill(translated, vars);
   }
   return fill(entry.en, vars);
 };
 
-module.exports = { SYSTEM_MESSAGES, getSystemMessage };
+module.exports = { SYSTEM_MESSAGES, BUILT_IN_MESSAGES, REVIEWED_MESSAGES, getSystemMessage, getReviewedMessage };

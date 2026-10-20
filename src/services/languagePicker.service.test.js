@@ -86,3 +86,13 @@ test('the Language node for the canvas', () => {
   assert.equal(picker.buildLanguageNode({ enabledLanguages: ['en', 'hi'] }).pickerKind, 'buttons');
   assert.equal(picker.buildLanguageNode({}).pickerKind, 'none');
 });
+
+test('a native-reviewed "Choose your language" line replaces the machine-assisted one', () => {
+  const { REVIEWED_MESSAGES } = require('../utils/systemMessages');
+  REVIEWED_MESSAGES.ta = { chooseLanguageLine: 'REVIEWED-TA' };
+  try {
+    assert.equal(picker.defaultPromptLine(['en', 'ta', 'te']), 'Choose your language / REVIEWED-TA / మీ భాషను ఎంచుకోండి');
+  } finally {
+    delete REVIEWED_MESSAGES.ta;
+  }
+});

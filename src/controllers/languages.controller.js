@@ -6,7 +6,7 @@ const {
 
 /**
  * GET /api/public/languages (no auth)
- * -> { languages: [{ code, name, englishName }], maxEnabled: 4, defaultSuggested: ['en','hi'],
+ * -> { languages: [{ code, name, englishName }], maxEnabled: 3, defaultSuggested: ['en','hi'],
  *      states: [{ name, suggested: ['en', ...] }] }
  * Static catalog data only - nothing from app_config or the database.
  */

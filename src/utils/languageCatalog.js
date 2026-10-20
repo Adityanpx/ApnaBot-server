@@ -23,7 +23,7 @@ const LANGUAGE_CATALOG = {
   or: { name: 'ଓଡ଼ିଆ', englishName: 'Odia', azure: 'or', metaTemplate: null }
 };
 
-const MAX_ENABLED_LANGUAGES = 4; // 'en' + up to 3 more
+const MAX_ENABLED_LANGUAGES = 3; // 'en' + up to 2 more
 
 const isValidLanguageCode = (code) => Object.prototype.hasOwnProperty.call(LANGUAGE_CATALOG, code);
 
@@ -89,8 +89,11 @@ const suggestedLanguagesForState = (state) => {
  * @returns {{ error: string }|{ value: string[] }}
  */
 const validateEnabledLanguages = (languages) => {
-  if (!Array.isArray(languages) || languages.length < 1 || languages.length > MAX_ENABLED_LANGUAGES) {
-    return { error: `enabledLanguages must include between 1 and ${MAX_ENABLED_LANGUAGES} languages (English plus up to ${MAX_ENABLED_LANGUAGES - 1} more).` };
+  if (!Array.isArray(languages) || languages.length < 1) {
+    return { error: 'enabledLanguages must be a list of at least one language (English).' };
+  }
+  if (languages.length > MAX_ENABLED_LANGUAGES) {
+    return { error: `You can choose up to ${MAX_ENABLED_LANGUAGES} languages (English + ${MAX_ENABLED_LANGUAGES - 1} more).` };
   }
   const invalid = languages.filter((code) => !isValidLanguageCode(code));
   if (invalid.length > 0) {

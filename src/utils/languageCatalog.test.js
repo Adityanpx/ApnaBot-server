@@ -3,8 +3,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const {
   LANGUAGE_CATALOG, STATES, isValidLanguageCode, validateEnabledLanguages, suggestedLanguagesForState,
-  canonicalState, catalogList
-} = require('./languageCatalog');
+  canonicalState, catalogList, MAX_ENABLED_LANGUAGES, STATE_LANGUAGES
+} =require('./languageCatalog');
 
 test('the catalog has the 11 languages, each with native name, English name and Azure code', () => {
   assert.deepEqual(Object.keys(LANGUAGE_CATALOG), ['en', 'hi', 'mr', 'gu', 'kn', 'ta', 'te', 'ml', 'bn', 'pa', 'or']);
@@ -22,13 +22,16 @@ test('Meta template locales: every language but Odia has one', () => {
   assert.equal(Object.values(LANGUAGE_CATALOG).filter(l => l.metaTemplate).length, 10);
 });
 
-test('enabledLanguages: en always included and first, 1 to 4 catalog codes', () => {
+test('enabledLanguages: en always included and first, 1 to 3 catalog codes', () => {
+  assert.equal(MAX_ENABLED_LANGUAGES, 3);
   assert.deepEqual(validateEnabledLanguages(['en']), { value: ['en'] });
-  assert.deepEqual(validateEnabledLanguages(['en', 'hi', 'gu', 'ta']), { value: ['en', 'hi', 'gu', 'ta'] });
+  assert.deepEqual(validateEnabledLanguages(['en', 'hi', 'gu']), { value: ['en', 'hi', 'gu'] });
   assert.deepEqual(validateEnabledLanguages(['gu', 'en']), { value: ['en', 'gu'] }, 'en is moved to the front');
-  assert.match(validateEnabledLanguages(['en', 'hi', 'gu', 'ta', 'te']).error, /between 1 and 4/);
-  assert.match(validateEnabledLanguages([]).error, /between 1 and 4/);
-  assert.match(validateEnabledLanguages('en').error, /between 1 and 4/);
+  const tooMany = 'You can choose up to 3 languages (English + 2 more).';
+  assert.equal(validateEnabledLanguages(['en', 'hi', 'gu', 'ta']).error, tooMany);
+  assert.equal(validateEnabledLanguages(['en', 'hi', 'gu', 'ta', 'te']).error, tooMany);
+  assert.match(validateEnabledLanguages([]).error, /at least one language/);
+  assert.match(validateEnabledLanguages('en').error, /at least one language/);
   assert.match(validateEnabledLanguages(['en', 'fr']).error, /Invalid language code\(s\): fr/);
   assert.match(validateEnabledLanguages(['en', 'hi', 'hi']).error, /duplicate/);
   assert.match(validateEnabledLanguages(['hi', 'mr']).error, /English cannot be removed/);
@@ -51,6 +54,7 @@ test('unknown / missing state -> en, hi; typing is forgiving; every suggestion i
   assert.equal(canonicalState('gujarat'), 'Gujarat');
   assert.equal(canonicalState('Pune'), null);
   assert.equal(STATES.length, 36);
+  for (const [state, list] of Object.entries(STATE_LANGUAGES)) assert.ok(list.length <= MAX_ENABLED_LANGUAGES, `${state} suggests more than the cap`);
   for (const state of STATES) assert.equal(validateEnabledLanguages(suggestedLanguagesForState(state)).error, undefined, state);
 });
 

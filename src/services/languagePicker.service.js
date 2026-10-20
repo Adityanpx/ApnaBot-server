@@ -9,6 +9,7 @@
 //   change keyword still opens the picker.
 const { LANGUAGE_CATALOG, isValidLanguageCode } = require('../utils/languageCatalog');
 const { LIMITS, truncate } = require('../utils/textLimits');
+const { getReviewedMessage } = require('../utils/systemMessages');
 
 const PICKER_MODES = ['first_message', 'off'];
 const DEFAULT_MODE = 'first_message';
@@ -122,8 +123,10 @@ const validateSettingsInput = (body, existingRaw, enabledLanguages) => {
 const defaultPromptLine = (enabledLanguages) => {
   const codes = Array.isArray(enabledLanguages) && enabledLanguages.length ? enabledLanguages : ['en'];
   if (codes.every((c) => c === 'en' || c === 'hi' || c === 'mr')) return LEGACY_PROMPT_LINE;
-  const others = codes.filter((c) => c !== 'en' && CHOOSE_LANGUAGE_LINE[c]);
-  return [CHOOSE_LANGUAGE_LINE.en, ...others.map((c) => CHOOSE_LANGUAGE_LINE[c])].join(' / ');
+  // A native-reviewed line (src/i18n, via the review CSV) wins over the machine-assisted one above.
+  const lineFor = (c) => getReviewedMessage('chooseLanguageLine', c) || CHOOSE_LANGUAGE_LINE[c];
+  const others = codes.filter((c) => c !== 'en' && lineFor(c));
+  return [CHOOSE_LANGUAGE_LINE.en, ...others.map(lineFor)].join(' / ');
 };
 
 /**
@@ -153,7 +156,8 @@ const buildPicker = ({ enabledLanguages, rawSettings, welcomeMessage, customerLa
     nextKeyword: `lang_${code}`
   }));
 
-  // WhatsApp allows 3 reply buttons; a 4th language needs a list.
+  // WhatsApp allows 3 reply buttons; a 4th language needs a list. Unreachable while the language
+  // cap is 3 (en + 2): kept, with its tests, in case the cap is raised again.
   if (codes.length > LIMITS.MAX_BUTTONS) {
     return {
       text,

@@ -317,7 +317,7 @@ const updateBusiness = async (req, res, next) => {
       }
     }
 
-    // enabledLanguages: 'en' first, at most 4 (en + 3), catalog codes only (utils/languageCatalog.js).
+    // enabledLanguages: 'en' first, at most 3 (en + 2), catalog codes only (utils/languageCatalog.js).
     let previousLanguages = null;
     if (req.body.enabledLanguages !== undefined) {
       const checked = validateEnabledLanguages(req.body.enabledLanguages);
