@@ -56,9 +56,10 @@ test.beforeEach(() => {
 });
 
 const get = (headers = {}) => fetch(base, { headers });
-const ALL_OFF = { followups: false, opt_in_links: false, contact_import: false, owner_phone_media: false, staff: false, broadcasts: false };
+// catalogue is the one feature that is ON by default (categoryFeature.service.js defaultEnabled).
+const ALL_OFF = { followups: false, opt_in_links: false, contact_import: false, owner_phone_media: false, staff: false, broadcasts: false, catalogue: true };
 
-test('a new business with no override and no category row: every feature is Off, in the usual wrapper', async () => {
+test('a new business with no override and no category row: every feature is Off except the default-on catalogue, in the usual wrapper', async () => {
   const res = await get({ 'x-business': 'newbiz' });
   assert.equal(res.status, 200);
   const body = await res.json();

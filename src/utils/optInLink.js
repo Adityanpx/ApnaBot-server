@@ -28,7 +28,7 @@ const GREETING_MAX_LENGTH = 200;
 // the language picker's "lang_{code}".
 const OPT_IN_YES_PREFIX = 'optin_yes:';
 const OPT_IN_NO_PREFIX = 'optin_no:';
-const SYSTEM_TAP_PREFIXES = ['lang_', 'optin_'];
+const SYSTEM_TAP_PREFIXES = ['lang_', 'optin_', 'cat:'];
 // The post-booking consent question (services/bookingConsent.service.js) has
 // no link, so its ids end in this word instead of a link UUID. Not a UUID, so
 // it can never be mistaken for a link id.

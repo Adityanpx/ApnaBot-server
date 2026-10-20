@@ -349,6 +349,18 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
       return { error: `replyNodes[${i}]: id "${providedId}" belongs to a non-reply node.` };
     }
 
+    // The Catalogue reply (content_type 'catalog') is a projection of the Catalogue settings: whatever the
+    // client echoes back is ignored, only its canvas position may change (like a computed question node).
+    if (existing && existing.content_type === 'catalog') {
+      const { positionX = existing.position_x ?? null, positionY = existing.position_y ?? null } = item;
+      keepNodeIds.add(existing.id);
+      seenKeywords.add(String(existing.keyword || '').toLowerCase().trim());
+      replyContentTypeById.set(existing.id, 'catalog');
+      nodeUpserts.push({ ...existing, position_x: positionX, position_y: positionY });
+      proposedNodes.push({ id: existing.id, nodeType: 'reply', replyKind: existing.reply_kind || 'text', fieldKey: null });
+      continue;
+    }
+
     const {
       keyword, matchType = 'contains', replyKind = 'text', contentType = 'text',
       imageUrl = null, mediaId = null, hindiAliases = [], isActive = true,
@@ -613,6 +625,9 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
     if (!fromNodeId) return { error: `edges[${i}]: fromNodeId "${rawFrom}" does not resolve to any node in this save` };
     if (!toNodeId) return { error: `edges[${i}]: toNodeId "${rawTo}" does not resolve to any node in this save` };
 
+    if (replyContentTypeById.get(fromNodeId) === 'catalog') {
+      return { error: `edges[${i}]: The Catalogue reply cannot have outgoing buttons.` };
+    }
     const fromNode = proposedNodeById.get(fromNodeId);
     if (fromNode && fromNode.nodeType === 'vehicle_carousel') {
       return { error:
@@ -724,6 +739,13 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
     return { error:
       `Cannot delete computed node (fieldKey "${computedDelete.field_key}", id ${computedDelete.id}) via batch save — ` +
       'vehicle_carousel/rentalPackage nodes have no delete path anywhere in this API. Include it in questionNodes (position-only edits are fine) rather than omitting it.'
+    };
+  }
+
+  const catalogDelete = nodeDeletes.find(n => n.content_type === 'catalog');
+  if (catalogDelete) {
+    return { error:
+      'The Catalogue reply cannot be deleted from the canvas (it was left out of the save). Include it in replyNodes - position-only edits are fine - or switch the Catalogue off on the Catalogue page.'
     };
   }
 

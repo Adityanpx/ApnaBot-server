@@ -96,10 +96,34 @@ const importUpload = multer({
 
 const uploadImportSingle = importUpload.single('file');
 
+// Catalogue batch upload (POST /api/catalog/media): up to 10 photos, field name 'files', 5MB each. Every file
+// type is let through here so a wrong one gets its own per-file error from catalogMedia.service.js instead of
+// failing the whole batch; only a file over 5MB or an 11th file aborts the request (multer cannot go on).
+const catalogImagesUpload = multer({
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024, files: 10 }
+}).array('files', 10);
+
+const uploadCatalogImages = (req, res, next) => {
+  catalogImagesUpload(req, res, (err) => {
+    if (!err) return next();
+    if (err instanceof multer.MulterError) {
+      if (err.code === 'LIMIT_FILE_SIZE') {
+        return errorResponse(res, 400, 'Each photo must be 5 MB or smaller.', { code: 'FILE_TOO_LARGE' });
+      }
+      if (err.code === 'LIMIT_UNEXPECTED_FILE' || err.code === 'LIMIT_FILE_COUNT') {
+        return errorResponse(res, 400, 'You can upload up to 10 photos at a time (field name "files").', { code: 'TOO_MANY_FILES' });
+      }
+    }
+    return errorResponse(res, 400, err.message, { code: 'UPLOAD_ERROR' });
+  });
+};
+
 module.exports = {
   uploadSingle,
   uploadMediaSingle,
   uploadImportSingle,
+  uploadCatalogImages,
   handleUploadError,
   upload
 };

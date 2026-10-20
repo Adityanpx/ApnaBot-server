@@ -51,6 +51,7 @@ const featuresRoutes = require('./routes/features.routes');
 const appVersionRoutes = require('./routes/appVersion.routes');
 const appConfigAdminRoutes = require('./routes/appConfigAdmin.routes');
 const notificationRoutes = require('./routes/notification.routes');
+const catalogRoutes = require('./routes/catalog.routes');
 
 const app = express();
 
@@ -153,6 +154,7 @@ app.use('/api/message-templates', messageTemplateRoutes);
 app.use('/api/broadcasts', broadcastRoutes);
 app.use('/api/wallet', walletRoutes);
 app.use('/api/translate', translateRoutes);
+app.use('/api/catalog', catalogRoutes);
 app.use('/api/flow-graph/snapshots', flowSnapshotRoutes);
 app.use('/api/flow-graph/library', nodeLibraryPublicRoutes);
 app.use('/api/flow-graph/preview', flowGraphPreviewRoutes);

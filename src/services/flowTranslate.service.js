@@ -13,7 +13,7 @@ const azure = require('./azureTranslate.service');
 const slotsUtil = require('../utils/translationSlots');
 const { readStatus, statusSummary, isTranslating } = require('../utils/translationStatus');
 
-const { nodeSlots, edgeSlots, businessSlots, isMissing, markAuto, clone } = slotsUtil;
+const { nodeSlots, edgeSlots, businessSlots, catalogSettingsSlots, catalogCollectionSlots, catalogItemSlots, isMissing, markAuto, clone } = slotsUtil;
 
 const NODE_COLUMNS = ['label_translations', 'button_text_translations', 'form_title_translations', 'carousel_cards', 'options', 'auto_translations'];
 const EDGE_COLUMNS = ['label_translations', 'description_translations', 'auto_translations'];
@@ -21,6 +21,9 @@ const BUSINESS_COLUMNS = [
   'welcome_message_translations', 'stop_message_translations', 'start_message_translations',
   'cancel_message_translations', 'flow_fields', 'auto_translations'
 ];
+const CATALOG_COLUMNS = ['settings', 'auto_translations'];
+const COLLECTION_COLUMNS = ['title_translations', 'body_translations', 'price_label_translations', 'auto_translations'];
+const ITEM_COLUMNS = ['caption_translations', 'auto_translations'];
 const WRITE_CHUNK = 10;
 
 const same = (a, b) => JSON.stringify(a ?? null) === JSON.stringify(b ?? null);
@@ -67,7 +70,8 @@ const fillSlots = async ({ businessId, entries, lang, scope }) => {
 const buildGraphEntries = (nodes, edges) => {
   const nodeById = new Map(nodes.map((n) => [n.id, n]));
   return [
-    ...nodes.map((row) => ({ kind: 'node', row, slots: nodeSlots(row) })),
+    // The catalogue node's text belongs to the Catalogue settings (it is a projection of them), translated there.
+    ...nodes.filter((n) => n.content_type !== 'catalog').map((row) => ({ kind: 'node', row, slots: nodeSlots(row) })),
     ...edges.map((row) => ({ kind: 'edge', row, slots: edgeSlots(row, nodeById.get(row.from_node_id)) }))
   ];
 };
@@ -105,42 +109,63 @@ const setStatus = async (businessId, lang, status) => {
  * @param {string} args.lang catalog code, not 'en'
  * @param {'flow'|'system'} args.scope 'flow' = the owner asked (counts against their monthly cap);
  *   'system' = the signup run (global counter only, and translation_status is kept for the canvas)
+ * @param {'catalog'|null} [args.only] 'catalog' = just the Catalogue (settings texts, collections, captions);
+ *   null = the whole flow AND the Catalogue
  * @returns {Promise<{ language:string, translated:number, alreadyTranslated:number, skipped:Object[], warnings:Object[], charged:number, usage:Object|null }>}
  */
-const translateBusinessFlow = async ({ businessId, lang, scope }) => {
+const translateBusinessFlow = async ({ businessId, lang, scope, only = null }) => {
   // The status is for the background (signup) run, which the canvas has to wait out; an owner's own
   // request is synchronous and answers when it is done.
   const track = scope === 'system';
   if (track) await setStatus(businessId, lang, 'pending');
   try {
-    const [nodesRes, edgesRes, businessRes] = await Promise.all([
+    const catalogOnly = only === 'catalog';
+    const [nodesRes, edgesRes, businessRes, catalogRes, collectionsRes, itemsRes] = await Promise.all([
       supabase.from('flow_nodes').select('*').eq('business_id', businessId),
       supabase.from('flow_edges').select('*').eq('business_id', businessId),
-      supabase.from('businesses').select('welcome_message, welcome_message_translations, stop_message, stop_message_translations, start_message, start_message_translations, cancel_message, cancel_message_translations, flow_fields, auto_translations').eq('id', businessId).single()
+      supabase.from('businesses').select('welcome_message, welcome_message_translations, stop_message, stop_message_translations, start_message, start_message_translations, cancel_message, cancel_message_translations, flow_fields, auto_translations').eq('id', businessId).single(),
+      supabase.from('catalogs').select('*').eq('business_id', businessId).maybeSingle(),
+      supabase.from('catalog_collections').select('*').eq('business_id', businessId),
+      supabase.from('catalog_items').select('*').eq('business_id', businessId)
     ]);
-    for (const res of [nodesRes, edgesRes, businessRes]) if (res.error) throw res.error;
+    for (const res of [nodesRes, edgesRes, businessRes, catalogRes, collectionsRes, itemsRes]) if (res.error) throw res.error;
 
     const originalNodes = nodesRes.data || [];
     const originalEdges = edgesRes.data || [];
     const originalBusiness = businessRes.data;
+    const originalCatalog = catalogRes.data || null;
+    const originalCollections = collectionsRes.data || [];
+    const originalItems = itemsRes.data || [];
     const nodes = clone(originalNodes);
     const edges = clone(originalEdges);
     const business = clone(originalBusiness);
 
+    const catalog = clone(originalCatalog);
+    const collections = clone(originalCollections);
+    const items = clone(originalItems);
     const entries = [
-      ...buildGraphEntries(nodes, edges),
-      { kind: 'business', row: business, slots: businessSlots(business) }
+      ...(catalogOnly ? [] : buildGraphEntries(nodes, edges)),
+      ...(catalogOnly ? [] : [{ kind: 'business', row: business, slots: businessSlots(business) }]),
+      ...(catalog ? [{ kind: 'catalog', row: catalog, slots: catalogSettingsSlots(catalog) }] : []),
+      ...collections.map((row) => ({ kind: 'collection', row, slots: catalogCollectionSlots(row) })),
+      ...items.map((row) => ({ kind: 'item', row, slots: catalogItemSlots(row) }))
     ];
     const summary = await fillSlots({ businessId, entries, lang, scope });
 
     const jobs = [];
     entries.forEach((entry) => {
-      const original = entry.kind === 'node' ? originalNodes.find((n) => n.id === entry.row.id)
-        : entry.kind === 'edge' ? originalEdges.find((e) => e.id === entry.row.id) : originalBusiness;
-      const columns = entry.kind === 'node' ? NODE_COLUMNS : entry.kind === 'edge' ? EDGE_COLUMNS : BUSINESS_COLUMNS;
-      const patch = patchOf(original, entry.row, columns);
+      const TARGETS = {
+        node: { original: () => originalNodes.find((n) => n.id === entry.row.id), columns: NODE_COLUMNS, table: 'flow_nodes' },
+        edge: { original: () => originalEdges.find((e) => e.id === entry.row.id), columns: EDGE_COLUMNS, table: 'flow_edges' },
+        business: { original: () => originalBusiness, columns: BUSINESS_COLUMNS, table: 'businesses' },
+        catalog: { original: () => originalCatalog, columns: CATALOG_COLUMNS, table: 'catalogs' },
+        collection: { original: () => originalCollections.find((c) => c.id === entry.row.id), columns: COLLECTION_COLUMNS, table: 'catalog_collections' },
+        item: { original: () => originalItems.find((i) => i.id === entry.row.id), columns: ITEM_COLUMNS, table: 'catalog_items' }
+      };
+      const target = TARGETS[entry.kind];
+      const patch = patchOf(target.original(), entry.row, target.columns);
       if (Object.keys(patch).length === 0) return;
-      const table = entry.kind === 'node' ? 'flow_nodes' : entry.kind === 'edge' ? 'flow_edges' : 'businesses';
+      const table = target.table;
       const id = entry.kind === 'business' ? businessId : entry.row.id;
       jobs.push(() => supabase.from(table).update(patch).eq('id', id));
     });

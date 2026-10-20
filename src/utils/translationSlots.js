@@ -119,6 +119,40 @@ const businessSlots = (business) => {
   return slots;
 };
 
+// ---- Catalogue (catalogs.settings, catalog_collections, catalog_items) ----
+const CATALOG_SETTING_TEXTS = [
+  ['text', LIMITS.INTERACTIVE_BODY], ['emptyText', LIMITS.INTERACTIVE_BODY],
+  ['viewButtonLabel', LIMITS.BUTTON_TITLE], ['orderButtonLabel', LIMITS.BUTTON_TITLE],
+  ['showMoreLabel', LIMITS.BUTTON_TITLE], ['menuLabel', LIMITS.BUTTON_TITLE]
+];
+
+/** Slots of a catalogs row: the owner's texts and labels in settings (a text never set has nothing to translate). */
+const catalogSettingsSlots = (row) => {
+  const settings = isObject(row.settings) ? row.settings : {};
+  const slots = [];
+  for (const [key, max] of CATALOG_SETTING_TEXTS) {
+    if (hasText(settings[key])) slots.push(mapSlot(settings, `${key}Translations`, key, settings[key], max));
+  }
+  const action = settings.orderAction;
+  if (isObject(action) && action.type === 'message' && hasText(action.text)) {
+    slots.push(mapSlot(action, 'textTranslations', 'orderAction.text', action.text, LIMITS.INTERACTIVE_BODY));
+  }
+  return slots;
+};
+
+/** Slots of a catalog_collections row: title (60), card text (160), price label (30). */
+const catalogCollectionSlots = (row) => {
+  const slots = [];
+  if (hasText(row.title)) slots.push(mapSlot(row, 'title_translations', 'title', row.title, 60));
+  if (hasText(row.body)) slots.push(mapSlot(row, 'body_translations', 'body', row.body, CARD_BODY_MAX));
+  if (hasText(row.price_label)) slots.push(mapSlot(row, 'price_label_translations', 'priceLabel', row.price_label, 30));
+  return slots;
+};
+
+/** Slots of a catalog_items row: the caption (design numbers and prices are never translated). */
+const catalogItemSlots = (row) => (hasText(row.caption)
+  ? [mapSlot(row, 'caption_translations', 'caption', row.caption, 500)] : []);
+
 /** True when the slot has no usable text in `lang` (absent, null or blank) - the only case that gets filled. */
 const isMissing = (slot, lang) => !hasText(slot.get(lang));
 
@@ -167,7 +201,13 @@ const shapeRowForApi = (row, slots) => {
 const shapeNodeForApi = (node) => shapeRowForApi(node, nodeSlots(node));
 const shapeEdgeForApi = (edge, parentNode) => shapeRowForApi(edge, edgeSlots(edge, parentNode));
 
+/** { <slot>: [lang] } for the catalogue pieces, same contract as the nodes' autoTranslated. */
+const shapeSettingsAuto = (row) => autoTranslatedOf(row, catalogSettingsSlots(row));
+const shapeCollectionAuto = (row) => autoTranslatedOf(row, catalogCollectionSlots(row));
+const shapeItemAuto = (row) => autoTranslatedOf(row, catalogItemSlots(row));
+
 module.exports = {
   shapeNodeForApi, shapeEdgeForApi,
-  textHash, clone, nodeSlots, edgeSlots, businessSlots, isMissing, markAuto, autoTranslatedOf, businessRowFromCamel
+  textHash, clone, nodeSlots, edgeSlots, businessSlots, isMissing, markAuto, autoTranslatedOf, businessRowFromCamel,
+  catalogSettingsSlots, catalogCollectionSlots, catalogItemSlots, shapeSettingsAuto, shapeCollectionAuto, shapeItemAuto
 };

@@ -1,6 +1,6 @@
 // Super Admin on/off feature switches per business category
-// (category_features, 20260929140000_category_features.sql; no row = off),
-// with optional per-business overrides (business_features,
+// (category_features, 20260929140000_category_features.sql; no row = off, except a feature
+// with defaultEnabled: true), with optional per-business overrides (business_features,
 // 20261002120000_business_features.sql; no row = follow the category).
 // Not to be confused with config/categoryFeatures.js, which holds per-
 // category DEFAULT values for business_travel_settings columns.
@@ -47,8 +47,19 @@ const FEATURES = {
     label: 'Broadcasts',
     description: 'Broadcasts to customers',
     categories: ALL_CATEGORIES
+  },
+  // The only switch that is ON by default: with no business override and no category row the
+  // definition's defaultEnabled applies. An explicit Off row (Super Admin) turns it off.
+  catalogue: {
+    label: 'Catalogue',
+    description: 'The Catalogue page (collections and photos shown to customers on WhatsApp). On by default; switch off to hide the page and make the catalogue reply with its "empty" text.',
+    categories: ALL_CATEGORIES,
+    defaultEnabled: true
   }
 };
+
+/** The state a category has when no category_features row exists for the feature. */
+const defaultFor = (feature) => !!(FEATURES[feature] && FEATURES[feature].defaultEnabled);
 
 /** Whether `feature` exists and applies to businesses in `category`. */
 const appliesTo = (category, feature) => {
@@ -63,7 +74,7 @@ const isCategoryEnabled = async (category, feature) => {
     .from('category_features').select('is_enabled')
     .eq('category', category).eq('feature', feature).maybeSingle();
   if (error) throw error;
-  return !!data?.is_enabled;
+  return data ? !!data.is_enabled : defaultFor(feature);
 };
 
 /** The business's override: true / false, or null when it follows its category. */
@@ -109,7 +120,7 @@ const listForCategory = async (category) => {
     feature: key,
     label: f.label,
     description: f.description,
-    isEnabled: !!rows.get(key)?.is_enabled,
+    isEnabled: rows.has(key) ? !!rows.get(key).is_enabled : defaultFor(key),
     updatedAt: rows.get(key)?.updated_at || null
   }));
 };

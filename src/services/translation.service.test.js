@@ -381,3 +381,73 @@ test('edge slots take their title limit from the parent (list rows 24, buttons 2
   const buttons = edgeSlots({ label: 'Prices' }, { node_type: 'reply', content_type: 'buttons' });
   assert.equal(buttons[0].max, 20);
 });
+
+// ---------------------------------------------------------------- Catalogue
+const { shapeSettingsAuto, shapeCollectionAuto, shapeItemAuto } = require('../utils/translationSlots');
+
+const seedCatalogue = () => {
+  db.catalogs = [{ id: 'cat1', business_id: BIZ, auto_translations: null, settings: { enabled: true, text: 'Our catalogue', emptyText: 'Coming soon', viewButtonLabel: 'View designs', textTranslations: null,
+    orderAction: { type: 'message', text: 'Thanks for ordering', textTranslations: null } } }];
+  db.catalog_collections = [{ id: 'col1', business_id: BIZ, title: 'Silk Sarees', title_translations: null, body: 'Pure silk', body_translations: { hi: 'human body' }, price_label: 'From 999', price_label_translations: null, auto_translations: null }];
+  db.catalog_items = [
+    { id: 'it1', business_id: BIZ, collection_id: 'col1', design_no: 'A-102', price_text: '1,499', caption: 'Soft cotton', caption_translations: null, auto_translations: null },
+    { id: 'it2', business_id: BIZ, collection_id: 'col1', design_no: 'A-103', price_text: '999', caption: null, caption_translations: null, auto_translations: null }
+  ];
+  db.flow_nodes = [
+    { id: 'n1', business_id: BIZ, node_type: 'reply', content_type: 'text', keyword: 'faq', label: 'We open at 9', label_translations: null, auto_translations: null },
+    { id: 'n2', business_id: BIZ, node_type: 'reply', content_type: 'catalog', keyword: 'catalogue', label: 'Our catalogue', label_translations: null, auto_translations: null }
+  ];
+};
+
+test('catalogue: titles, card text, price labels, captions and the settings texts are translated; design numbers and prices never', async () => {
+  seedCatalogue();
+  const result = await flowTranslate.translateBusinessFlow({ businessId: BIZ, lang: 'hi', scope: 'flow', only: 'catalog' });
+  const sent = azureCalls.flatMap(c => c.texts).sort();
+  assert.deepEqual(sent, ['Coming soon', 'From 999', 'Our catalogue', 'Silk Sarees', 'Soft cotton', 'Thanks for ordering', 'View designs']);
+  assert.equal(result.translated, 7);
+  const [col] = db.catalog_collections;
+  assert.equal(col.title_translations.hi, '[hi] Silk Sarees');
+  assert.equal(col.price_label_translations.hi, '[hi] From 999');
+  assert.equal(col.body_translations.hi, 'human body', 'a human translation is never overwritten');
+  assert.equal(db.catalog_items[0].caption_translations.hi, '[hi] Soft cotton');
+  assert.equal(db.catalog_items[1].caption_translations, null, 'no caption, nothing to translate');
+  const settings = db.catalogs[0].settings;
+  assert.equal(settings.textTranslations.hi, '[hi] Our catalogue');
+  assert.equal(settings.viewButtonLabelTranslations.hi, '[hi] View designs');
+  assert.equal(settings.orderAction.textTranslations.hi, '[hi] Thanks for ordering');
+  assert.equal(settings.enabled, true, 'the other settings are untouched');
+});
+
+test('catalogue: the auto-translated badges are reported until the text is hand-edited', async () => {
+  seedCatalogue();
+  await flowTranslate.translateBusinessFlow({ businessId: BIZ, lang: 'hi', scope: 'flow', only: 'catalog' });
+  assert.deepEqual(shapeCollectionAuto(db.catalog_collections[0]), { title: ['hi'], priceLabel: ['hi'] });
+  assert.deepEqual(shapeItemAuto(db.catalog_items[0]), { caption: ['hi'] });
+  assert.deepEqual(shapeSettingsAuto(db.catalogs[0]), { text: ['hi'], emptyText: ['hi'], viewButtonLabel: ['hi'], 'orderAction.text': ['hi'] });
+  db.catalog_items[0].caption_translations = { hi: 'my own words' };
+  assert.deepEqual(shapeItemAuto(db.catalog_items[0]), {});
+});
+
+test('catalogue only: the rest of the flow and the welcome message are not translated, and the catalogue node is never a flow slot', async () => {
+  seedCatalogue();
+  await flowTranslate.translateBusinessFlow({ businessId: BIZ, lang: 'hi', scope: 'flow', only: 'catalog' });
+  assert.equal(db.flow_nodes[0].label_translations, null);
+  assert.equal(db.businesses[0].welcome_message_translations, null);
+  assert.equal(azureCalls.some(c => c.texts.includes('We open at 9')), false);
+
+  azureCalls = [];
+  await flowTranslate.translateBusinessFlow({ businessId: BIZ, lang: 'gu', scope: 'flow' });   // the whole flow also covers the Catalogue
+  const sent = azureCalls.flatMap(c => c.texts);
+  assert.ok(sent.includes('We open at 9') && sent.includes('Silk Sarees') && sent.some(t => t.startsWith('Welcome to')));
+  assert.equal(sent.filter(t => t === 'Our catalogue').length, 1, 'once, from the settings, not again from the node');
+  assert.equal(db.flow_nodes[1].label_translations, null, 'the catalogue node keeps no translation of its own');
+});
+
+test('catalogue: a second run translates nothing', async () => {
+  seedCatalogue();
+  await flowTranslate.translateBusinessFlow({ businessId: BIZ, lang: 'hi', scope: 'flow', only: 'catalog' });
+  azureCalls = [];
+  const again = await flowTranslate.translateBusinessFlow({ businessId: BIZ, lang: 'hi', scope: 'flow', only: 'catalog' });
+  assert.equal(again.translated, 0);
+  assert.equal(azureCalls.length, 0);
+});

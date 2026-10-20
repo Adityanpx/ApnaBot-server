@@ -31,8 +31,9 @@ const IMAGE_QUALITY = 80;
  * re-encoded as JPEG — PNG transparency is flattened in that case, which is
  * an accepted tradeoff of normalizing to two output formats instead of
  * preserving every input format.
+ * forceJpeg (catalogue uploads): WebP is converted to JPEG too - WhatsApp image headers are JPEG / PNG.
  */
-const processImage = async (buffer, mimetype) => {
+const processImage = async (buffer, mimetype, { forceJpeg = false } = {}) => {
   const image = sharp(buffer).rotate(); // rotate() auto-applies EXIF orientation, then strips it
   const resized = image.resize({
     width: IMAGE_MAX_DIMENSION,
@@ -41,7 +42,7 @@ const processImage = async (buffer, mimetype) => {
     withoutEnlargement: true
   });
 
-  const outputMimetype = mimetype === 'image/webp' ? 'image/webp' : 'image/jpeg';
+  const outputMimetype = mimetype === 'image/webp' && !forceJpeg ? 'image/webp' : 'image/jpeg';
   const output = outputMimetype === 'image/webp'
     ? await resized.webp({ quality: IMAGE_QUALITY }).toBuffer({ resolveWithObject: true })
     : await resized.jpeg({ quality: IMAGE_QUALITY }).toBuffer({ resolveWithObject: true });
@@ -58,8 +59,10 @@ const processImage = async (buffer, mimetype) => {
  * POST /api/business/media
  * Upload one file to this business's media library. Enforces per-type size
  * caps and plan storage quota before touching R2.
+ * options (catalogue batch upload only): maxImageBytes replaces the 2MB image input cap (the image is
+ * re-encoded below 1280px anyway), forceJpeg converts WebP to JPEG.
  */
-const uploadBusinessMedia = async (businessId, file) => {
+const uploadBusinessMedia = async (businessId, file, options = {}) => {
   const mediaType = MIME_TO_MEDIA_TYPE[file.mimetype];
   if (!mediaType) {
     const err = new Error(`Unsupported file type: ${file.mimetype}`);
@@ -67,7 +70,7 @@ const uploadBusinessMedia = async (businessId, file) => {
     throw err;
   }
 
-  const maxBytes = MAX_BYTES_BY_TYPE[mediaType];
+  const maxBytes = mediaType === 'image' && options.maxImageBytes ? options.maxImageBytes : MAX_BYTES_BY_TYPE[mediaType];
   if (file.buffer.length > maxBytes) {
     const err = new Error(`${mediaType} files must be ${Math.round(maxBytes / (1024 * 1024))}MB or smaller.`);
     err.statusCode = 400;
@@ -80,7 +83,7 @@ const uploadBusinessMedia = async (businessId, file) => {
   let height = null;
 
   if (mediaType === 'image') {
-    const processed = await processImage(file.buffer, file.mimetype);
+    const processed = await processImage(file.buffer, file.mimetype, { forceJpeg: options.forceJpeg === true });
     uploadBuffer = processed.buffer;
     uploadMimetype = processed.mimetype;
     width = processed.width;
@@ -112,6 +115,7 @@ const uploadBusinessMedia = async (businessId, file) => {
       'Delete unused media or upgrade your plan.'
     );
     err.statusCode = 400;
+    err.code = 'STORAGE_LIMIT';
     throw err;
   }
 

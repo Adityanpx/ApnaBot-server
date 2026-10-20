@@ -63,7 +63,7 @@ test('listForBusiness: category state, override and result', async () => {
   assert.deepEqual({ feature: f.feature, categoryEnabled: f.categoryEnabled, override: f.override, isEnabled: f.isEnabled },
     { feature: 'bot_builder', categoryEnabled: false, override: true, isEnabled: true });
   // bot_builder is coaching-only; followups, opt_in_links, contact_import and owner_phone_media ('*') apply everywhere.
-  assert.deepEqual((await svc.listForBusiness('swanand', 'internet_cafe')).map(f => f.feature), ['followups', 'opt_in_links', 'contact_import', 'owner_phone_media', 'staff', 'broadcasts']);
+  assert.deepEqual((await svc.listForBusiness('swanand', 'internet_cafe')).map(f => f.feature), ['followups', 'opt_in_links', 'contact_import', 'owner_phone_media', 'staff', 'broadcasts', 'catalogue']);
 });
 
 test('followups: off for every category until switched on; per-business pilot works', async () => {
@@ -75,7 +75,7 @@ test('followups: off for every category until switched on; per-business pilot wo
   assert.equal(await svc.isEnabled('travels', 'followups', 'searchcab'), false);
   // bot_builder stays coaching-only
   assert.equal(svc.appliesTo('travels', 'bot_builder'), false);
-  assert.deepEqual((await svc.listForBusiness('sg', 'travels')).map(f => [f.feature, f.isEnabled]), [['followups', true], ['opt_in_links', false], ['contact_import', false], ['owner_phone_media', false], ['staff', false], ['broadcasts', false]]);
+  assert.deepEqual((await svc.listForBusiness('sg', 'travels')).map(f => [f.feature, f.isEnabled]), [['followups', true], ['opt_in_links', false], ['contact_import', false], ['owner_phone_media', false], ['staff', false], ['broadcasts', false], ['catalogue', true]]);
 });
 
 test('opt_in_links: off for every category until switched on; per-business pilot works', async () => {
@@ -95,8 +95,8 @@ test("'*' covers every category, including one added later; a list stays a list"
   assert.equal(svc.appliesTo('pet_shop', 'bot_builder'), false);
   assert.equal(svc.appliesTo('coaching', 'bot_builder'), true);
   assert.equal(svc.appliesTo('pet_shop', 'no_such_feature'), false);
-  assert.deepEqual((await svc.listForCategory('pet_shop')).map(f => f.feature), ['followups', 'opt_in_links', 'contact_import', 'owner_phone_media', 'staff', 'broadcasts']);
-  assert.deepEqual((await svc.listForCategory('coaching')).map(f => f.feature), ['bot_builder', 'followups', 'opt_in_links', 'contact_import', 'owner_phone_media', 'staff', 'broadcasts']);
+  assert.deepEqual((await svc.listForCategory('pet_shop')).map(f => f.feature), ['followups', 'opt_in_links', 'contact_import', 'owner_phone_media', 'staff', 'broadcasts', 'catalogue']);
+  assert.deepEqual((await svc.listForCategory('coaching')).map(f => f.feature), ['bot_builder', 'followups', 'opt_in_links', 'contact_import', 'owner_phone_media', 'staff', 'broadcasts', 'catalogue']);
   await svc.setBusinessOverride('pets', 'followups', true);
   assert.equal(await svc.isEnabled('pet_shop', 'followups', 'pets'), true);
 });
@@ -175,4 +175,18 @@ test('every key: no row = off', async () => {
 test('contact_import no longer promises a broadcast on its own', () => {
   assert.doesNotMatch(svc.FEATURES.contact_import.description, /and broadcast to a group/);
   assert.match(svc.FEATURES.contact_import.description, /while Broadcasts is on/);
+});
+
+test('catalogue is ON by default for every category; an explicit Off row or override turns it off', async () => {
+  reset(null);
+  assert.equal(svc.FEATURES.catalogue.defaultEnabled, true);
+  assert.equal(await svc.isEnabled('travels', 'catalogue', 'sg'), true);
+  assert.equal(await svc.isEnabled('maha_eseva_kendra', 'catalogue', 'katta'), true);
+  tables.category_features.push({ category: 'travels', feature: 'catalogue', is_enabled: false });
+  assert.equal(await svc.isEnabled('travels', 'catalogue', 'sg'), false);
+  await svc.setBusinessOverride('sg', 'catalogue', true);
+  assert.equal(await svc.isEnabled('travels', 'catalogue', 'sg'), true);
+  assert.deepEqual((await svc.listForCategory('menswear')).find(f => f.feature === 'catalogue').isEnabled, true);
+  // every other switch still defaults to Off
+  assert.equal(await svc.isEnabled('menswear', 'broadcasts', 'x'), false);
 });

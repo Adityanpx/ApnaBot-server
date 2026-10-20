@@ -276,6 +276,81 @@ const SYSTEM_MESSAGES = {
     en: "⏰ Reminder: {{student}}'s free demo class for {{course}} at {{business}} is on {{time}}. Reply here if you can't make it.",
     hi: '⏰ याद दिलाना: {{student}} की {{course}} की फ्री डेमो क्लास ({{business}}) {{time}} को है। अगर आप नहीं आ पाएंगे तो यहाँ जवाब दें।',
     mr: '⏰ आठवण: {{student}} चा {{course}} चा मोफत डेमो क्लास ({{business}}) {{time}} ला आहे. येणे शक्य नसल्यास येथे उत्तर द्या.'
+  },
+
+  // ── Catalogue (catalogReply.service.js). The owner can override the button labels and texts per
+  // language in the Catalogue settings; these are the built-in defaults. hi / mr wordings are
+  // unreviewed - have a native speaker check them. Button titles must stay <= 20 characters. ──
+  catalogDefaultText: {
+    en: 'Here is our catalogue 👇',
+    hi: 'यह रहा हमारा कैटलॉग 👇',
+    mr: 'हा आमचा कॅटलॉग 👇'
+  },
+  catalogEmptyText: {
+    en: 'Our catalogue is being updated. Please check back soon.',
+    hi: 'हमारा कैटलॉग अपडेट हो रहा है। कृपया कुछ समय बाद देखें।',
+    mr: 'आमचा कॅटलॉग अपडेट होत आहे. कृपया थोड्या वेळाने पाहा.'
+  },
+  catalogViewButton: {
+    en: 'View designs',
+    hi: 'डिज़ाइन देखें',
+    mr: 'डिझाइन पहा'
+  },
+  catalogOrderButton: {
+    en: 'Order',
+    hi: 'ऑर्डर करें',
+    mr: 'ऑर्डर करा'
+  },
+  catalogOrderThisButton: {
+    en: 'Order this',
+    hi: 'यह ऑर्डर करें',
+    mr: 'हे ऑर्डर करा'
+  },
+  catalogShowMoreButton: {
+    en: 'Show more designs',
+    hi: 'और डिज़ाइन देखें',
+    mr: 'आणखी डिझाइन पहा'
+  },
+  catalogMenuLabel: {
+    en: '🛍️ Catalogue',
+    hi: '🛍️ कैटलॉग',
+    mr: '🛍️ कॅटलॉग'
+  },
+  catalogPageSummary: {
+    en: 'Showing {{from}}–{{to}} of {{total}} designs in {{title}}',
+    hi: '{{title}} के {{total}} डिज़ाइन में से {{from}}–{{to}} दिखाए गए',
+    mr: '{{title}} मधील {{total}} डिझाइनपैकी {{from}}–{{to}} दाखवले'
+  },
+  catalogCollectionEmpty: {
+    en: 'There are no designs in {{title}} yet.',
+    hi: '{{title}} में अभी कोई डिज़ाइन नहीं है।',
+    mr: '{{title}} मध्ये अजून कोणतेही डिझाइन नाही.'
+  },
+  catalogOrderMessageDefault: {
+    en: 'Thank you! We have noted your order request and our team will contact you shortly.',
+    hi: 'धन्यवाद! हमने आपका ऑर्डर नोट कर लिया है, हमारी टीम जल्द ही आपसे संपर्क करेगी।',
+    mr: 'धन्यवाद! आम्ही तुमची ऑर्डर विनंती नोंदवली आहे, आमची टीम लवकरच तुमच्याशी संपर्क साधेल.'
+  },
+  catalogTapStale: {
+    en: 'That item is no longer available. Here is our catalogue again.',
+    hi: 'यह आइटम अब उपलब्ध नहीं है। यह रहा हमारा कैटलॉग।',
+    mr: 'ही वस्तू आता उपलब्ध नाही. हा आमचा कॅटलॉग पुन्हा.'
+  },
+  // Field labels of a catalogue order (booking confirmation + web form chips).
+  catalogFieldCollection: {
+    en: 'Collection',
+    hi: 'कलेक्शन',
+    mr: 'कलेक्शन'
+  },
+  catalogFieldDesignNo: {
+    en: 'Design no',
+    hi: 'डिज़ाइन नंबर',
+    mr: 'डिझाइन क्रमांक'
+  },
+  catalogFieldPrice: {
+    en: 'Price',
+    hi: 'कीमत',
+    mr: 'किंमत'
   }
 };
 

@@ -16,7 +16,7 @@ const KNOWN_PREFIXES = Object.keys(PREFIX_KIND);
 
 const KINDS = [
   'chat_inbound', 'chat_echo', 'library', 'template_header', 'bot_node_image',
-  'payment_qr', 'logo', 'vehicle_photo', 'course_image', 'orphan'
+  'payment_qr', 'logo', 'vehicle_photo', 'course_image', 'catalog_image', 'orphan'
 ];
 const CHAT_KINDS = ['chat_inbound', 'chat_echo'];
 

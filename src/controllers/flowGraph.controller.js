@@ -302,6 +302,10 @@ const updateReplyNode = async (req, res, next) => {
     if (!node) {
       return errorResponse(res, 404, 'Reply node not found');
     }
+    // The Catalogue reply is a projection of the Catalogue settings (services/catalog.service.js).
+    if (node.content_type === 'catalog') {
+      return errorResponse(res, 400, 'This reply is the Catalogue: change it on the Catalogue page.', { code: 'CATALOG_NODE_MANAGED' });
+    }
 
     if (matchType !== undefined && !VALID_MATCH_TYPES.includes(matchType)) {
       return errorResponse(res, 400, `matchType must be one of: ${VALID_MATCH_TYPES.join(', ')}`);
@@ -507,10 +511,13 @@ const deleteReplyNode = async (req, res, next) => {
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
-      .from('flow_nodes').select('id').eq('id', id).eq('business_id', businessId).eq('node_type', 'reply').maybeSingle();
+      .from('flow_nodes').select('id, content_type').eq('id', id).eq('business_id', businessId).eq('node_type', 'reply').maybeSingle();
     if (findErr) throw findErr;
     if (!node) {
       return errorResponse(res, 404, 'Reply node not found');
+    }
+    if (node.content_type === 'catalog') {
+      return errorResponse(res, 400, 'This reply is the Catalogue and cannot be deleted. Switch the Catalogue off on the Catalogue page instead.', { code: 'CATALOG_NODE_MANAGED' });
     }
 
     const { data: incomingEdges, error: incomingErr } = await supabase
@@ -571,10 +578,13 @@ const toggleReplyNode = async (req, res, next) => {
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
-      .from('flow_nodes').select('is_active').eq('id', id).eq('business_id', businessId).eq('node_type', 'reply').maybeSingle();
+      .from('flow_nodes').select('is_active, content_type').eq('id', id).eq('business_id', businessId).eq('node_type', 'reply').maybeSingle();
     if (findErr) throw findErr;
     if (!node) {
       return errorResponse(res, 404, 'Reply node not found');
+    }
+    if (node.content_type === 'catalog') {
+      return errorResponse(res, 400, 'Switch the Catalogue on or off on the Catalogue page.', { code: 'CATALOG_NODE_MANAGED' });
     }
 
     const { data: updatedNode, error } = await supabase
@@ -1187,6 +1197,10 @@ const createEdge = async (req, res, next) => {
       return errorResponse(res, 400,
         'vehicle_carousel nodes cannot have outgoing edges — the post-selection flow is handled entirely in bookingGraph.service.js, not by edges.'
       );
+    }
+    // The Catalogue sends its own buttons; edges may point INTO it (a menu button) but never leave it.
+    if (fromNode.content_type === 'catalog') {
+      return errorResponse(res, 400, 'The Catalogue reply cannot have outgoing buttons.', { code: 'CATALOG_NODE_MANAGED' });
     }
 
     // A carousel button belongs to one card (cardIndex); no other parent takes a cardIndex.

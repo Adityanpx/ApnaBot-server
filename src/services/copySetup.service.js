@@ -9,7 +9,8 @@ const {
   writeBusinessGraphRows,
   enforceSnapshotCap,
   setActiveSnapshot,
-  createSnapshotFromRows
+  createSnapshotFromRows,
+  healCatalogue
 } = require('./flowSnapshot.service');
 const {
   checkCopyCompatibility,
@@ -199,6 +200,7 @@ const applyPlan = async (plan, adminUserId) => {
     }
 
     await invalidateRulesCache(targetId);
+    await healCatalogue(targetId);
 
     // Same as importCategoryTemplate: a snapshot failure is logged, not fatal — the copy is already live.
     try {

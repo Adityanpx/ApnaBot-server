@@ -9,7 +9,8 @@ const {
   writeBusinessGraphRows,
   enforceSnapshotCap,
   setActiveSnapshot,
-  createSnapshotFromRows
+  createSnapshotFromRows,
+  healCatalogue
 } = require('../services/flowSnapshot.service');
 const businessCategoryService = require('../services/businessCategory.service');
 const logger = require('../utils/logger');
@@ -101,6 +102,7 @@ const restoreSnapshot = async (req, res, next) => {
       resetTriggerCount: false
     });
     await invalidateRulesCache(businessId);
+    await healCatalogue(businessId);
 
     await setActiveSnapshot(businessId, id);
 

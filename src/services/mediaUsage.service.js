@@ -13,6 +13,8 @@ const supabase = require('../config/supabase');
 //   template_header  message_templates.header_media_id               id, label = template name
 //   course           business_courses.image_media_id                 id, label = course name
 //   vehicle          vehicles.custom_photo_url = the file's url      id, label = vehicle name
+//   catalog_cover    catalog_collections.cover_media_id              id, label = collection title
+//   catalog_item     catalog_items.media_id                          id, collectionId, label = design no (else "Photo")
 
 const must = ({ data, error }) => {
   if (error) throw error;
@@ -33,7 +35,7 @@ const getMediaUsage = async (businessId, mediaId) => {
   if (mediaErr) throw mediaErr;
   if (!media) return { found: false, inUse: false, usedBy: [], fileSizeBytes: null };
 
-  const [mainRefs, galleryRefs, videoRefs, carouselNodes, templates, courses, vehicles] = (await Promise.all([
+  const [mainRefs, galleryRefs, videoRefs, carouselNodes, templates, courses, vehicles, catalogCovers, catalogItems] = (await Promise.all([
     supabase.from('flow_nodes').select('id, label, keyword').eq('business_id', businessId).eq('media_id', mediaId),
     supabase.from('flow_nodes').select('id, label, keyword').eq('business_id', businessId).contains('gallery_media_ids', [mediaId]),
     supabase.from('flow_nodes').select('id, label, keyword').eq('business_id', businessId).eq('video_media_id', mediaId),
@@ -44,7 +46,9 @@ const getMediaUsage = async (businessId, mediaId) => {
     supabase.from('business_courses').select('id, name').eq('business_id', businessId).eq('image_media_id', mediaId),
     media.url
       ? supabase.from('vehicles').select('id, custom_name').eq('business_id', businessId).eq('custom_photo_url', media.url)
-      : Promise.resolve({ data: [], error: null })
+      : Promise.resolve({ data: [], error: null }),
+    supabase.from('catalog_collections').select('id, title').eq('business_id', businessId).eq('cover_media_id', mediaId),
+    supabase.from('catalog_items').select('id, collection_id, design_no').eq('business_id', businessId).eq('media_id', mediaId)
   ])).map(must);
 
   const usedBy = [
@@ -56,7 +60,9 @@ const getMediaUsage = async (businessId, mediaId) => {
       .filter(Boolean)),
     ...templates.map(t => ({ kind: 'template_header', id: t.id, label: t.name })),
     ...courses.map(c => ({ kind: 'course', id: c.id, label: c.name })),
-    ...vehicles.map(v => ({ kind: 'vehicle', id: v.id, label: v.custom_name || v.id }))
+    ...vehicles.map(v => ({ kind: 'vehicle', id: v.id, label: v.custom_name || v.id })),
+    ...catalogCovers.map(c => ({ kind: 'catalog_cover', id: c.id, label: c.title })),
+    ...catalogItems.map(i => ({ kind: 'catalog_item', id: i.id, collectionId: i.collection_id, label: i.design_no || 'Photo' }))
   ];
 
   return { found: true, inUse: usedBy.length > 0, usedBy, fileSizeBytes: Number(media.file_size_bytes) };
@@ -88,7 +94,15 @@ const describeUsage = (usedBy) => {
   if (courses.length > 0) {
     return `Used as the photo of course: ${unique(courses.map(u => u.label)).join(', ')} — change the course photo first.`;
   }
-  return `Used as the photo of vehicle: ${unique(of('vehicle').map(u => u.label)).join(', ')} — change the vehicle photo first.`;
+  const vehicles = of('vehicle');
+  if (vehicles.length > 0) {
+    return `Used as the photo of vehicle: ${unique(vehicles.map(u => u.label)).join(', ')} — change the vehicle photo first.`;
+  }
+  const covers = of('catalog_cover');
+  if (covers.length > 0) {
+    return `Used as the cover of catalogue collection: ${unique(covers.map(u => u.label)).join(', ')} — change the cover first.`;
+  }
+  return `Used in the Catalogue (${of('catalog_item').length} photo${of('catalog_item').length === 1 ? '' : 's'}) — remove it from the Catalogue first.`;
 };
 
 module.exports = { getMediaUsage, describeUsage };

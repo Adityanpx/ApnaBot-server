@@ -85,7 +85,18 @@ const withEdgeDefaults = (row) => fillDefaults(row, EDGE_DEFAULTS);
  * copy-into-a-different-context case, since another business's or a
  * template's historical trigger counts are meaningless for the target.
  */
-const writeBusinessGraphRows = async (targetBusinessId, storedNodes, storedEdges, { reuseIds, resetTriggerCount }) => {
+const writeBusinessGraphRows = async (targetBusinessId, storedNodesIn, storedEdgesIn, { reuseIds, resetTriggerCount }) => {
+  let storedNodes = storedNodesIn;
+  let storedEdges = storedEdgesIn;
+  if (!reuseIds) {
+    // The Catalogue reply (content_type 'catalog') belongs to ONE business's Catalogue settings: a copy into
+    // another business / a template never carries it, nor the buttons that point at it.
+    const catalogIds = new Set((storedNodes || []).filter(n => n.content_type === 'catalog').map(n => n.id));
+    if (catalogIds.size > 0) {
+      storedNodes = storedNodes.filter(n => !catalogIds.has(n.id));
+      storedEdges = (storedEdges || []).filter(e => !catalogIds.has(e.from_node_id) && !catalogIds.has(e.to_node_id));
+    }
+  }
   const idMap = new Map();
   const nodesToInsert = (storedNodes || []).map(n => {
     const newId = reuseIds ? n.id : crypto.randomUUID();
@@ -178,8 +189,22 @@ const createSnapshotFromRows = async (businessId, name, nodes, edges) => {
   return data;
 };
 
+/**
+ * After the whole flow was replaced (snapshot restore, template import, copy setup) put the business's
+ * Catalogue node and menu row back from its settings. Best effort; a business without a Catalogue costs one query.
+ */
+const healCatalogue = async (businessId) => {
+  try {
+    // Required here: catalog.service pulls in the rules cache (Redis), which this module must not load itself.
+    await require('./catalog.service').healAfterGraphReplace(businessId);
+  } catch (error) {
+    require('../utils/logger').error('Catalogue heal failed:', { businessId, message: error.message });
+  }
+};
+
 module.exports = {
   MAX_SNAPSHOTS_PER_BUSINESS,
+  healCatalogue,
   readBusinessGraphRows,
   deleteBusinessGraphRows,
   writeBusinessGraphRows,

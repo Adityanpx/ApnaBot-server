@@ -62,3 +62,20 @@ test('values filled into system messages are cleaned', () => {
   assert.equal(getSystemMessage('bookingIdLine', 'en', { code: 'SG1234 ' }), 'Booking ID: *SG1234*');
   assert.equal(getSystemMessage('bookingIdLine', 'en', { code: '$&' }), 'Booking ID: *$&*');
 });
+
+test('catalogue button titles fit WhatsApp\'s 20 characters in every language; the texts have no unfilled placeholder', () => {
+  for (const key of ['catalogViewButton', 'catalogOrderButton', 'catalogOrderThisButton', 'catalogShowMoreButton', 'catalogMenuLabel']) {
+    for (const lang of LANGUAGES) {
+      const title = SYSTEM_MESSAGES[key][lang];
+      assert.ok(title, `${key}.${lang} missing`);
+      assert.ok(title.length <= 20, `${key}.${lang} "${title}" is ${title.length} characters`);
+    }
+  }
+  const vars = { from: 1, to: 10, total: 34, title: 'Silk' };
+  for (const key of ['catalogPageSummary', 'catalogCollectionEmpty']) {
+    for (const lang of LANGUAGES) assert.ok(!getSystemMessage(key, lang, vars).includes('{{'), `${key}.${lang}`);
+  }
+  for (const key of ['catalogFieldCollection', 'catalogFieldDesignNo', 'catalogFieldPrice', 'catalogDefaultText', 'catalogEmptyText', 'catalogOrderMessageDefault', 'catalogTapStale']) {
+    for (const lang of LANGUAGES) assert.ok(SYSTEM_MESSAGES[key][lang], `${key}.${lang} missing`);
+  }
+});

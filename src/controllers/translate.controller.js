@@ -101,6 +101,37 @@ const translateFlow = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/catalog/translate (owner; routes/catalog.routes.js)
+ * Body: { to: '<code>' }. Like POST /api/translate/flow but only the Catalogue: the settings texts and labels,
+ * collection titles / card texts / price labels and photo captions with no translation in `to`. Same cap,
+ * same response shape. (POST /api/translate/flow also covers the Catalogue.)
+ */
+const translateCatalog = async (req, res, next) => {
+  try {
+    const { to } = req.body || {};
+    const business = await businessService.getBusinessById(req.user.businessId);
+    const targetProblem = typeof to === 'string' ? checkTargets([to], (business && business.enabledLanguages) || ['en']) : 'to must be a language code.';
+    if (targetProblem) return errorResponse(res, 400, targetProblem);
+
+    if (!azure.isConfigured()) return notConfigured(res);
+
+    const result = await flowTranslate.translateBusinessFlow({ businessId: req.user.businessId, lang: to, scope: 'flow', only: 'catalog' });
+    const usage = result.usage && result.usage.used != null ? result.usage : await translation.getUsage(req.user.businessId);
+    return successResponse(res, 200, {
+      language: result.language,
+      translated: result.translated,
+      alreadyTranslated: result.alreadyTranslated,
+      skipped: result.skipped,
+      warnings: result.warnings,
+      usage: usageShape(usage)
+    });
+  } catch (error) {
+    logger.error('Error in translateCatalog:', error);
+    return respondTranslateError(error, res, next);
+  }
+};
+
 /** GET /api/translate/usage (owner) -> { used, cap, remaining, configured } for the current (India) month. */
 const getUsage = async (req, res, next) => {
   try {
@@ -112,4 +143,4 @@ const getUsage = async (req, res, next) => {
   }
 };
 
-module.exports = { translateTexts, translateFlow, getUsage };
+module.exports = { translateTexts, translateFlow, translateCatalog, getUsage };

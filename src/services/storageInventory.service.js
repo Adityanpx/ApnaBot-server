@@ -123,6 +123,20 @@ const loadReferences = async ({ businessId = null } = {}) => {
     add(m && m.r2_key, { type: 'course', id: c.id, businessId: c.business_id, label: c.name, protected: false, reason: null });
   }
 
+  // Catalogue photos: an item's photo and a collection's cover are uses (never protected: the card / page
+  // simply lacks the photo once an admin purge includes in-use files, and the FKs clean the rows).
+  const catalogCovers = await fetchAll('catalog_collections', 'id, business_id, title, cover_media_id',
+    (q) => scoped(q).not('cover_media_id', 'is', null));
+  for (const c of catalogCovers) {
+    const m = mediaById.get(c.cover_media_id);
+    add(m && m.r2_key, { type: 'catalog', id: c.id, businessId: c.business_id, label: c.title, protected: false, reason: null });
+  }
+  const catalogItems = await fetchAll('catalog_items', 'id, business_id, collection_id, design_no, media_id', scoped);
+  for (const i of catalogItems) {
+    const m = mediaById.get(i.media_id);
+    add(m && m.r2_key, { type: 'catalog', id: i.id, businessId: i.business_id, label: i.design_no || 'Catalogue photo', protected: false, reason: null });
+  }
+
   const bizRows = await fetchAll('businesses', 'id, name, payment_qr_url, profile_image, require_advance_payment',
     (q) => (businessId ? q.eq('id', businessId) : q));
   const businesses = new Map(bizRows.map(b => [b.id, b]));
@@ -189,6 +203,7 @@ const classifyObject = (obj, { refs, chatMessages }) => {
     if (usages.some(u => u.type === 'flow_node' || u.type === 'flow_snapshot')) kind = 'bot_node_image';
     else if (usages.some(u => u.type === 'template')) kind = 'template_header';
     else if (usages.some(u => u.type === 'course')) kind = 'course_image';
+    else if (usages.some(u => u.type === 'catalog')) kind = 'catalog_image';
   }
 
   const businessId = (media && media.business_id) || (usages.find(u => u.businessId) || {}).businessId || parsed.businessId || null;

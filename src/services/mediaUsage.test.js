@@ -87,3 +87,21 @@ test('GET /media/:id/usage answers { inUse, usedBy, fileSizeBytes }, 404 for a f
   assert.deepEqual((await call(FREE)).body.data, { inUse: false, usedBy: [], fileSizeBytes: 10 });
   assert.equal((await call(uuid(999))).status, 404);
 });
+
+test('catalogue: a collection cover and a catalogue photo are uses (with the collection id), and DELETE refuses them', async () => {
+  const COVER = uuid(110); const PHOTO = uuid(111); const BOTH = uuid(112);
+  db.business_media.push(...[COVER, PHOTO, BOTH].map(id => ({ id, business_id: B1, r2_key: `k-${id}`, url: url(`k-${id}`), file_size_bytes: 10, media_type: 'image' })));
+  db.catalog_collections = [{ id: uuid(800), business_id: B1, title: 'Silk', cover_media_id: COVER }, { id: uuid(801), business_id: B1, title: 'Cotton', cover_media_id: BOTH }];
+  db.catalog_items = [
+    { id: uuid(810), business_id: B1, collection_id: uuid(800), media_id: PHOTO, design_no: 'A-1' },
+    { id: uuid(811), business_id: B1, collection_id: uuid(800), media_id: BOTH, design_no: null },
+    { id: uuid(812), business_id: B2, collection_id: uuid(802), media_id: FREE, design_no: 'other business' }
+  ];
+  assert.deepEqual((await usage(COVER)).usedBy, [{ kind: 'catalog_cover', id: uuid(800), label: 'Silk' }]);
+  assert.deepEqual((await usage(PHOTO)).usedBy, [{ kind: 'catalog_item', id: uuid(810), collectionId: uuid(800), label: 'A-1' }]);
+  assert.deepEqual((await usage(BOTH)).usedBy.map(u => [u.kind, u.label]), [['catalog_cover', 'Cotton'], ['catalog_item', 'Photo']]);
+  assert.equal((await usage(FREE)).inUse, false, 'another business\'s catalogue photo does not count');
+  assert.match((await del(COVER)).message, /cover of catalogue collection: Silk/);
+  assert.match((await del(PHOTO)).message, /Used in the Catalogue \(1 photo\)/);
+  assert.equal((await del(PHOTO)).statusCode, 400);
+});

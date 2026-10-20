@@ -4,7 +4,8 @@ const {
   deleteBusinessGraphRows,
   writeBusinessGraphRows,
   enforceSnapshotCap,
-  setActiveSnapshot
+  setActiveSnapshot,
+  healCatalogue
 } = require('./flowSnapshot.service');
 const logger = require('../utils/logger');
 const { r2KeyFromUrl } = require('../utils/r2Key');
@@ -33,6 +34,7 @@ const importTemplateIntoBusiness = async (businessId, template, { snapshotName }
     resetTriggerCount: true
   });
   await invalidateRulesCache(businessId);
+  await healCatalogue(businessId);
 
   try {
     const { data: newSnapshot, error: snapshotErr } = await supabase.from('flow_snapshots').insert({

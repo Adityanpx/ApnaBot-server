@@ -285,3 +285,17 @@ test('a file used only by a carousel card (live node or snapshot) is in use and 
   const snap = find(entries, kSnap);
   assert.deepEqual([snap.inUse, snap.protected], [true, false]);
 });
+
+test('catalogue photos and covers are in use (kind catalog_image), never an unused library file', async () => {
+  const keys = ['business-media/cat-photo.jpeg', 'business-media/cat-cover.jpeg', 'business-media/free.jpeg'];
+  keys.forEach(k => h.put(k));
+  db.business_media = keys.map((k, i) => ({ id: uuid(100 + i), business_id: B1, r2_key: k, url: url(k), file_size_bytes: 1000, media_type: 'image' }));
+  db.catalog_items = [{ id: uuid(500), business_id: B1, collection_id: uuid(501), design_no: 'A-1', media_id: uuid(100) }];
+  db.catalog_collections = [{ id: uuid(501), business_id: B1, title: 'Silk', cover_media_id: uuid(101) }];
+  const entries = await scan();
+  assert.deepEqual([find(entries, keys[0]).kind, find(entries, keys[0]).inUse, find(entries, keys[0]).protected], ['catalog_image', true, false]);
+  assert.deepEqual([find(entries, keys[1]).kind, find(entries, keys[1]).inUse], ['catalog_image', true]);
+  assert.deepEqual([find(entries, keys[2]).kind, find(entries, keys[2]).inUse], ['library', false]);
+  assert.deepEqual(find(entries, keys[0]).usedBy, [{ type: 'catalog', id: uuid(500), label: 'A-1' }]);
+  assert.equal(find(entries, keys[0]).businessId, B1);
+});

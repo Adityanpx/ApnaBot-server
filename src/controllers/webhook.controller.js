@@ -36,6 +36,8 @@ const { getReplyMediaLimits, getCarouselMaxCards, planReplyMediaSend } = require
 const { planCarouselSend, cardsOf } = require('../utils/carouselPayload');
 const { isBulkSyncBody } = require('../utils/coexistencePayload');
 const coexistenceService = require('../services/coexistence.service');
+const catalogReply = require('../services/catalogReply.service');
+const { parseCatalogTapId } = require('../utils/catalogIds');
 const { buildStatusEvents, statusOnlySummary } = require('../utils/statusPayload');
 const { withFailure } = require('../utils/whatsappErrors');
 const { notifyBroadcastProgress } = require('../services/broadcastProgress.service');
@@ -1395,6 +1397,14 @@ const processWebhookChange = async (entry, changes) => {
           buttonReplyId = carouselTapEdgeId;
           messageText = carouselTapEdgeId;
           logCarouselTapShapeOnce(message);
+        } else if (typeof message.button?.payload === 'string' && message.button.payload.startsWith('cat:')) {
+          // A Catalogue card button ("cat:..."), only when its collection / photo belongs to this business.
+          const catalogTapId = await catalogReply.claimTapPayload(tenant.businessId, message.button.payload);
+          if (catalogTapId) {
+            buttonReplyId = catalogTapId;
+            messageText = catalogTapId;
+            logCarouselTapShapeOnce(message);
+          }
         }
       } catch (carouselTapErr) {
         logger.error('Error checking for a carousel button tap, treating it as a template tap:', carouselTapErr);
@@ -2214,6 +2224,21 @@ const processWebhookChange = async (entry, changes) => {
       return; // The Yes/No tap continues as greeting
     }
 
+    // Step 12.7 - Catalogue taps ("cat:..." ids, utils/catalogIds.js; a system tap, so Step 12 never treated one
+    // as a booking answer). Mid-booking they only re-show the pending question. View designs / Show more / the
+    // Catalogue button are answered by catalogReply.service.js; an Order that starts a booking_trigger /
+    // web_form_trigger node comes back as catalogOrder and runs through Step 14 below with its prefill.
+    let catalogOrder = null;
+    const catalogTap = parseCatalogTapId(buttonReplyId);
+    if (catalogTap) {
+      if (activeSession && await resendCurrentBookingPrompt(ctx, activeSession)) {
+        return; // Back to the pending booking question - session untouched
+      }
+      const catalogOutcome = await catalogReply.handleTap(ctx, catalogTap);
+      if (catalogOutcome.handled) return;
+      catalogOrder = catalogOutcome;
+    }
+
     // Step 12.5 - Greeting -> welcome message (exact match only, so
     // real rule keywords still take priority over this).
     const normalizedText = (messageText || '').trim().toLowerCase();
@@ -2295,6 +2320,10 @@ const processWebhookChange = async (entry, changes) => {
     // source_node_id so the form can pre-fill from it (e.g. the course of a
     // Bot Builder course page, publicServiceForm.controller.js).
     let tappedFromNodeId = null;
+    if (catalogOrder) {
+      matchedNode = catalogOrder.orderNode;
+      matchedEdges = [];
+    }
 
     const tappedEdgeId = (buttonReplyId && !isSystemTapId(buttonReplyId)) ? buttonReplyId : listReplyId;
     if (tappedEdgeId) {
@@ -2363,6 +2392,11 @@ const processWebhookChange = async (entry, changes) => {
       replyText = applyMessageTemplateWithFooter(firstField.label, tenant, customer);
 
     } else if (matchedNode) {
+      // The Catalogue reply (content_type 'catalog'): live collections / photos, sent by catalogReply.service.js.
+      if (matchedNode.contentType === 'catalog') {
+        await catalogReply.handleCatalogueNode(ctx, matchedNode);
+        return;
+      }
       triggeredRuleId = matchedNode.id;
 
       if (!TRIGGER_REPLY_KINDS.has(matchedNode.replyKind)) {
@@ -2395,7 +2429,8 @@ const processWebhookChange = async (entry, changes) => {
           const { session: newBookingSession, result } = await bookingGraphService.startGraphSession(
             tenant.businessId,
             matchedNode.id,
-            customer.preferredLanguage
+            customer.preferredLanguage,
+            ...(catalogOrder ? [{ prefill: catalogOrder.prefill }] : [])
           );
 
           if (result.done) {
@@ -2516,7 +2551,9 @@ const processWebhookChange = async (entry, changes) => {
               customer_number: customerNumber,
               flow_node_id: matchedNode.id,
               source_node_id: tappedFromNodeId,
-              expires_at: expiresAt
+              expires_at: expiresAt,
+              // A catalogue order: the collection / design / price the form shows as read-only chips
+              ...(catalogOrder ? { prefill: catalogOrder.prefill } : {})
             })
             .select('token')
             .single();

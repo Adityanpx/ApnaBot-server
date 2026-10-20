@@ -62,6 +62,7 @@ const { getSystemMessage } = require('../utils/systemMessages');
 const logger = require('../utils/logger');
 const businessService = require('./business.service');
 const bookingService = require('./booking.service');
+const { sanitizePrefill, prefillLabel } = require('../utils/catalogOrder');
 
 const MAX_HOPS = 25; // cycle guard for pickNextNodeId's skip-forward walk
 
@@ -83,6 +84,19 @@ const OTHER_SENTINELS = {
 const humanize = (fieldKey) => fieldKey
   .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
   .replace(/\b\w/g, c => c.toUpperCase());
+
+/**
+ * Writes a catalogue order's known values into a new session's collected + answeredFields (the way an
+ * edge preset is written), labelled in the customer's language for the confirmation text (label stays
+ * English for the owner). Returns the keys written.
+ */
+const applyPrefill = (collected, answeredFields, entries, languageCode) => {
+  for (const { key, value } of entries) {
+    collected[key] = value;
+    answeredFields.push({ fieldKey: key, label: prefillLabel(key, null), summaryLabel: prefillLabel(key, languageCode) });
+  }
+  return entries.map(e => e.key);
+};
 
 /**
  * Load a business's full booking-relevant graph (all flow_nodes/flow_edges
@@ -130,6 +144,15 @@ const isNodeEffectivelyActive = (node, disabledFieldKeys) => {
 };
 
 /**
+ * A question whose field_key was prefilled at session start (a catalogue order: catalogCollection /
+ * catalogDesignNo / catalogPrice) is not asked: its answer is already in collected. Only applies to
+ * sessions that carry prefilledKeys; every other session passes [] and behaves exactly as before.
+ */
+const isPrefilledSkip = (node, collected, prefilledKeys) =>
+  prefilledKeys.length > 0 && node.nodeType === 'question' && !!node.fieldKey &&
+  prefilledKeys.includes(node.fieldKey) && collected[node.fieldKey] !== undefined;
+
+/**
  * Walk from fromNodeId along the first outgoing edge whose condition
  * matches session.collected, skipping forward through any landed node
  * that's effectively inactive (per the live disabledBookingFields
@@ -145,7 +168,7 @@ const isNodeEffectivelyActive = (node, disabledFieldKeys) => {
  * @returns {{nodeId: string|null, appliedPresets: Array<{field: string, value: string, label: string}>}}
  *   nodeId is null if the sequence has ended.
  */
-const pickNextNodeId = (nodes, edges, fromNodeId, collected, disabledFieldKeys, businessId) => {
+const pickNextNodeId = (nodes, edges, fromNodeId, collected, disabledFieldKeys, businessId, prefilledKeys = []) => {
   const nodeById = new Map(nodes.map(n => [n.id, n]));
   let currentId = fromNodeId;
   const appliedPresets = [];
@@ -192,7 +215,7 @@ const pickNextNodeId = (nodes, edges, fromNodeId, collected, disabledFieldKeys, 
       logger.error('bookingGraph: flow_edges row references a missing node', { edgeId: matched.id, toNodeId: matched.toNodeId });
       return { nodeId: null, appliedPresets };
     }
-    if (!isNodeEffectivelyActive(targetNode, disabledFieldKeys)) {
+    if (!isNodeEffectivelyActive(targetNode, disabledFieldKeys) || isPrefilledSkip(targetNode, collected, prefilledKeys)) {
       currentId = targetNode.id;
       continue;
     }
@@ -341,12 +364,17 @@ const rebuildOrFallback = async (businessId, nodes, currentNode, session, served
  * @param {string} businessId
  * @param {string} replyNodeId - the matched reply node's id (today's ruleId)
  * @param {string} [languageCode]
+ * @param {{ prefill?: { key: string, value: string }[] }} [options] - a catalogue order's known values
+ *   (utils/catalogOrder.js): written into collected + answeredFields like an edge preset, so they appear in
+ *   the confirmation and bookings.fields, and any question whose field_key is one of the keys is skipped.
+ *   Omitted (every other caller) = the session starts exactly as before.
  * @returns {Promise<{session: Object, result: Object|{done:true,collected:Object}}>}
  *   result shape matches advanceGraphSession's own contract: either the
  *   next field to ask, or {done:true, collected}.
  */
-const startGraphSession = async (businessId, replyNodeId, languageCode) => {
+const startGraphSession = async (businessId, replyNodeId, languageCode, { prefill } = {}) => {
   const { nodes, edges } = await loadGraph(businessId);
+  const prefillEntries = sanitizePrefill(prefill);
   const entryEdge = edges.find(e => e.fromNodeId === replyNodeId && !e.condition);
   if (!entryEdge) {
     // No question wired after this trigger - nothing to ask, confirm
@@ -354,10 +382,13 @@ const startGraphSession = async (businessId, replyNodeId, languageCode) => {
     // customer_number). Mirrors advanceGraphSession's own "zero
     // outgoing edges = done" signal, just at the very start instead of
     // mid-flow.
+    const collected = {};
+    const answeredFields = [];
+    applyPrefill(collected, answeredFields, prefillEntries, languageCode);
     const session = {
       currentNodeId: null,
-      collected: {},
-      answeredFields: [],
+      collected,
+      answeredFields,
       ruleId: replyNodeId,
       startedAt: new Date().toISOString(),
       localRentalUnconfigured: false,
@@ -365,7 +396,7 @@ const startGraphSession = async (businessId, replyNodeId, languageCode) => {
       currentNodeComputedOptions: null,
       displayOverrides: {}
     };
-    return { session, result: { done: true, collected: {} } };
+    return { session, result: { done: true, collected } };
   }
 
   const entryNode = nodes.find(n => n.id === entryEdge.toNodeId);
@@ -395,6 +426,7 @@ const startGraphSession = async (businessId, replyNodeId, languageCode) => {
       const label = entryEdge.preset.summaryLabel || humanize(entryEdge.preset.field);
       answeredFields.push({ fieldKey: entryEdge.preset.field, label, summaryLabel: label });
     }
+    applyPrefill(collected, answeredFields, prefillEntries, languageCode);
 
     const session = {
       currentNodeId: null,
@@ -424,6 +456,7 @@ const startGraphSession = async (businessId, replyNodeId, languageCode) => {
       summaryLabel: label
     });
   }
+  const prefilledKeys = applyPrefill(collected, answeredFields, prefillEntries, languageCode);
 
   const session = {
     currentNodeId: entryNode.id,
@@ -449,6 +482,28 @@ const startGraphSession = async (businessId, replyNodeId, languageCode) => {
     // comment in advanceGraphSession's buttons/list branch.
     displayOverrides: {}
   };
+
+  if (prefilledKeys.length > 0) {
+    session.prefilledKeys = prefilledKeys;
+    // The first question is already answered by the order: walk on to the first one that is not (or finish).
+    // Only a plain next question is entered this way; a computed node (vehicle picker) needs live options, so
+    // in that unusual case the entry question is simply asked as before.
+    if (isPrefilledSkip(entryNode, collected, prefilledKeys)) {
+      const walk = pickNextNodeId(nodes, edges, entryNode.id, collected, business.disabledBookingFields || [], businessId, prefilledKeys);
+      for (const applied of walk.appliedPresets) {
+        answeredFields.push({ fieldKey: applied.field, label: applied.label || applied.field, summaryLabel: applied.label || applied.field });
+      }
+      if (walk.nodeId === null) {
+        session.currentNodeId = null;
+        return { session, result: { done: true, collected } };
+      }
+      const nextNode = nodes.find(n => n.id === walk.nodeId);
+      if (nextNode && !nextNode.isComputed) {
+        session.currentNodeId = nextNode.id;
+        return { session, result: nodeToFieldLocalized(nextNode, business.travelSettings?.servedCities || [], null, languageCode) };
+      }
+    }
+  }
 
   return { session, result: nodeToFieldLocalized(entryNode, business.travelSettings?.servedCities || [], null, languageCode) };
 };
@@ -717,7 +772,7 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
   });
 
   // ---- advance ----
-  const { nodeId: nextNodeId, appliedPresets } = pickNextNodeId(nodes, edges, currentNode.id, session.collected, disabledFieldKeys, businessId);
+  const { nodeId: nextNodeId, appliedPresets } = pickNextNodeId(nodes, edges, currentNode.id, session.collected, disabledFieldKeys, businessId, session.prefilledKeys || []);
   // Record each preset applied along the way the same way a real answer is
   // recorded above, so it shows up in the confirmation summary — the field
   // was never asked, but its value is now just as "known" as a typed one.

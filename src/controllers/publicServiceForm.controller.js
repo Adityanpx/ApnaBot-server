@@ -19,6 +19,7 @@ const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 const { isValidLanguageCode } = require('../utils/languageCatalog');
 const { localizedFormTitle, bookingFormTitle } = require('../utils/formTitle');
+const { sanitizePrefill, prefillLabel } = require('../utils/catalogOrder');
 
 const TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -307,6 +308,18 @@ const getServiceForm = async (req, res, next) => {
     } catch (prefillError) {
       logger.error('Error resolving service form prefill:', prefillError);
     }
+    // A catalogue order (booking_form_tokens.prefill): shown as read-only chips; a form field with the same
+    // name is pre-filled and locked (the submit enforces the value, whatever the page sends).
+    const orderPrefill = sanitizePrefill(formToken.prefill);
+    const orderChips = orderPrefill.map(entry => ({ key: entry.key, label: prefillLabel(entry.key, language), value: entry.value }));
+    const lockedFields = [];
+    for (const entry of orderPrefill) {
+      const field = flowFields.find(f => f.name === entry.key && f.type !== 'display_text');
+      if (field) {
+        prefill = { ...prefill, [field.name]: entry.value };
+        lockedFields.push(field.name);
+      }
+    }
     let formTitle = null;
     try {
       formTitle = await resolveFormTitle(formToken, formNode, language);
@@ -349,6 +362,10 @@ const getServiceForm = async (req, res, next) => {
       // Additive, only when non-empty: starting values, e.g.
       // { course: 'Abacus' } — see resolvePrefill.
       ...(Object.keys(prefill).length > 0 ? { prefill } : {}),
+      // Additive, only for a catalogue order: read-only chips [{ key, label, value }] and the names of the form
+      // fields that are locked to the order's value.
+      ...(orderChips.length > 0 ? { orderChips } : {}),
+      ...(lockedFields.length > 0 ? { lockedFields } : {}),
       // Additive, only when known: this form's own page header — see resolveFormTitle.
       ...(formTitle ? { formTitle: formTitle.title, ...(formTitle.subtitle ? { formSubtitle: formTitle.subtitle } : {}) } : {})
     });
@@ -388,6 +405,13 @@ const submitServiceForm = async (req, res, next) => {
     }
     const formNode = await loadFormNode(formToken);
     const flowFields = await resolveDynamicOptions(formToken.businessId, await resolveFlowFields(formToken, business, formNode));
+
+    // A catalogue order's values are the token's, not the page's: a locked field is forced to them (before the
+    // required-field check), the other entries are saved below as extra lines of the booking.
+    const orderPrefill = sanitizePrefill(formToken.prefill);
+    for (const entry of orderPrefill) {
+      if (flowFields.some(f => f.name === entry.key && f.type !== 'display_text')) values[entry.key] = entry.value;
+    }
 
     // A course-list dropdown must hold one of the business's current courses
     // (the list can change between opening the form and submitting it).
@@ -455,13 +479,19 @@ const submitServiceForm = async (req, res, next) => {
     // where the question has a translation; label (saved on the booking for
     // the owner) stays English.
     const language = await loadCustomerLanguage(formToken);
-    const orderedFields = flowFields
+    const orderLines = [];
+    for (const entry of orderPrefill) {
+      if (flowFields.some(f => f.name === entry.key && f.type !== 'display_text')) continue;
+      collected[entry.key] = entry.value;
+      orderLines.push({ fieldKey: entry.key, label: prefillLabel(entry.key, null), summaryLabel: prefillLabel(entry.key, language) });
+    }
+    const orderedFields = [...orderLines, ...flowFields
       .filter(field => field.type !== 'display_text')
       .map(field => ({
         fieldKey: field.name,
         label: field.label,
         summaryLabel: (language && field.labelTranslations && field.labelTranslations[language]) || field.label
-      }));
+      }))];
 
     // If this business has a distance-fare Vehicle Picker (icon_select +
     // pickup/drop address fields), re-derive the fare server-side from the
