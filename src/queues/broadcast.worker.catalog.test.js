@@ -40,8 +40,8 @@ require('./broadcast.worker');
 
 const catalog = {
   templates: {
-    en: { name: 'apnabot_catalog_2_en_2', language: 'en_US' },
-    hi: { name: 'apnabot_catalog_2_hi_2', language: 'hi' }
+    en: { name: 'apnabot_catalog_v2_2_en_2', language: 'en_US' },
+    hi: { name: 'apnabot_catalog_v2_2_hi_2', language: 'hi' }
   },
   cards: [
     { mediaId: 'M1', texts: { en: 'Red Kurta', hi: 'HI Red Kurta' }, payloads: ['cat:c1:p:0:b:bc', 'cat:c1:order:b:bc'] },
@@ -61,7 +61,7 @@ test('each recipient gets the template and card texts of their language, with th
     ]
   });
   assert.deepEqual(result, { sent: 2, failed: 0 });
-  assert.deepEqual(sent.map(s => [s.to, s.name, s.lang]), [['911', 'apnabot_catalog_2_en_2', 'en_US'], ['912', 'apnabot_catalog_2_hi_2', 'hi']]);
+  assert.deepEqual(sent.map(s => [s.to, s.name, s.lang]), [['911', 'apnabot_catalog_v2_2_en_2', 'en_US'], ['912', 'apnabot_catalog_v2_2_hi_2', 'hi']]);
   assert.equal(sent[0].components[0].parameters[0].text, 'Asha');
   assert.equal(sent[1].components[0].parameters[0].text, 'Rahul');
   const cards = (s) => s.components[1].cards;

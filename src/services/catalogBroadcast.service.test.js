@@ -72,7 +72,7 @@ const customer = (n, extra = {}) => ({
   opted_in: true, is_blocked: false, opted_out_at: null, marketing_blocked_at: null, preferred_language: null, ...extra
 });
 const template = (cardCount, lang, buttons, status, extra = {}) => ({
-  id: uuid(500 + db.message_templates.length), business_id: B, kind: 'catalog_carousel', name: `apnabot_catalog_${cardCount}_${lang}_${buttons}`,
+  id: uuid(500 + db.message_templates.length), business_id: B, kind: 'catalog_carousel', name: `apnabot_catalog_v2_${cardCount}_${lang}_${buttons}`,
   language: { en: 'en_US', hi: 'hi', mr: 'mr' }[lang], status, meta_template_id: status === 'draft' ? null : `m-${lang}`, created_at: new Date().toISOString(), ...extra
 });
 
@@ -117,7 +117,7 @@ test('preview: the cards, the audience, the cost and the template status per lan
   assert.deepEqual(d.errors, []);
   assert.deepEqual(d.skipped, []);
   assert.deepEqual(d.languages.map((l) => [l.language, l.name, l.status, l.recipients]), [
-    ['en', 'apnabot_catalog_3_en_2', 'approved', 3], ['hi', 'apnabot_catalog_3_hi_2', 'missing', 1], ['mr', 'apnabot_catalog_3_mr_2', 'missing', 1]
+    ['en', 'apnabot_catalog_v2_3_en_2', 'approved', 3], ['hi', 'apnabot_catalog_v2_3_hi_2', 'missing', 1], ['mr', 'apnabot_catalog_v2_3_mr_2', 'missing', 1]
   ]);
   assert.deepEqual([d.templatesReady, d.canPrepare, d.canSend], [true, true, true]);
   assert.deepEqual([d.audience.selected, d.audience.willReceive, d.audience.overCap, d.audience.cap], [5, 5, false, 1000]);
@@ -179,7 +179,7 @@ test('preview: fewer than 2 usable collections, a switched-off catalogue and an 
 test('preview: a catalogue with no order action needs the one-button template', async () => {
   db.catalogs[0].settings = { enabled: true, orderAction: null };
   const out = await preview({ collectionIds: C.slice(0, 2) });
-  assert.deepEqual([out.data.orderButton, out.data.buttonCount, out.data.languages[0].name], [false, 1, 'apnabot_catalog_2_en_1']);
+  assert.deepEqual([out.data.orderButton, out.data.buttonCount, out.data.languages[0].name], [false, 1, 'apnabot_catalog_v2_2_en_1']);
 });
 
 test('preview: bad requests are 400 / 404', async () => {
@@ -197,7 +197,7 @@ test('send with no template yet: creates + submits one per language the audience
   assert.equal(out.status, 202);
   assert.match(out.message, /Waiting for Meta approval — usually minutes, up to 24h/);
   assert.deepEqual(out.data.templatesPending.map((t) => [t.language, t.name, t.status]), [
-    ['en', 'apnabot_catalog_3_en_2', 'pending'], ['hi', 'apnabot_catalog_3_hi_2', 'pending'], ['mr', 'apnabot_catalog_3_mr_2', 'pending']
+    ['en', 'apnabot_catalog_v2_3_en_2', 'pending'], ['hi', 'apnabot_catalog_v2_3_hi_2', 'pending'], ['mr', 'apnabot_catalog_v2_3_mr_2', 'pending']
   ]);
   assert.equal(db.broadcasts.length, 0);
   assert.equal(queued.length, 0);
@@ -211,7 +211,7 @@ test('send with no template yet: creates + submits one per language the audience
   }
   assert.equal(posted.length, 3);
   assert.equal(posted[0].url, 'https://graph.test/waba1/message_templates');
-  assert.equal(posted[0].payload.name, 'apnabot_catalog_3_en_2');
+  assert.equal(posted[0].payload.name, 'apnabot_catalog_v2_3_en_2');
   assert.deepEqual(posted[0].payload.components[1].cards.map((c) => c.components[0].example.header_handle[0]), ['handle-1', 'handle-2', 'handle-3']);
   assert.deepEqual(uploadedHandles.slice(0, 3), [url('cover1.jpg'), url('cover2.jpg'), url('cover3.jpg')], 'the samples are this send\'s covers, in card order');
 });
@@ -247,6 +247,32 @@ test('send: a rejected template is submitted again; a draft left by a failed sub
   assert.equal(db.message_templates[0].status, 'pending');
 });
 
+test('send: Meta refusing the wording marks the row rejected with Meta\'s own message, and the next send resubmits it', async () => {
+  const reason = 'Params Words Ratio Exceeds Limit - too many variables for its length';
+  const realPost = require('axios').post;
+  require('axios').post = async () => { throw Object.assign(new Error('Request failed with status code 400'), { response: { status: 400, data: { error: { code: 100, error_subcode: 2388293, error_user_msg: reason } } } }); };
+  try {
+    const failed = await send({ collectionIds: C.slice(0, 2), prepareOnly: true });
+    assert.deepEqual([failed.status, failed.errors.code], [400, 'TEMPLATE_SUBMIT_FAILED']);
+    assert.match(failed.message, /Params Words Ratio/);
+  } finally {
+    require('axios').post = realPost;
+  }
+  assert.ok(db.message_templates.length > 0);
+  for (const row of db.message_templates) assert.deepEqual([row.status, row.rejection_reason], ['rejected', reason]);
+
+  const retried = await send({ collectionIds: C.slice(0, 2), prepareOnly: true });
+  assert.equal(retried.status, 202);
+  assert.ok(db.message_templates.every((row) => row.status === 'pending' && row.rejection_reason === null), 'a rejected row is submitted again');
+});
+
+test('send: a failure that is not Meta refusing the content (no 400 / code 100) leaves the draft as it is', async () => {
+  postFails = 'Network down';
+  await send({ collectionIds: C.slice(0, 2), prepareOnly: true });
+  assert.ok(db.message_templates.length > 0);
+  assert.ok(db.message_templates.every((row) => row.status === 'draft'));
+});
+
 test('send: a paused or disabled English template is a 400 TEMPLATE_BLOCKED', async () => {
   db.message_templates.push(template(2, 'en', 2, 'paused'));
   const out = await send({ collectionIds: C.slice(0, 2) });
@@ -278,7 +304,7 @@ test('send with the templates approved: 201, a catalog broadcast row, jobs with 
 
   assert.deepEqual([broadcast.kind, broadcast.status, broadcast.name, broadcast.total_recipients, broadcast.business_id],
     ['catalog', 'sending', 'Diwali', 5, B]);
-  const english = db.message_templates.find((t) => t.name === 'apnabot_catalog_3_en_2');
+  const english = db.message_templates.find((t) => t.name === 'apnabot_catalog_v2_3_en_2');
   assert.equal(broadcast.template_id, english.id, 'template_id is the English variant');
   assert.deepEqual(broadcast.catalog_config.collectionIds, C.slice(0, 3));
   assert.deepEqual([broadcast.catalog_config.cardCount, broadcast.catalog_config.buttons], [3, 2]);
@@ -290,7 +316,7 @@ test('send with the templates approved: 201, a catalog broadcast row, jobs with 
   const job = queued[0];
   assert.deepEqual([job.broadcastId, job.phoneNumberId, job.billed], [broadcast.id, 'pn1', false]);
   assert.deepEqual(job.recipients.map((r) => [r.customer.name, r.templateLang]), [['Cust 1', 'en'], ['Cust 2', 'en'], ['Cust 3', 'hi'], ['Cust 4', 'en'], ['Cust 5', 'en']]);
-  assert.deepEqual(job.catalog.templates, { en: { name: 'apnabot_catalog_3_en_2', language: 'en_US' }, hi: { name: 'apnabot_catalog_3_hi_2', language: 'hi' } });
+  assert.deepEqual(job.catalog.templates, { en: { name: 'apnabot_catalog_v2_3_en_2', language: 'en_US' }, hi: { name: 'apnabot_catalog_v2_3_hi_2', language: 'hi' } });
   assert.deepEqual(job.catalog.cards.map((c) => c.mediaId), ['MEDIA-1', 'MEDIA-2', 'MEDIA-3']);
   assert.deepEqual(job.catalog.cards[0].texts, { en: 'Collection 1 · From Rs 100', hi: 'HI 1 · From Rs 100' });
   const [view, order] = job.catalog.cards[1].payloads;
@@ -306,7 +332,7 @@ test('send: a one-button catalogue sends one payload per card', async () => {
   const out = await send({ collectionIds: C.slice(0, 2) });
   assert.equal(out.status, 201);
   assert.deepEqual(queued[0].catalog.cards.map((c) => c.payloads.length), [1, 1]);
-  assert.equal(queued[0].catalog.templates.en.name, 'apnabot_catalog_2_en_1');
+  assert.equal(queued[0].catalog.templates.en.name, 'apnabot_catalog_v2_2_en_1');
 });
 
 test('send: recipients are split into jobs of 50', async () => {

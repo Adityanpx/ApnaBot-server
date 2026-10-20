@@ -8,7 +8,7 @@ const stub = (rel, exports) => { const p = require.resolve(rel); require.cache[p
 const filters = [];
 const rows = [
   { id: 't1', business_id: 'b', name: 'promo', kind: 'standard', created_at: '2026-01-01', meta_deleted_at: null },
-  { id: 't2', business_id: 'b', name: 'apnabot_catalog_3_en_2', kind: 'catalog_carousel', created_at: '2026-01-02', meta_deleted_at: null }
+  { id: 't2', business_id: 'b', name: 'apnabot_catalog_v2_3_en_2', kind: 'catalog_carousel', created_at: '2026-01-02', meta_deleted_at: null }
 ];
 stub('../config/supabase', {
   from: () => {

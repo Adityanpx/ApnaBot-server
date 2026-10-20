@@ -1485,10 +1485,13 @@ is the only deploy step (apply it BEFORE the server: `GET /api/message-templates
   per card; at send the card header is documented as `{ image: { id } }` only, a quick-reply payload per card is allowed, the tap arrives in
   `messages.button.payload`.
 - **Templates** (`utils/catalogCarouselTemplate.js`, pure): one reusable system template per (card count, language, button count) per
-  business, named `apnabot_catalog_<cards>_<lang>_<buttons>` (e.g. `apnabot_catalog_3_hi_2`; buttons = 1 without an order action, 2 with).
-  Body `Hi {{1}}, our new collection is here 👇` ({{1}} = customer name; fallback "there" / "जी" when none), card body `✨ {{1}} ✨`
-  ({{1}} = `title · price`, one plain line, <= 156 characters; Meta forbids a body that starts or ends with a variable, hence the fixed
-  words), buttons = the built-in `catalogViewButton` / `catalogOrderButton` labels (NOT the owner's custom labels). Stored in
+  business, named `apnabot_catalog_v<TEMPLATE_VERSION>_<cards>_<lang>_<buttons>` (now `apnabot_catalog_v2_3_hi_2`; buttons = 1 without an order
+  action, 2 with; only the current version is looked up, so rows from older wording never clash - bump `TEMPLATE_VERSION` when the wording changes).
+  Body `Hi {{1}}, our new collection has just arrived. Swipe through the cards below and tap the button to see every design with its price 👇`
+  ({{1}} = customer name; fallback "there" / "जी" when none), card body per language, e.g. en `New arrivals in {{1}}. Tap the button below to see all
+  designs and prices.` ({{1}} = `title · price`, one plain line; only that value is truncated, to `cardTextMax(lang)` = 160 - the fixed text, ~91 for en;
+  Meta forbids a body that starts or ends with a variable and one with too many variables for its length, so `validateSpec` also checks fixed words per
+  variable >= `MIN_FIXED_WORDS_PER_VARIABLE` (5) - our approximation, Meta's real threshold is unpublished), buttons = the built-in `catalogViewButton` / `catalogOrderButton` labels (NOT the owner's custom labels). Stored in
   `message_templates` with `kind = 'catalog_carousel'`, `send_support = 'unsupported_component'` (so no normal broadcast / follow-up can
   ever pick one; template sync would write the same value), `meta_components` = BODY + CAROUSEL without the sample handles.
   `GET /api/message-templates` hides them unless `?includeSystem=true`. Status flows through the existing template webhook / sync.
@@ -1671,7 +1674,12 @@ is the only deploy step (apply it BEFORE the server: `GET /api/message-templates
 31. **Catalogue broadcast v1 limits**: the body is the fixed greeting (no owner free-text message - a second variable would raise the chance
    Meta rejects the template); the button labels are the fixed built-ins (custom labels would need a hash in the template name and a new
    approval per edit); only `en` / `hi` / `mr` have template wording (hi / mr need a native-speaker review), every other language gets English.
-32. **Catalogue broadcast is unverified against a live Meta account**: whether Meta accepts a card body that is mostly a variable, `image.id`
+32. **Catalogue broadcast is unverified against a live Meta account**. First live submit (2026-10-21): Meta REJECTED `apnabot_catalog_2_en_1` with
+   `error_subcode 2388293` "Params Words Ratio Exceeds Limit - too many variables for its length" - the card body `✨ {{1}} ✨` was nearly all
+   variable. Fixed by new wording + versioned names (`apnabot_catalog_v2_*`, see Templates above); the old unversioned row stays in
+   `message_templates` unused. **The v2 wording has not been submitted yet**: re-run `testCatalogCarouselTemplate.js --confirm` on a test business. A
+   submit Meta refuses with 400 / code 100 now marks the row `rejected` with Meta's `error_user_msg`; other failures leave the draft. Still open:
+   `image.id`
    in the card header at send (the doc documents only `id`), and whether a carousel-template quick-reply tap arrives as `type 'button'`
    (handled) or `interactive` (also handled). Run `testCatalogCarouselTemplate.js --confirm` and one small send on a test business (not
    Search cab AI) before offering it to owners. Meta's payload length limit was not checked (ours are ~83 characters).

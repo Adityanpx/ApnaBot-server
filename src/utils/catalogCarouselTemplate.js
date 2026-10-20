@@ -4,11 +4,15 @@
 //
 // One reusable template per (card count, language, button count), the same for every business and every
 // collection selection - the card text, picture and button payloads are all filled in at send time:
-//   name   apnabot_catalog_<cards 2..10>_<lang>_<buttons 1|2>      e.g. apnabot_catalog_3_hi_2
-//   body   "Hi {{1}}, our new collection is here 👇"   ({{1}} = the customer's name)
-//   cards  header IMAGE | body "✨ {{1}} ✨" ({{1}} = "title · price") | quick-reply "View designs" [+ "Order"]
-// Meta needs the card count fixed when the template is created, the same components on every card, and
-// forbids a body that starts or ends with a variable - hence the fixed words around {{1}}.
+//   name   apnabot_catalog_v<TEMPLATE_VERSION>_<cards 2..10>_<lang>_<buttons 1|2>      e.g. apnabot_catalog_v2_3_hi_2
+//   body   "Hi {{1}}, our new collection has just arrived. Swipe ... 👇"   ({{1}} = the customer's name)
+//   cards  header IMAGE | body "New arrivals in {{1}}. Tap the button below ..." ({{1}} = "title · price") |
+//          quick-reply "View designs" [+ "Order"]
+// Meta needs the card count fixed when the template is created, the same components on every card, forbids a
+// body that starts or ends with a variable, and rejects one with too many variables for its length (subcode
+// 2388293, "Params Words Ratio Exceeds Limit") - hence plenty of fixed words around {{1}}; validateSpec checks it.
+// TEMPLATE_VERSION is part of the name: bump it when the wording changes, so rows Meta rejected or approved under
+// the old wording never clash with (or get reused for) the new one. Only the current version is looked up.
 // Languages: only the ones we have reviewed built-in wording for (en, hi, mr); anyone else gets English.
 // Button labels are the built-in ones (catalogViewButton / catalogOrderButton), not the owner's custom labels.
 const { LIMITS, truncate } = require('./textLimits');
@@ -21,19 +25,27 @@ const TEMPLATE_LANGUAGES = ['en', 'hi', 'mr'];
 const FALLBACK_LANGUAGE = 'en';
 const MIN_CARDS = 2;
 const MAX_CARDS = 10;
-const NAME_PREFIX = 'apnabot_catalog_';
-const NAME_PATTERN = /^apnabot_catalog_(\d{1,2})_([a-z]{2})_([12])$/;
+const TEMPLATE_VERSION = 2;
+const NAME_PREFIX = `apnabot_catalog_v${TEMPLATE_VERSION}_`;
+const NAME_PATTERN = new RegExp(`^apnabot_catalog_v${TEMPLATE_VERSION}_(\\d{1,2})_([a-z]{2})_([12])$`);
 
 const CARD_BODY_MAX = 160;                       // Meta: a card body, variables included
-const CARD_BODY = '✨ {{1}} ✨';
-const CARD_BODY_FIXED_LENGTH = CARD_BODY.replace('{{1}}', '').length;
-const CARD_TEXT_MAX = CARD_BODY_MAX - CARD_BODY_FIXED_LENGTH;
+// Each starts with fixed words (Meta forbids a leading variable) and ends with fixed words too.
+const CARD_BODY = {
+  en: 'New arrivals in {{1}}. Tap the button below to see all designs and prices.',
+  hi: 'नए डिज़ाइन: {{1}}। सभी डिज़ाइन और कीमत देखने के लिए नीचे बटन दबाएँ।',
+  mr: 'नवीन डिझाइन: {{1}}. सर्व डिझाइन आणि किंमत पाहण्यासाठी खाली बटण दाबा.'
+};
 const NAME_MAX = 60;
 
+// Our best reading of Meta's "Params Words Ratio" rule (the exact threshold is not published): fixed words per
+// variable in a body. The rejected "✨ {{1}} ✨" had 0; the wording below has 12+ in a card and 20+ in the greeting.
+const MIN_FIXED_WORDS_PER_VARIABLE = 5;
+
 const GREETING = {
-  en: 'Hi {{1}}, our new collection is here 👇',
-  hi: 'नमस्ते {{1}}, हमारा नया कलेक्शन आ गया है 👇',
-  mr: 'नमस्कार {{1}}, आमचे नवीन कलेक्शन आले आहे 👇'
+  en: 'Hi {{1}}, our new collection has just arrived. Swipe through the cards below and tap the button to see every design with its price 👇',
+  hi: 'नमस्ते {{1}}, हमारा नया कलेक्शन आ गया है। नीचे दिए कार्ड स्वाइप करें और हर डिज़ाइन व कीमत देखने के लिए बटन दबाएँ 👇',
+  mr: 'नमस्कार {{1}}, आमचे नवीन कलेक्शन आले आहे. खालील कार्ड स्वाइप करा आणि प्रत्येक डिझाइन व किंमत पाहण्यासाठी बटण दाबा 👇'
 };
 // Used when a customer has no name on file.
 const NAME_FALLBACK = { en: 'there', hi: 'जी', mr: 'जी' };
@@ -54,6 +66,16 @@ const parseTemplateName = (name) => {
   return m ? { cardCount: Number(m[1]), lang: m[2], buttonCount: Number(m[3]) } : null;
 };
 
+/** The longest "title · price" a card of this language takes: the card limit minus the fixed words. */
+const cardTextMax = (lang) => CARD_BODY_MAX - CARD_BODY[lang].replace('{{1}}', '').length;
+
+/** Words (letters / digits in any script; emoji and punctuation are not words) outside the {{n}} variables, per variable. */
+const fixedWordsPerVariable = (text) => {
+  const variables = (text.match(/\{\{\s*\d+\s*\}\}/g) || []).length;
+  const words = text.replace(/\{\{\s*\d+\s*\}\}/g, ' ').split(/\s+/).filter((token) => /[\p{L}\p{N}]/u.test(token)).length;
+  return variables === 0 ? Infinity : words / variables;
+};
+
 /** The quick-reply labels on every card: "View designs" and, when the catalogue has an order action, "Order". */
 const buttonLabels = (lang, buttonCount) => {
   const labels = [getSystemMessage('catalogViewButton', lang), getSystemMessage('catalogOrderButton', lang)].slice(0, buttonCount);
@@ -69,10 +91,14 @@ const validateSpec = ({ cardCount, lang, buttonCount }) => {
   if (errors.length > 0) return errors;
 
   const greeting = GREETING[lang];
+  const cardBody = CARD_BODY[lang];
   if (greeting.length > BODY_MAX) errors.push(`The body can be at most ${BODY_MAX} characters.`);
-  errors.push(...checkBodyVariables(greeting).errors, ...checkBodyVariables(CARD_BODY).errors);
-  if (checkBodyVariables(greeting).count !== 1 || checkBodyVariables(CARD_BODY).count !== 1) errors.push('The body and the card body each take exactly one variable.');
-  if (CARD_BODY.length > CARD_BODY_MAX) errors.push(`A card body can be at most ${CARD_BODY_MAX} characters.`);
+  errors.push(...checkBodyVariables(greeting).errors, ...checkBodyVariables(cardBody).errors);
+  if (checkBodyVariables(greeting).count !== 1 || checkBodyVariables(cardBody).count !== 1) errors.push('The body and the card body each take exactly one variable.');
+  if (cardBody.length > CARD_BODY_MAX) errors.push(`A card body can be at most ${CARD_BODY_MAX} characters.`);
+  for (const [label, text] of [['body', greeting], ['card body', cardBody]]) {
+    if (fixedWordsPerVariable(text) < MIN_FIXED_WORDS_PER_VARIABLE) errors.push(`The ${label} has too many variables for its length - Meta rejects that (Params Words Ratio). Add fixed words around {{1}}.`);
+  }
   const labels = buttonLabels(lang, buttonCount);
   if (labels.some((label) => !label || label.length > BUTTON_TEXT_MAX)) errors.push(`Button text is required, at most ${BUTTON_TEXT_MAX} characters.`);
   if (new Set(labels.map((label) => label.toLowerCase())).size !== labels.length) errors.push('Button text must be different from the other buttons.');
@@ -81,7 +107,7 @@ const validateSpec = ({ cardCount, lang, buttonCount }) => {
 
 const cardComponents = (lang, buttonCount, headerHandle) => [
   { type: 'HEADER', format: 'IMAGE', ...(headerHandle !== undefined ? { example: { header_handle: [headerHandle] } } : {}) },
-  { type: 'BODY', text: CARD_BODY, example: { body_text: [[SAMPLE_CARD_TEXT]] } },
+  { type: 'BODY', text: CARD_BODY[lang], example: { body_text: [[SAMPLE_CARD_TEXT]] } },
   { type: 'BUTTONS', buttons: buttonLabels(lang, buttonCount).map((text) => ({ type: 'QUICK_REPLY', text })) }
 ];
 
@@ -115,9 +141,10 @@ const buildCreatePayload = ({ cardCount, lang, buttonCount, headerHandles }) => 
 };
 
 /** The one card-body variable: "title · price", one line, no formatting marks, short enough for the card. */
-const cardText = (title, priceLabel) => {
+const cardText = (title, priceLabel, lang = FALLBACK_LANGUAGE) => {
   const parts = [title, priceLabel].map((v) => cleanValue(v).replace(/[*_~`]/g, '')).filter(Boolean);
-  return truncate(parts.join(' · '), CARD_TEXT_MAX).trim();
+  // Only the value is cut, never the template's fixed words.
+  return truncate(parts.join(' · '), cardTextMax(TEMPLATE_LANGUAGES.includes(lang) ? lang : FALLBACK_LANGUAGE)).trim();
 };
 
 /** The customer-name variable, with the language's fallback when there is no name. */
@@ -149,7 +176,8 @@ const buildSendComponents = ({ lang, customerName, cards }) => [
 ];
 
 module.exports = {
-  TEMPLATE_LANGUAGES, FALLBACK_LANGUAGE, MIN_CARDS, MAX_CARDS, GREETING, NAME_FALLBACK, SAMPLE_NAME, CARD_BODY, CARD_TEXT_MAX,
-  templateLanguageFor, metaLanguageOf, templateName, parseTemplateName, buttonLabels, validateSpec,
+  TEMPLATE_LANGUAGES, FALLBACK_LANGUAGE, MIN_CARDS, MAX_CARDS, TEMPLATE_VERSION, MIN_FIXED_WORDS_PER_VARIABLE,
+  GREETING, NAME_FALLBACK, SAMPLE_NAME, CARD_BODY,
+  templateLanguageFor, metaLanguageOf, templateName, parseTemplateName, cardTextMax, fixedWordsPerVariable, buttonLabels, validateSpec,
   buildStoredComponents, buildCreatePayload, cardText, greetingName, buildSendComponents
 };

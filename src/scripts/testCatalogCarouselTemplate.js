@@ -116,7 +116,7 @@ async function main() {
       customerName: 'Priya',
       cards: selection.cards.map((c, i) => ({
         mediaId: `<MEDIA_ID_${i + 1}>`,
-        text: tpl.cardText(c.title, c.priceLabel),
+        text: tpl.cardText(c.title, c.priceLabel, d.language),
         payloads: [pageId(c.id, 0, '<broadcastId>'), ...(buttonCount === 2 ? [collectionOrderId(c.id, '<broadcastId>')] : [])]
       }))
     })));
@@ -132,7 +132,7 @@ async function main() {
   const results = await catalogBroadcast.ensureTemplates(business, { cardCount, buttonCount, sampleUrls: selection.cards.map((c) => c.coverUrl) }, descriptors);
   console.log('\nResult:');
   for (const r of results) {
-    console.log(`  ${r.name}: ${r.submitError ? `FAILED - ${r.submitError}` : r.submitted ? 'submitted, now pending Meta approval' : `left as is (${r.status})`}`);
+    console.log(`  ${r.name}: ${r.submitError ? `FAILED - Meta said: ${r.submitError}` : r.submitted ? 'submitted, now pending Meta approval' : `left as is (${r.status})`}`);
   }
   console.log('Nothing was sent to any customer. Run a template sync (or wait for the status webhook) to see approval.');
 }

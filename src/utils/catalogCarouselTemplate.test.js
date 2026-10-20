@@ -10,11 +10,15 @@ const { parseCatalogTapId, pageId, collectionOrderId } = require('./catalogIds')
 const C1 = '3f2504e0-4f89-41d3-9a0c-0305e82c3301';
 const BC = '7c1d5e84-2a63-4f0e-b1a9-5d8e3f6a7b92';
 
-test('names: apnabot_catalog_<cards>_<lang>_<buttons>, and they parse back', () => {
-  assert.equal(t.templateName(3, 'en', 2), 'apnabot_catalog_3_en_2');
-  assert.equal(t.templateName(10, 'hi', 1), 'apnabot_catalog_10_hi_1');
-  assert.deepEqual(t.parseTemplateName('apnabot_catalog_10_hi_1'), { cardCount: 10, lang: 'hi', buttonCount: 1 });
-  for (const bad of ['apnabot_catalog_3_en', 'apnabot_catalog_3_en_3', 'promo_3_en_2', 'apnabot_catalog_x_en_2', null]) assert.equal(t.parseTemplateName(bad), null, String(bad));
+test('names: apnabot_catalog_v<version>_<cards>_<lang>_<buttons>, and the current version parses back', () => {
+  assert.equal(t.TEMPLATE_VERSION, 2);
+  assert.equal(t.templateName(3, 'en', 2), 'apnabot_catalog_v2_3_en_2');
+  assert.equal(t.templateName(10, 'hi', 1), 'apnabot_catalog_v2_10_hi_1');
+  assert.deepEqual(t.parseTemplateName('apnabot_catalog_v2_10_hi_1'), { cardCount: 10, lang: 'hi', buttonCount: 1 });
+  // the unversioned names of the first (rejected) wording, and any other version, are not ours to look up
+  for (const bad of ['apnabot_catalog_3_en_2', 'apnabot_catalog_v1_3_en_2', 'apnabot_catalog_v3_3_en_2', 'apnabot_catalog_v2_3_en', 'apnabot_catalog_v2_3_en_3', 'promo_3_en_2', 'apnabot_catalog_v2_x_en_2', null]) {
+    assert.equal(t.parseTemplateName(bad), null, String(bad));
+  }
 });
 
 test('a customer language maps to a template language; anything without wording gets English', () => {
@@ -42,19 +46,63 @@ test('the spec check refuses a bad card count, language or button count', () => 
 });
 
 test('the wording follows Meta body rules: one variable, never first or last', () => {
-  for (const text of [...Object.values(t.GREETING), t.CARD_BODY]) {
+  for (const text of [...Object.values(t.GREETING), ...Object.values(t.CARD_BODY)]) {
     assert.equal((text.match(/\{\{\d+\}\}/g) || []).length, 1, text);
     assert.doesNotMatch(text.trim(), /^\{\{/);
     assert.doesNotMatch(text.trim(), /\}\}$/);
   }
-  assert.equal(t.GREETING.en, 'Hi {{1}}, our new collection is here \u{1F447}');
-  assert.equal(t.CARD_TEXT_MAX, 156);
+  assert.equal(t.GREETING.en, 'Hi {{1}}, our new collection has just arrived. Swipe through the cards below and tap the button to see every design with its price \u{1F447}');
+  assert.equal(t.CARD_BODY.en, 'New arrivals in {{1}}. Tap the button below to see all designs and prices.');
+  assert.deepEqual(Object.keys(t.CARD_BODY).sort(), [...t.TEMPLATE_LANGUAGES].sort());
+});
+
+// Meta rejected "✨ {{1}} ✨" (subcode 2388293, Params Words Ratio Exceeds Limit). Its exact rule is not published; this is
+// our approximation (fixed words per variable), so a wording change that is too variable-heavy fails here, not at Meta.
+test('the words-to-variables pre-check: the rejected wording fails, every shipped wording passes', () => {
+  assert.equal(t.fixedWordsPerVariable('✨ {{1}} ✨'), 0);
+  assert.ok(t.fixedWordsPerVariable('✨ {{1}} ✨') < t.MIN_FIXED_WORDS_PER_VARIABLE);
+  assert.ok(t.fixedWordsPerVariable('Hi {{1}}, {{2}} is here') < t.MIN_FIXED_WORDS_PER_VARIABLE);
+  assert.equal(t.fixedWordsPerVariable('no variables here'), Infinity);
+  for (const lang of t.TEMPLATE_LANGUAGES) {
+    for (const [label, text] of [['greeting', t.GREETING[lang]], ['card body', t.CARD_BODY[lang]]]) {
+      assert.ok(t.fixedWordsPerVariable(text) >= t.MIN_FIXED_WORDS_PER_VARIABLE, `${lang} ${label}: ${t.fixedWordsPerVariable(text)} fixed words`);
+    }
+  }
+});
+
+test('validateSpec refuses a variable-heavy wording (the error Meta gave on the first submit)', () => {
+  const saved = { ...t.CARD_BODY };
+  try {
+    t.CARD_BODY.en = '✨ {{1}} ✨';
+    const errors = t.validateSpec({ cardCount: 3, lang: 'en', buttonCount: 2 });
+    assert.ok(errors.some((e) => /Params Words Ratio/.test(e)), errors.join(' | '));
+    t.CARD_BODY.en = 'Hot new {{1}} now on sale today';   // 6 fixed words - passes the ratio
+    assert.deepEqual(t.validateSpec({ cardCount: 3, lang: 'en', buttonCount: 2 }), []);
+    t.CARD_BODY.en = 'Look {{1}} now';                    // 2 words: too variable-heavy
+    assert.ok(t.validateSpec({ cardCount: 3, lang: 'en', buttonCount: 2 }).some((e) => /Params Words Ratio/.test(e)));
+  } finally {
+    Object.assign(t.CARD_BODY, saved);
+  }
+});
+
+test('the card body fits 160 characters with the longest title + price, per language; only the value is cut', () => {
+  for (const lang of t.TEMPLATE_LANGUAGES) {
+    const longest = t.cardText('T'.repeat(300), 'P'.repeat(300), lang);
+    assert.equal(longest.length, t.cardTextMax(lang), lang);
+    const rendered = t.CARD_BODY[lang].replace('{{1}}', longest);
+    assert.ok(rendered.length <= 160, `${lang}: ${rendered.length}`);
+    assert.ok(rendered.startsWith(t.CARD_BODY[lang].split('{{1}}')[0]) && rendered.endsWith(t.CARD_BODY[lang].split('{{1}}')[1]), 'the fixed text is intact');
+    assert.ok(t.cardTextMax(lang) >= 80, `${lang} leaves room for a realistic "Title · Price"`);
+  }
+  const realistic = t.cardText('Embroidered Cotton Kurta Set', 'From ₹1,499', 'en');
+  assert.equal(realistic, 'Embroidered Cotton Kurta Set · From ₹1,499');
+  assert.equal(t.CARD_BODY.en.replace('{{1}}', realistic).length < 160, true);
 });
 
 test('creation JSON: BODY + CAROUSEL with exactly N identical cards, a sample handle on each, MARKETING', () => {
   const handles = ['h1', 'h2', 'h3'];
   const payload = t.buildCreatePayload({ cardCount: 3, lang: 'en', buttonCount: 2, headerHandles: handles });
-  assert.equal(payload.name, 'apnabot_catalog_3_en_2');
+  assert.equal(payload.name, 'apnabot_catalog_v2_3_en_2');
   assert.equal(payload.category, 'MARKETING');
   assert.equal(payload.language, 'en_US');
   assert.deepEqual(payload.components.map(c => c.type), ['BODY', 'CAROUSEL']);
@@ -65,7 +113,7 @@ test('creation JSON: BODY + CAROUSEL with exactly N identical cards, a sample ha
   cards.forEach((card, i) => {
     assert.deepEqual(card.components.map(c => c.type), ['HEADER', 'BODY', 'BUTTONS']);
     assert.deepEqual(card.components[0], { type: 'HEADER', format: 'IMAGE', example: { header_handle: [handles[i]] } });
-    assert.equal(card.components[1].text, t.CARD_BODY);
+    assert.equal(card.components[1].text, t.CARD_BODY.en);
     assert.equal(card.components[1].example.body_text[0].length, 1);
     assert.deepEqual(card.components[2].buttons, [{ type: 'QUICK_REPLY', text: 'View designs' }, { type: 'QUICK_REPLY', text: 'Order' }]);
   });
@@ -77,8 +125,9 @@ test('creation JSON: BODY + CAROUSEL with exactly N identical cards, a sample ha
 
 test('creation JSON: a catalogue with no order action has one button per card; hi/mr use their locale', () => {
   const one = t.buildCreatePayload({ cardCount: 2, lang: 'hi', buttonCount: 1, headerHandles: ['a', 'b'] });
-  assert.equal(one.name, 'apnabot_catalog_2_hi_1');
+  assert.equal(one.name, 'apnabot_catalog_v2_2_hi_1');
   assert.equal(one.language, 'hi');
+  assert.equal(one.components[1].cards[0].components[1].text, t.CARD_BODY.hi, 'each language\'s cards carry its own card body');
   assert.equal(one.components[1].cards[0].components[2].buttons.length, 1);
   assert.equal(t.buildCreatePayload({ cardCount: 2, lang: 'mr', buttonCount: 2, headerHandles: ['a', 'b'] }).language, 'mr');
 });
@@ -99,7 +148,7 @@ test('card text is one plain line, "title · price", and fits the card', () => {
   assert.equal(t.cardText('Red Kurta', null), 'Red Kurta');
   assert.equal(t.cardText('', ''), '');
   const long = t.cardText('A'.repeat(60), 'B'.repeat(30) + 'C'.repeat(200));
-  assert.ok(long.length <= t.CARD_TEXT_MAX);
+  assert.ok(long.length <= t.cardTextMax('en'));
   assert.doesNotMatch(long, /[\n\t*]/);
 });
 

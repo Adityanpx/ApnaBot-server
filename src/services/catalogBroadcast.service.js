@@ -188,9 +188,23 @@ const submitTemplate = async (business, accessToken, { cardCount, lang, buttonCo
   const headerHandles = [];
   for (const url of sampleUrls.slice(0, cardCount)) headerHandles.push(await uploadHeaderHandle({ url, accessToken }));
   const payload = tpl.buildCreatePayload({ cardCount, lang, buttonCount, headerHandles });
-  const response = await axios.post(`${META_API_BASE}/${business.wabaId}/message_templates`, payload, {
-    headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
-  });
+  let response;
+  try {
+    response = await axios.post(`${META_API_BASE}/${business.wabaId}/message_templates`, payload, {
+      headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' }
+    });
+  } catch (error) {
+    // Meta refused the CONTENT (400, code 100: e.g. 2388293 "Params Words Ratio Exceeds Limit"): record it on the row so the
+    // reason shows up and the next send resubmits. A token / network / 5xx failure leaves the draft as it is.
+    const metaError = error.response && error.response.data && error.response.data.error;
+    if (error.response && error.response.status === 400 && metaError && metaError.code === 100) {
+      const { error: markErr } = await supabase.from('message_templates')
+        .update({ status: 'rejected', meta_status: 'REJECTED', rejection_reason: metaErrorText(error).slice(0, 500) })
+        .eq('id', id).eq('business_id', business.id);
+      if (markErr) logger.error('Could not mark the rejected catalogue template', { id, error: markErr.message });
+    }
+    throw error;
+  }
   const { error: updateErr } = await supabase.from('message_templates').update({
     meta_template_id: String(response.data.id),
     status: templateStatusFromMeta(response.data.status) || 'pending',
@@ -465,7 +479,7 @@ const sendCatalogBroadcast = async (businessId, body) => {
     templates: Object.fromEntries(usedLangs.map((lang) => [lang, { name: catalogConfig.templates[lang].name, language: catalogConfig.templates[lang].language }])),
     cards: cards.map((card, i) => ({
       mediaId: mediaIds[i],
-      texts: Object.fromEntries(usedLangs.map((lang) => [lang, tpl.cardText(getLocalizedText(card, 'title', lang) || card.title, getLocalizedText(card, 'priceLabel', lang) || card.priceLabel)])),
+      texts: Object.fromEntries(usedLangs.map((lang) => [lang, tpl.cardText(getLocalizedText(card, 'title', lang) || card.title, getLocalizedText(card, 'priceLabel', lang) || card.priceLabel, lang)])),
       payloads: [pageId(card.id, 0, broadcastId), ...(buttonCount === 2 ? [collectionOrderId(card.id, broadcastId)] : [])]
     }))
   };
