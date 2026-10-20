@@ -46,12 +46,17 @@ const message = (settings, key, builtIn, language) => {
   return typeof custom === 'string' && custom.trim() ? custom.trim() : getSystemMessage(builtIn, language);
 };
 
-/** Fire-and-forget counters for the Insights tab; never delays or breaks the reply. */
+/**
+ * Fire-and-forget counters for the Insights tab; never delays or breaks the reply. ctx.broadcastId (set by
+ * handleTap for a tap on a "Send catalogue" broadcast's card) marks that tap's events source 'broadcast'; every
+ * other event is written exactly as before (no source / broadcast_id columns in the row).
+ */
 const logEvents = (ctx, events) => {
   if (!events.length) return;
   const rows = events.map(e => ({
     business_id: ctx.tenant.businessId, customer_id: ctx.customer.id,
-    event: e.event, collection_id: e.collectionId || null, item_id: e.itemId || null
+    event: e.event, collection_id: e.collectionId || null, item_id: e.itemId || null,
+    ...(ctx.broadcastId ? { source: 'broadcast', broadcast_id: ctx.broadcastId } : {})
   }));
   Promise.resolve(supabase.from('catalog_events').insert(rows))
     .then(({ error }) => { if (error) logger.error('Catalogue event log failed:', error.message); })
@@ -345,11 +350,28 @@ const handleCatalogueNode = async (ctx, node) => {
 };
 
 /**
+ * A tap whose id carries ":b:<broadcastId>" came from a catalogue broadcast's card: ctx.broadcastId is set when
+ * that broadcast is a catalogue broadcast of THIS business (a forged or stale id is just a normal tap).
+ */
+const withBroadcastSource = async (ctx, tap) => {
+  if (!tap.broadcastId) return ctx;
+  try {
+    const rows = must(await supabase.from('broadcasts').select('id').eq('id', tap.broadcastId)
+      .eq('business_id', ctx.tenant.businessId).eq('kind', 'catalog'));
+    return rows.length > 0 ? { ...ctx, broadcastId: tap.broadcastId } : ctx;
+  } catch (error) {
+    logger.error('Catalogue: could not check the broadcast of a tap, counting it as a normal tap:', { message: error.message });
+    return ctx;
+  }
+};
+
+/**
  * A "cat:" tap (parseCatalogTapId result). Never throws.
  * @returns {Promise<{ handled: true } | { handled: false, orderNode: Object, prefill: Object[] }>}
  */
 const handleTap = async (ctx, tap) => {
   try {
+    ctx = await withBroadcastSource(ctx, tap);
     if (tap.kind === 'menu') await sendCatalogue(ctx);
     else if (tap.kind === 'page') await sendDesigns(ctx, tap.collectionId, tap.page);
     else return await startOrder(ctx, tap);

@@ -220,6 +220,8 @@ const validateHeaderMedia = (media, format) => {
 
 module.exports = {
   CATEGORIES,
+  BODY_MAX,
+  BUTTON_TEXT_MAX,
   LANGUAGES,
   HEADER_TYPES,
   HEADER_MEDIA_TYPE,

@@ -1471,6 +1471,61 @@ The owner manages **collections** (a card each: cover, title, card text, price l
 - **Roles.** Writes owner only; reads any member of the business (like the flow graph).
 - **Not done / follow-ups.** Web (`apnabot-web`) and Flutter screens; the canvas clients should show the `catalog` node read-only. Existing WebP media used in replies / carousels may be rejected by WhatsApp (image headers are JPEG / PNG): verify on a real send; only catalogue uploads are converted. The carousel card-button tap shape (interactive vs `button`) is still unverified on a live send. No retention job for `catalog_events`. Native-script keywords only match once Unicode matching is on for the business. Tests: `catalogIds/Settings/Validation/Order/Payload.test.js`, `catalog.service.test.js`, `catalogCollection.service.test.js`, `catalogMedia.service.test.js`, `catalog.controller.test.js`, `webhook.catalog.test.js`, `bookingGraph.prefill.test.js`, `flowGraph.catalogNode.test.js`, `publicServiceForm.catalogPrefill.test.js`, additions to the translation, media usage, inventory, system message and feature switch tests.
 
+## Send catalogue - carousel broadcast (built 2026-10-27, migration `20261027120000_catalog_broadcast.sql`, uncommitted)
+
+The owner picks 2..10 Catalogue collections + an audience; each recipient gets ONE Meta media-card CAROUSEL **marketing template**
+message: card = the collection's cover + `title · price` + quick-reply buttons "View designs" (+ "Order" when the catalogue has an order
+action). A tap opens the 24h window and routes into the existing catalogue handlers. Needs the `catalogue` AND `broadcasts` switches
+(`broadcasts` is OFF by default per business). **Cutover:** nothing changes for any customer until an owner sends one; the migration
+is the only deploy step (apply it BEFORE the server: `GET /api/message-templates` filters on `message_templates.kind`).
+
+- **Meta facts used** (checked against Meta's "media card carousel templates" doc): carousel templates are MARKETING only; the
+  card count is fixed at creation (2..10) and a send must match it; every card has the same components; card header IMAGE/VIDEO needs an
+  `example.header_handle` from the resumable upload; card body optional but all-or-none, <= 160 characters, variables included; <= 2 buttons
+  per card; at send the card header is documented as `{ image: { id } }` only, a quick-reply payload per card is allowed, the tap arrives in
+  `messages.button.payload`.
+- **Templates** (`utils/catalogCarouselTemplate.js`, pure): one reusable system template per (card count, language, button count) per
+  business, named `apnabot_catalog_<cards>_<lang>_<buttons>` (e.g. `apnabot_catalog_3_hi_2`; buttons = 1 without an order action, 2 with).
+  Body `Hi {{1}}, our new collection is here 👇` ({{1}} = customer name; fallback "there" / "जी" when none), card body `✨ {{1}} ✨`
+  ({{1}} = `title · price`, one plain line, <= 156 characters; Meta forbids a body that starts or ends with a variable, hence the fixed
+  words), buttons = the built-in `catalogViewButton` / `catalogOrderButton` labels (NOT the owner's custom labels). Stored in
+  `message_templates` with `kind = 'catalog_carousel'`, `send_support = 'unsupported_component'` (so no normal broadcast / follow-up can
+  ever pick one; template sync would write the same value), `meta_components` = BODY + CAROUSEL without the sample handles.
+  `GET /api/message-templates` hides them unless `?includeSystem=true`. Status flows through the existing template webhook / sync.
+  Languages with wording: `en` (en_US), `hi`, `mr` only; every other customer language is sent English.
+- **Creation on demand** (`services/catalogBroadcast.service.js#ensureTemplates`): for each language the audience needs (+ English) that is
+  missing / draft / rejected, insert the row, upload one sample per card (this send's covers, resumable upload) and POST
+  `/{waba}/message_templates`. Pending / approved / paused / disabled are left alone (a rejected one is resubmitted; a draft left by a failed
+  submit is reused). English paused/disabled -> 400 `TEMPLATE_BLOCKED` before anything is submitted.
+- **Send** (`sendCatalogBroadcast`): selection -> audience (`resolveAudience`, MARKETING rule) -> templates (202 until English is approved;
+  another language that is not approved yet is sent English and reported in `languageFallbacks`) -> each cover uploaded once to Meta media
+  (`whatsapp.service.js#uploadImageFromUrl`, JPEG/PNG) -> `broadcasts` row (`kind 'catalog'`, `template_id` = the English variant,
+  `catalog_config { collectionIds, cardCount, buttons, templates }`; the id is generated in code because it goes into every payload) ->
+  wallet debit (same rules as `sendBroadcast`; billing is off today, rate 0) -> `broadcast_recipients` rows -> jobs of 50. A send that never
+  reached the queue marks the broadcast `failed` (there is no draft to go back to) and refunds. Worker: `broadcast.worker.js` has one branch
+  for jobs carrying `catalog` (per recipient: the template of its `templateLang`, card texts in that language, payloads); other jobs are untouched.
+- **Cards**: active collections with a cover (the collection's cover, else its first photo), in the order asked for, at most the plan's
+  `carousel_max_cards` (and 10). Left-out collections are reported (`skipped`: `not_found | inactive | no_cover | over_plan_cap`). A cover
+  that is not JPG/PNG (WebP...) is a blocking error `WEBP_COVER`, not a skip. Catalogue switched off -> `CATALOGUE_DISABLED`.
+- **Tap attribution**: button payloads are `cat:<collectionId>:p:0:b:<broadcastId>` / `cat:<collectionId>:order:b:<broadcastId>`.
+  `catalogIds.js#parseCatalogTapId` accepts the optional `:b:<uuid>` suffix (ids without it parse exactly as before);
+  `catalogReply.service.js#handleTap` sets `ctx.broadcastId` only when that broadcast is a `kind 'catalog'` broadcast of THIS business, and
+  that tap's `catalog_events` rows get `source 'broadcast'` + `broadcast_id` (every other event is written exactly as before). Replies the
+  bot sends next carry no suffix.
+- **Broadcasts switch**: the catalogue-broadcast routes answer 404 `errors { code: 'BROADCASTS_DISABLED', feature: 'broadcasts' }`, message
+  "Broadcasts are not enabled for your account. Contact support." (`requireCategoryFeature(feature, off)` got an optional second argument; the
+  default 404 `FEATURE_DISABLED` is unchanged). Catalogue off -> the catalogue's own `FEATURE_DISABLED`.
+- **Refactor of a live path**: `chunk`, `createRecipientRows`, `removeRecipientRows`, `BATCH_SIZE` moved from `broadcast.controller.js` to
+  `services/broadcastDispatch.service.js` (mechanical; all broadcast tests unchanged and green). `resolveAudience` also selects
+  `preferred_language`.
+- **API (owner only)**: `POST /api/catalog/broadcast/preview` and `POST /api/catalog/broadcast`; shapes live in
+  `services/catalogBroadcast.service.js` (`previewCatalogBroadcast`, `sendCatalogBroadcast`).
+- **Script**: `node src/scripts/testCatalogCarouselTemplate.js --business <id|name> [--collections id,id] [--lang en,hi] [--confirm]` - the dry
+  run prints the creation JSON + send components; `--confirm` submits the templates only (never sends to a customer); refuses Search cab AI.
+- Tests: `utils/catalogCarouselTemplate.test.js`, `services/catalogBroadcast.service.test.js`, `queues/broadcast.worker.catalog.test.js`,
+  `routes/catalogBroadcast.routes.test.js`, `controllers/messageTemplate.listSystem.test.js`, additions to `utils/catalogIds.test.js` and
+  `controllers/webhook.catalog.test.js`.
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism
@@ -1611,8 +1666,22 @@ The owner manages **collections** (a card each: cover, title, card text, price l
    "different" keyword. Follow-up to gap #26; not fixed.
 29. **`carouselBundle.service.js` builds an ASCII slug from card text**, so a card with only native-script text gets an empty slug.
    Follow-up to gap #26; not fixed.
+30. **Broadcast scheduling is not implemented** (any broadcast): `broadcasts.scheduled_at` and the `'scheduled'` status exist in the schema
+   but nothing sets or reads them, and there is no scheduled-send route or delayed job. The catalogue broadcast therefore has no `scheduleAt`.
+31. **Catalogue broadcast v1 limits**: the body is the fixed greeting (no owner free-text message - a second variable would raise the chance
+   Meta rejects the template); the button labels are the fixed built-ins (custom labels would need a hash in the template name and a new
+   approval per edit); only `en` / `hi` / `mr` have template wording (hi / mr need a native-speaker review), every other language gets English.
+32. **Catalogue broadcast is unverified against a live Meta account**: whether Meta accepts a card body that is mostly a variable, `image.id`
+   in the card header at send (the doc documents only `id`), and whether a carousel-template quick-reply tap arrives as `type 'button'`
+   (handled) or `interactive` (also handled). Run `testCatalogCarouselTemplate.js --confirm` and one small send on a test business (not
+   Search cab AI) before offering it to owners. Meta's payload length limit was not checked (ours are ~83 characters).
+33. **Catalogue broadcast has no web / Flutter screen**, and the broadcast detail does not show taps per broadcast yet
+   (`catalog_events.broadcast_id` is recorded for it).
 
 ## Session log (append here as major milestones land)
+- 2026-10-27: Send catalogue carousel broadcast (see "Send catalogue - carousel broadcast"): migration `20261027120000_catalog_broadcast.sql`
+  must be applied before deploying. Working tree only, not committed. No customer-facing change until an owner sends one; needs the
+  `broadcasts` switch (off by default). Search cab AI untouched (it has broadcasts off).
 - 2026-10-25: Native-script keyword matching (gap #26): shadow mode + per-business / global switch, all OFF. Working tree only,
   not committed. **Deploy: apply `20261025120000_unicode_matching.sql` first, then the server.** No behaviour change until a
   business (or the global default) is switched on; Search cab AI stays on legacy matching and is only read by the shadow log.

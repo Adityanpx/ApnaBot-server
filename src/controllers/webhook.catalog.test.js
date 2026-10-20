@@ -404,3 +404,57 @@ test('an ordinary keyword reply is untouched (no catalogue code on the path)', a
   assert.equal(jobs()[0].message, 'We open at 9');
   assert.equal(db.catalog_events.length, 0);
 });
+
+// ---- taps on the card buttons of a "Send catalogue" broadcast (payload ends ":b:<broadcastId>") ----
+const BC = id(900);
+
+test('a View designs tap from a catalogue broadcast is logged with source "broadcast" and its broadcast id', async () => {
+  db.broadcasts = [{ id: BC, business_id: BIZ, kind: 'catalog' }];
+  addItems(C1, 3);
+  await tapAsButton(`cat:${C1}:p:0:b:${BC}`);   // how a template quick-reply tap arrives
+  await flush();
+  assert.equal(jobs().at(-1).type, 'text');
+  assert.match(jobs().at(-1).message, /Showing 1.3 of 3 designs in Collection 1/);
+  assert.deepEqual(db.catalog_events.map(e => [e.event, e.collection_id, e.source, e.broadcast_id]), [['designs_view', C1, 'broadcast', BC]]);
+  assert.deepEqual(jobs().at(-1).buttons.map(b => b.nextKeyword), [`cat:${C1}:order`, 'cat:menu'], 'the next buttons the bot sends carry no suffix');
+});
+
+test('an Order tap from a catalogue broadcast is logged the same way (interactive reply too)', async () => {
+  db.broadcasts = [{ id: BC, business_id: BIZ, kind: 'catalog' }];
+  await tap(`cat:${C2}:order:b:${BC}`);
+  await flush();
+  assert.deepEqual(db.catalog_events.map(e => [e.event, e.collection_id, e.source, e.broadcast_id]), [['order_collection', C2, 'broadcast', BC]]);
+});
+
+test('a tap without the suffix is a normal bot tap: no source / broadcast_id in the row', async () => {
+  db.broadcasts = [{ id: BC, business_id: BIZ, kind: 'catalog' }];
+  addItems(C1, 2);
+  await tap(`cat:${C1}:p:0`);
+  await flush();
+  assert.equal(db.catalog_events.length, 1);
+  assert.equal('source' in db.catalog_events[0], false);
+  assert.equal('broadcast_id' in db.catalog_events[0], false);
+});
+
+test('a suffix naming another business\'s, a template, or an unknown broadcast is just a normal tap', async () => {
+  db.broadcasts = [
+    { id: BC, business_id: 'other-business', kind: 'catalog' },
+    { id: id(901), business_id: BIZ, kind: 'template' }
+  ];
+  addItems(C1, 2);
+  for (const broadcastId of [BC, id(901), id(902)]) {
+    db.catalog_events = [];
+    await tap(`cat:${C1}:p:0:b:${broadcastId}`);
+    await flush();
+    assert.equal(db.catalog_events.length, 1, broadcastId);
+    assert.equal('broadcast_id' in db.catalog_events[0], false, broadcastId);
+  }
+});
+
+test('a broadcast-suffixed tap on a collection that no longer exists gets the "no longer available" answer', async () => {
+  db.broadcasts = [{ id: BC, business_id: BIZ, kind: 'catalog' }];
+  db.catalog_collections[1].is_active = false;
+  await tapAsButton(`cat:${C2}:p:0:b:${BC}`);
+  assert.match(jobs()[0].message, /no longer available/);
+  assert.equal(jobs()[1].type, 'carousel');
+});

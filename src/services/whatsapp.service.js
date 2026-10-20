@@ -463,6 +463,41 @@ const markMessageAsRead = async (phoneNumberId, encryptedAccessToken, metaMessag
   }
 };
 
+const UPLOAD_MIME_BY_EXTENSION = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png' };
+
+/**
+ * Upload an image (fetched from a public url) to Meta's media store for this phone number, so a send can refer to
+ * it by id (POST /{phone-number-id}/media). Used by the catalogue broadcast: a carousel template's card headers
+ * are documented as `{ image: { id } }`. JPEG / PNG only.
+ * @param {string} phoneNumberId
+ * @param {string} encryptedAccessToken
+ * @param {string} url  public image url
+ * @returns {Promise<string>} the media id
+ */
+const uploadImageFromUrl = async (phoneNumberId, encryptedAccessToken, url) => {
+  const extension = (/\.([a-z0-9]+)(?:[?#].*)?$/i.exec(url) || [])[1];
+  const mimeType = UPLOAD_MIME_BY_EXTENSION[(extension || '').toLowerCase()];
+  if (!mimeType) throw new Error(`Only JPG and PNG images can be sent in a carousel (${url})`);
+  const accessToken = decrypt(encryptedAccessToken);
+  const file = await axios.get(url, { responseType: 'arraybuffer' });
+
+  const form = new FormData();
+  form.append('messaging_product', 'whatsapp');
+  form.append('type', mimeType);
+  form.append('file', new Blob([file.data], { type: mimeType }), `card.${mimeType === 'image/png' ? 'png' : 'jpg'}`);
+  try {
+    const response = await axios.post(`${META_API_BASE}/${phoneNumberId}/media`, form, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+      maxBodyLength: Infinity
+    });
+    if (!response.data || !response.data.id) throw new Error('Meta did not return a media id');
+    return response.data.id;
+  } catch (error) {
+    logger.error('Error uploading an image to Meta:', { phoneNumberId, error: error.response?.data || error.message });
+    throw error;
+  }
+};
+
 /**
  * Download an inbound media file (image/document/...) by its Meta media id.
  * Two calls: GET /{media-id} returns a short-lived URL, which itself needs
@@ -502,6 +537,7 @@ module.exports = {
   sendRuleListMessage,
   sendCtaUrlButton,
   sendTemplateMessage,
+  uploadImageFromUrl,
   markMessageAsRead,
   META_API_BASE
 };

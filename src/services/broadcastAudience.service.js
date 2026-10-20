@@ -238,11 +238,11 @@ const applySegment = (query, params, now = Date.now()) => {
  * broadcast with this audience reaches — opted-in ones who haven't stopped
  * marketing messages only, unless the template's `category` is UTILITY
  * (requiresMarketingOptIn).
- * @returns {Promise<{ id, whatsapp_number, name }[]>}
+ * @returns {Promise<{ id, whatsapp_number, name, preferred_language }[]>}
  */
 const resolveAudience = async (businessId, filter, params, { category = null } = {}) => {
   const base = () => {
-    const query = supabase.from('customers').select('id, whatsapp_number, name').eq('business_id', businessId);
+    const query = supabase.from('customers').select('id, whatsapp_number, name, preferred_language').eq('business_id', businessId);
     return (requiresMarketingOptIn(category) ? query.eq('opted_in', true).is('marketing_blocked_at', null) : query).eq('is_blocked', false).is('opted_out_at', null);
   };
   let customers = [];

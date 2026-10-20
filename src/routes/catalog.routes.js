@@ -14,6 +14,9 @@ const { uploadCatalogImages } = require('../middleware/upload.middleware');
 router.use(protect, requireBusiness, requireCategoryFeature('catalogue'));
 const owner = requireRole('owner');
 
+// "Send catalogue" broadcast (needs the 'broadcasts' switch as well) - before the other routes so /broadcast is not read as an id.
+router.use('/broadcast', require('./catalogBroadcast.routes'));
+
 router.get('/', catalogController.getCatalog);
 router.put('/', owner, catalogController.updateCatalog);
 

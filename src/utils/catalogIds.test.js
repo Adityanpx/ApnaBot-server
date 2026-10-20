@@ -49,3 +49,33 @@ test('every catalogue id is a system tap (an active booking session never consum
   assert.equal(isSystemTapId(C), false);
   assert.equal(isSystemTapId(`${C}:3`), false);
 });
+
+// ---- the ":b:<broadcastId>" attribution suffix of a "Send catalogue" broadcast ----
+const BC = '7c1d5e84-2a63-4f0e-b1a9-5d8e3f6a7b92';
+
+test('a broadcast suffix round-trips and the shapes are documented', () => {
+  assert.equal(pageId(C, 0, BC), `cat:${C}:p:0:b:${BC}`);
+  assert.equal(collectionOrderId(C, BC), `cat:${C}:order:b:${BC}`);
+  assert.deepEqual(parseCatalogTapId(pageId(C, 0, BC)), { kind: 'page', collectionId: C, page: 0, broadcastId: BC });
+  assert.deepEqual(parseCatalogTapId(collectionOrderId(C, BC)), { kind: 'collection_order', collectionId: C, broadcastId: BC });
+  assert.ok(pageId(C, 0, BC).length < 100);
+});
+
+test('ids without a suffix are byte-identical to before and carry no broadcastId key', () => {
+  assert.equal(pageId(C, 3), `cat:${C}:p:3`);
+  assert.equal(collectionOrderId(C), `cat:${C}:order`);
+  assert.equal('broadcastId' in parseCatalogTapId(pageId(C, 0)), false);
+  assert.equal('broadcastId' in parseCatalogTapId(collectionOrderId(C)), false);
+  assert.equal(pageId(C, 1, null), pageId(C, 1));
+});
+
+test('a malformed suffix is not a catalogue id', () => {
+  for (const bad of [`cat:${C}:p:0:b`, `cat:${C}:p:0:b:`, `cat:${C}:p:0:b:not-a-uuid`, `cat:${C}:order:b:not-a-uuid`,
+    `cat:${C}:p:0:x:${BC}`, `cat:${C}:p:0:b:${BC}:more`, `cat:item:${I}:order:b:${BC}`, `cat:menu:b:${BC}`, `cat:${C}:b:${BC}`]) {
+    assert.equal(parseCatalogTapId(bad), null, bad);
+  }
+});
+
+test('a suffixed id is still a system tap', () => {
+  assert.equal(isSystemTapId(pageId(C, 0, BC)), true);
+});

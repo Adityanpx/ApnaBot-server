@@ -8,8 +8,10 @@ const { errorResponse } = require('../utils/response');
  * Otherwise 404 (errors.code 'FEATURE_DISABLED' when the switch is off) — the same response these routes gave when they weren't
  * mounted at all, so the web app's availability probe (GET /bot-settings)
  * keeps working unchanged. Must run after protect + requireBusiness.
+ * `off` ({ code, message }) lets a route that has its own screen say which switch is off: the 404 then carries
+ * that message and errors { code, feature } instead of the generic ones (the catalogue broadcast uses it).
  */
-const requireCategoryFeature = (feature) => async (req, res, next) => {
+const requireCategoryFeature = (feature, off = null) => async (req, res, next) => {
   try {
     const { data: business, error } = await supabase
       .from('businesses').select('business_category').eq('id', req.user.businessId).maybeSingle();
@@ -18,6 +20,7 @@ const requireCategoryFeature = (feature) => async (req, res, next) => {
     // over its category's switch.
     if (!business) return errorResponse(res, 404, 'Not found');
     if (!(await categoryFeatureService.isEnabled(business.business_category, feature, req.user.businessId))) {
+      if (off) return errorResponse(res, 404, off.message, { code: off.code, feature });
       return errorResponse(res, 404, 'Not found', { code: 'FEATURE_DISABLED' });
     }
     next();

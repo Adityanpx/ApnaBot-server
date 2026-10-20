@@ -22,14 +22,17 @@ const HEADER_IMAGE_TYPES = ['image/jpeg', 'image/png'];
 
 /**
  * GET /api/message-templates
- * List business's message templates
+ * List business's message templates. The reusable system templates of the "Send catalogue" broadcast
+ * (kind 'catalog_carousel', services/catalogBroadcast.service.js) are left out unless ?includeSystem=true:
+ * they are not the owner's to pick for a broadcast or follow-up.
  */
 const getMessageTemplates = async (req, res, next) => {
   try {
     const businessId = req.user.businessId;
 
-    const { data, error } = await supabase
-      .from('message_templates').select('*').eq('business_id', businessId).order('created_at', { ascending: false });
+    let query = supabase.from('message_templates').select('*').eq('business_id', businessId);
+    if (req.query.includeSystem !== 'true') query = query.neq('kind', 'catalog_carousel');
+    const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
 
     // source / qualityScore / sendSupport / lastSyncedAt come straight from the

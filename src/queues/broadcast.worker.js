@@ -7,6 +7,7 @@ const config = require('../config/env');
 const { workerConnection } = require('../config/queueConnection');
 const { buildTemplateComponents } = require('../utils/templateComponents');
 const { splitMapping } = require('../utils/templateMapping');
+const { buildSendComponents } = require('../utils/catalogCarouselTemplate');
 const { extractMetaMessageId } = require('../services/outboundMessageId.service');
 const { fromSendError } = require('../utils/whatsappErrors');
 const { notifyBroadcastProgress } = require('../services/broadcastProgress.service');
@@ -39,6 +40,21 @@ const resolveValue = (entry, recipient) => {
   return String(text);
 };
 
+// A catalogue broadcast (services/catalogBroadcast.service.js) sends a different carousel template per recipient
+// language: job.catalog = { templates: { <lang>: { name, language } }, cards: [{ mediaId, texts: { <lang> }, payloads }] },
+// and each recipient carries its templateLang. Returns [templateName, language, components].
+const resolveCatalogSend = (catalog, recipient) => {
+  const lang = recipient.templateLang;
+  const template = catalog.templates[lang];
+  if (!template) throw new Error(`no catalogue template for language "${lang}"`);
+  const components = buildSendComponents({
+    lang,
+    customerName: recipient.customer?.name,
+    cards: catalog.cards.map((card) => ({ mediaId: card.mediaId, text: card.texts[lang] || card.texts.en, payloads: card.payloads }))
+  });
+  return [template.name, template.language, components];
+};
+
 const resolveRecipientComponents = (variableMapping, recipient, mediaHeader = null, quickReplies = []) => {
   const parts = splitMapping(variableMapping);
   const body = [...parts.body]
@@ -67,7 +83,7 @@ const recordRecipient = async (broadcastId, whatsappNumber, fields) => {
 };
 
 const worker = new Worker('broadcast-outbound', async (job) => {
-  const { broadcastId, businessId, phoneNumberId, encryptedAccessToken, templateName, language, components, variableMapping, ratePerMessage, billed, recipients, quickReplyComponents } = job.data;
+  const { broadcastId, businessId, phoneNumberId, encryptedAccessToken, templateName, language, components, variableMapping, ratePerMessage, billed, recipients, quickReplyComponents, catalog } = job.data;
   // Refund only what broadcast.controller.js actually debited. Jobs queued
   // before `billed` existed fall back to the billing switch (same condition
   // as the debit, since ratePerMessage > 0 is checked below).
@@ -88,10 +104,17 @@ const worker = new Worker('broadcast-outbound', async (job) => {
 
   for (const recipient of recipients) {
     try {
-      const recipientComponents = variableMapping
-        ? resolveRecipientComponents(variableMapping, recipient, headerComponent, quickReplyComponents || [])
-        : components;
-      const sendResult = await whatsappService.sendTemplateMessage(phoneNumberId, encryptedAccessToken, recipient.whatsappNumber, templateName, language, recipientComponents);
+      let sendName = templateName;
+      let sendLanguage = language;
+      let recipientComponents;
+      if (catalog) {
+        [sendName, sendLanguage, recipientComponents] = resolveCatalogSend(catalog, recipient);
+      } else {
+        recipientComponents = variableMapping
+          ? resolveRecipientComponents(variableMapping, recipient, headerComponent, quickReplyComponents || [])
+          : components;
+      }
+      const sendResult = await whatsappService.sendTemplateMessage(phoneNumberId, encryptedAccessToken, recipient.whatsappNumber, sendName, sendLanguage, recipientComponents);
       sent += 1;
       await recordRecipient(broadcastId, recipient.whatsappNumber, {
         status: 'sent',
