@@ -18,6 +18,7 @@ const supabase = require('../config/supabase');
 const botSettingsService = require('./botSettings.service');
 const businessService = require('./business.service');
 const { matchNodeInList } = require('./chatbot.service');
+const { isUnicodeMatchingEnabled } = require('./unicodeMatching.service');
 const { GREETING_KEYWORDS } = require('../controllers/webhook.controller');
 const { applyMessageTemplate, applyMessageTemplateWithFooter } = require('../utils/messageTemplating');
 const { getLocalizedText } = require('../utils/localization');
@@ -161,11 +162,13 @@ const previewMessage = async ({ businessId, graphBusiness, preset, settings, mes
   }
 
   // Step 13 — typed text, matched exactly like live messages.
-  const matched = matchNodeInList(draft.nodes, message);
+  // Same matcher as live for this business (its unicode_matching flag), so the preview agrees with WhatsApp.
+  const unicode = await isUnicodeMatchingEnabled(businessId);
+  const matched = matchNodeInList(draft.nodes, message, { unicode });
   if (matched) return renderNode(draft, matched, business);
 
   // No match — the static fallback reply plus the menu's buttons, like live.
-  const menu = matchNodeInList(draft.nodes, 'hi');
+  const menu = matchNodeInList(draft.nodes, 'hi', { unicode });
   const menuOptions = menu && (menu.contentType === 'buttons' || menu.contentType === 'list')
     ? renderOptions(draft, menu)
     : { buttons: [], listOptions: [] };

@@ -424,7 +424,7 @@ const buildFormFields = (form, t) => {
  *   courses may carry `id` (business_courses.id) — the key of their translations
  * @returns {{ spec: Object|null, error: string|null, translation?: { slots: Object[], report: Object } }}
  */
-const mapCoachingSettingsToSpec = (settings, { businessName, courses, languages = [] } = {}) => {
+const mapCoachingSettingsToSpec = (settings, { businessName, courses, languages = [], unicode = false } = {}) => {
   if (!isNonEmptyString(businessName)) return { spec: null, error: 'businessName is required' };
   const settingsError = validateCoachingSettings(settings, { forPublish: true });
   if (settingsError) return { spec: null, error: settingsError };
@@ -610,7 +610,7 @@ const mapCoachingSettingsToSpec = (settings, { businessName, courses, languages 
     forms,
     ...(location ? { location } : {})
   };
-  const specError = validateFlowSpecV2(spec);
+  const specError = validateFlowSpecV2(spec, { unicode });
   if (specError) return { spec: null, error: `The generated flow is invalid: ${specError}` };
   return { spec, error: null, translation: { slots: slots(), report } };
 };

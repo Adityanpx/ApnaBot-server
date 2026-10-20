@@ -17,6 +17,7 @@ const { MAX_SNAPSHOTS_PER_BUSINESS } = require('../controllers/flowSnapshot.cont
 const { validateFlowSpec, compileFlowSpec } = require('../utils/flowSpec');
 const { mapAnswersToFlowSpec } = require('../utils/flowSpecQuestionnaire');
 const logger = require('../utils/logger');
+const { isUnicodeMatchingEnabled } = require('./unicodeMatching.service');
 
 const loadBusiness = async (businessId) => {
   const { data, error } = await supabase
@@ -33,7 +34,7 @@ const loadBusiness = async (businessId) => {
  * the business name read from the business row at call time.
  * @returns {{ spec: Object|null, status: number|null, error: string|null }}
  */
-const resolveSpec = ({ business, spec, answers }) => {
+const resolveSpec = ({ business, spec, answers, unicode = false }) => {
   const hasSpec = spec !== undefined && spec !== null;
   const hasAnswers = answers !== undefined && answers !== null;
   if (hasSpec === hasAnswers) {
@@ -44,7 +45,7 @@ const resolveSpec = ({ business, spec, answers }) => {
     if (error) return { spec: null, status: 400, error };
     return { spec: mapped, status: null, error: null };
   }
-  const specError = validateFlowSpec(spec);
+  const specError = validateFlowSpec(spec, { unicode });
   if (specError) return { spec: null, status: 400, error: specError };
   return { spec, status: null, error: null };
 };
@@ -56,9 +57,10 @@ const resolveSpec = ({ business, spec, answers }) => {
 const compile = async ({ businessId, spec, answers }) => {
   const business = await loadBusiness(businessId);
   if (!business) return { status: 404, error: 'Business not found' };
-  const resolved = resolveSpec({ business, spec, answers });
+  const unicode = await isUnicodeMatchingEnabled(businessId);
+  const resolved = resolveSpec({ business, spec, answers, unicode });
   if (resolved.error) return { status: resolved.status, error: resolved.error };
-  const { warnings, ...graph } = compileFlowSpec(resolved.spec);
+  const { warnings, ...graph } = compileFlowSpec(resolved.spec, { unicode });
   return { spec: resolved.spec, graph, warnings };
 };
 
@@ -107,7 +109,8 @@ const prepareApply = async ({ businessId, graphBusiness, spec, answers }) => {
     return { status: 409, error: `AI flow generation is not available for the "${graphBusiness.businessCategory}" category yet.` };
   }
 
-  const resolved = resolveSpec({ business, spec, answers });
+  const unicode = await isUnicodeMatchingEnabled(businessId);
+  const resolved = resolveSpec({ business, spec, answers, unicode });
   if (resolved.error) return { status: resolved.status, error: resolved.error };
 
   const currentRows = await readBusinessGraphRows(businessId);
@@ -119,7 +122,7 @@ const prepareApply = async ({ businessId, graphBusiness, spec, answers }) => {
     };
   }
 
-  const { warnings: compileWarnings, ...compiled } = compileFlowSpec(resolved.spec);
+  const { warnings: compileWarnings, ...compiled } = compileFlowSpec(resolved.spec, { unicode });
   const warnings = [...compileWarnings];
 
   if (hasWelcomeMessage(business)) {

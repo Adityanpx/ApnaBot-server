@@ -1,0 +1,352 @@
+{
+  "SG Travels": [
+    {
+      "keyword": "rates",
+      "matchType": "contains",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "shirt-designs",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "our location",
+      "matchType": "contains",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "kurta-designs",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "jeans-designs",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "book",
+      "matchType": "contains",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "contactinfo",
+      "matchType": "contains",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "hi",
+      "matchType": "contains",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "catalogue",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    }
+  ],
+  "Averix Solutions": [
+    {
+      "keyword": "form_coaching_form",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "demo travels",
+      "matchType": "contains",
+      "hindiAliases": [
+        "demo cab",
+        "demo taxi",
+        "demo travel"
+      ],
+      "isActive": true
+    },
+    {
+      "keyword": "page_travels_info",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "demo hotel",
+      "matchType": "contains",
+      "hindiAliases": [
+        "demo lodge",
+        "demo resort"
+      ],
+      "isActive": true
+    },
+    {
+      "keyword": "page_hotel_info",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "demo coaching",
+      "matchType": "contains",
+      "hindiAliases": [
+        "demo classes",
+        "demo tuition",
+        "demo academy"
+      ],
+      "isActive": true
+    },
+    {
+      "keyword": "page_coaching_info",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "demo clinic",
+      "matchType": "contains",
+      "hindiAliases": [
+        "demo doctor",
+        "demo hospital",
+        "demo dental"
+      ],
+      "isActive": true
+    },
+    {
+      "keyword": "page_clinic_info",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "demo salon",
+      "matchType": "contains",
+      "hindiAliases": [
+        "demo spa",
+        "demo parlour",
+        "demo parlor"
+      ],
+      "isActive": true
+    },
+    {
+      "keyword": "page_salon_info",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "demo tax",
+      "matchType": "contains",
+      "hindiAliases": [
+        "demo gst",
+        "demo itr",
+        "demo accountant"
+      ],
+      "isActive": true
+    },
+    {
+      "keyword": "page_ca_info",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "demo eseva",
+      "matchType": "contains",
+      "hindiAliases": [
+        "demo seva",
+        "demo setu",
+        "demo e seva"
+      ],
+      "isActive": true
+    },
+    {
+      "keyword": "page_eseva_info",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "demo gym",
+      "matchType": "contains",
+      "hindiAliases": [
+        "demo fitness",
+        "demo yoga"
+      ],
+      "isActive": true
+    },
+    {
+      "keyword": "page_gym_info",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "demo real estate",
+      "matchType": "contains",
+      "hindiAliases": [
+        "demo property",
+        "demo builder",
+        "demo flat"
+      ],
+      "isActive": true
+    },
+    {
+      "keyword": "page_realestate_info",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "form_hotel_form",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "form_clinic_form",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "form_salon_form",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "form_ca_form",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "form_eseva_form",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "form_gym_form",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "form_realestate_form",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "get apnabot",
+      "matchType": "contains",
+      "hindiAliases": [
+        "want apnabot",
+        "apnabot price",
+        "apnabot pricing",
+        "buy apnabot"
+      ],
+      "isActive": true
+    },
+    {
+      "keyword": "form_travels_form",
+      "matchType": "exact",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "hi",
+      "matchType": "exact",
+      "hindiAliases": [
+        "hello",
+        "hey",
+        "hii",
+        "hlo",
+        "namaste",
+        "start",
+        "menu",
+        "demo",
+        "namaskar",
+        "namaskaar",
+        "helo",
+        "apnabot",
+        "apna bot",
+        "hi apnabot",
+        "hello apnabot"
+      ],
+      "isActive": true
+    }
+  ],
+  "CareWell Clinic": [
+    {
+      "keyword": "hi",
+      "matchType": "exact",
+      "hindiAliases": [
+        "hello",
+        "hey",
+        "hii",
+        "hlo",
+        "namaste",
+        "start",
+        "menu"
+      ],
+      "isActive": true
+    },
+    {
+      "keyword": "appointment",
+      "matchType": "contains",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "services",
+      "matchType": "contains",
+      "hindiAliases": [
+        "price",
+        "rates"
+      ],
+      "isActive": true
+    },
+    {
+      "keyword": "timings",
+      "matchType": "contains",
+      "hindiAliases": [
+        "hours"
+      ],
+      "isActive": true
+    },
+    {
+      "keyword": "address",
+      "matchType": "contains",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "payment",
+      "matchType": "contains",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "contact",
+      "matchType": "contains",
+      "hindiAliases": [],
+      "isActive": true
+    },
+    {
+      "keyword": "insurance",
+      "matchType": "contains",
+      "hindiAliases": [],
+      "isActive": true
+    }
+  ]
+}

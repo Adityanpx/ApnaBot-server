@@ -3,6 +3,11 @@ const supabase = require('../config/supabase');
 const redis = require('../config/redis');
 const logger = require('../utils/logger');
 const { toCamelCase } = require('../utils/caseConvert');
+const {
+  normalizeLegacy, normalizeUnicode, hasNonAsciiLetter, isMixedScript, asciiProjection,
+  codePointDistance, nativeFuzzyThreshold, indexOfAtBoundary
+} = require('../utils/textNormalize');
+const { isUnicodeMatchingEnabled } = require('./unicodeMatching.service');
 
 /**
  * Adaptive edit-distance threshold for fuzzy keyword matching, scaled to
@@ -70,15 +75,7 @@ const invalidateRulesCache = async (businessId) => {
  * @param {string} text - Input text
  * @returns {string}
  */
-const normalizeText = (text) => {
-  if (!text) return '';
-
-  return text
-    .toLowerCase()
-    .trim()
-    .replace(/[^\w\s]/g, '') // Remove punctuation
-    .replace(/\s+/g, ' ');   // Collapse multiple spaces
-};
+const normalizeText = normalizeLegacy;
 
 /**
  * Fire-and-forget trigger_count increment via RPC (atomic on the DB side,
@@ -187,44 +184,39 @@ const resolveCarouselTap = async (businessId, payload) => {
 };
 
 /**
- * The keyword matching itself, with no DB access or side effects: which of
- * `nodes` (reply nodes, camelCase; inactive ones are skipped) a message
- * triggers, or null. findMatchingRule runs it against the business's live
- * nodes; the Bot Builder draft preview (botSettings.controller.js) runs it
- * against an unpublished compiled graph, so both match identically.
- * @param {Object[]} nodes
- * @param {string} incomingText
- * @returns {Object|null}
+ * The passes, run against one already-normalized message. `unicode` only changes three things for
+ * keywords that contain non-ASCII letters (native script): a startsWith/contains hit must not end
+ * mid-grapheme (next char a combining mark), fuzzy distance is on code points, and fuzzy has the
+ * native thresholds (off below 6 code points). ASCII keywords behave exactly as before in both modes.
  */
-const matchNodeInList = (nodes, incomingText) => {
-  // Normalize the incoming text
-  const normalizedText = normalizeText(incomingText);
-
-  if (!normalizedText) {
-    return null;
-  }
-
-  // Filter active nodes only
-  const activeNodes = nodes.filter(node => node.isActive);
+const runPasses = (activeNodes, normalizedText, { norm, unicode }) => {
+  const native = (kw) => unicode && hasNonAsciiLetter(kw);
+  const startsWithKw = (kw) => {
+    if (!normalizedText.startsWith(kw)) return false;
+    if (!native(kw)) return true;
+    const next = normalizedText.codePointAt(kw.length);
+    return next === undefined || !/\p{M}/u.test(String.fromCodePoint(next));
+  };
+  const containsKw = (kw) => (native(kw) ? indexOfAtBoundary(normalizedText, kw) !== -1 : normalizedText.includes(kw));
 
   // Pass 1 - Exact match
   let matchedNode = activeNodes.find(node =>
-    node.matchType === 'exact' && normalizeText(node.keyword) === normalizedText
+    node.matchType === 'exact' && norm(node.keyword) === normalizedText
   );
 
   // Pass 2 - Starts with match
   if (!matchedNode) {
     matchedNode = activeNodes.find(node => {
-      const normalizedKeyword = normalizeText(node.keyword);
-      return node.matchType === 'startsWith' && normalizedKeyword && normalizedText.startsWith(normalizedKeyword);
+      const normalizedKeyword = norm(node.keyword);
+      return node.matchType === 'startsWith' && normalizedKeyword && startsWithKw(normalizedKeyword);
     });
   }
 
   // Pass 3 - Contains match
   if (!matchedNode) {
     matchedNode = activeNodes.find(node => {
-      const normalizedKeyword = normalizeText(node.keyword);
-      return node.matchType === 'contains' && normalizedKeyword && normalizedText.includes(normalizedKeyword);
+      const normalizedKeyword = norm(node.keyword);
+      return node.matchType === 'contains' && normalizedKeyword && containsKw(normalizedKeyword);
     });
   }
 
@@ -232,7 +224,7 @@ const matchNodeInList = (nodes, incomingText) => {
   // Exact alias match first (highest confidence)
   if (!matchedNode) {
     matchedNode = activeNodes.find(node =>
-      (node.hindiAliases || []).some(alias => normalizeText(alias) === normalizedText)
+      (node.hindiAliases || []).some(alias => norm(alias) === normalizedText)
     );
   }
 
@@ -240,8 +232,8 @@ const matchNodeInList = (nodes, incomingText) => {
   if (!matchedNode) {
     matchedNode = activeNodes.find(node =>
       (node.hindiAliases || []).some(alias => {
-        const normalizedAlias = normalizeText(alias);
-        return normalizedAlias && normalizedText.includes(normalizedAlias);
+        const normalizedAlias = norm(alias);
+        return normalizedAlias && containsKw(normalizedAlias);
       })
     );
   }
@@ -255,11 +247,19 @@ const matchNodeInList = (nodes, incomingText) => {
     let closestFuzzyDistance = Infinity;
 
     for (const node of activeNodes) {
-      const normalizedKeyword = normalizeText(node.keyword);
+      const normalizedKeyword = norm(node.keyword);
       if (!normalizedKeyword) continue;
 
-      const editDistance = distance(normalizedText, normalizedKeyword);
-      const threshold = fuzzyThresholdFor(normalizedKeyword.length);
+      let editDistance;
+      let threshold;
+      if (native(normalizedKeyword)) {
+        threshold = nativeFuzzyThreshold(Array.from(normalizedKeyword).length);
+        if (threshold < 0) continue;
+        editDistance = codePointDistance(normalizedText, normalizedKeyword);
+      } else {
+        editDistance = distance(normalizedText, normalizedKeyword);
+        threshold = fuzzyThresholdFor(normalizedKeyword.length);
+      }
 
       if (editDistance <= threshold && editDistance < closestFuzzyDistance) {
         closestFuzzyMatch = node;
@@ -271,6 +271,86 @@ const matchNodeInList = (nodes, incomingText) => {
   }
 
   return matchedNode || null;
+};
+
+/**
+ * The keyword matching itself, with no DB access or side effects: which of
+ * `nodes` (reply nodes, camelCase; inactive ones are skipped) a message
+ * triggers, or null. findMatchingRule runs it against the business's live
+ * nodes; the Bot Builder draft preview (botSettings.controller.js) runs it
+ * against an unpublished compiled graph, so both match identically.
+ *
+ * `unicode` false = the legacy normalizer (native-script text normalizes to '' and never matches).
+ * `unicode` true = utils/textNormalize.js#normalizeUnicode, plus a fallback for mixed messages
+ * ("hi भाई"): when the full text matches nothing, the passes run once more on its ASCII projection
+ * ("hi") so Roman keywords keep matching exactly as they do for ASCII-only messages.
+ * @param {Object[]} nodes
+ * @param {string} incomingText
+ * @param {{ unicode?: boolean }} [opts]
+ * @returns {{ node: Object|null, via: 'full'|'projection'|null }}
+ */
+const matchNodeInListDetailed = (nodes, incomingText, { unicode = false } = {}) => {
+  const activeNodes = nodes.filter(node => node.isActive);
+
+  if (!unicode) {
+    const normalizedText = normalizeText(incomingText);
+    if (!normalizedText) return { node: null, via: null };
+    const node = runPasses(activeNodes, normalizedText, { norm: normalizeText, unicode: false });
+    return { node, via: node ? 'full' : null };
+  }
+
+  const normalizedText = normalizeUnicode(incomingText);
+  if (!normalizedText) return { node: null, via: null };
+  const full = runPasses(activeNodes, normalizedText, { norm: normalizeUnicode, unicode: true });
+  if (full) return { node: full, via: 'full' };
+
+  if (isMixedScript(incomingText)) {
+    const projected = asciiProjection(incomingText);
+    if (projected && projected !== normalizedText) {
+      const node = runPasses(activeNodes, projected, { norm: normalizeUnicode, unicode: true });
+      if (node) return { node, via: 'projection' };
+    }
+  }
+  return { node: null, via: null };
+};
+
+const matchNodeInList = (nodes, incomingText, opts) => matchNodeInListDetailed(nodes, incomingText, opts).node;
+
+/**
+ * Why the legacy and Unicode matchers disagree, or null when they agree (or, with the flag ON, when
+ * the difference is not a regression). `legacy` / `modern` are matchNodeInListDetailed results.
+ * old_only = legacy matched, Unicode did not; mixed_fallback = Unicode matched only via the ASCII
+ * projection; native_only = legacy found nothing on a native-script message; different_node = the rest.
+ * @returns {'old_only'|'mixed_fallback'|'native_only'|'different_node'|null}
+ */
+const shadowReason = (incomingText, legacy, modern, unicodeOn) => {
+  const oldId = legacy.node ? legacy.node.id : null;
+  const newId = modern.node ? modern.node.id : null;
+  if (oldId === newId) return null;
+  if (oldId && !newId) return 'old_only';
+  if (unicodeOn) return null;
+  if (modern.via === 'projection') return 'mixed_fallback';
+  if (!oldId && hasNonAsciiLetter(incomingText)) return 'native_only';
+  return 'different_node';
+};
+
+/**
+ * Shadow comparison of the legacy and Unicode matchers (never throws, no phone numbers).
+ * Flag OFF: logs every difference. Flag ON: logs only 'old_only' (legacy matched, Unicode did not)
+ * to catch regressions on enabled businesses. Search the logs for "[unicode-match-shadow]".
+ */
+const logUnicodeShadow = (businessId, incomingText, legacy, modern, unicodeOn) => {
+  try {
+    const reason = shadowReason(incomingText, legacy, modern, unicodeOn);
+    if (!reason) return;
+    const oldId = legacy.node ? legacy.node.id : null;
+    const newId = modern.node ? modern.node.id : null;
+
+    const messageSample = String(incomingText || '').slice(0, 40).replace(/\d{7,}/g, '#');
+    logger.info(`[unicode-match-shadow] ${JSON.stringify({ businessId, oldNodeId: oldId, newNodeId: newId, messageSample, reason })}`);
+  } catch (error) {
+    logger.error('Unicode match shadow log failed:', error);
+  }
 };
 
 /**
@@ -287,17 +367,22 @@ const matchNodeInList = (nodes, incomingText) => {
  */
 const findMatchingRule = async (businessId, incomingText, { incrementCount = true } = {}) => {
   try {
-    // Normalize the incoming text
-    const normalizedText = normalizeText(incomingText);
-
-    if (!normalizedText) {
+    // Nothing matchable in either normalizer (empty, emoji-only, punctuation-only)
+    if (!normalizeText(incomingText) && !normalizeUnicode(incomingText)) {
       return null;
     }
+
+    const unicodeOn = await isUnicodeMatchingEnabled(businessId);
 
     // Load reply nodes from cache
     const nodes = await getRulesFromCache(businessId);
 
-    const matchedNode = matchNodeInList(nodes, incomingText);
+    // Both matchers always run: the enabled one answers, the other is the shadow comparison.
+    // Probe calls (incrementCount:false: previews, the 'hi' fallback probe) are not customer messages.
+    const legacy = matchNodeInListDetailed(nodes, incomingText, { unicode: false });
+    const modern = matchNodeInListDetailed(nodes, incomingText, { unicode: true });
+    if (incrementCount) logUnicodeShadow(businessId, incomingText, legacy, modern, unicodeOn);
+    const matchedNode = (unicodeOn ? modern : legacy).node;
 
     if (!matchedNode) {
       return null;
@@ -324,6 +409,8 @@ module.exports = {
   invalidateRulesCache,
   normalizeText,
   matchNodeInList,
+  matchNodeInListDetailed,
+  shadowReason,
   findMatchingRule,
   getOutgoingEdges,
   resolveTappedEdge,

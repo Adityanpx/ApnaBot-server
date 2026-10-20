@@ -1,0 +1,14 @@
+-- Native-script keyword matching (PRD gap #26), part 1: the per-business switch.
+--
+--   businesses.unicode_matching   NULL  = follow the global default (app_config.unicode_matching_default,
+--                                          'false' when the row is absent)
+--                                 true  = this business matches keywords with the Unicode normalizer
+--                                 false = this business stays on the legacy normalizer even if the
+--                                          global default is switched on
+--
+-- No app_config row is inserted: a missing row reads as the default (false).
+--
+-- DEPLOY ORDER: apply BEFORE the server code from the same change. Additive, nullable, no default -
+-- every business starts on the legacy matcher, so nothing changes for any live traffic (Search cab AI
+-- included). Until applied, the server's flag read fails open to 'legacy' and logs an error.
+alter table businesses add column if not exists unicode_matching boolean;

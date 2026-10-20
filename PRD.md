@@ -1565,13 +1565,37 @@ Goal: a plan created or edited in Super Admin shows up in the web app and Flutte
    `azureTranslate.service.js` / `translation.service.js`). Delete it when convenient.
 25. **Owner-app language vs bot language.** `notification.service.js` (`LANGUAGES`, owner push voice) and
    `help.controller.js` (`FEEDBACK_LOCALES`) stay `en/hi/mr` on purpose: they are the OWNER's app language, not the bot's.
-26. **Native-script keyword matching (Phase 2).** `chatbot.service.js#normalizeText` (and its mirror `flowSpec.js#normalizeText`) strips
-   `[^\w\s]`, and JS `\w` is ASCII-only, so every Devanagari / Gujarati / Tamil... character is removed: a native-script
-   message normalizes to '' and matches nothing (`matchNodeInList` returns null on '' ). The picker's own keywords bypass it.
-   Fix with `[^\p{L}\p{N}\p{M}\s_]` + the `u` flag in both copies, then re-run the matching tests.
+26. **Native-script keyword matching (Phase 2) - BUILT, behind a switch, OFF everywhere.** The legacy
+   `chatbot.service.js#normalizeText` strips `[^ws]` and JS `w` is ASCII-only, so a Devanagari / Gujarati / Tamil...
+   message normalized to '' and matched nothing. New: `utils/textNormalize.js` (`normalizeLegacy` kept byte-for-byte,
+   `normalizeUnicode`: NFC, lowercase, invisibles (ZWJ/ZWNJ...) removed, Indic digits -> 0-9, keep letters + marks + digits + '_',
+   collapse whitespace THEN trim). `matchNodeInListDetailed(nodes, text, { unicode })` in chatbot.service.js: with `unicode` it adds
+   (a) a matra boundary guard (a native keyword hit may not stop before a combining mark, so "क" never matches inside "की"),
+   (b) code-point fuzzy with native thresholds (OFF below 6 code points, 1 edit up to 9, 2 from 10; ASCII keywords keep 1/2/3),
+   (c) a mixed-script fallback: if the full text matches nothing, run again on its ASCII projection ("hi भाई" -> "hi").
+   Known, intended differences from legacy for ASCII text: "hi !" no longer leaves a trailing space; accented Latin (café) keeps its accent.
+   **Flag:** `businesses.unicode_matching` (boolean, NULL = follow the global) + `app_config.unicode_matching_default` (absent = false;
+   Super Admin PUT /api/admin/app-config `unicodeMatchingDefault`). `services/unicodeMatching.service.js` resolves it with a ~60s
+   in-process cache and fails OPEN to legacy. **Shadow log:** every inbound text runs both matchers; the live answer is the enabled one.
+   Flag OFF logs every difference, flag ON logs only `old_only`; line prefix `[unicode-match-shadow]`, JSON
+   `{businessId, oldNodeId, newNodeId, messageSample, reason}`, reasons old_only / mixed_fallback / native_only / different_node.
+   **Replay:** `node src/scripts/replayUnicodeMatching.js --business <id> [--limit 1000]` (read-only, refuses Search cab AI).
+   FlowSpec v1/v2 duplicate / min-length / overlap checks take `{ unicode }` and follow the business flag (aiFlow, botSettings).
+   The draft preview (botSettingsPreview) follows the flag. Migration `20261025120000_unicode_matching.sql` - apply BEFORE deploying.
+   Open: client/app keyword inputs need no change (no ASCII validation exists); owners cannot yet author native keywords through the
+   FlowSpec wizards until the flag is on for their business (legacy min-length check rejects them). The 4-character keyword minimum
+   counts code points, so a 3-code-point native word is refused.
 27. **Follow-up automation texts** (`followup_automations.message_text_translations`) are not covered by `/api/translate/flow`.
+28. **Server duplicate-keyword checks compare the raw lowercased string** (`flowGraph.controller.js` create/update, and
+   `flowGraph.service.js`), not the normalized one, so a ZWJ / danda / punctuation variant of an existing keyword slips through as a
+   "different" keyword. Follow-up to gap #26; not fixed.
+29. **`carouselBundle.service.js` builds an ASCII slug from card text**, so a card with only native-script text gets an empty slug.
+   Follow-up to gap #26; not fixed.
 
 ## Session log (append here as major milestones land)
+- 2026-10-25: Native-script keyword matching (gap #26): shadow mode + per-business / global switch, all OFF. Working tree only,
+  not committed. **Deploy: apply `20261025120000_unicode_matching.sql` first, then the server.** No behaviour change until a
+  business (or the global default) is switched on; Search cab AI stays on legacy matching and is only read by the shadow log.
 - 2026-10-24: Bot languages (en + up to 3 of 11), language picker (buttons / list, change keyword, mode off), Language virtual node,
   Azure auto-translate with cache + caps, "auto-translated" markers, signup default-flow translation - see "Bot languages, language
   picker, auto-translate". Migrations `20261024120000`, `20261024130000` must be applied before deploying.

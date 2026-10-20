@@ -69,6 +69,8 @@ const LIMITS = {
 
 const MENU_ACTION_TYPES = ['faq', 'booking', 'payment', 'contact', 'location'];
 const FIELD_TYPES = ['text', 'choice', 'location'];
+const { normalizeLegacy, normalizeUnicode } = require('./textNormalize');
+
 const ID_PATTERN = /^[a-z0-9_]{1,40}$/;
 const FIELD_KEY_PATTERN = /^[a-z][a-zA-Z0-9]{0,39}$/;
 
@@ -84,11 +86,11 @@ const DY = 200;
 // Mirrors chatbot.service.js#normalizeText (duplicated for the same reason
 // as GREETING_WORDS) — duplicate detection must see keywords the way the
 // live matcher does, e.g. "faq-a" and "faqa" collide there.
-const normalizeText = (text) => (text || '')
-  .toLowerCase()
-  .trim()
-  .replace(/[^\w\s]/g, '')
-  .replace(/\s+/g, ' ');
+const normalizeText = normalizeLegacy;
+
+// Duplicate/overlap checks normalize like the live matcher does FOR THIS BUSINESS: the Unicode
+// normalizer when its effective unicode_matching flag is on (callers pass { unicode }), else legacy.
+const normalizerFor = (unicode) => (unicode ? normalizeUnicode : normalizeText);
 
 const isNonEmptyString = (v) => typeof v === 'string' && v.trim() !== '';
 const len = (v) => v.trim().length;
@@ -103,7 +105,8 @@ const toSummaryLabel = (label) => label.trim().replace(/\?+$/, '').trim() || lab
  * @param {Object} spec
  * @returns {string|null}
  */
-const validateFlowSpec = (spec) => {
+const validateFlowSpec = (spec, { unicode = false } = {}) => {
+  const normalizeText = normalizerFor(unicode);
   if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return 'spec must be an object';
   if (spec.version !== 1) return 'spec.version must be 1';
 
@@ -314,8 +317,9 @@ const validateFlowSpec = (spec) => {
  * @param {Object} spec
  * @returns {{ replyNodes: Object[], questionNodes: Object[], edges: Object[], warnings: string[] }}
  */
-const compileFlowSpec = (spec) => {
-  const error = validateFlowSpec(spec);
+const compileFlowSpec = (spec, { unicode = false } = {}) => {
+  const normalizeText = normalizerFor(unicode);
+  const error = validateFlowSpec(spec, { unicode });
   if (error) throw new Error(`Invalid FlowSpec: ${error}`);
 
   const faqs = spec.faqs || [];
@@ -488,6 +492,7 @@ module.exports = {
   compileFlowSpec,
   // Shared with flowSpecV2.js (additive exports only).
   normalizeText,
+  normalizerFor,
   ID_PATTERN,
   GREETING_WORDS,
   RESERVED_TRAVEL_FIELD_KEYS,

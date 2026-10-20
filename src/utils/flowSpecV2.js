@@ -29,7 +29,7 @@
 //   target: { type: 'page', id } | { type: 'form', id } | { type: 'menu' } | { type: 'location' }
 //
 // Pure — no Supabase/Redis — same as flowSpec.js.
-const { normalizeText, ID_PATTERN, GREETING_WORDS, LIMITS, DX, DY } = require('./flowSpec');
+const { normalizerFor, ID_PATTERN, GREETING_WORDS, LIMITS, DX, DY } = require('./flowSpec');
 const { validateFlowFields } = require('./flowFieldsValidation');
 const { isValidLanguageCode } = require('./languageCatalog');
 const { FORM_TITLE_MAX } = require('./formTitle');
@@ -111,7 +111,8 @@ const validateChoices = (choices, at, { asButtons, allowDescription, targetExist
  * @param {Object} spec
  * @returns {string|null}
  */
-const validateFlowSpecV2 = (spec) => {
+const validateFlowSpecV2 = (spec, { unicode = false } = {}) => {
+  const normalizeText = normalizerFor(unicode);
   if (!spec || typeof spec !== 'object' || Array.isArray(spec)) return 'spec must be an object';
   if (spec.version !== 2) return 'spec.version must be 2';
   if (!spec.greeting || !isNonEmptyString(spec.greeting.text)) return 'greeting.text is required';
@@ -263,8 +264,9 @@ const validateFlowSpecV2 = (spec) => {
  * @param {Object} spec
  * @returns {{ replyNodes: Object[], questionNodes: [], edges: Object[], warnings: string[] }}
  */
-const compileFlowSpecV2 = (spec) => {
-  const error = validateFlowSpecV2(spec);
+const compileFlowSpecV2 = (spec, { unicode = false } = {}) => {
+  const normalizeText = normalizerFor(unicode);
+  const error = validateFlowSpecV2(spec, { unicode });
   if (error) throw new Error(`Invalid FlowSpec v2: ${error}`);
 
   const pages = spec.pages || [];

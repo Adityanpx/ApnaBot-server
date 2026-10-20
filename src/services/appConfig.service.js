@@ -24,7 +24,10 @@ const FIELDS = {
   // Auto-translate caps (source characters sent to Azure). Super Admin only - toPublic() below
   // never returns them, so GET /api/app/version cannot leak them.
   translateMonthlyCharCap:   { key: 'translate_monthly_char_cap',   type: 'int', default: 20000 },
-  translateGlobalMonthlyCap: { key: 'translate_global_monthly_cap', type: 'int', default: 1800000 }
+  translateGlobalMonthlyCap: { key: 'translate_global_monthly_cap', type: 'int', default: 1800000 },
+  // Native-script keyword matching for every business whose businesses.unicode_matching is NULL
+  // (utils/textNormalize.js, services/unicodeMatching.service.js). Super Admin only, never public.
+  unicodeMatchingDefault:    { key: 'unicode_matching_default',     type: 'boolean', default: false }
 };
 const FIELD_NAMES = Object.keys(FIELDS);
 
@@ -199,9 +202,18 @@ const getIntSetting = async (name) => {
   }
 };
 
+/** Boolean setting read straight from app_config; throws on a DB error (the caller decides how to fail). */
+const getBooleanSetting = async (name) => {
+  const field = FIELDS[name];
+  const { data, error } = await supabase.from('app_config').select('value').eq('key', field.key).maybeSingle();
+  if (error) throw error;
+  return parseValue(field, data ? data.value : undefined);
+};
+
 module.exports = {
   FIELD_NAMES,
   getIntSetting,
+  getBooleanSetting,
   compareVersions,
   getPublicConfig,
   getAdminConfig,

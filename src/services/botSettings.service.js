@@ -17,6 +17,7 @@ const demoReminderTemplateService = require('./demoReminderTemplate.service');
 const { TRANSLATION_LANGUAGES, translationWarnings } = require('../utils/coachingTranslations');
 const { listInstitutePresets } = require('../utils/coachingInstitutePresets');
 const logger = require('../utils/logger');
+const { isUnicodeMatchingEnabled } = require('./unicodeMatching.service');
 
 const PRESETS = {
   coaching: {
@@ -157,8 +158,9 @@ const buildFromSettings = async ({ businessId, graphBusiness, presetName, settin
 
   const coursesWithIds = await loadActiveCourses(businessId, { withIds: true });
   const courses = coursesWithIds.map(({ id, ...c }) => c);
+  const unicode = await isUnicodeMatchingEnabled(businessId);
   const { spec, error, translation } = resolved.preset.mapToSpec(settings, {
-    businessName: business.display_name || business.name, courses: coursesWithIds, languages: translationLanguagesOf(business)
+    businessName: business.display_name || business.name, courses: coursesWithIds, languages: translationLanguagesOf(business), unicode
   });
   if (error) return { status: 400, error };
 
@@ -166,7 +168,7 @@ const buildFromSettings = async ({ businessId, graphBusiness, presetName, settin
     return { status: 400, error: 'Location is switched on, but the shop location (latitude/longitude) is not set in Settings. Set it, or switch Location off.' };
   }
 
-  const { warnings, ...graph } = compileFlowSpecV2(spec);
+  const { warnings, ...graph } = compileFlowSpecV2(spec, { unicode });
   const fee = settings.admissionForm && settings.admissionForm.enabled && settings.admissionForm.fee;
   if (fee && fee.enabled && !business.payment_qr_url) {
     warnings.push('The Admission form asks for a fee, but no payment QR is uploaded in Settings — parents will be told your team will share the payment details.');
