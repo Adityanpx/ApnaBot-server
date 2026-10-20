@@ -17,10 +17,11 @@ test('name: lowercase snake_case only', () => {
   assert.match(validateName('a'.repeat(513)), /512/);
 });
 
-test('language is en_US | hi | mr; category MARKETING | UTILITY', () => {
-  for (const l of ['en_US', 'hi', 'mr']) assert.equal(validateLanguage(l), null);
-  assert.match(validateLanguage('fr'), /en_US, hi, mr/);
-  assert.match(validateLanguage('en'), /en_US, hi, mr/);
+test('language is a Meta locale for a catalog language; category MARKETING | UTILITY', () => {
+  for (const l of ['en_US', 'hi', 'mr', 'gu', 'kn', 'ta', 'te', 'ml', 'bn', 'pa']) assert.equal(validateLanguage(l), null);
+  assert.match(validateLanguage('or'), /en_US, hi, mr, gu, kn, ta, te, ml, bn, pa/); // Meta has no Odia locale
+  assert.match(validateLanguage('fr'), /en_US, hi, mr, gu/);
+  assert.match(validateLanguage('en'), /en_US, hi, mr, gu/);
   assert.equal(validateCategory('UTILITY'), null);
   assert.match(validateCategory('AUTHENTICATION'), /MARKETING, UTILITY/);
 });

@@ -7,6 +7,8 @@ const logger = require('../utils/logger');
 const { r2KeyFromUrl } = require('../utils/r2Key');
 const { transformNodesForCopy } = require('../utils/copySetup');
 const { isValidLanguageCode } = require('../utils/languageCatalog');
+const flowTranslate = require('../services/flowTranslate.service');
+const azure = require('../services/azureTranslate.service');
 
 /**
  * GET /api/admin/category-templates
@@ -412,8 +414,45 @@ const updateTemplateNodeTexts = async (req, res, next) => {
   }
 };
 
+/**
+ * POST /api/admin/category-templates/:id/translate
+ * Body: { to: '<code>' } - any catalog language except English (not limited to a business's enabled ones).
+ * Fills that language's empty texts on the template's stored nodes and edges (labels, button text, form
+ * titles, carousel card bodies, choice-question options, edge labels and descriptions), so a business
+ * created from the template arrives pre-translated with zero API calls. Existing translations are never
+ * overwritten. Not counted against any business cap (only the global Azure counter).
+ * -> { language, translated, alreadyTranslated, skipped: [{ slot, reason }], warnings, charged }
+ */
+const translateTemplate = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { to } = req.body || {};
+    if (typeof to !== 'string' || !isValidLanguageCode(to)) return errorResponse(res, 400, 'to must be a language code.');
+    if (to === 'en') return errorResponse(res, 400, 'English is the source language and cannot be a translation target.');
+
+    const { data: template, error } = await supabase
+      .from('flow_snapshots').select('id, nodes, edges').eq('id', id).eq('is_category_template', true).maybeSingle();
+    if (error) throw error;
+    if (!template) return errorResponse(res, 404, 'Template not found');
+
+    if (!azure.isConfigured()) {
+      return errorResponse(res, 503, azure.NOT_CONFIGURED_MESSAGE, { code: 'TRANSLATE_NOT_CONFIGURED' });
+    }
+
+    const result = await flowTranslate.translateTemplate({ template, lang: to });
+    return successResponse(res, 200, result);
+  } catch (error) {
+    if (error && error.name === 'TranslateError') {
+      return errorResponse(res, error.statusCode, error.message, { code: error.code });
+    }
+    logger.error('Error in translateTemplate:', error);
+    next(error);
+  }
+};
+
 module.exports = {
   findBusinessNameWarnings,
+  translateTemplate,
   getCategoryTemplate,
   setDefaultTemplate,
   unsetDefaultTemplate,

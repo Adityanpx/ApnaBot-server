@@ -20,11 +20,16 @@ const FIELDS = {
   androidLatestVersion: { key: 'android_latest_version', type: 'version', default: '1.0.0' },
   forceUpdate:          { key: 'force_update',           type: 'boolean', default: false },
   maintenanceMode:      { key: 'maintenance_mode',       type: 'boolean', default: false },
-  playStoreUrl:         { key: 'play_store_url',         type: 'url',     default: DEFAULT_STORE_URL }
+  playStoreUrl:         { key: 'play_store_url',         type: 'url',     default: DEFAULT_STORE_URL },
+  // Auto-translate caps (source characters sent to Azure). Super Admin only - toPublic() below
+  // never returns them, so GET /api/app/version cannot leak them.
+  translateMonthlyCharCap:   { key: 'translate_monthly_char_cap',   type: 'int', default: 20000 },
+  translateGlobalMonthlyCap: { key: 'translate_global_monthly_cap', type: 'int', default: 1800000 }
 };
 const FIELD_NAMES = Object.keys(FIELDS);
 
 const isVersion = (v) => typeof v === 'string' && VERSION_PATTERN.test(v);
+const isCount = (v) => /^\d{1,9}$/.test(String(v));
 const isHttpsUrl = (v) => {
   if (typeof v !== 'string' || v.length > 2048) return false;
   try { return new URL(v).protocol === 'https:'; } catch { return false; }
@@ -45,6 +50,7 @@ const parseValue = (field, raw) => {
   if (raw === undefined || raw === null) return field.default;
   if (field.type === 'boolean') return raw === 'true' ? true : raw === 'false' ? false : field.default;
   if (field.type === 'version') return isVersion(raw) ? raw : field.default;
+  if (field.type === 'int') return isCount(raw) ? Number(raw) : field.default;
   return isHttpsUrl(raw) ? raw : field.default;
 };
 
@@ -145,6 +151,7 @@ const validateChanges = (body) => {
     if (type === 'version' && !isVersion(v)) throw httpError(400, `${name} must be a version like 1.2.3`);
     if (type === 'boolean' && typeof v !== 'boolean') throw httpError(400, `${name} must be true or false`);
     if (type === 'url' && !isHttpsUrl(v)) throw httpError(400, `${name} must be an https:// URL`);
+    if (type === 'int' && !(Number.isInteger(v) && v >= 0 && v <= 999999999)) throw httpError(400, `${name} must be a whole number of 0 or more`);
     changes[name] = v;
   }
   return changes;
@@ -179,8 +186,22 @@ const updateConfig = async (body, userId) => {
   return { config: await getAdminConfig(), changed };
 };
 
+/** Integer setting (translate caps) read straight from app_config, default when missing/malformed. Not cached: callers are per-request and rare. */
+const getIntSetting = async (name) => {
+  const field = FIELDS[name];
+  try {
+    const { data, error } = await supabase.from('app_config').select('value').eq('key', field.key).maybeSingle();
+    if (error) throw error;
+    return parseValue(field, data ? data.value : undefined);
+  } catch (error) {
+    logger.error(`app_config read of ${field.key} failed - using default:`, error);
+    return field.default;
+  }
+};
+
 module.exports = {
   FIELD_NAMES,
+  getIntSetting,
   compareVersions,
   getPublicConfig,
   getAdminConfig,

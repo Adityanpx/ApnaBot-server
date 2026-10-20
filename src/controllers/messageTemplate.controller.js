@@ -169,7 +169,7 @@ const setButtonActions = async (req, res, next) => {
 /**
  * POST /api/message-templates
  * Create a message template as draft.
- *   { name, category?, language? (en_US | hi | mr), bodyText, variableSamples?,
+ *   { name, category?, language? (a catalog metaTemplate locale: en_US | hi | mr | gu | kn | ta | te | ml | bn | pa), bodyText, variableSamples?,
  *     header?: { type: NONE|TEXT|IMAGE|VIDEO|DOCUMENT, text?, textSample?, mediaId? },
  *     footerText?, buttons?: [{ type: 'URL', text, url, dynamic?, example? } | { type: 'PHONE_NUMBER', text, phone }
  *       | { type: 'QUICK_REPLY', text, action? }] }  (up to 3 buttons; quick replies grouped together)

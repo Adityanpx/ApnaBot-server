@@ -37,6 +37,12 @@ router.post('/', protect, businessController.createBusiness);
 router.put('/', protect, requireBusiness, businessController.updateBusiness);
 
 // GET /served-cities - Get the business's servedCities list
+// GET /language-settings - the Language node (enabled languages + picker settings)
+router.get('/language-settings', protect, requireBusiness, businessController.getLanguageSettings);
+
+// PUT /language-settings - picker prompt / mode / change keyword (owner)
+router.put('/language-settings', protect, requireBusiness, requireRole('owner'), businessController.updateLanguageSettings);
+
 router.get('/served-cities', protect, requireBusiness, businessController.getServedCities);
 
 // PUT /served-cities - Replace the business's servedCities list

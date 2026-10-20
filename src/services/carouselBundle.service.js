@@ -6,7 +6,7 @@ const { prepareReplyMediaWrite } = require('./replyMedia.service');
 const { VALID_MATCH_TYPES, validateTranslationsMap } = require('./flowGraph.service');
 const { validateEdgeCopy, LIMITS } = require('../utils/textLimits');
 const { MAX_CARD_BUTTONS } = require('../utils/carouselPayload');
-const { toCamelCase } = require('../utils/caseConvert');
+const { shapeNodeForApi, shapeEdgeForApi } = require('../utils/translationSlots');
 
 // POST /api/flow-graph/carousel-bundle: a carousel reply node + the reply nodes its card buttons open +
 // the edges, created ALL-OR-NOTHING by the create_carousel_bundle RPC (one transaction). Everything is
@@ -244,8 +244,11 @@ const createCarouselBundle = async ({ businessId, body }) => {
   if (nodesRes.error) throw nodesRes.error;
   if (edgesRes.error) throw edgesRes.error;
   const order = new Map(plan.nodeRows.map((r, i) => [r.id, i]));
-  const nodes = (nodesRes.data || []).sort((a, b) => order.get(a.id) - order.get(b.id)).map(toCamelCase);
-  return { data: { carouselNodeId: plan.carouselId, nodes, edges: (edgesRes.data || []).map(toCamelCase) } };
+  // Same shape as GET /flow-graph/full (including autoTranslated).
+  const nodeRows = (nodesRes.data || []).sort((a, b) => order.get(a.id) - order.get(b.id));
+  const nodeById = new Map(nodeRows.map((n) => [n.id, n]));
+  const nodes = nodeRows.map(shapeNodeForApi);
+  return { data: { carouselNodeId: plan.carouselId, nodes, edges: (edgesRes.data || []).map((e) => shapeEdgeForApi(e, nodeById.get(e.from_node_id))) } };
 };
 
 module.exports = { createCarouselBundle, planBundle, slugOf, H_SPACING, V_SPACING };

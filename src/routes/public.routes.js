@@ -3,6 +3,7 @@ const router = express.Router();
 const config = require('../config/env');
 const publicServiceFormController = require('../controllers/publicServiceForm.controller');
 const helpController = require('../controllers/help.controller');
+const languagesController = require('../controllers/languages.controller');
 const { helpFeedbackLimiter } = require('../middleware/rateLimiter.middleware');
 
 // GET /api/public/whatsapp-embedded-signup-config
@@ -18,6 +19,12 @@ router.get('/whatsapp-embedded-signup-config', (req, res) => {
     }
   });
 });
+
+// GET /api/public/languages - the language catalog + the per-state suggestions (onboarding language screen)
+router.get('/languages', languagesController.getLanguages);
+
+// GET /api/public/languages/suggested?state=Gujarat
+router.get('/languages/suggested', languagesController.getSuggestedLanguages);
 
 // GET /api/public/service-form/:token
 // Web-form booking link (alternative to a Meta WhatsApp Flow) — token-gated,

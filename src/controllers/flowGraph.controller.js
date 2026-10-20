@@ -18,6 +18,9 @@ const { prepareReplyMediaWrite } = require('../services/replyMedia.service');
 const { prepareCarouselWrite, carouselBodyError, carouselEdgeError } = require('../services/carouselNode.service');
 const { validateEdgeCopy, validateButtonText } = require('../utils/textLimits');
 const logger = require('../utils/logger');
+const { shapeNodeForApi, shapeEdgeForApi } = require('../utils/translationSlots');
+const { statusSummary, isTranslating } = require('../utils/translationStatus');
+const { buildLanguageNode } = require('../services/languagePicker.service');
 
 // Shared with flowGraph.service.js#saveFullGraph (the canvas batch save /
 // AI-flow apply core), which is where these now live — moved there as-is.
@@ -1013,19 +1016,34 @@ const getFullGraph = async (req, res, next) => {
   try {
     const businessId = req.user.businessId;
 
-    const [replyNodesRes, questionNodesRes, edgesRes] = await Promise.all([
+    const [replyNodesRes, questionNodesRes, edgesRes, languageRes] = await Promise.all([
       supabase.from('flow_nodes').select('*').eq('business_id', businessId).eq('node_type', 'reply'),
       supabase.from('flow_nodes').select('*').eq('business_id', businessId).in('node_type', ['question', 'vehicle_carousel', 'rentalPackage']),
-      supabase.from('flow_edges').select('*').eq('business_id', businessId).order('display_order', { ascending: true })
+      supabase.from('flow_edges').select('*').eq('business_id', businessId).order('display_order', { ascending: true }),
+      supabase.from('businesses').select('enabled_languages, language_picker, translation_status').eq('id', businessId).maybeSingle()
     ]);
     if (replyNodesRes.error) throw replyNodesRes.error;
     if (questionNodesRes.error) throw questionNodesRes.error;
     if (edgesRes.error) throw edgesRes.error;
+    if (languageRes.error) throw languageRes.error;
+
+    const replyRows = replyNodesRes.data || [];
+    const questionRows = questionNodesRes.data || [];
+    const nodeById = new Map([...replyRows, ...questionRows].map((n) => [n.id, n]));
+    // Each node / edge carries autoTranslated { <slot>: [lang] } - texts still holding Azure's translation.
+    const languageRow = languageRes.data || {};
+    const translationStatus = statusSummary(languageRow.translation_status);
 
     return successResponse(res, 200, {
-      replyNodes: (replyNodesRes.data || []).map(toCamelCase),
-      questionNodes: (questionNodesRes.data || []).map(toCamelCase),
-      edges: (edgesRes.data || []).map(toCamelCase)
+      replyNodes: replyRows.map(shapeNodeForApi),
+      questionNodes: questionRows.map(shapeNodeForApi),
+      edges: (edgesRes.data || []).map((e) => shapeEdgeForApi(e, nodeById.get(e.from_node_id))),
+      // The "Language" node at the start of the canvas: settings-backed, not a flow_nodes row.
+      languageNode: buildLanguageNode(toCamelCase(languageRow)),
+      // { <lang>: 'pending'|'done'|'failed' } of the signup default-flow translation; while `translating`
+      // is true PUT /full answers 409 (a copy loaded now would overwrite the translations arriving).
+      translationStatus,
+      translating: isTranslating(translationStatus)
     });
   } catch (error) {
     logger.error('Error in getFullGraph:', error);
@@ -1045,6 +1063,18 @@ const saveFullGraph = async (req, res, next) => {
   try {
     const businessId = req.user.businessId;
     const { replyNodes = [], questionNodes = [], edges = [] } = req.body;
+
+    // The signup default-flow translation is still writing translations: saving a copy loaded before
+    // it finished would silently overwrite them. Short-lived (seconds); a crashed run unlocks itself.
+    const { data: statusRow, error: statusErr } = await supabase
+      .from('businesses').select('translation_status').eq('id', businessId).maybeSingle();
+    if (statusErr) throw statusErr;
+    const translationStatus = statusSummary(statusRow && statusRow.translation_status);
+    if (isTranslating(translationStatus)) {
+      return errorResponse(res, 409, 'Your bot is still being translated. Reload and try saving again in a few seconds.', {
+        code: 'TRANSLATION_IN_PROGRESS', translationStatus
+      });
+    }
 
     const { error: saveError } = await flowGraphService.saveFullGraph({
       businessId,

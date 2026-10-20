@@ -1287,6 +1287,74 @@ breaks) + 1-2 quick-reply buttons (<= 20 chars), under a required main message (
 - Tests: `services/carouselBundle.service.test.js` (the RPC is modelled in memory),
   `config/categoryFeatures.newCategories.test.js`.
 
+## Bot languages, language picker, auto-translate (built 2026-10-24, migrations `20261024120000`, `20261024130000`, uncommitted)
+
+Each business offers English + up to 3 Indian languages. **Cutover note:** a business created from now on gets a
+state-based default (`en,hi` for most states) instead of `{en}`, so its customers see a language picker; existing
+businesses keep exactly what they have (Search cab AI is untouched: `["en","hi","mr"]`, picker output byte-identical,
+pinned by `webhook.interactiveSites.golden.json`).
+
+- **Catalog (`utils/languageCatalog.js`, single source of truth):** `en hi mr gu kn ta te ml bn pa or` with native name
+  (`name`), `englishName`, `azure` code and `metaTemplate` locale (Odia has none: it is not on Meta's supported-languages
+  list, so message templates cannot be created in Odia). `validateEnabledLanguages`: 1..4 codes, 'en' required (moved first),
+  catalog codes, no duplicates. `STATE_LANGUAGES` / `suggestedLanguagesForState` hold the per-state defaults (Maharashtra
+  en,hi,mr · Gujarat en,hi,gu · Karnataka en,hi,kn · Tamil Nadu en,ta · Telangana/Andhra en,hi,te · Kerala en,ml · West Bengal
+  en,hi,bn · Punjab en,hi,pa · Odisha en,hi,or · every other state / UT / unknown en,hi). Every translation validator already
+  accepted "any catalog code", so the new codes work in node / edge / option / carousel-card / form-field / follow-up translations.
+  `utils/followup.js` now uses the catalog too. `utils/templateValidation.js` takes Meta template locales from the catalog
+  (`en_US hi mr gu kn ta te ml bn pa`).
+- **Public API:** `GET /api/public/languages` -> `{ languages: [{ code, name, englishName }], maxEnabled: 4,
+  defaultSuggested, states: [{ name, suggested }] }`; `GET /api/public/languages/suggested?state=` -> `{ state, suggested }`.
+  Static data only - nothing from `app_config`.
+- **Columns:** `businesses.state` (validated against the 36 states / UTs), `businesses.language_picker` (jsonb, NULL =
+  defaults), `businesses.translation_status`, `businesses.auto_translations`, `flow_nodes.auto_translations`,
+  `flow_edges.auto_translations`. `enabled_languages` unchanged. `POST /api/business` takes optional `state` and
+  `enabledLanguages` (default from the state); `PUT /api/business` validates both.
+- **Picker (`services/languagePicker.service.js` + `sendLanguagePicker` in `webhook.controller.js`, replacing two duplicated
+  blocks):** 2-3 languages = reply buttons, 4 = a WhatsApp list (rows `lang_<code>`; a `lang_` list tap is mapped to the same
+  system-tap handler, it never reaches the edge resolver). Titles use the grapheme-safe `truncate` (fixes gap 19 for the picker).
+  Built-in prompt: the old "Choose your language / अपनी भाषा चुनें" for en/hi/mr businesses (unchanged), a composed line when
+  another language is on (the non-Hindi/Marathi wordings are unreviewed - have a native speaker check them). Settings
+  (`language_picker`): `mode` `first_message` (default, today's behaviour) or `off` (customer silently gets the first enabled
+  language; there is no 'always'), `prompt`, `promptTranslations`, `changeKeyword`. Change keywords: `language`, `भाषा`,
+  `bhasha` + the owner's word, typed text only, work in every mode (reserved words - greetings, menu, stop, start, cancel... - are
+  refused). The webhook reads `enabledLanguages` / `languagePicker` from the cached tenant (a tenant cached before this existed
+  simply lacks them; `PUT` invalidates the cache).
+- **Language node:** a settings-backed *virtual* node, not a `flow_nodes` row (the engine, snapshots, the canvas-save RPC
+  whitelist and the validators never see it). `GET /api/flow-graph/full` returns `languageNode`; edit through `PUT /api/business`
+  (languages) and `PUT /api/business/language-settings` (picker); `GET /api/business/language-settings` returns the same node.
+- **Disabled language:** saving `enabledLanguages` without a language sets `customers.preferred_language = NULL` for those
+  customers (they are asked again on their next message; every other sender - follow-ups, broadcasts, payment texts - falls back to
+  English on NULL). The webhook also treats a stale language as unset when the cached tenant says it is off. Stored translations are
+  never deleted, so re-enabling restores them.
+- **Auto-translate (Azure Translator F0; `AZURE_TRANSLATOR_KEY`, `AZURE_TRANSLATOR_REGION`, optional `AZURE_TRANSLATOR_ENDPOINT`;
+  missing = 503 "not configured", the app keeps working):** `services/azureTranslate.service.js` (HTTP), `translation.service.js`
+  (cache + caps), `flowTranslate.service.js` (whole-flow), `utils/translateProtect.js` (protection), `utils/translationSlots.js`
+  (what can be translated). Text is sent as HTML: `{{x}}` in `<span class="notranslate">`, `*bold*`/`_italic_` as `<b>`/`<i>`, line
+  breaks as `<br>`, then restored and **verified** (same placeholders, bold/italic count, line breaks, emojis) - an unfaithful
+  translation is dropped with a warning and never cached or stored (English fallback at send time). Global cache
+  `translation_cache`; per-business monthly cap `app_config.translate_monthly_char_cap` (default 20000; cache hits are free; the
+  characters are reserved atomically by `reserve_translate_chars` before the call and refunded if it fails; month = India month) and a
+  global safeguard `translate_global_monthly_cap` (default 1,800,000 of the free tier's 2M). Both are editable in Super Admin
+  (`PUT /api/admin/app-config`: `translateMonthlyCharCap`, `translateGlobalMonthlyCap`) and are **not** in the public
+  `/api/app/version` payload (tested). Endpoints (owner): `POST /api/translate`, `POST /api/translate/flow`,
+  `GET /api/translate/usage` (20 calls/min per business). Super Admin: `POST /api/admin/category-templates/:id/translate`.
+  The flow run fills only slots with **no** text in that language (a human translation is never overwritten), writes straight to
+  the translation columns (not through the canvas save RPC), skips a translation longer than WhatsApp's limit (button 20, row 24,
+  description 72, card 160...) and refuses the whole run up front if it would exceed the cap. Plain-string question options become
+  the `{value,label,labelTranslations}` object `normalizeOption` already reads.
+- **"Auto-translated" badge:** `auto_translations` on flow_nodes / flow_edges / businesses holds
+  `{ "<slot>": { "<lang>": "<hash of the stored text>" } }`. A slot is reported (`autoTranslated: { label: ['hi'] }` on every node
+  and edge of `GET /flow-graph/full` and the carousel-bundle response, and on `GET|PUT|POST /api/business` for the welcome / stop /
+  start / cancel messages and booking-form labels) only while the stored text still hashes to the recorded value, so a hand edit
+  clears the badge by itself and no writer (canvas save RPC, AI apply...) has to know about the column. Template copies carry it
+  because rows are copied verbatim.
+- **Signup:** after `applyDefaultSetup` the default flow is translated into the owner's languages in the background
+  (`startNewBusinessTranslation`; global counter only, the new owner's allowance is untouched; skipped if Azure is not configured).
+  `businesses.translation_status` is written `pending` before the signup response, `GET /flow-graph/full` returns
+  `translationStatus { <lang>: 'pending'|'done'|'failed' }` + `translating`, and `PUT /flow-graph/full` answers **409**
+  `TRANSLATION_IN_PROGRESS` while any language is pending (a pending older than 10 minutes reads as failed).
+
 ## Mobile app version gate (built 2026-10-18, migration `20261018120000_app_config.sql`)
 
 Tells the Flutter app which versions to accept. **Server only - no client reads it yet**, so
@@ -1467,9 +1535,8 @@ Goal: a plan created or edited in Super Admin shows up in the web app and Flutte
 18. **Supabase version of `rotateEncryptionKey` (encryption key rotation).** The old script
    (re-encrypting stored access tokens with a new `ENCRYPTION_KEY`) was Mongo-only and was deleted
    in the MongoDB cleanup; no replacement exists yet.
-19. **Language-picker titles use `.slice(0, 20)`** (two places in `webhook.controller.js`, where
-   `languageButtons` is built): not grapheme-safe, unlike the senders' `truncate`. Current language names
-   are short, so nothing is affected today.
+19. ~~Language-picker titles use `.slice(0, 20)`~~ - fixed 2026-10-24: the picker is built once in
+   `languagePicker.service.js` with the grapheme-safe `truncate`.
 20. **Chat redesign leftovers (2026-10-14).** The tapped button / list id is not stored (an inbound tap is
    `type 'interactive'` with the tapped title as `content`); inbound location lat/lng are not stored (only
    the "📍 Location · name · address" text); outbound pin coordinates are not stored; the web inbox does not
@@ -1478,7 +1545,27 @@ Goal: a plan created or edited in Super Admin shows up in the web app and Flutte
 21. **`plans.rule_limit` is seeded (10 / 50 / -1) and editable in Super Admin but never enforced** anywhere in
    `src/`; there is no plan limit on the number of reply nodes (the carousel-bundle endpoint therefore has none either).
 
+22. **System texts for gu/kn/ta/te/ml/bn/pa/or (HIGH priority).** `utils/systemMessages.js` (about 100 customer-facing strings:
+   booking confirmation, payment, fallbacks...) only has `en`/`hi`/`mr`; the new languages get English for these. Plan: a
+   reviewed static file (generated offline with a dry-run script, checked by a native speaker), not runtime machine translation.
+   Same for the picker's "Choose your language" wording and the web booking-form strings in `apnabot-web`.
+23. **Template `flow_fields` translation.** `POST /api/translate/flow` covers `businesses.flow_fields`;
+   `business_category_templates.flow_fields` (what a new business is seeded with) is not covered by the Super Admin template
+   translate, so a new business's booking-form labels are translated by the signup run, not pre-translated.
+24. **`services/translate.service.js` is dead code** (Anthropic-based rule-reply translator, no caller; the Azure path is
+   `azureTranslate.service.js` / `translation.service.js`). Delete it when convenient.
+25. **Owner-app language vs bot language.** `notification.service.js` (`LANGUAGES`, owner push voice) and
+   `help.controller.js` (`FEEDBACK_LOCALES`) stay `en/hi/mr` on purpose: they are the OWNER's app language, not the bot's.
+26. **Native-script keyword matching (Phase 2).** `chatbot.service.js#normalizeText` (and its mirror `flowSpec.js#normalizeText`) strips
+   `[^\w\s]`, and JS `\w` is ASCII-only, so every Devanagari / Gujarati / Tamil... character is removed: a native-script
+   message normalizes to '' and matches nothing (`matchNodeInList` returns null on '' ). The picker's own keywords bypass it.
+   Fix with `[^\p{L}\p{N}\p{M}\s_]` + the `u` flag in both copies, then re-run the matching tests.
+27. **Follow-up automation texts** (`followup_automations.message_text_translations`) are not covered by `/api/translate/flow`.
+
 ## Session log (append here as major milestones land)
+- 2026-10-24: Bot languages (en + up to 3 of 11), language picker (buttons / list, change keyword, mode off), Language virtual node,
+  Azure auto-translate with cache + caps, "auto-translated" markers, signup default-flow translation - see "Bot languages, language
+  picker, auto-translate". Migrations `20261024120000`, `20261024130000` must be applied before deploying.
 - 2026-10-18: Mobile app version gate (see "Mobile app version gate"): `app_config` table, public
   `GET /api/app/version`, superadmin `GET|PUT /api/admin/app-config`. Working tree only, not committed.
   **Deploy: apply `20261018120000_app_config.sql` first, then the server.** Additive; no client reads it yet.

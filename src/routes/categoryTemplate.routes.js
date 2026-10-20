@@ -16,5 +16,7 @@ router.get('/:id', categoryTemplateController.getCategoryTemplate);
 router.post('/:id/set-default', categoryTemplateController.setDefaultTemplate);
 router.post('/:id/unset-default', categoryTemplateController.unsetDefaultTemplate);
 router.patch('/:id/node-texts', categoryTemplateController.updateTemplateNodeTexts);
+// Fills one language's empty texts with Azure (not counted against any business cap)
+router.post('/:id/translate', categoryTemplateController.translateTemplate);
 
 module.exports = router;

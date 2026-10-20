@@ -1,4 +1,5 @@
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = require('express-rate-limit');
 
 const globalLimiter = rateLimit({
   windowMs: 60 * 1000, // 1 minute
@@ -20,8 +21,18 @@ const helpFeedbackLimiter = rateLimit({
   message: 'Too many requests from this IP, please try again after a minute'
 });
 
+// Auto-translate (POST /api/translate*) - applied on those routes, on top of globalLimiter. Keyed by
+// business (the monthly character cap is the real budget; this stops a runaway client first).
+const translateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: 20, // limit each business to 20 translate calls per windowMs
+  keyGenerator: (req) => (req.user && req.user.businessId) || ipKeyGenerator(req.ip),
+  message: { success: false, message: 'Too many translate requests, please try again in a minute', data: null, errors: null }
+});
+
 module.exports = {
   globalLimiter,
   webhookLimiter,
-  helpFeedbackLimiter
+  helpFeedbackLimiter,
+  translateLimiter
 };

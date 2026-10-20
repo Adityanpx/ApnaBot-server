@@ -13,7 +13,11 @@ const logger = require('../utils/logger');
 const r2 = require('../services/r2.service');
 const { r2KeyFromUrl } = require('../utils/r2Key');
 const config = require('../config/env');
-const { isValidLanguageCode, LANGUAGE_CATALOG } = require('../utils/languageCatalog');
+const { validateEnabledLanguages, canonicalState, suggestedLanguagesForState, STATES } = require('../utils/languageCatalog');
+const languagePickerService = require('../services/languagePicker.service');
+const flowTranslate = require('../services/flowTranslate.service');
+const { businessSlots, businessRowFromCamel, autoTranslatedOf } = require('../utils/translationSlots');
+const { statusSummary } = require('../utils/translationStatus');
 const { validateFlowFields } = require('../utils/flowFieldsValidation');
 const { cleanValue } = require('../utils/templateValue');
 const { META_API_BASE } = require('../services/whatsapp.service');
@@ -22,6 +26,28 @@ const onboardingService = require('../services/whatsappOnboarding.service');
 const { withPaymentIssue, dismissPaymentIssue } = require('../services/accountHealth.service');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Turns the raw auto-translate bookkeeping on a business API object into what the apps read:
+ * autoTranslated { <slot>: [lang] } (the welcome / stop / start / cancel messages and booking form
+ * labels still holding the machine's text) and translationStatus { <lang>: 'pending'|'done'|'failed' }
+ * (the signup default-flow translation). Mutates and returns `businessData`.
+ */
+const withTranslationInfo = (businessData) => {
+  const row = businessRowFromCamel(businessData);
+  businessData.autoTranslated = autoTranslatedOf(row, businessSlots(row));
+  businessData.translationStatus = statusSummary(businessData.translationStatus);
+  delete businessData.autoTranslations;
+  return businessData;
+};
+
+// Optional `state`: null/'' clears it, anything else must be an Indian state / UT (case-insensitive).
+const parseStateInput = (value) => {
+  if (value === undefined) return { skip: true };
+  if (value === null || value === '') return { value: null };
+  const state = typeof value === 'string' ? canonicalState(value) : null;
+  return state ? { value: state } : { error: `state must be one of: ${STATES.join(', ')}` };
+};
 
 /**
  * Resolves the WABA's phone number ID server-side, for the "connect existing
@@ -91,6 +117,8 @@ const getBusiness = async (req, res, next) => {
     delete businessData.whatsappRegisterPin;
     withPaymentIssue(businessData);
 
+    withTranslationInfo(businessData);
+
     const { remaining, resetAt } = bookingService.getPreviewCreditsStatus(business);
     businessData.previewCreditsRemaining = remaining;
     businessData.previewCreditsResetAt = resetAt;
@@ -110,7 +138,7 @@ const getBusiness = async (req, res, next) => {
  */
 const createBusiness = async (req, res, next) => {
   try {
-    const { name, businessCategory, subCategories, displayName, address, city } = req.body;
+    const { name, businessCategory, subCategories, displayName, address, city, enabledLanguages: requestedLanguages } = req.body;
 
     // Check if user already has a business. users.business_id alone isn't
     // enough — also check ownership directly, so a user whose
@@ -161,6 +189,20 @@ const createBusiness = async (req, res, next) => {
       }
     }
 
+    // State + languages: an explicit enabledLanguages wins; otherwise the state picks the default
+    // (Maharashtra en,hi,mr ... others en,hi - see utils/languageCatalog.js).
+    const stateInput = parseStateInput(req.body.state);
+    if (stateInput.error) return errorResponse(res, 400, stateInput.error);
+    const state = stateInput.skip ? null : stateInput.value;
+    let enabledLanguages;
+    if (requestedLanguages !== undefined) {
+      const checked = validateEnabledLanguages(requestedLanguages);
+      if (checked.error) return errorResponse(res, 400, checked.error);
+      enabledLanguages = checked.value;
+    } else {
+      enabledLanguages = suggestedLanguagesForState(state);
+    }
+
     // Create business. Two concurrent requests can both pass the ownership
     // check above; the loser hits businesses_owner_user_id_key (migration
     // 20260926120000) and gets the same 409 instead of a 500.
@@ -172,7 +214,9 @@ const createBusiness = async (req, res, next) => {
         subCategories,
         displayName,
         address,
-        city
+        city,
+        state,
+        enabledLanguages
       });
     } catch (createErr) {
       if (createErr.code === '23505' && (createErr.message || '').includes('businesses_owner_user_id_key')) {
@@ -183,7 +227,12 @@ const createBusiness = async (req, res, next) => {
 
     // Seed the category's default flow + form fields (best effort; never throws,
     // so a failure only leaves the business empty as before).
-    await applyDefaultSetup(business.id);
+    const setup = await applyDefaultSetup(business.id);
+
+    // Translate that default flow into the owner's languages in the background (Azure; a language
+    // the template already has costs nothing). The 'pending' marks are written before this returns,
+    // so the canvas's first GET /flow-graph/full already says "translating". Never blocks signup.
+    if (setup && setup.applied) await flowTranslate.startNewBusinessTranslation(business.id);
 
     // Generate new tokens with businessId
     const userPayload = {
@@ -203,6 +252,7 @@ const createBusiness = async (req, res, next) => {
     delete businessData.accessToken;
     delete businessData.whatsappRegisterPin;
     withPaymentIssue(businessData);
+    withTranslationInfo(businessData);
 
     return successResponse(res, 201, {
       business: businessData,
@@ -267,22 +317,18 @@ const updateBusiness = async (req, res, next) => {
       }
     }
 
+    // enabledLanguages: 'en' first, at most 4 (en + 3), catalog codes only (utils/languageCatalog.js).
+    let previousLanguages = null;
     if (req.body.enabledLanguages !== undefined) {
-      const { enabledLanguages } = req.body;
-      if (!Array.isArray(enabledLanguages) || enabledLanguages.length < 1 || enabledLanguages.length > 3) {
-        return errorResponse(res, 400, 'enabledLanguages must include between 1 and 3 languages.');
-      }
-      const invalidCodes = enabledLanguages.filter(code => !isValidLanguageCode(code));
-      if (invalidCodes.length > 0) {
-        return errorResponse(res, 400, `Invalid language code(s): ${invalidCodes.join(', ')}. Must be one of: ${Object.keys(LANGUAGE_CATALOG).join(', ')}`);
-      }
-      const uniqueCodes = new Set(enabledLanguages);
-      if (uniqueCodes.size !== enabledLanguages.length) {
-        return errorResponse(res, 400, 'enabledLanguages must not contain duplicate language codes.');
-      }
-      if (!enabledLanguages.includes('en')) {
-        return errorResponse(res, 400, 'English cannot be removed from enabled languages.');
-      }
+      const checked = validateEnabledLanguages(req.body.enabledLanguages);
+      if (checked.error) return errorResponse(res, 400, checked.error);
+      req.body.enabledLanguages = checked.value;
+      previousLanguages = (await businessService.getBusinessById(businessId))?.enabledLanguages || ['en'];
+    }
+    if (req.body.state !== undefined) {
+      const stateInput = parseStateInput(req.body.state);
+      if (stateInput.error) return errorResponse(res, 400, stateInput.error);
+      req.body.state = stateInput.value;
     }
 
     if (req.body.requireAdvancePayment === true) {
@@ -311,6 +357,27 @@ const updateBusiness = async (req, res, next) => {
     // The webhook re-caches the tenant on every inbound message, so a stale
     // cached name/displayName would otherwise persist past the TTL and keep
     // showing customers the old {{businessName}} indefinitely.
+    // A language the owner just switched off: customers who had chosen it are reset to "no language"
+    // (so they are asked again on their next message, and every other sender falls back to English).
+    // Stored translations are never touched - turning the language back on restores them.
+    if (previousLanguages) {
+      const removed = previousLanguages.filter((code) => !req.body.enabledLanguages.includes(code));
+      if (removed.length > 0) {
+        const { error: resetError } = await supabase
+          .from('customers').update({ preferred_language: null }).eq('business_id', businessId).in('preferred_language', removed);
+        if (resetError) logger.error('Error resetting customers of a disabled language:', resetError);
+      }
+    }
+
+    // The webhook reads enabledLanguages / languagePicker from the cached tenant too.
+    if (req.body.enabledLanguages !== undefined && business.phoneNumberId) {
+      try {
+        await tenantService.invalidateTenantCache(business.phoneNumberId);
+      } catch (error) {
+        logger.error('Error invalidating tenant cache after enabledLanguages update:', error);
+      }
+    }
+
     if ((req.body.name !== undefined || req.body.displayName !== undefined) && business.phoneNumberId) {
       try {
         await tenantService.invalidateTenantCache(business.phoneNumberId);
@@ -325,10 +392,60 @@ const updateBusiness = async (req, res, next) => {
     delete businessData.accessToken;
     delete businessData.whatsappRegisterPin;
     withPaymentIssue(businessData);
+    withTranslationInfo(businessData);
 
     return successResponse(res, 200, businessData);
   } catch (error) {
     logger.error('Error in updateBusiness:', error);
+    next(error);
+  }
+};
+
+/**
+ * GET /api/business/language-settings
+ * -> the "Language" node: { id: 'language', type: 'language', enabledLanguages, languages: [{ code, name, englishName }],
+ *    pickerKind: 'none'|'buttons'|'list', picker: { mode, prompt, promptTranslations, changeKeyword, defaultPrompt, builtInKeywords } }
+ */
+const getLanguageSettings = async (req, res, next) => {
+  try {
+    const business = await businessService.getBusinessById(req.user.businessId);
+    if (!business) return errorResponse(res, 404, 'Business not found');
+    return successResponse(res, 200, languagePickerService.buildLanguageNode(business));
+  } catch (error) {
+    logger.error('Error in getLanguageSettings:', error);
+    next(error);
+  }
+};
+
+/**
+ * PUT /api/business/language-settings (owner)
+ * Body (any of): { mode: 'first_message'|'off', prompt: string|null, promptTranslations: { <code>: string }|null,
+ *   changeKeyword: string|null } - a null / empty value clears that setting back to its default.
+ * The enabled languages themselves are set with PUT /api/business { enabledLanguages }.
+ * -> the same node as GET.
+ */
+const updateLanguageSettings = async (req, res, next) => {
+  try {
+    const businessId = req.user.businessId;
+    const business = await businessService.getBusinessById(businessId);
+    if (!business) return errorResponse(res, 404, 'Business not found');
+
+    const checked = languagePickerService.validateSettingsInput(req.body, business.languagePicker, business.enabledLanguages);
+    if (checked.error) return errorResponse(res, 400, checked.error);
+
+    const { error } = await supabase.from('businesses').update({ language_picker: checked.value }).eq('id', businessId);
+    if (error) throw error;
+
+    if (business.phoneNumberId) {
+      try {
+        await tenantService.invalidateTenantCache(business.phoneNumberId);
+      } catch (cacheError) {
+        logger.error('Error invalidating tenant cache after language settings update:', cacheError);
+      }
+    }
+    return successResponse(res, 200, languagePickerService.buildLanguageNode({ ...business, languagePicker: checked.value }));
+  } catch (error) {
+    logger.error('Error in updateLanguageSettings:', error);
     next(error);
   }
 };
@@ -1107,6 +1224,8 @@ const getVehicleOptions = async (req, res, next) => {
 module.exports = {
   getBusiness,
   createBusiness,
+  getLanguageSettings,
+  updateLanguageSettings,
   updateBusiness,
   getServedCities,
   updateServedCities,

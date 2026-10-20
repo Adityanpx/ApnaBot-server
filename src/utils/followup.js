@@ -6,6 +6,7 @@
 //
 // Times are minutes. Send hours are India time (utils/ist.js).
 const { getSystemMessage } = require('./systemMessages');
+const { LANGUAGE_CATALOG } = require('./languageCatalog');
 const { getLocalizedText } = require('./localization');
 const { applyMessageTemplate } = require('./messageTemplating');
 const { cleanValue, fillPlaceholders } = require('./templateValue');
@@ -19,7 +20,7 @@ const DAY = 24 * HOUR;
 const WINDOW_MARGIN_MINUTES = 10;
 const NAME_MAX = 35;
 const TEXT_MAX = 1000;
-const LANGUAGE_CODES = ['en', 'hi', 'mr'];
+const LANGUAGE_CODES = Object.keys(LANGUAGE_CATALOG);
 const TRIGGER_TYPES = ['after_last_inbound', 'after_completed', 'after_payment_requested', 'inactive_for'];
 const MESSAGE_CATEGORIES = ['marketing', 'utility'];
 // Triggers that fire for a booking (one follow-up per booking occurrence),

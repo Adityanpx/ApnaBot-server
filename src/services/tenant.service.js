@@ -50,6 +50,10 @@ const resolveBusinessByPhoneNumberId = async (phoneNumberId) => {
       fallbackReply: business.fallback_reply,
       enableSmartFallback: business.enable_smart_fallback,
       businessCategory: business.business_category,
+      // Read by the webhook without a business fetch: the change-language keyword and the
+      // 'language switched off' check. Absent on tenants cached before these existed.
+      enabledLanguages: business.enabled_languages || ['en'],
+      languagePicker: business.language_picker || null,
       // NULL for businesses connected before 2026-10-05 (no backfill).
       whatsappOnboardingType: business.whatsapp_onboarding_type || null,
       isActive: business.is_active,

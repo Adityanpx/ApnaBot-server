@@ -4,11 +4,13 @@
 // template that passes here is one Meta's format rules won't bounce. Meta still
 // has the final say (content policy, variable-to-text ratio, ...).
 const { extensionOf, EXTENSIONS_BY_FORMAT } = require('./templateSendSupport');
+const { LANGUAGE_CATALOG } = require('./languageCatalog');
 
 const TEMPLATE_NAME_REGEX = /^[a-z0-9_]+$/;
 const TEMPLATE_NAME_MAX = 512;
 const CATEGORIES = ['MARKETING', 'UTILITY'];
-const LANGUAGES = ['en_US', 'hi', 'mr'];
+// Meta's template locales for every catalog language that has one (Odia has none), see languageCatalog.js.
+const LANGUAGES = Object.values(LANGUAGE_CATALOG).map((l) => l.metaTemplate).filter(Boolean);
 const HEADER_TYPES = ['NONE', 'TEXT', 'IMAGE', 'VIDEO', 'DOCUMENT'];
 
 const BODY_MAX = 1024;

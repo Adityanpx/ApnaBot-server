@@ -22,6 +22,7 @@ const cleanBusinessField = (field, value) => (
 
 const businessFieldMap = {
   name: 'name', displayName: 'display_name', address: 'address', city: 'city',
+  state: 'state',
   profileImage: 'profile_image', upiId: 'upi_id', paymentQrUrl: 'payment_qr_url',
   fallbackReply: 'fallback_reply',
   welcomeMessage: 'welcome_message',
@@ -170,6 +171,8 @@ const createBusiness = async (ownerUserId, data) => {
       sub_categories: subCategories || [],
       address,
       city,
+      ...(data.state ? { state: data.state } : {}),
+      ...(data.enabledLanguages ? { enabled_languages: data.enabledLanguages } : {}),
       display_name: displayName || name,
       owner_user_id: ownerUserId,
       webhook_verify_token: webhookVerifyToken,

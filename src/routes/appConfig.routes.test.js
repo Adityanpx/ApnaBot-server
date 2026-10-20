@@ -283,3 +283,26 @@ test('compareVersions is numeric per part', () => {
   assert.ok(appConfig.compareVersions('1.0.0', '1.0.1') < 0);
   assert.equal(appConfig.compareVersions('2.3.4', '2.3.4'), 0);
 });
+
+test('translate caps: editable by the superadmin (whole numbers only) and never part of the public /app/version payload', async () => {
+  tables.app_config.push({ key: 'translate_monthly_char_cap', value: '20000', updated_at: SEED_AT, updated_by: null });
+  tables.app_config.push({ key: 'translate_global_monthly_cap', value: '1800000', updated_at: SEED_AT, updated_by: null });
+
+  const pub = await (await getVersion()).json();
+  assert.deepEqual(Object.keys(pub.data).sort(), ['forceUpdate', 'latestVersion', 'maintenanceMode', 'minimumVersion', 'storeUrl']);
+  assert.equal(JSON.stringify(pub).includes('translate'), false);
+
+  const admin = await (await adminGet()).json();
+  assert.equal(admin.data.translateMonthlyCharCap, 20000);
+  assert.equal(admin.data.translateGlobalMonthlyCap, 1800000);
+
+  for (const bad of [{ translateMonthlyCharCap: -1 }, { translateMonthlyCharCap: '5000' }, { translateMonthlyCharCap: 1.5 }]) {
+    assert.equal((await adminPut(bad)).status, 400, JSON.stringify(bad));
+  }
+  assert.equal((await adminPut({ translateMonthlyCharCap: 50000 })).status, 200);
+  assert.equal(tables.app_config.find(r => r.key === 'translate_monthly_char_cap').value, '50000');
+
+  appConfig.clearCache();
+  const pubAfter = await (await getVersion()).json();
+  assert.equal(JSON.stringify(pubAfter).includes('translate'), false);
+});

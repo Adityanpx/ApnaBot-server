@@ -14,6 +14,7 @@ const supabase = require('../config/supabase');
 const { toCamelCase } = require('../utils/caseConvert');
 const { applyMessageTemplate, applyMessageTemplateWithFooter } = require('../utils/messageTemplating');
 const { LANGUAGE_CATALOG, isValidLanguageCode } = require('../utils/languageCatalog');
+const languagePickerService = require('../services/languagePicker.service');
 const { getLocalizedText, getListButtonLabel } = require('../utils/localization');
 const { getSystemMessage } = require('../utils/systemMessages');
 const { cleanValue } = require('../utils/templateValue');
@@ -77,7 +78,8 @@ const TRIGGER_REPLY_KINDS = new Set(['booking_trigger', 'payment_trigger', 'web_
 // Lets a customer re-open the language picker at any time, not just on their
 // very first message (see the change-language check in receiveWebhook, and
 // Step 12.6 below for the first-time version of this same picker).
-const CHANGE_LANGUAGE_KEYWORDS = new Set(['language', 'भाषा']);
+// The words that re-open it ('language', 'भाषा', 'bhasha' + the owner's own changeKeyword) come from
+// languagePicker.service.js#isChangeKeyword.
 const CUSTOMER_STOP_PAUSE_DURATION_MS = 24 * 60 * 60 * 1000;
 
 /**
@@ -714,6 +716,64 @@ const sendFallbackTextMessage = async (ctx, text) => {
 };
 
 /**
+ * Send the language picker: reply buttons for 2-3 enabled languages, a list for 4. Text and
+ * options come from languagePicker.service.js#buildPicker (the owner's prompt, or the built-in
+ * line after the English welcome message). Shared by the change-language keyword (Step 11.5)
+ * and a new customer's first message (Step 12.6).
+ * @param {Object} ctx - { tenant, customer, customerNumber }
+ * @param {Object} businessDoc - camelCase business row
+ * @param {string[]} enabledLanguages - 2-4 codes
+ */
+const sendLanguagePicker = async (ctx, businessDoc, enabledLanguages) => {
+  const { tenant, customer, customerNumber } = ctx;
+  const picker = languagePickerService.buildPicker({
+    enabledLanguages,
+    rawSettings: businessDoc?.languagePicker,
+    welcomeMessage: getLocalizedText(businessDoc, 'welcomeMessage', 'en'),
+    customerLanguage: customer.preferredLanguage
+  });
+  const text = applyMessageTemplate(picker.text, tenant, customer);
+  const interactiveFields = picker.buttons
+    ? { buttons: picker.buttons }
+    : { listOptions: picker.listOptions, listButtonLabel: picker.listButtonLabel };
+
+  const pickerMsg = await saveMessage({
+    business_id: tenant.businessId,
+    customer_id: customer.id,
+    customer_number: customerNumber,
+    direction: 'outbound',
+    type: 'text',
+    content: text,
+    status: 'sent',
+    sender_type: 'bot',
+    interactive_payload: buildInteractivePayload({ message: text, ...interactiveFields }),
+    is_read: true
+  });
+  await addToWhatsappQueue({
+    businessId: tenant.businessId,
+    phoneNumberId: tenant.phoneNumberId,
+    encryptedAccessToken: tenant.accessToken,
+    to: customerNumber,
+    message: text,
+    type: 'text',
+    ...interactiveFields,
+    messageId: pickerMsg.id
+  });
+  usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
+    logger.error('Error incrementing outbound usage:', err)
+  );
+  try {
+    socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
+      customer,
+      message: pickerMsg,
+      customerNumber
+    });
+  } catch (socketError) {
+    logger.error('Error emitting socket event:', socketError);
+  }
+};
+
+/**
  * Ask for marketing consent after a JOIN-<code> message from an opt-in link
  * (Step 11.7 / the lang_ handler / Step 12.55). Two reply buttons whose ids
  * are the reserved "optin_yes:<linkId>" / "optin_no:<linkId>" — handled at
@@ -1148,10 +1208,15 @@ const processWebhookChange = async (entry, changes) => {
     // A tapped reply-button arrives as type 'interactive'. We stored the target
     // rule's keyword as the button id (see sendInteractiveButtons), so treat that
     // id as the incoming "text" and let the normal rule matcher chain the flow.
-    let buttonReplyId = message.interactive?.button_reply?.id || null;
     // A tapped list-message row arrives as type 'interactive' too, with its
     // id in list_reply instead of button_reply (see sendListMessage).
-    const listReplyId = message.interactive?.list_reply?.id || null;
+    const rawListReplyId = message.interactive?.list_reply?.id || null;
+    // The language picker is a list when the business offers 4 languages: its rows are system
+    // taps (lang_{code}) like the picker's buttons, so they are handled as a button tap and
+    // never reach the edge resolver as a list row.
+    const isLanguageListTap = !!rawListReplyId && rawListReplyId.startsWith('lang_');
+    let buttonReplyId = message.interactive?.button_reply?.id || (isLanguageListTap ? rawListReplyId : null);
+    const listReplyId = isLanguageListTap ? null : rawListReplyId;
     // A shared-location message ({latitude, longitude, name?, address?} per
     // Meta's payload) — only meaningful mid-booking against a
     // 'location_request' field, checked once the active session is known
@@ -1526,8 +1591,14 @@ const processWebhookChange = async (entry, changes) => {
     // control the pause flag itself, so a paused customer shouldn't get an
     // unsolicited reply). Only plain text is checked, same guard as
     // STOP_KEYWORDS/START_KEYWORDS/ESCAPE_KEYWORDS.
-    const normalizedLanguageText = isPlainTextStopStart ? (message.text?.body || '').trim().toLowerCase() : '';
-    if (CHANGE_LANGUAGE_KEYWORDS.has(normalizedLanguageText)) {
+    // A language the owner has since switched off is treated as unset for this message (the
+    // owner's save also clears it in the DB; this covers the cached-tenant window), so Step 12.6
+    // asks again. tenant.enabledLanguages is absent on tenants cached before this field existed.
+    if (customer.preferredLanguage && Array.isArray(tenant.enabledLanguages) && !tenant.enabledLanguages.includes(customer.preferredLanguage)) {
+      customer.preferredLanguage = null;
+    }
+
+    if (isPlainTextStopStart && languagePickerService.isChangeKeyword(message.text?.body, tenant.languagePicker)) {
       const languageBusinessDoc = await businessService.getBusinessById(tenant.businessId);
       const enabledLanguages = languageBusinessDoc?.enabledLanguages?.length ? languageBusinessDoc.enabledLanguages : ['en'];
 
@@ -1584,57 +1655,11 @@ const processWebhookChange = async (entry, changes) => {
         return; // Do not process booking session, greeting, or rule matching
       }
 
-      // 2 or 3 languages enabled - ask, then wait for the reply. Deliberately
-      // does NOT touch customer.preferredLanguage here - it stays whatever it
-      // already was until a tap actually lands (handled by the same lang_
-      // handler below), so an abandoned picker leaves the existing language
-      // working normally on the customer's next message.
-      const languageButtons = enabledLanguages.map((code) => ({
-        title: (LANGUAGE_CATALOG[code]?.name || code).slice(0, 20),
-        nextKeyword: `lang_${code}`
-      }));
-      const languageChoiceLine = 'Choose your language / अपनी भाषा चुनें';
-      const welcomeMessage = getLocalizedText(languageBusinessDoc, 'welcomeMessage', 'en');
-      const languagePromptText = applyMessageTemplate(
-        welcomeMessage ? `${welcomeMessage}\n\n${languageChoiceLine}` : languageChoiceLine,
-        tenant,
-        customer
-      );
-
-      const languagePromptMsg = await saveMessage({
-        business_id: tenant.businessId,
-        customer_id: customer.id,
-        customer_number: customerNumber,
-        direction: 'outbound',
-        type: 'text',
-        content: languagePromptText,
-        status: 'sent',
-        sender_type: 'bot',
-        interactive_payload: buildInteractivePayload({ message: languagePromptText, buttons: languageButtons }),
-        is_read: true
-      });
-      await addToWhatsappQueue({
-        businessId: tenant.businessId,
-        phoneNumberId: tenant.phoneNumberId,
-        encryptedAccessToken: tenant.accessToken,
-        to: customerNumber,
-        message: languagePromptText,
-        type: 'text',
-        buttons: languageButtons,
-        messageId: languagePromptMsg.id
-      });
-      usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-        logger.error('Error incrementing outbound usage:', err)
-      );
-      try {
-        socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
-          customer,
-          message: languagePromptMsg,
-          customerNumber
-        });
-      } catch (socketError) {
-        logger.error('Error emitting socket event:', socketError);
-      }
+      // 2-4 languages enabled - ask, then wait for the reply. Deliberately does NOT touch
+      // customer.preferredLanguage here - it stays whatever it already was until a tap
+      // actually lands (handled by the same lang_ handler below), so an abandoned
+      // picker leaves the existing language working normally on the next message.
+      await sendLanguagePicker({ tenant, customer, customerNumber }, languageBusinessDoc, enabledLanguages);
 
       logger.info(`Sent change-language picker for business ${tenant.businessId}, customer ${customerNumber}`);
       return; // Do not process booking session, greeting, or rule matching
@@ -2083,9 +2108,10 @@ const processWebhookChange = async (entry, changes) => {
       const languageBusinessDoc = await businessService.getBusinessById(tenant.businessId);
       const enabledLanguages = languageBusinessDoc?.enabledLanguages?.length ? languageBusinessDoc.enabledLanguages : ['en'];
 
-      if (enabledLanguages.length === 1) {
-        // Nothing to ask - set it directly and fall through to greeting/rule
-        // matching this same turn.
+      if (enabledLanguages.length === 1 || languagePickerService.resolveSettings(languageBusinessDoc?.languagePicker).mode === 'off') {
+        // Nothing to ask (one language, or the owner turned the automatic picker off - the change
+        // keyword still works) - set the first enabled language directly and fall through to
+        // greeting/rule matching this same turn.
         const { data: updatedCustomer, error: langErr } = await supabase
           .from('customers')
           .update({ preferred_language: enabledLanguages[0] })
@@ -2095,53 +2121,8 @@ const processWebhookChange = async (entry, changes) => {
         if (langErr) throw langErr;
         customer.preferredLanguage = toCamelCase(updatedCustomer).preferredLanguage;
       } else {
-        // 2 or 3 languages enabled - ask, then wait for the reply.
-        const languageButtons = enabledLanguages.map((code) => ({
-          title: (LANGUAGE_CATALOG[code]?.name || code).slice(0, 20),
-          nextKeyword: `lang_${code}`
-        }));
-        const languageChoiceLine = 'Choose your language / अपनी भाषा चुनें';
-        const welcomeMessage = getLocalizedText(languageBusinessDoc, 'welcomeMessage', 'en');
-        const languagePromptText = applyMessageTemplate(
-          welcomeMessage ? `${welcomeMessage}\n\n${languageChoiceLine}` : languageChoiceLine,
-          tenant,
-          customer
-        );
-
-        const languagePromptMsg = await saveMessage({
-          business_id: tenant.businessId,
-          customer_id: customer.id,
-          customer_number: customerNumber,
-          direction: 'outbound',
-          type: 'text',
-          content: languagePromptText,
-          status: 'sent',
-          sender_type: 'bot',
-          interactive_payload: buildInteractivePayload({ message: languagePromptText, buttons: languageButtons }),
-          is_read: true
-        });
-        await addToWhatsappQueue({
-          businessId: tenant.businessId,
-          phoneNumberId: tenant.phoneNumberId,
-          encryptedAccessToken: tenant.accessToken,
-          to: customerNumber,
-          message: languagePromptText,
-          type: 'text',
-          buttons: languageButtons,
-          messageId: languagePromptMsg.id
-        });
-        usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-          logger.error('Error incrementing outbound usage:', err)
-        );
-        try {
-          socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
-            customer,
-            message: languagePromptMsg,
-            customerNumber
-          });
-        } catch (socketError) {
-          logger.error('Error emitting socket event:', socketError);
-        }
+        // 2-4 languages enabled - ask, then wait for the reply.
+        await sendLanguagePicker({ tenant, customer, customerNumber }, languageBusinessDoc, enabledLanguages);
 
         logger.info(`Sent language picker for business ${tenant.businessId}, customer ${customerNumber}`);
         return; // Do not run greeting or rule matching this turn
