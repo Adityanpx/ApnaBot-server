@@ -88,12 +88,19 @@ test('voice off sends voice types on v1_messages; quiet hours on v1_silent (quie
   assert.equal(svc.pickChannel({ type: 'booking_new', language: 'hi', voice: false, quiet: true }), 'v1_silent');
 });
 
-test('normal types are always v1_messages; critical types are always v1_critical, whatever voice / quiet say', () => {
-  assert.equal(svc.pickChannel({ type: 'new_message', language: 'hi', quiet: true }), 'v1_messages');
+test('new_message / customer_waiting use their voice channel; voice off -> v1_messages, quiet -> v1_silent', () => {
+  assert.equal(svc.pickChannel({ type: 'new_message', language: 'hi' }), 'v1_new_message_hi');
+  assert.equal(svc.pickChannel({ type: 'customer_waiting', language: 'mr' }), 'v1_customer_waiting_mr');
+  assert.equal(svc.pickChannel({ type: 'new_message', language: 'hi', quiet: true }), 'v1_silent');
   assert.equal(svc.pickChannel({ type: 'customer_waiting', language: 'mr', voice: false }), 'v1_messages');
-  for (const type of ['whatsapp_disconnected', 'payment_issue', 'usage_90', 'usage_100', 'plan_expiring', 'plan_expired', 'quality_dropped']) {
-    assert.equal(svc.pickChannel({ type, language: 'hi', voice: false, quiet: true }), 'v1_critical');
+});
+
+test('critical voice types keep their voice clip whatever voice / quiet say; usage_90 has no clip yet', () => {
+  for (const type of ['whatsapp_disconnected', 'payment_issue', 'usage_100', 'plan_expiring', 'plan_expired', 'quality_dropped']) {
+    assert.equal(svc.pickChannel({ type, language: 'hi', voice: false, quiet: true }), `v1_${type}_hi`, type);
+    assert.equal(svc.pickChannel({ type, language: 'ta' }), `v1_${type}_en`, type);
   }
+  assert.equal(svc.pickChannel({ type: 'usage_90', language: 'hi', voice: false, quiet: true }), 'v1_critical');
 });
 
 test('quiet hours: off when empty, same-day window, window past midnight, 22:00-07:00 in India time', () => {
@@ -165,7 +172,7 @@ test('critical types ignore toggles and quiet hours and go to the owner only', a
   ];
   await svc.notify(BIZ, 'usage_100', {});
   assert.deepEqual(tokensSent(), ['t-owner']);
-  assert.equal(channelOf('t-owner'), 'v1_critical');
+  assert.equal(channelOf('t-owner'), 'v1_usage_100_hi'); // owner's language, voice off + quiet hours ignored
   assert.equal(sent[0].message.data.route, '/subscription/status');
 });
 
@@ -215,13 +222,14 @@ test('notifyOnce: a Redis failure drops the push rather than risk a repeat; push
   assert.equal(redisKeys.size, 0);
 });
 
-test('new_message: at most one per customer per 2 minutes (Redis key), on v1_messages, and plans one 10-minute customer_waiting check', async () => {
+test('new_message: at most one per customer per 2 minutes (Redis key), on the voice channel, and plans one 10-minute customer_waiting check', async () => {
   const payload = { customerId: 'c1', customerName: 'Ravi', customerNumber: '9198', preview: 'hello' };
   await svc.notifyNewMessage(BIZ, payload);
   await svc.notifyNewMessage(BIZ, payload);
   const groups = sent.filter((s) => s.message.data.type === 'new_message');
   assert.equal(groups.length, 3); // owner(hi) + staffAll(en) + staffChat(mr): one call per language, once
-  assert.ok(groups.every((g) => g.message.android.notification.channelId === 'v1_messages'));
+  assert.deepEqual(groups.map((g) => g.message.android.notification.channelId).sort(),
+    ['v1_new_message_en', 'v1_new_message_hi', 'v1_new_message_mr']);
   assert.equal(redisKeys.get(`notif:newmsg:${BIZ}:c1`), 120);
   assert.equal(scheduled.length, 1);
   assert.equal(scheduled[0].delay, 10 * 60 * 1000);
@@ -241,7 +249,7 @@ test('customer_waiting: notifies when nothing was sent to the customer since, st
   db.messages = [{ business_id: BIZ, customer_id: 'c1', direction: 'inbound', created_at: '2026-10-17T10:05:00.000Z' }];
   assert.equal(await svc.runCustomerWaitingCheck(job), 'notified');
   assert.equal(sent.every((s) => s.message.data.type === 'customer_waiting'), true);
-  assert.equal(sent[0].message.android.notification.channelId, 'v1_messages');
+  assert.match(sent[0].message.android.notification.channelId, /^v1_customer_waiting_(en|hi|mr)$/);
   sent = [];
   db.messages.push({ business_id: BIZ, customer_id: 'c1', direction: 'outbound', created_at: '2026-10-17T10:06:00.000Z' });
   assert.equal(await svc.runCustomerWaitingCheck(job), 'answered');

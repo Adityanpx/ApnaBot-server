@@ -35,21 +35,22 @@ const PERMISSION_COLUMNS = {
 };
 
 // kind: 'voice' (own sound per language) | 'normal' | 'critical' (owner only, ignores toggles and quiet hours)
+// A critical type with voice: true plays its spoken clip (v1_<type>_<lang>) instead of the plain critical channel.
 const TYPES = {
   booking_new:       { kind: 'voice', permission: 'bookings' },
   enquiry_new:       { kind: 'voice', permission: 'messages' },
   payment_received:  { kind: 'voice', permission: 'payments' },
   human_needed:      { kind: 'voice', permission: 'messages' },
   booking_cancelled: { kind: 'voice', permission: 'bookings' },
-  new_message:       { kind: 'normal', permission: 'messages' },
-  customer_waiting:  { kind: 'normal', permission: 'messages' },
-  whatsapp_disconnected: { kind: 'critical', route: '/business/whatsapp' },
-  payment_issue:         { kind: 'critical', route: '/business/whatsapp' },
+  new_message:       { kind: 'voice', permission: 'messages' },
+  customer_waiting:  { kind: 'voice', permission: 'messages' },
+  whatsapp_disconnected: { kind: 'critical', voice: true, route: '/business/whatsapp' },
+  payment_issue:         { kind: 'critical', voice: true, route: '/business/whatsapp' },
   usage_90:              { kind: 'critical', route: '/subscription/status' },
-  usage_100:             { kind: 'critical', route: '/subscription/status' },
-  plan_expiring:         { kind: 'critical', route: '/subscription/status' },
-  plan_expired:          { kind: 'critical', route: '/subscription/status' },
-  quality_dropped:       { kind: 'critical', route: '/business/whatsapp' }
+  usage_100:             { kind: 'critical', voice: true, route: '/subscription/status' },
+  plan_expiring:         { kind: 'critical', voice: true, route: '/subscription/status' },
+  plan_expired:          { kind: 'critical', voice: true, route: '/subscription/status' },
+  quality_dropped:       { kind: 'critical', voice: true, route: '/business/whatsapp' }
 };
 const TYPE_NAMES = Object.keys(TYPES);
 
@@ -283,11 +284,12 @@ const isQuietHours = (resolvedPrefs, now = new Date()) => {
  */
 const pickChannel = ({ type, language, voice = true, quiet = false }) => {
   const kind = TYPES[type].kind;
-  if (kind === 'critical') return CHANNEL_CRITICAL;
+  const voiceChannel = `v1_${type}_${normalizeLanguage(language)}`;
+  if (kind === 'critical') return TYPES[type].voice ? voiceChannel : CHANNEL_CRITICAL;
   if (kind === 'normal') return CHANNEL_NORMAL;
   if (quiet) return CHANNEL_SILENT;
   if (!voice) return CHANNEL_NORMAL;
-  return `v1_${type}_${normalizeLanguage(language)}`;
+  return voiceChannel;
 };
 
 // ── Recipients ───────────────────────────────────────────────────────────────

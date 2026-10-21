@@ -11,7 +11,6 @@
 // Never throws to its callers except where noted: a failure here must not stop the customer's reply.
 const supabase = require('../config/supabase');
 const notificationService = require('./notification.service');
-const socketService = require('./socket.service');
 const { fromRow, toRow, DEFAULTS, effectiveKeywords } = require('../utils/handoffSettings');
 const { isClosedNow, nextOpening, formatOpening } = require('../utils/handoffHours');
 const { getLocalizedText } = require('../utils/localization');
@@ -122,7 +121,8 @@ const toNeedsHuman = (customerRow) => {
 
 const emitNeedsHuman = (businessId, customerId, needsHuman) => {
   try {
-    socketService.emitToBusiness(String(businessId), 'needs_human', { customerId, needsHuman });
+    // Lazy: socket.service pulls in auth.service and Redis; importing this module must stay light.
+    require('./socket.service').emitToBusiness(String(businessId), 'needs_human', { customerId, needsHuman });
   } catch (err) {
     logger.error('Error emitting needs_human socket event:', err);
   }
