@@ -79,6 +79,12 @@ const TEXT = {
       en: "{who} asked something the bot couldn't answer",
       hi: '{who} ने ऐसा कुछ पूछा जिसका जवाब बॉट नहीं दे सका',
       mr: '{who} ने असे काहीतरी विचारले ज्याचे उत्तर बॉट देऊ शकला नाही'
+    },
+    // The "still waiting" reminder of an open handoff (handoff.service.js#runReminder).
+    bodyReminder: {
+      en: '{who} is still waiting for your reply',
+      hi: '{who} अभी भी आपके जवाब का इंतज़ार कर रहा है',
+      mr: '{who} अजूनही तुमच्या उत्तराची वाट पाहत आहे'
     }
   },
   booking_cancelled: {
@@ -173,6 +179,7 @@ const buildText = (type, payload, language) => {
     return { title, body: parts.length > 0 ? parts.join(' · ') : text.body[lang] };
   }
   if (type === 'payment_received' && !payload.amount) return { title, body: fill(text.bodyNoAmount[lang], vars) };
+  if (type === 'human_needed' && payload.reminder) return { title, body: fill(text.bodyReminder[lang], vars) };
   const body = fill(text.body[lang], vars);
   if (type === 'new_message' && payload.preview) return { title, body: `${who}: ${payload.preview}` };
   return { title, body };
@@ -426,13 +433,15 @@ const notifyOnce = async (businessId, type, payload, dedupeKey, ttlSeconds) => {
 
 /**
  * An inbound message while the bot is paused for that customer: notify at most
- * once per customer per 2 minutes, and plan a customer_waiting check 10 minutes on.
+ * once per customer per 2 minutes, and plan a customer_waiting check 10 minutes on
+ * (not while a handoff is open for that customer: skipWaitingCheck - it has its own reminder).
  */
-const notifyNewMessage = async (businessId, payload) => {
+const notifyNewMessage = async (businessId, payload, { skipWaitingCheck = false } = {}) => {
   try {
     if (!pushService.isPushEnabled() || !payload.customerId) return;
     if (!(await claimOnce(`notif:newmsg:${businessId}:${payload.customerId}`, NEW_MESSAGE_THROTTLE_SECONDS))) return;
     await module.exports.notify(businessId, 'new_message', payload);
+    if (skipWaitingCheck) return;
     // Lazy: keeps the BullMQ queue (and its Redis use) out of anything that only imports this module.
     const { scheduleCustomerWaiting } = require('../queues/customerWaiting.queue');
     await scheduleCustomerWaiting({

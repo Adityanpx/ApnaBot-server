@@ -212,8 +212,8 @@ const createReplyNode = async (req, res, next) => {
     if (replyKind === 'booking_trigger' && !label) {
       label = 'Great! Let me collect your details.';
     }
-    if (!label && !resolvedImageUrl && contentType !== 'location') {
-      return errorResponse(res, 400, 'label is required (unless imageUrl/mediaId is provided, or contentType is "location")');
+    if (!label && !resolvedImageUrl && contentType !== 'location' && replyKind !== 'handoff') {
+      return errorResponse(res, 400, 'label is required (unless imageUrl/mediaId is provided, or contentType is "location" or replyKind is "handoff")');
     }
     if (!label) label = '';
 

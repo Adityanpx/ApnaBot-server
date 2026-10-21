@@ -14,6 +14,7 @@ const {
   updateCustomer,
   blockCustomer,
   unblockCustomer,
+  clearHandoff,
   resumeMarketing,
   toggleCustomerOptIn
 } = require('../controllers/customer.controller');
@@ -28,6 +29,8 @@ router.get('/:id',          requireRole('owner', 'staff', 'superadmin'), getCust
 router.put('/:id',          requireRole('owner', 'superadmin'),          updateCustomer);
 router.post('/:id/block',   requireRole('owner', 'superadmin'),          blockCustomer);
 router.post('/:id/unblock', requireRole('owner', 'superadmin'),          unblockCustomer);
+// Mark done on a "customer needs a person" alert; answers { customerId, clearedAt }
+router.post('/:id/handoff/clear', requireRole('owner', 'staff', 'superadmin'), clearHandoff);
 router.post('/:id/resume-marketing', requireRole('owner', 'superadmin'), resumeMarketing);
 router.patch('/:id/opt-in', requireRole('owner', 'superadmin'),          toggleCustomerOptIn);
 

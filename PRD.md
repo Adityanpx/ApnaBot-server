@@ -1529,6 +1529,63 @@ is the only deploy step (apply it BEFORE the server: `GET /api/message-templates
   `routes/catalogBroadcast.routes.test.js`, `controllers/messageTemplate.listSystem.test.js`, additions to `utils/catalogIds.test.js` and
   `controllers/webhook.catalog.test.js`.
 
+## Human-needed alert ("handoff") (built 2026-10-28, migration `20261028120000_handoff.sql`, uncommitted)
+
+When a customer needs a person, the owner gets ONE `human_needed` push per open escalation, the customer gets an honest reply, and a
+"still waiting" reminder follows if nobody answers. Reuses the existing `human_needed` push type / channels / sounds (no new Flutter
+sound or channel). **Cutover:** the webhook change is live code on deploy, but customer-visible behaviour changes only for a business
+with a `business_handoff_settings` row where `enabled = true`. Existing businesses have NO row (= off, the old "push on every
+unmatched message / on `asksForHuman`" behaviour stays exactly as it was - Search cab AI included, it must stay without a row until the
+owner decides). New signups (`business.service.js#createBusiness`) get a row with `enabled = true`. Apply the migration BEFORE the
+server (the webhook selects the new `customers` columns and the settings table; a missing table fails open to "off" but logs an error).
+
+- **State** on `customers`: `needs_human_at` (NULL = none open), `needs_human_reason` (`tap|keyword|unmatched`), `handoff_cleared_at`,
+  `handoff_pause_set_to` (the `bot_paused_until` value the handoff wrote - clearing lifts only a pause that still equals it).
+  One guarded UPDATE (`handoff.service.js#raise`) opens it; only the winner pushes / pauses / plans the reminder. Phase A listed 3
+  columns; `handoff_pause_set_to` is the 4th (needed so "auto-resume" never undoes an owner's own pause).
+- **Triggers** (`webhook.controller.js`, after the `isBotPaused` return, only when handoff is enabled; never in a booking session, while
+  paused, or over the limit):
+  - *keyword* - a typed message of **<= 6 words** (`utils/handoffMatch.js#HANDOFF_MAX_WORDS`) holding a keyword phrase as whole words
+    (`normalizeUnicode`, independent of the per-business Unicode-matching flag, so Devanagari works on the legacy matcher too). Goes
+    AHEAD of rule matching, language keyword and opt-in handling; replies and returns. Longer messages fall through.
+  - *tap* - a reply node with `reply_kind = 'handoff'` (typed keyword or button tap). Node text wins; the settings/built-in text only
+    when the node's text is empty. With handoff off the node is a plain text reply (never an empty message).
+  - *unmatched* - the Nth (`unmatched_threshold`, default 3, 0 = off) unmatched message in a row (Redis `handoff:unmatched:<biz>:<cust>`,
+    24h; acknowledgements, taps and smart-fallback-answered messages don't count; a matched rule / tap / booking start resets). The Nth
+    is answered with the handoff reply. 30-minute cooldown after a clear (tap / keyword bypass it). Redis failure fails open (no escalation).
+  - A repeat trigger while one is open still answers the customer but sends no push, no reminder, no event.
+- **Default keywords** (`utils/handoffSettings.js`): talk to, speak to, call me, agent, human, owner, customer care, बात करनी है,
+  बात करना, बोलायचं आहे, बोलायचे आहे, मालक, baat karni, baat karna, bolaycha, malak (NOT `person`, NOT bare `बात`).
+- **Reply text**: built-in `handoffReply` / `handoffClosed` (en/hi/mr, `systemMessages.js`) or the business's own
+  `reply_text` / `closed_text` (+ translations). Closed variant only when `hours` is set and it is closed now (India time);
+  `{{nextOpening}}` = "today at 10:00 am" / "tomorrow at 9:00 am" / "Monday at 10:00 am" (`utils/handoffHours.js`, hi/mr wording is
+  new and wants a native-speaker review). `hours` null = the closed text is never sent. A node with its own text never gets the closed
+  variant (flagged: a business wanting it should leave the node text empty).
+- **Bot pause**: `pause_bot_minutes` (0 = leave the bot on) - never shortens a pause already in force (an owner's "forever" included).
+- **Reminder**: BullMQ queue `handoff-reminder` (`queues/handoffReminder.{queue,worker}.js`, started in `server.js`), job id
+  `handoff-reminder-<customerId>-<needsHumanAt epoch>`, `reminder_minutes` (default 15, 0 = none); the worker re-checks
+  `needs_human_at` before pushing, so a lost cancel is harmless. Reminder = `human_needed` with a "still waiting" body (en/hi/mr).
+  While an escalation is open the `customer_waiting` job is NOT scheduled (`notifyNewMessage(..., { skipWaitingCheck })`); `new_message`
+  pushes stay. Reminder jobs live in Redis: a flushed Redis loses them (the DB row is the truth; no sweep).
+- **Clear paths** (`handoff.service.js#clear`): dashboard / app send (`message.controller.js#afterManualSend`, covers `send` and
+  `send-payment-qr`), a phone-app reply (`coexistence.service.js#decideEchoPause`, genuine echoes only), and `POST /api/customers/:id/handoff/clear`
+  ("Mark done"). Each stamps `handoff_cleared_at`, cancels the reminder, emits the socket event; `auto_resume_bot` lifts the handoff's
+  OWN pause only. A staff/owner reply also pauses the bot 24h (existing behaviour), so auto-resume only matters for Mark done.
+- **API**: `GET/PUT /api/business/handoff-settings` (owner only, shape in `utils/handoffSettings.js`); `GET /api/messages` items gain
+  `needsHuman: { since, reason } | null` and accept `?needsHuman=true`; `getDashboardStats` gains `needsHumanCount`; socket event
+  `needs_human` `{ customerId, needsHuman: { since, reason } | null }`.
+- **Script**: `node src/scripts/convertTalkToHandoff.js [--templates] [--business=<id>] [--keyword=talk] [--expect-nodes=N] [--confirm]` -
+  dry run by default; converts plain-text reply nodes whose keyword is `talk` to `reply_kind='handoff'` in category templates and/or
+  one named business (then flushes its `rules:`/`tenant:` caches); REFUSES Search cab AI by name; aborts `--confirm` if the migration
+  is not applied. The 2026-10-21 dry run found 5 template nodes (software_it, gym, clothing_wholesaler, photographer, menswear);
+  the `maha_eseva_kendra` template's text-only `contact` node and the medical/hotel/coaching `contact` nodes are NOT converted
+  (different keyword; some carry buttons) - decide separately.
+- **Not built**: Flutter UI (inbox badge / filter, Mark done, settings screen, handoff kind in the reply-node editor, dashboard count),
+  web UI, a hours editor. **Staff cannot send messages from the app** (`POST /api/messages/send` is owner/superadmin only), so staff can
+  only Mark done.
+- Tests: `utils/handoffMatch.test.js`, `utils/handoffHours.test.js`, `utils/handoffSettings.test.js`, `services/handoff.service.test.js`,
+  `controllers/webhook.handoff.test.js`, additions to `services/notification.service.test.js`.
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism
@@ -1685,8 +1742,16 @@ is the only deploy step (apply it BEFORE the server: `GET /api/message-templates
    Search cab AI) before offering it to owners. Meta's payload length limit was not checked (ours are ~83 characters).
 33. **Catalogue broadcast has no web / Flutter screen**, and the broadcast detail does not show taps per broadcast yet
    (`catalog_events.broadcast_id` is recorded for it).
+34. **Handoff v1 limits** (see "Human-needed alert"): staff cannot send from the app (`/api/messages/send` is owner-only), only Mark done;
+    hours are India time only, single-day ranges (no overnight range); keyword matching is whole-word, so an inflected form
+    ("मालकाशी") needs its own phrase; the unmatched counter resets on a rule / tap / booking START, not on each booking step;
+    `botSettingsPreview.service.js` (Bot Builder draft preview) does not render a handoff node (presets never produce one);
+    `GET /api/customers` / chat payloads now carry the raw `needsHumanAt` / `needsHumanReason` / `handoffClearedAt` /
+    `handoffPauseSetTo` fields because they select `*`.
 
 ## Session log (append here as major milestones land)
+- 2026-10-28: Human-needed alert ("handoff"): migration `20261028120000_handoff.sql` (apply BEFORE the server), `business_handoff_settings`,
+  `reply_kind = 'handoff'`, reminder queue, `convertTalkToHandoff.js`. Off for every existing business (no row); on for new signups.
 - 2026-10-27: Send catalogue carousel broadcast (see "Send catalogue - carousel broadcast"): migration `20261027120000_catalog_broadcast.sql`
   must be applied before deploying. Working tree only, not committed. No customer-facing change until an owner sends one; needs the
   `broadcasts` switch (off by default). Search cab AI untouched (it has broadcasts off).

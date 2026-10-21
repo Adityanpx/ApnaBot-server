@@ -337,3 +337,22 @@ test('asksForHuman: contains one of the listed phrases, any case', () => {
   }
   for (const no of ['', 'hello', 'price of innova', 'thanks']) assert.equal(svc.asksForHuman(no), false, no);
 });
+
+// ── handoff (human_needed reminder, no customer_waiting while a handoff is open) ──────────────
+test('human_needed reminder: same type, title and channel, a "still waiting" body (en/hi/mr)', async () => {
+  const payload = { customerId: 'c1', customerName: 'Ravi', customerNumber: '9198', reminder: true };
+  assert.equal(svc.buildText('human_needed', payload, 'en').body, 'Ravi is still waiting for your reply');
+  assert.equal(svc.buildText('human_needed', payload, 'hi').body, 'Ravi अभी भी आपके जवाब का इंतज़ार कर रहा है');
+  assert.equal(svc.buildText('human_needed', payload, 'mr').body, 'Ravi अजूनही तुमच्या उत्तराची वाट पाहत आहे');
+  assert.equal(svc.buildText('human_needed', payload, 'en').title, svc.buildText('human_needed', { ...payload, reminder: false }, 'en').title);
+  assert.match(svc.buildText('human_needed', { ...payload, reminder: false }, 'en').body, /asked something the bot couldn't answer/);
+  await svc.notify(BIZ, 'human_needed', payload);
+  assert.equal(channelOf('t-owner'), 'v1_human_needed_hi');
+});
+
+test('new_message with skipWaitingCheck: still pushes (throttled) but plans no customer_waiting check', async () => {
+  const payload = { customerId: 'c1', customerName: 'Ravi', preview: 'hello?' };
+  await svc.notifyNewMessage(BIZ, payload, { skipWaitingCheck: true });
+  assert.equal(sent.filter((s) => s.message.data.type === 'new_message').length, 3);
+  assert.equal(scheduled.length, 0);
+});

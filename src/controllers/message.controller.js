@@ -8,6 +8,7 @@ const { withFailure } = require('../utils/whatsappErrors');
 const { withWindowExpiresAt } = require('./customer.controller');
 const { INDEFINITE_PAUSE_SENTINEL, BOT_PAUSE_DURATION_MS, isIndefinitePause } = require('../utils/botPause');
 const customerPipelineService = require('../services/customerPipeline.service');
+const handoffService = require('../services/handoff.service');
 const paymentService = require('../services/payment.service');
 const logger = require('../utils/logger');
 const { displayContent } = require('../utils/inboundMessage');
@@ -30,14 +31,17 @@ const { displayContent } = require('../utils/inboundMessage');
  */
 const getConversations = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20 } = req.query;
+    const { page = 1, limit = 20, needsHuman } = req.query;
     const businessId = req.user.businessId;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
 
-    const { data: customers, error, count } = await supabase
+    // ?needsHuman=true: only the conversations with an open "customer needs a person" alert.
+    let customerQuery = supabase
       .from('customers').select('*', { count: 'exact' }).eq('business_id', businessId)
-      .not('last_activity_at', 'is', null)
+      .not('last_activity_at', 'is', null);
+    if (needsHuman === 'true') customerQuery = customerQuery.not('needs_human_at', 'is', null);
+    const { data: customers, error, count } = await customerQuery
       .order('last_activity_at', { ascending: false, nullsFirst: false })
       .range((pageNum - 1) * limitNum, pageNum * limitNum - 1);
     if (error) throw error;
@@ -60,6 +64,7 @@ const getConversations = async (req, res, next) => {
         lastDirection: lastMsg?.direction ?? null,
         unreadCount: unreadCount || 0,
         botPausedUntil: customer.botPausedUntil ?? null,
+        needsHuman: handoffService.toNeedsHuman(customer),
         customer
       };
     }));
@@ -234,6 +239,12 @@ const afterManualSend = async (customer) => {
     .from('customers').update(customerUpdate).eq('id', customer.id);
   if (updateErr) {
     logger.error('Error pausing bot / stamping activity after manual send:', updateErr);
+  }
+
+  // A person answering closes an open "customer needs a person" alert (and its reminder). The pause
+  // written above is the owner's, not the handoff's, so auto-resume never lifts it.
+  if (customer.needsHumanAt) {
+    await handoffService.clearQuietly({ businessId: customer.businessId, customerId: customer.id });
   }
   return botPausedUntil;
 };

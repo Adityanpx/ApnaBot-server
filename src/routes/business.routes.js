@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const businessController = require('../controllers/business.controller');
 const businessMediaController = require('../controllers/businessMedia.controller');
+const handoffController = require('../controllers/handoff.controller');
 const { protect, requireBusiness } = require('../middleware/auth.middleware');
 const { requireRole } = require('../middleware/role.middleware');
 const { uploadSingle, uploadMediaSingle } = require('../middleware/upload.middleware');
@@ -42,6 +43,10 @@ router.get('/language-settings', protect, requireBusiness, businessController.ge
 
 // PUT /language-settings - picker prompt / mode / change keyword (owner)
 router.put('/language-settings', protect, requireBusiness, requireRole('owner'), businessController.updateLanguageSettings);
+
+// GET /handoff-settings, PUT /handoff-settings - the human-needed alert (owner)
+router.get('/handoff-settings', protect, requireBusiness, requireRole('owner'), handoffController.getHandoffSettings);
+router.put('/handoff-settings', protect, requireBusiness, requireRole('owner'), handoffController.updateHandoffSettings);
 
 router.get('/served-cities', protect, requireBusiness, businessController.getServedCities);
 

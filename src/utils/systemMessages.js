@@ -40,6 +40,18 @@ const SYSTEM_MESSAGES = {
     hi: 'आपके संदेश के लिए धन्यवाद। हम जल्द ही आपसे संपर्क करेंगे।',
     mr: 'तुमच्या संदेशाबद्दल धन्यवाद. आम्ही लवकरच तुमच्याशी संपर्क साधू.'
   },
+  // Human-needed alert (services/handoff.service.js). Used when the business has set no text of
+  // its own. {{nextOpening}} is "today at 10:00 am" / "tomorrow at 9:00 am" / "Monday at 10:00 am".
+  handoffReply: {
+    en: 'Thank you! 🙏 Our team has been told and will reply to you here shortly.',
+    hi: 'धन्यवाद! 🙏 हमारी टीम को बता दिया गया है, वे जल्द ही आपको यहीं जवाब देंगे।',
+    mr: 'धन्यवाद! 🙏 आमच्या टीमला कळवले आहे, ते लवकरच तुम्हाला इथेच उत्तर देतील.'
+  },
+  handoffClosed: {
+    en: 'Thank you! 🙏 We are closed right now. Our team will reply to you here {{nextOpening}}.',
+    hi: 'धन्यवाद! 🙏 हम अभी बंद हैं। हमारी टीम {{nextOpening}} आपको यहीं जवाब देगी।',
+    mr: 'धन्यवाद! 🙏 आम्ही सध्या बंद आहोत. आमची टीम {{nextOpening}} तुम्हाला इथेच उत्तर देईल.'
+  },
   locationNotConfigured: {
     en: 'Sorry, our location is not set up yet.',
     hi: 'माफ़ कीजिए, हमारा लोकेशन अभी सेट नहीं किया गया है।',

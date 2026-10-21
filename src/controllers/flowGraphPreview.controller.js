@@ -21,6 +21,7 @@ const bookingService = require('../services/booking.service');
 const chatbotService = require('../services/chatbot.service');
 const smartFallbackService = require('../services/smartFallback.service');
 const businessService = require('../services/business.service');
+const handoffService = require('../services/handoff.service');
 const { GREETING_KEYWORDS } = require('./webhook.controller');
 const { applyMessageTemplate, applyMessageTemplateWithFooter } = require('../utils/messageTemplating');
 const { getLocalizedText } = require('../utils/localization');
@@ -221,6 +222,24 @@ const handleNoActiveSession = async (business, messageText, buttonReplyId) => {
       const replyText = applyMessageTemplateWithFooter(localizedReply, business, null);
       const rendered = buildReplyNodeOptions(matchedNode, matchedEdges);
       return { replyText, buttons: rendered.buttons, listOptions: rendered.listOptions, session: null };
+    }
+
+    if (matchedNode.replyKind === 'handoff') {
+      // Mirrors webhook.controller.js's handoff reply (the node's own text first, else the settings
+      // or built-in text) WITHOUT alerting anyone - a preview has no real customer.
+      const settings = await handoffService.getActiveSettings(business.id);
+      const ownText = getLocalizedText(matchedNode, 'label', null);
+      const text = ownText && String(ownText).trim() !== ''
+        ? ownText
+        : (settings ? handoffService.replyTextFor(settings, null) : getSystemMessage('handoffReply', null));
+      const rendered = buildReplyNodeOptions(matchedNode, matchedEdges);
+      return {
+        replyText: applyMessageTemplateWithFooter(text, business, null),
+        buttons: rendered.buttons,
+        listOptions: rendered.listOptions,
+        session: null,
+        note: 'Preview only: on WhatsApp the owner would also get a "customer needs your reply" alert.'
+      };
     }
 
     if (matchedNode.replyKind === 'booking_trigger') {

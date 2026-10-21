@@ -31,7 +31,8 @@ const VALID_MATCH_TYPES = ['exact', 'contains', 'startsWith'];
 const VALID_CONTENT_TYPES = ['text', 'buttons', 'list', 'location', 'location_request', 'carousel'];
 // Question nodes (booking fields) never send a carousel.
 const VALID_QUESTION_CONTENT_TYPES = VALID_CONTENT_TYPES.filter(t => t !== 'carousel');
-const VALID_REPLY_KINDS = ['text', 'booking_trigger', 'payment_trigger', 'web_form_trigger'];
+// 'handoff': the "talk to a person" reply (webhook.controller.js; services/handoff.service.js). Its label may be empty.
+const VALID_REPLY_KINDS = ['text', 'booking_trigger', 'payment_trigger', 'web_form_trigger', 'handoff'];
 // 'rentalPackage' deliberately excluded — still engine-internal/migration-only,
 // per PRD.md's "NOT done yet" note. Only vehicle_carousel has a create path.
 const VALID_QUESTION_NODE_TYPES = ['question', 'vehicle_carousel'];
@@ -440,8 +441,8 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
 
     if (replyKind === 'payment_trigger' && !label) label = 'Please complete your payment.';
     if (replyKind === 'booking_trigger' && !label) label = 'Great! Let me collect your details.';
-    if (!label && !resolvedImageUrl && contentType !== 'location') {
-      return { error: `replyNodes[${i}]: label is required (unless imageUrl/mediaId is provided, or contentType is "location")` };
+    if (!label && !resolvedImageUrl && contentType !== 'location' && replyKind !== 'handoff') {
+      return { error: `replyNodes[${i}]: label is required (unless imageUrl/mediaId is provided, or contentType is "location" or replyKind is "handoff")` };
     }
     if (!label) label = '';
     if (contentType === 'carousel') {

@@ -19,6 +19,7 @@ const socketService = require('./socket.service');
 const tenantService = require('./tenant.service');
 const notificationService = require('./notification.service');
 const customerPipelineService = require('./customerPipeline.service');
+const handoffService = require('./handoff.service');
 const { echoMediaOf, isOwnerMediaEnabled, storeEchoMedia } = require('./echoMedia.service');
 const { toCamelCase } = require('../utils/caseConvert');
 const { cleanValue } = require('../utils/templateValue');
@@ -220,6 +221,8 @@ const decideEchoPause = async ({ businessId, customerId, wamid }) => {
         }
         // A genuine staff reply moves New -> Contacted, paused or not.
         await customerPipelineService.advancePipelineStage(customerId, 'contacted');
+        // ...and closes an open "customer needs a person" alert (never throws; no-op when none is open).
+        await handoffService.clearQuietly({ businessId, customerId });
       }
     }
   } catch (err) {

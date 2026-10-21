@@ -199,6 +199,14 @@ const createBusiness = async (ownerUserId, data) => {
       }).select().single();
     if (travelSettingsErr) throw travelSettingsErr;
 
+    // New signups start with the human-needed alert (handoff) switched on; an existing business has
+    // no row, which means off. Best-effort: a failure here must never fail the signup.
+    const { error: handoffSettingsErr } = await supabase
+      .from('business_handoff_settings').insert({ business_id: business.id, enabled: true });
+    if (handoffSettingsErr) {
+      logger.error(`createBusiness: could not create the handoff settings row for business ${business.id}:`, handoffSettingsErr);
+    }
+
     // The business row is created with a literal empty graph (no flow_nodes/
     // flow_edges rows). Right after this returns, business.controller.js
     // #createBusiness calls defaultSetup.service.js#applyDefaultSetup, which
@@ -473,14 +481,17 @@ const getDashboardStats = async (businessId) => {
   };
 
   // eq: {column: value} filters; gt: {column: value} > filters; gteColumn/gteValue:
-  // an additional >= filter (for "today" cutoffs)
-  const countRows = async (table, { eq = {}, gt = {}, gteColumn, gteValue } = {}) => {
+  // an additional >= filter (for "today" cutoffs); notNull: [column] rows where the column is set
+  const countRows = async (table, { eq = {}, gt = {}, notNull = [], gteColumn, gteValue } = {}) => {
     let query = supabase.from(table).select('*', { count: 'exact', head: true }).eq('business_id', businessId);
     for (const [column, value] of Object.entries(eq)) {
       query = query.eq(column, value);
     }
     for (const [column, value] of Object.entries(gt)) {
       query = query.gt(column, value);
+    }
+    for (const column of notNull) {
+      query = query.not(column, 'is', null);
     }
     if (gteColumn) query = query.gte(gteColumn, gteValue);
     const { count, error } = await query;
@@ -495,6 +506,7 @@ const getDashboardStats = async (businessId) => {
     totalCustomers,
     newCustomersToday,
     pendingBookings,
+    needsHumanCount,
     currentMonthUsage
   ] = await Promise.all([
     safe(() => countRows('messages', { gteColumn: 'created_at', gteValue: startOfToday.toISOString() }), 'todayMessageCount', 0),
@@ -505,6 +517,8 @@ const getDashboardStats = async (businessId) => {
     // the import time, and a 5,000-row import isn't 5,000 new customers today.
     safe(() => countRows('customers', { gt: { total_messages: 0 }, gteColumn: 'first_seen_at', gteValue: startOfToday.toISOString() }), 'newCustomersToday', 0),
     safe(() => countRows('bookings', { eq: { status: 'pending' } }), 'pendingBookings', 0),
+    // Customers with an open "needs a person" alert (handoff)
+    safe(() => countRows('customers', { notNull: ['needs_human_at'] }), 'needsHumanCount', 0),
     require('./usage.service').getUsageForBusiness(businessId)
   ]);
 
@@ -515,6 +529,7 @@ const getDashboardStats = async (businessId) => {
     totalCustomers,
     newCustomersToday,
     pendingBookings,
+    needsHumanCount,
     currentMonthUsage: currentMonthUsage || null
   };
 };

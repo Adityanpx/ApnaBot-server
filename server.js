@@ -49,6 +49,13 @@ try {
   logger.warn('Customer waiting BullMQ worker not started (Redis may not be available):', err.message);
 }
 
+try {
+  require('./src/queues/handoffReminder.worker');
+  logger.info('Handoff reminder BullMQ worker started');
+} catch (err) {
+  logger.warn('Handoff reminder BullMQ worker not started (Redis may not be available):', err.message);
+}
+
 // ── Subscription Expiry Cron (every 24 hours) ──────────────────────────────
 const subscriptionService = require('./src/services/subscription.service');
 const subscriptionNotifications = require('./src/services/subscriptionNotifications.service');

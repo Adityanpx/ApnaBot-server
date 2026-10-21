@@ -5,6 +5,7 @@ const { toCamelCase } = require('../utils/caseConvert');
 const businessService = require('../services/business.service');
 const optInLinkService = require('../services/optInLink.service');
 const contactGroupService = require('../services/contactGroup.service');
+const handoffService = require('../services/handoff.service');
 const { PIPELINE_STAGES, applyTagsAny, parseTagsParam } = require('../utils/customerFilters');
 const logger = require('../utils/logger');
 
@@ -507,6 +508,27 @@ const blockCustomer = async (req, res, next) => {
 };
 
 /**
+ * POST /api/customers/:id/handoff/clear
+ * "Mark done" on a customer who needs a person: closes the open handoff alert, cancels its
+ * reminder and (with auto-resume on) lifts the bot pause the handoff set. Owner, staff, superadmin.
+ * Idempotent: with nothing open it answers 200 with clearedAt null.
+ * Response: { customerId, clearedAt }
+ */
+const clearHandoff = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const businessId = req.user.businessId;
+    const result = await handoffService.clear({ businessId, customerId: id });
+    if (!result.found) return errorResponse(res, 404, 'Customer not found');
+    return successResponse(res, 200, { customerId: id, clearedAt: result.clearedAt },
+      result.wasOpen ? 'Marked as done' : 'Nothing was waiting for this customer');
+  } catch (error) {
+    logger.error('Error in clearHandoff:', error);
+    next(error);
+  }
+};
+
+/**
  * POST /api/customers/:id/unblock
  * Unblock a customer
  */
@@ -620,6 +642,7 @@ module.exports = {
   updateCustomer,
   blockCustomer,
   unblockCustomer,
+  clearHandoff,
   resumeMarketing,
   toggleCustomerOptIn,
   withWindowExpiresAt,

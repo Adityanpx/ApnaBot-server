@@ -5,6 +5,8 @@ const chatbotService = require('../services/chatbot.service');
 const smartFallbackService = require('../services/smartFallback.service');
 const usageService = require('../services/usage.service');
 const notificationService = require('../services/notification.service');
+const handoffService = require('../services/handoff.service');
+const { asksForPerson } = require('../utils/handoffMatch');
 const bookingService = require('../services/booking.service');
 const bookingGraphService = require('../services/bookingGraph.service');
 const socketService = require('../services/socket.service');
@@ -83,6 +85,13 @@ const TRIGGER_REPLY_KINDS = new Set(['booking_trigger', 'payment_trigger', 'web_
 // The words that re-open it ('language', 'भाषा', 'bhasha' + the owner's own changeKeyword) come from
 // languagePicker.service.js#isChangeKeyword.
 const CUSTOMER_STOP_PAUSE_DURATION_MS = 24 * 60 * 60 * 1000;
+
+/** The language a handoff reply goes out in: the customer's if the business still offers it, else its first one. */
+const handoffLanguage = (tenant, customer) => {
+  const enabled = Array.isArray(tenant.enabledLanguages) && tenant.enabledLanguages.length > 0 ? tenant.enabledLanguages : null;
+  if (customer.preferredLanguage && (!enabled || enabled.includes(customer.preferredLanguage))) return customer.preferredLanguage;
+  return enabled ? enabled[0] : 'en';
+};
 
 /**
  * Insert a message row. Throws on failure — used at call sites that were
@@ -1343,7 +1352,8 @@ const processWebhookChange = async (entry, changes) => {
       if (customerInfo.isNew || lastInboundMs === null || Date.now() - lastInboundMs > ENQUIRY_GAP_MS) {
         notificationService.notify(tenant.businessId, 'enquiry_new', pushPayload);
       } else if (isBotPaused) {
-        notificationService.notifyNewMessage(tenant.businessId, pushPayload);
+        // An open handoff has its own reminder, so no customer_waiting check on top of it.
+        notificationService.notifyNewMessage(tenant.businessId, pushPayload, { skipWaitingCheck: !!customer.needsHumanAt });
       }
     }
 
@@ -1579,9 +1589,42 @@ const processWebhookChange = async (entry, changes) => {
       customerName: customer.name,
       customerNumber
     }, `${tenant.businessId}:${customer.id}`, 5 * 60);
+    // The human-needed alert (services/handoff.service.js): null unless the business has an enabled
+    // business_handoff_settings row. Without one, everything below is the legacy behaviour exactly.
+    const handoffCfg = await handoffService.getActiveSettings(tenant.businessId);
     // Only typed free text counts: not a button / list tap, and not an answer to a booking question
     // (the session is read only when the text matches, which is rare).
-    if (messageType === 'text' && notificationService.asksForHuman(messageText)) {
+    if (handoffCfg) {
+      // A short message that asks for a person goes ahead of rule matching (and of the language and
+      // opt-in handling below): the owner is alerted once and the customer is told so. A longer
+      // message, or one in a booking, carries on as before.
+      if (messageType === 'text' && asksForPerson(messageText, handoffService.effectiveKeywords(handoffCfg))) {
+        let inBookingSession = true; // if the session can't be read, stay quiet
+        try {
+          inBookingSession = !!(await bookingService.getBookingSession(tenant.businessId, customerNumber));
+        } catch (sessionError) {
+          logger.error('Error reading the booking session for the handoff check:', sessionError);
+        }
+        if (!inBookingSession) {
+          let raised = false;
+          try {
+            await handoffService.raise({ businessId: tenant.businessId, customer, customerNumber, reason: 'keyword', settings: handoffCfg });
+            raised = true;
+          } catch (raiseError) {
+            // Not told the owner, so not told the customer either: carry on with normal matching.
+            logger.error('Error raising the handoff for a keyword request, carrying on without it:', raiseError);
+          }
+          if (raised) {
+            await sendFallbackTextMessage(
+              { tenant, customer, customerNumber, triggeredRuleId: null },
+              applyMessageTemplate(handoffService.replyTextFor(handoffCfg, handoffLanguage(tenant, customer)), tenant, customer)
+            );
+            logger.info(`Handoff keyword request from ${customerNumber} for business ${tenant.businessId}`);
+            return; // Do not run rule matching
+          }
+        }
+      }
+    } else if (messageType === 'text' && notificationService.asksForHuman(messageText)) {
       let inBookingSession = true; // if the session can't be read, stay quiet
       try {
         inBookingSession = !!(await bookingService.getBookingSession(tenant.businessId, customerNumber));
@@ -2373,6 +2416,12 @@ const processWebhookChange = async (entry, changes) => {
     // button rendered at Step 16 instead of a plain text reply.
     let ctaButton = null;
 
+    // A rule, a tap or a booking start answered this message: the run of unanswered messages that
+    // escalates to a person (handoff) starts over. Never throws.
+    if ((directBookingEntry || matchedNode) && handoffCfg && handoffCfg.unmatchedThreshold > 0) {
+      await handoffService.resetUnmatched(tenant.businessId, customer.id);
+    }
+
     if (directBookingEntry) {
       // Button targeted a question node directly — start the graph right
       // there instead of following a booking_trigger node's single edge.
@@ -2407,7 +2456,7 @@ const processWebhookChange = async (entry, changes) => {
         // producing an empty interactive.body.text that Meta rejects
         // outright. Found 2026-09-15 via a Multi-Brand Router node that
         // shipped with replyKind=null from bad upstream data.
-        if (matchedNode.replyKind !== 'text') {
+        if (matchedNode.replyKind !== 'text' && matchedNode.replyKind !== 'handoff') {
           logger.warn('Reply node has unrecognized replyKind — falling back to text-reply behavior', {
             businessId: tenant.businessId,
             nodeId: matchedNode.id,
@@ -2416,6 +2465,27 @@ const processWebhookChange = async (entry, changes) => {
         }
         const localizedReply = getLocalizedText(matchedNode, 'label', customer.preferredLanguage);
         replyText = applyMessageTemplateWithFooter(localizedReply, tenant, customer);
+
+        if (matchedNode.replyKind === 'handoff') {
+          // "Talk to a person". With handoff on for the business this also alerts the owner (once per
+          // open escalation); the customer gets the reply either way. The node's own text wins; the
+          // settings text (closed variant included) or the built-in one is used only when it is empty.
+          if (handoffCfg) {
+            try {
+              await handoffService.raise({ businessId: tenant.businessId, customer, customerNumber, reason: 'tap', settings: handoffCfg });
+            } catch (raiseError) {
+              logger.error('Error raising the handoff for a handoff node, falling back to the plain push:', raiseError);
+              notifyHumanNeeded();
+            }
+          }
+          if (!localizedReply || String(localizedReply).trim() === '') {
+            const language = handoffLanguage(tenant, customer);
+            replyText = applyMessageTemplateWithFooter(
+              handoffCfg ? handoffService.replyTextFor(handoffCfg, language) : getSystemMessage('handoffReply', language),
+              tenant, customer
+            );
+          }
+        }
 
       } else if (matchedNode.replyKind === 'booking_trigger') {
         // Start booking flow. startGraphSession is side-effect-free
@@ -2609,7 +2679,27 @@ const processWebhookChange = async (entry, changes) => {
       // The bot had no rule for this message (even if the AI fallback answered): tell the
       // owner a person may be needed. At most once per customer per 5 minutes (fire and forget).
       // A bare "ok" / "thanks" / 👍 needs no person.
-      if (!notificationService.isAcknowledgement(messageText)) notifyHumanNeeded();
+      if (!handoffCfg) {
+        if (!notificationService.isAcknowledgement(messageText)) notifyHumanNeeded();
+      } else if (!smartReply && !buttonReplyId && !listReplyId && handoffCfg.unmatchedThreshold > 0 &&
+                 !notificationService.isAcknowledgement(messageText)) {
+        // Handoff on: not every unmatched message, but the Nth in a row (a message the AI fallback
+        // answered, a tap and an acknowledgement do not count). The Nth is answered with the handoff
+        // reply instead of the fallback; if an escalation is already open (or was cleared under 30
+        // minutes ago) nothing more is sent and the fallback reply stands.
+        const unmatchedCount = await handoffService.bumpUnmatched(tenant.businessId, customer.id);
+        if (unmatchedCount >= handoffCfg.unmatchedThreshold) {
+          try {
+            const raised = await handoffService.raise({ businessId: tenant.businessId, customer, customerNumber, reason: 'unmatched', settings: handoffCfg });
+            if (raised.claimed) {
+              replyText = applyMessageTemplate(handoffService.replyTextFor(handoffCfg, handoffLanguage(tenant, customer)), tenant, customer);
+            }
+          } catch (raiseError) {
+            logger.error('Error raising the handoff for unmatched messages, falling back to the plain push:', raiseError);
+            notifyHumanNeeded();
+          }
+        }
+      }
 
       // Attach the business's greeting/menu buttons (if one is configured)
       // so the customer has a tappable way forward instead of a dead-end
