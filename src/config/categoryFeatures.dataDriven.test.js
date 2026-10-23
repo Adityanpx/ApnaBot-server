@@ -1,5 +1,5 @@
 // Run: node --test src/config/categoryFeatures.dataDriven.test.js
-// Categories are data (migration 20261031120000): the four category CHECK lists become foreign keys to
+// Categories are data (migration 20261024140000): the four category CHECK lists become foreign keys to
 // business_categories(value), the table gains emoji + label_translations, mobile_electronics is the first
 // row created that way, and categoryFeatures.js treats any category it does not list as "no features".
 const test = require('node:test');
@@ -10,7 +10,7 @@ const { CATEGORY_DEFAULT_FEATURES, computeFeatureFlags, isTravelFeaturedCategory
 
 const MIGRATIONS = path.join(__dirname, '..', '..', 'supabase', 'migrations');
 const read = (name) => fs.readFileSync(path.join(MIGRATIONS, name), 'utf8');
-const raw = read('20261031120000_data_driven_categories.sql');
+const raw = read('20261024140000_data_driven_categories.sql');
 const code = raw.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
 const statements = code.split(';').map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
 

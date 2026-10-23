@@ -140,13 +140,29 @@ test('the specified nodes: keywords, match types, buttons and where each button 
   assert.deepEqual(nav('address'), [['Main menu', 'hi']]);
   assert.deepEqual(nav('call'), []);
   assert.deepEqual(nav('offer'), []);
-  for (const kw of ['mobile', 'tv', 'csd', 'emi', 'offer', 'address', 'call']) assert.equal(byKeyword(kw).match_type, 'contains', kw);
+  for (const kw of ['mobile', 'tv', 'csd', 'offer', 'address', 'call']) assert.equal(byKeyword(kw).match_type, 'contains', kw);
+  assert.equal(byKeyword('emi').match_type, 'exact', 'emi is too short to match inside words (premium)');
   assert.deepEqual(byKeyword('mobile').hindi_aliases, ['phone', 'smartphone', 'फोन', 'मोबाइल']);
   assert.deepEqual(byKeyword('csd').hindi_aliases, ['cpc', 'canteen', 'army', 'police', 'defence']);
   assert.deepEqual(byKeyword('emi').hindi_aliases, ['loan', 'finance', 'installment', 'किस्त']);
-  assert.deepEqual(byKeyword('offer').hindi_aliases, ['price', 'rate', 'catalogue']);
+  assert.deepEqual(byKeyword('offer').hindi_aliases, ['price', 'price list', 'catalogue']);
   assert.deepEqual(byKeyword('address').hindi_aliases, ['location', 'shop', 'timing', 'पता']);
   assert.deepEqual(byKeyword('call').hindi_aliases, ['talk', 'person']);
+});
+
+test('D and E texts are the agreed wording, and the owner reminders live in the template description', () => {
+  assert.equal(byKeyword('csd').label, 'We are an authorised CSD & CPC dealer. Defence and Central Armed Police personnel can buy eligible products at canteen rates. Tap *Documents needed* to see what to bring.');
+  assert.equal(byKeyword('csd_documents').label, "Please bring your CSD / CPC card and your service ID card (retired personnel: PPO). We'll guide you through the rest.");
+  assert.equal(template.description, 'Before going live, confirm the CSD/CPC eligibility and document wording (D, E) with the owner, and add the brands they stock to Mobiles and TV & Appliances.');
+});
+
+test('no customer-visible text carries an "Owner:" note', () => {
+  const visible = [
+    ...template.nodes.flatMap((n) => [n.label, ...(n.options || []).map((o) => o.label), n.button_text]),
+    ...template.edges.flatMap((e) => [e.label, e.description])
+  ].filter((t) => typeof t === 'string');
+  assert.ok(visible.length > 30);
+  assert.deepEqual(visible.filter((t) => /owner:/i.test(t)), []);
 });
 
 test('G is the Catalogue reply (catalog content type, no buttons); I is the handoff reply with an empty label', () => {

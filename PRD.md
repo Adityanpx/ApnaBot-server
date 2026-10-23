@@ -1309,6 +1309,38 @@ breaks) + 1-2 quick-reply buttons (<= 20 chars), under a required main message (
 - Tests: `services/carouselBundle.service.test.js` (the RPC is modelled in memory),
   `config/categoryFeatures.newCategories.test.js`.
 
+## Data-driven business categories + `mobile_electronics` (built 2026-10-24, migration `20261024140000_data_driven_categories.sql`)
+
+- **A category is one `business_categories` row**, created from Super Admin: no migration, deploy or client release. The
+  table gained `emoji text` (default `''`) and `label_translations jsonb` (default `{}`, shape `{"hi","mr"}`); clients
+  fall back to their own maps / `label` when these are empty. The four category CHECK constraints
+  (`businesses`, `flow_snapshots` (nullable), `category_whatsapp_flows`, `node_library_entries`) became foreign keys to
+  `business_categories(value)`, `on update cascade on delete restrict`. `business_type_templates` / `flow_packs` (dead)
+  keep their CHECKs. `category_features` / `course_catalog` already referenced the table.
+- **Endpoints (superadmin only, `/api/admin/business-categories`):** `POST /` `{ value, label, labelTranslations?, emoji?,
+  icon?, displayOrder?, isEnabled? }` - `value` matches `^[a-z][a-z0-9_]{2,39}$`, 409 if it exists, `isEnabled` defaults
+  to **false** (a half-made category never shows at signup), `displayOrder` defaults to max + 10; `PUT /:value` - same
+  fields except `value` (immutable, 400 if it differs), 404 if missing. No delete. Limits: label <= 40, emoji <= 8
+  characters, translations only `hi`/`mr` strings (empty ones dropped), `icon` length-only (older rows hold a raw emoji).
+  `GET` (admin list) and the public `GET /api/business-categories` return `emoji` and `labelTranslations` camelCased.
+  The older `PUT /:value/toggle` remains.
+- **Server code needs no per-category list:** validation goes through `businessCategoryService.isKnownCategory` /
+  `isEnabledCategory`. `categoryFeatures.js` treats an unlisted category as "no features" (own-property lookup, so a
+  category named `constructor` is safe).
+- **`mobile_electronics`** ("Mobile & Electronics", icon `smartphone`, emoji 📱, order 158, enabled): mobile / TV /
+  appliance sales shops incl. CSD / CPC canteen dealers. `electronics_repair` is a separate, unchanged category.
+- **`templates/category/`** holds starter-flow files in the exact body `POST /api/admin/category-templates/import-json`
+  accepts (`{ category, name, description, nodes, edges }`, raw snake_case rows, fixed UUIDs). Files only: importing is a
+  manual Super Admin step. `mobile_electronics.default.json` is the first (menu, product enquiry, CSD/CPC + documents, EMI,
+  store details, handoff, 4-question enquiry via `booking_trigger`). Its Catalogue reply (`content_type 'catalog'`) is
+  dropped when a template is copied into a business (`writeBusinessGraphRows`), so businesses get a 6-row menu until they
+  enable the Catalogue page. The booking confirmation text is the fixed system message; a template cannot set a closing text.
+- **Apply order:** run the preflight in the migration header (must return 0 rows), apply the migration, THEN deploy the
+  server. Not a cutover for existing businesses; Search cab AI is unaffected.
+- Tests: `controllers/businessCategoryAdmin.controller.test.js`, `routes/businessCategoryAdmin.routes.test.js`,
+  `config/categoryFeatures.dataDriven.test.js`, `controllers/categoryTemplate.mobileElectronics.test.js`,
+  `services/bookingGraph.mobileElectronics.test.js`.
+
 ## Bot languages, language picker, auto-translate (built 2026-10-24, migrations `20261024120000`, `20261024130000`, uncommitted)
 
 Each business offers English + up to 2 Indian languages (3 total; the cap was 4 until 2026-10-20). **Cutover note:** a business created from now on gets a

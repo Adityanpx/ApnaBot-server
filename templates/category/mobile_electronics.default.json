@@ -1,7 +1,7 @@
 {
   "category": "mobile_electronics",
   "name": "Mobile & Electronics — Starter",
-  "description": "Starter flow for mobile / TV / appliance shops, including CSD & CPC canteen dealers: main menu, product enquiry, CSD/CPC info, EMI, store details, talk to a person, and a 4-question enquiry that lands in Bookings.",
+  "description": "Before going live, confirm the CSD/CPC eligibility and document wording (D, E) with the owner, and add the brands they stock to Mobiles and TV & Appliances.",
   "nodes": [
     {
       "id": "3b0b11e0-0000-4000-8000-000000000001",
@@ -96,7 +96,7 @@
       "reply_kind": "text",
       "trigger_count": 0,
       "content_type": "buttons",
-      "label": "We are an authorised CSD & CPC dealer. Serving and retired Defence personnel and Central Armed Police personnel can buy eligible products at canteen rates. (Owner: please confirm eligibility wording.)",
+      "label": "We are an authorised CSD & CPC dealer. Defence and Central Armed Police personnel can buy eligible products at canteen rates. Tap *Documents needed* to see what to bring.",
       "field_key": null,
       "summary_label": null,
       "required": false,
@@ -116,7 +116,7 @@
       "reply_kind": "text",
       "trigger_count": 0,
       "content_type": "buttons",
-      "label": "Please bring your CSD / CPC card and service ID card (or PPO for retired personnel). We'll guide you through the rest. (Owner: please confirm the list.)",
+      "label": "Please bring your CSD / CPC card and your service ID card (retired personnel: PPO). We'll guide you through the rest.",
       "field_key": null,
       "summary_label": null,
       "required": false,
@@ -131,7 +131,7 @@
       "id": "3b0b11e0-0000-4000-8000-000000000006",
       "node_type": "reply",
       "keyword": "emi",
-      "match_type": "contains",
+      "match_type": "exact",
       "hindi_aliases": [
         "loan",
         "finance",
@@ -159,7 +159,7 @@
       "match_type": "contains",
       "hindi_aliases": [
         "price",
-        "rate",
+        "price list",
         "catalogue"
       ],
       "reply_kind": "text",
