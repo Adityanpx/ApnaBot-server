@@ -287,7 +287,7 @@ const handleEchoes = async (tenant, value) => {
         sender_type: 'phone_app',
         is_read: true,
         ...(media ? { wa_media_id: media.id, wa_media_mime: media.mimeType, wa_media_filename: media.filename } : {}),
-        ...(row.createdAt ? { created_at: row.createdAt } : {})
+        ...(row.createdAt ? { created_at: row.createdAt, wa_timestamp: row.createdAt } : {})
       });
       if (res.duplicate) {
         stats.duplicates += 1;

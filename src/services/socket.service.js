@@ -3,6 +3,7 @@ const config = require('../config/env');
 const authService = require('./auth.service');
 const supabase = require('../config/supabase');
 const logger = require('../utils/logger');
+const { withMessageTime } = require('../utils/messageTime');
 
 let io = null;
 
@@ -128,7 +129,9 @@ const emitToBusiness = (businessId, event, data) => {
     logger.warn('Socket.io not initialized, cannot emit to business');
     return;
   }
-  io.to(`business:${businessId}`).emit(event, data);
+  // every new_message carries the chat time (waTimestamp, messageTime) so clients place it like history does
+  const payload = event === 'new_message' && data && data.message ? { ...data, message: withMessageTime(data.message) } : data;
+  io.to(`business:${businessId}`).emit(event, payload);
 };
 
 /**

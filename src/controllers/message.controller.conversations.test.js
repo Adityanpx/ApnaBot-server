@@ -70,6 +70,6 @@ test('getConversations: selects the last message type, maps unsupported to the l
   assert.equal(byId.c3.lastMessage, 'Hello there');
   assert.equal(byId.c4.lastMessage, null);
   assert.equal(byId.c1.lastDirection, 'inbound');
-  assert.ok(selects.some(([t, c]) => t === 'messages' && c === 'content, direction, created_at, type'), 'last-message select includes type');
+  assert.ok(selects.some(([t, c]) => t === 'messages' && c === 'content, direction, created_at, type, wa_timestamp, raw_payload'), 'last-message select includes type');
   assert.deepEqual(writes, []);
 });

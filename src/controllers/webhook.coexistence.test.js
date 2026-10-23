@@ -153,6 +153,12 @@ test('an owner phone message (echo) is stored but never reaches the bot, usage o
   assert.equal(customers()[0].total_messages, 0);
 });
 
+test('an owner phone message (echo) stores its payload timestamp as wa_timestamp (same as created_at)', async () => {
+  await sendBody(field('smb_message_echoes', echoValue('wamid.E1', '919800000001', 'price')));
+  assert.equal(db.messages[0].wa_timestamp, '2025-10-09T08:53:20.000Z');
+  assert.equal(db.messages[0].created_at, db.messages[0].wa_timestamp);
+});
+
 test('an echo and a real customer message in one entry: only the customer message runs the bot', async () => {
   await sendBody({ entry: [{ id: 'waba1', changes: [
     { field: 'smb_message_echoes', value: echoValue('wamid.E1', '919800000001', 'price') },

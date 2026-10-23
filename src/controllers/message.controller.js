@@ -12,6 +12,7 @@ const handoffService = require('../services/handoff.service');
 const paymentService = require('../services/payment.service');
 const logger = require('../utils/logger');
 const { displayContent } = require('../utils/inboundMessage');
+const { messageTimeOf, cursorOf, parseCursor } = require('../utils/messageTime');
 
 /**
  * GET /api/messages
@@ -50,8 +51,8 @@ const getConversations = async (req, res, next) => {
       const customer = toCamelCase(customerRow);
 
       const [{ data: lastMsg }, { count: unreadCount }] = await Promise.all([
-        supabase.from('messages').select('content, direction, created_at, type')
-          .eq('customer_id', customer.id).order('created_at', { ascending: false }).limit(1).maybeSingle(),
+        supabase.from('messages').select('content, direction, created_at, type, wa_timestamp, raw_payload')
+          .eq('customer_id', customer.id).order('message_time', { ascending: false }).limit(1).maybeSingle(),
         supabase.from('messages').select('*', { count: 'exact', head: true })
           .eq('customer_id', customer.id).eq('direction', 'inbound').eq('is_read', false)
       ]);
@@ -61,6 +62,11 @@ const getConversations = async (req, res, next) => {
         customerNumber: customer.whatsappNumber,
         lastMessage: displayContent(lastMsg), // unsupported rows: the friendly label, whatever was stored
         lastMessageAt: lastMsg?.created_at ?? customer.lastMessageAt,
+        // WhatsApp's own send time (falls back to created_at): what the chat orders and shows by
+        lastMessageTime: lastMsg ? (lastMsg.wa_timestamp ?? lastMsg.created_at) : null,
+        lastMessageType: lastMsg?.type ?? null,
+        // the real WhatsApp type behind an 'unsupported' placeholder (raw_payload is kept only for those)
+        lastMessageOriginalType: lastMsg?.type === 'unsupported' ? (lastMsg.raw_payload?.type ?? null) : null,
         lastDirection: lastMsg?.direction ?? null,
         unreadCount: unreadCount || 0,
         botPausedUntil: customer.botPausedUntil ?? null,
@@ -80,33 +86,60 @@ const getConversations = async (req, res, next) => {
 
 /**
  * GET /api/messages/:customerId
- * Full paginated chat history with a specific customer
+ * Chat history with a specific customer, ordered by messageTime (WhatsApp's send time,
+ * else created_at) then id - not created_at, which is later for a webhook Meta delivered late.
+ * Two ways to page, both answering oldest-first:
+ *   ?page=&limit=                     the old way, page 1 = the newest `limit` messages
+ *   ?before=<messageTime>|<id>&limit= the `limit` messages older than that message (a cursor: stable
+ *                                     when new messages arrive meanwhile). `before` wins over `page`.
+ * A cursor is exact: it skips nothing and repeats nothing, even for messages sharing one second.
+ * `pagination.nextCursor` is the cursor for the next older page (null when there is none).
+ * A plain `before=<ISO>` (no id) still works and is strict (<).
  */
 const getChatHistory = async (req, res, next) => {
   try {
     const { customerId } = req.params;
-    const { page = 1, limit = 50 } = req.query;
+    const { page = 1, limit = 50, before } = req.query;
     const businessId = req.user.businessId;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
+
+    let cursor = null;
+    if (before !== undefined && before !== '') {
+      cursor = parseCursor(before);
+      if (!cursor) return errorResponse(res, 400, 'before must be an ISO timestamp, optionally followed by |<message id>');
+    }
 
     const { data: customerRow, error: custErr } = await supabase
       .from('customers').select('*').eq('id', customerId).eq('business_id', businessId).maybeSingle();
     if (custErr) throw custErr;
     if (!customerRow) return errorResponse(res, 404, 'Customer not found');
 
-    const { data: messages, error, count } = await supabase
+    let query = supabase
       .from('messages').select('*', { count: 'exact' })
       .eq('business_id', businessId).eq('customer_id', customerId)
-      .order('created_at', { ascending: false })
-      .range((pageNum - 1) * limitNum, pageNum * limitNum - 1);
+      .order('message_time', { ascending: false })
+      .order('id', { ascending: false });
+    if (cursor) {
+      query = (cursor.id
+        ? query.or(`message_time.lt.${cursor.time},and(message_time.eq.${cursor.time},id.lt.${cursor.id})`)
+        : query.lt('message_time', cursor.time)
+      ).limit(limitNum);
+    } else {
+      query = query.range((pageNum - 1) * limitNum, pageNum * limitNum - 1);
+    }
+    const { data: messages, error, count } = await query;
     if (error) throw error;
 
-    const pagination = getPagination(count, pageNum, limitNum);
+    const rows = messages || [];
+    const hasMore = (count || 0) > (cursor ? 0 : (pageNum - 1) * limitNum) + rows.length;
+    const pagination = getPagination(count, cursor ? 1 : pageNum, limitNum);
+    if (cursor) pagination.hasMore = hasMore;
+    pagination.nextCursor = hasMore && rows.length > 0 ? cursorOf(rows[rows.length - 1]) : null;
     return successResponse(res, 200, {
       customer: withWindowExpiresAt(toCamelCase(customerRow)),
-      // chronological order; each message carries `failure` (null unless it failed)
-      messages: (messages || []).map((m) => withFailure(toCamelCase(m))).reverse(),
+      // chronological order; each message carries `failure` (null unless it failed) and `messageTime`
+      messages: rows.map((m) => ({ ...withFailure(toCamelCase(m)), messageTime: messageTimeOf(m) })).reverse(),
       pagination
     });
   } catch (error) {

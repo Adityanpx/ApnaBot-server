@@ -83,4 +83,14 @@ const inboundMediaLabel = (message) => {
   }
 };
 
-module.exports = { WEAK_TYPE, INBOUND_MESSAGE_TYPES, decideDuplicate, unsupportedLabel, displayContent, inboundMediaLabel };
+/**
+ * messages.wa_timestamp from a webhook message's `timestamp` (unix seconds, a string in Meta's payload).
+ * @returns {string|null} ISO time, or null when the payload has none / it is not a positive number
+ */
+const waTimestampOf = (message) => {
+  const n = Number(message && message.timestamp);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return new Date(n * 1000).toISOString();
+};
+
+module.exports = { WEAK_TYPE, INBOUND_MESSAGE_TYPES, decideDuplicate, unsupportedLabel, displayContent, inboundMediaLabel, waTimestampOf };

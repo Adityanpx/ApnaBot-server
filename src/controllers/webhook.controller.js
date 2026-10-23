@@ -31,7 +31,7 @@ const whatsappService = require('../services/whatsapp.service');
 const r2 = require('../services/r2.service');
 const logger = require('../utils/logger');
 const inboundMessageService = require('../services/inboundMessage.service');
-const { INBOUND_MESSAGE_TYPES, inboundMediaLabel } = require('../utils/inboundMessage');
+const { INBOUND_MESSAGE_TYPES, inboundMediaLabel, waTimestampOf } = require('../utils/inboundMessage');
 const { buildInteractivePayload } = require('../utils/interactivePayload');
 const { locationPinLabel } = require('../utils/locationLabel');
 const { getReplyMediaLimits, getCarouselMaxCards, planReplyMediaSend } = require('../utils/replyMediaLimits');
@@ -1269,7 +1269,12 @@ const processWebhookChange = async (entry, changes) => {
     //   unsupported after anything, or a repeat of a real one -> ignore
     // See services/inboundMessage.service.js.
     const storedType = INBOUND_MESSAGE_TYPES.has(messageType) ? messageType : 'unsupported';
-    const replaceFields = { type: storedType, content: displayContent, status: 'delivered', is_read: false, raw_payload: null };
+    // When WhatsApp says it was sent; created_at is when we stored it, later if Meta delivers late.
+    const waTimestamp = waTimestampOf(message);
+    const replaceFields = {
+      type: storedType, content: displayContent, status: 'delivered', is_read: false, raw_payload: null,
+      ...(waTimestamp ? { wa_timestamp: waTimestamp } : {})
+    };
     const dupGate = await inboundMessageService.gateInbound(tenant.businessId, metaMessageId, storedType, replaceFields);
     if (dupGate.action === 'ignore') {
       logger.info(`Duplicate delivery of ${metaMessageId} ignored (business ${tenant.businessId}, type ${storedType})`);
@@ -1318,6 +1323,7 @@ const processWebhookChange = async (entry, changes) => {
         meta_message_id: metaMessageId,
         status: 'delivered',
         is_read: false,
+        ...(waTimestamp ? { wa_timestamp: waTimestamp } : {}),
         // Kept for unsupported rows only, so errors / referral / the real type
         // can be read later without the logs.
         ...(storedType === 'unsupported' ? { raw_payload: message } : {})

@@ -111,7 +111,7 @@ test('inbox: with last_activity_at backfilled from last_message_at the list is t
   const list = await conversations();
   assert.deepEqual(list.map(c => c._id), oldOrder);
 
-  assert.deepEqual(Object.keys(list[0]).sort(), ['_id', 'botPausedUntil', 'customer', 'customerNumber', 'lastDirection', 'lastMessage', 'lastMessageAt', 'needsHuman', 'unreadCount']);
+  assert.deepEqual(Object.keys(list[0]).sort(), ['_id', 'botPausedUntil', 'customer', 'customerNumber', 'lastDirection', 'lastMessage', 'lastMessageAt', 'lastMessageOriginalType', 'lastMessageTime', 'lastMessageType', 'needsHuman', 'unreadCount']);
   assert.equal(list[0].lastMessage, 'hello');
   assert.equal(list[0].unreadCount, 1);
   assert.equal(list[1].lastMessage, null);

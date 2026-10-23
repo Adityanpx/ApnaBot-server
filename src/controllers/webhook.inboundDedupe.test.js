@@ -181,3 +181,21 @@ test('a different id is never a duplicate', async () => {
   assert.equal(inbound().length, 2);
   assert.equal(botRuns(), 2);
 });
+
+test('wa_timestamp: an inbound message stores the payload timestamp (unix seconds), apart from created_at', async () => {
+  await send({ id: 'wamid.T1', type: 'text', text: { body: 'hi' }, timestamp: '1760000000' });
+  assert.equal(inbound()[0].wa_timestamp, '2025-10-09T08:53:20.000Z');
+  assert.equal('created_at' in inbound()[0], false); // created_at stays the database's own default
+});
+
+test('wa_timestamp: a payload with no usable timestamp leaves it unset', async () => {
+  await send({ id: 'wamid.T2', type: 'text', text: { body: 'hi' } });
+  assert.equal('wa_timestamp' in inbound()[0], false);
+});
+
+test('wa_timestamp: the real message that replaces an unsupported placeholder keeps the payload time', async () => {
+  await send({ id: W, type: 'unsupported', errors: [{ code: 131051 }], timestamp: '1760000000' });
+  await send({ id: W, type: 'text', text: { body: 'price' }, timestamp: '1760000000' });
+  assert.equal(inbound().length, 1);
+  assert.equal(inbound()[0].wa_timestamp, '2025-10-09T08:53:20.000Z');
+});

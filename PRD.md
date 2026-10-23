@@ -648,6 +648,28 @@ tracked as a deferred "future initiative" — it's built and live.
   `users`, ON DELETE SET NULL), `sent_by_name` (text) and `interactive_payload` (jsonb, CHECK: NULL or an
   object). All nullable, no default, no index, no backfill: older rows are NULL and read as plain text.
   See "Chat redesign support".
+- `messages` chat time (migration `20261030120000`, working tree, NOT applied/pushed): `wa_timestamp timestamptz` (nullable) =
+  when WhatsApp says the message was sent. Inbound: the webhook payload `timestamp` (unix seconds); phone-app echoes: the echo
+  payload timestamp (same as their `created_at`); ApnaBot outbound and history imports: NULL (`created_at` is already the time).
+  `message_time` = `GENERATED ALWAYS AS (coalesce(wa_timestamp, created_at)) STORED` - PostgREST cannot order/filter on an
+  expression, so chat reads use this column; the app never writes it. Index `idx_messages_chat_time (business_id, customer_id,
+  message_time desc)`. Why: a webhook Meta delivers late has a later `created_at`, so created_at order showed it out of place.
+  **Deploy: apply the migration BEFORE the server code** (inserts write `wa_timestamp`, reads order by `message_time`; the column add
+  rewrites `messages` under an ACCESS EXCLUSIVE lock - quiet time). One-time cutover, no flag; Search cab AI (live) is affected.
+  **Backfill:** `node src/scripts/backfillInboundWaTimestamp.js` (dry run) / `--confirm` sets `wa_timestamp` from
+  `raw_payload.timestamp` on inbound rows. `raw_payload` is kept only for inbound `unsupported` rows, so only those are fillable
+  (dry run 2026-10-30: 227 of 227); ordinary inbound rows keep NULL and sort by `created_at` - the fix applies to new messages.
+  API (all additive): `GET /api/messages/:customerId` rows gain `waTimestamp` and `messageTime` (= message_time); order is
+  `message_time desc, id desc`. Paging: `?page=&limit=` unchanged, or the cursor `?before=<messageTime>|<id>&limit=` (the `limit`
+  messages older than that message; exact for same-second messages: `message_time < t OR (message_time = t AND id < id)`; plain
+  `before=<ISO>` still works, strict `<`; not a date -> 400; `before` wins over `page`). Always oldest-first in the response.
+  `pagination.nextCursor` = cursor of the oldest message returned, null when nothing older (set in page mode too);
+  `pagination.hasMore` in cursor mode. `GET /api/messages` items gain `lastMessageTime`, `lastMessageType` (the last message's
+  `type`) and `lastMessageOriginalType` (`raw_payload.type` when the type is `unsupported`, e.g. `revoke`, `edit`; else null);
+  the last message is picked by `message_time`. `lastMessageAt` stays `created_at`; the inbox order still follows
+  `customers.last_activity_at`. Socket `new_message` payloads: `socket.service.emitToBusiness` adds `message.waTimestamp` and
+  `message.messageTime` for every emit site (`utils/messageTime.js`). In the 30 days to 2026-10-30, 308 inbound rows were stored as
+  `unsupported`: raw type `unsupported` 206, `revoke` 18, `edit` 2, `errors` 1, no payload 81.
 - `message_templates` — one row per WhatsApp template. `source` (`app` |
   `meta_sync`), `meta_template_id`, `status` (draft, pending, approved,
   rejected, paused, disabled, deleted), raw `meta_status`, `quality_score`,
@@ -2135,3 +2157,4 @@ The plan's `msg_limit` is now counted per **subscription period**, not per calen
 - 2026-08-29: Redis queue namespace fix (`QUEUE_NAMESPACE` prefixing) —
   prevents local/prod BullMQ worker collision.
 - 2026-10-29: per-period message counter (outbound only, `usage_periods`, `increment_usage_period`, `subscriptions.current_period_start`), web-form `Idempotency-Key`, form field roles - see "Message counter per subscription period". Catalogue photo page = 1 unit via `countAs`.
+- 2026-10-30: messages chat time (`wa_timestamp` / generated `message_time`, `before=<messageTime>|<id>` cursor, `messageTime` / `lastMessageTime` / `lastMessageType` / `lastMessageOriginalType`, socket `new_message` times, backfill script) - see "`messages` chat time" under the schema notes. Working tree only; migration not applied.
