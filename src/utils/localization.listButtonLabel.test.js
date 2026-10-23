@@ -37,3 +37,9 @@ test('non-list nodes always get "Choose" (button_text keeps its web-form meaning
 test('the label is trimmed', () => {
   assert.equal(getListButtonLabel(list({ buttonText: '  See courses  ' }), 'en'), 'See courses');
 });
+
+test('the default "Choose" button is translated for Hindi and Marathi', () => {
+  assert.equal(getListButtonLabel({ contentType: 'list' }, 'hi'), 'चुनें');
+  assert.equal(getListButtonLabel({ contentType: 'list' }, 'mr'), 'निवडा');
+  assert.equal(getListButtonLabel({ contentType: 'list' }, 'ta'), 'Choose'); // no reviewed text: English
+});

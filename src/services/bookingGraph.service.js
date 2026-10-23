@@ -63,6 +63,7 @@ const logger = require('../utils/logger');
 const businessService = require('./business.service');
 const bookingService = require('./booking.service');
 const { sanitizePrefill, prefillLabel } = require('../utils/catalogOrder');
+const { isNameField, isDateField, isCheckOutField, validateName, validateDateAnswer } = require('../utils/answerValidation');
 
 const MAX_HOPS = 25; // cycle guard for pickNextNodeId's skip-forward walk
 
@@ -561,6 +562,33 @@ const startGraphSessionAtNode = async (businessId, entryNodeId, ruleId, language
 };
 
 /**
+ * Rules for a typed (text) answer to a name or date question (utils/answerValidation.js).
+ * @returns {Promise<string|null>} the localized re-ask (message, then the question again), or
+ *   null when the answer is fine / the question is neither a name nor a date
+ */
+const validateTypedAnswer = async ({ businessId, node, session, trimmedReply, languageCode }) => {
+  const key = node.fieldKey;
+  if (trimmedReply === '') return null; // an optional question left blank
+  let check = null;
+  if (isNameField(key)) {
+    check = validateName(trimmedReply);
+  } else if (isDateField(key)) {
+    // Weekly opening hours (the human-needed alert's); a read failure means "no hours".
+    const settings = await require('./handoff.service').getSettings(businessId);
+    check = validateDateAnswer(trimmedReply, {
+      hours: settings?.hours || null,
+      checkClosed: !isCheckOutField(key),
+      checkIn: isCheckOutField(key) ? session.collected.checkIn : null,
+      language: languageCode
+    });
+  }
+  if (!check || check.ok) return null;
+  const message = getSystemMessage(check.messageKey, languageCode, check.vars);
+  const question = getLocalizedText(node, 'label', languageCode);
+  return question ? `${message}\n\n${question}` : message;
+};
+
+/**
  * Process one booking-session turn against the graph.
  * @returns {Promise<{session: Object, result: Object|string|{done:true,collected:Object}}>}
  *   result is: the next field object, a re-prompt/status string (no state
@@ -758,7 +786,11 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
     if (currentNode.required === true && trimmedReply === '') {
       return { session, result: getLocalizedText(currentNode, 'label', languageCode) };
     }
-    session.collected[currentNode.fieldKey] = trimmedReply;
+    const rejection = await validateTypedAnswer({ businessId, node: currentNode, session, trimmedReply, languageCode });
+    if (rejection) return { session, result: rejection };
+    session.collected[currentNode.fieldKey] = isNameField(currentNode.fieldKey) && trimmedReply !== ''
+      ? validateName(trimmedReply).value
+      : trimmedReply;
   }
 
   // Every branch above that falls through to here (rather than returning

@@ -363,6 +363,53 @@ const SYSTEM_MESSAGES = {
     en: 'Price',
     hi: 'कीमत',
     mr: 'किंमत'
+  },
+
+  // ── Answer validation (utils/answerValidation.js: bot questions + web-form submit) ──
+  invalidName: {
+    en: 'Please enter a valid name (letters only, 2–60 characters).',
+    hi: 'कृपया सही नाम दर्ज करें (केवल अक्षर, 2–60 वर्ण)।',
+    mr: 'कृपया योग्य नाव टाका (फक्त अक्षरे, 2–60 वर्ण).'
+  },
+  invalidDate: {
+    en: 'Please enter a valid date, for example 25/12/2026.',
+    hi: 'कृपया सही तारीख दर्ज करें, जैसे 25/12/2026।',
+    mr: 'कृपया योग्य तारीख टाका, उदा. 25/12/2026.'
+  },
+  datePast: {
+    en: 'That date has already passed. Please enter today\'s date or a later date.',
+    hi: 'यह तारीख बीत चुकी है। कृपया आज की या आगे की तारीख दर्ज करें।',
+    mr: 'ही तारीख होऊन गेली आहे. कृपया आजची किंवा पुढची तारीख टाका.'
+  },
+  dateTooFar: {
+    en: 'Please enter a date within the next {{days}} days.',
+    hi: 'कृपया अगले {{days}} दिनों के भीतर की तारीख दर्ज करें।',
+    mr: 'कृपया पुढील {{days}} दिवसांतील तारीख टाका.'
+  },
+  checkoutNotAfterCheckin: {
+    en: 'Check-out must be at least 1 night after check-in. Please enter a later check-out date.',
+    hi: 'चेक-आउट, चेक-इन के कम से कम 1 रात बाद होना चाहिए। कृपया बाद की चेक-आउट तारीख दर्ज करें।',
+    mr: 'चेक-आउट हे चेक-इननंतर किमान 1 रात्र नंतर असावे. कृपया नंतरची चेक-आउट तारीख टाका.'
+  },
+  dateClosed: {
+    en: 'We\'re closed on {{day}}. Next available: {{date}}.',
+    hi: 'हम {{day}} को बंद रहते हैं। अगली उपलब्ध तारीख: {{date}}।',
+    mr: 'आम्ही {{day}} रोजी बंद असतो. पुढची उपलब्ध तारीख: {{date}}.'
+  },
+
+  // A voice note / photo / document / video / sticker / shared location where no step expects one
+  // (webhook.controller.js Step 11).
+  unsupportedMessageType: {
+    en: 'Sorry, I can only read text messages. Please type your reply or pick an option below.',
+    hi: 'माफ़ कीजिए, मैं केवल टेक्स्ट संदेश पढ़ सकता हूँ। कृपया अपना जवाब टाइप करें या नीचे से कोई विकल्प चुनें।',
+    mr: 'माफ करा, मी फक्त मजकूर संदेश वाचू शकतो. कृपया तुमचे उत्तर टाइप करा किंवा खालील पर्यायांपैकी एक निवडा.'
+  },
+
+  // Opens a list message (button on the message). Max 20 characters (WhatsApp).
+  listButtonChoose: {
+    en: 'Choose',
+    hi: 'चुनें',
+    mr: 'निवडा'
   }
 };
 

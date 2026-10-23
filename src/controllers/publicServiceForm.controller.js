@@ -20,6 +20,8 @@ const logger = require('../utils/logger');
 const { isValidLanguageCode } = require('../utils/languageCatalog');
 const { localizedFormTitle, bookingFormTitle } = require('../utils/formTitle');
 const { sanitizePrefill, prefillLabel } = require('../utils/catalogOrder');
+const { getSystemMessage } = require('../utils/systemMessages');
+const { isNameField, isDateField, isCheckInField, isCheckOutField, validateName, validateDateAnswer } = require('../utils/answerValidation');
 
 const TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -376,6 +378,44 @@ const getServiceForm = async (req, res, next) => {
 };
 
 /**
+ * Name and date rules (utils/answerValidation.js - the same ones the WhatsApp bot applies) over the
+ * submitted values of the fields the customer was shown. A valid name is stored trimmed with
+ * repeated spaces collapsed.
+ * @returns {Promise<Array<{field: string, code: string, message: string}>>}
+ */
+const validateFormAnswers = async ({ businessId, flowFields, values, skipNames, isFieldApplicable, language }) => {
+  const errors = [];
+  const shown = flowFields.filter(f => f.type !== 'display_text' && !skipNames.has(f.name) && isFieldApplicable(f, values));
+  const filled = (f) => values[f.name] !== undefined && values[f.name] !== null && String(values[f.name]).trim() !== '';
+  const checkInField = shown.find(f => isCheckInField(f.name));
+  let hours = null;
+  if (shown.some(f => filled(f) && (f.type === 'date' || isDateField(f.name)))) {
+    const settings = await require('../services/handoff.service').getSettings(businessId);
+    hours = settings?.hours || null;
+  }
+  for (const field of shown) {
+    if (!filled(field)) continue;
+    let check = null;
+    if (field.type === 'text' && isNameField(field.name)) {
+      check = validateName(values[field.name]);
+      if (check.ok) values[field.name] = check.value;
+    } else if (field.type === 'date' || (field.type === 'text' && isDateField(field.name))) {
+      check = validateDateAnswer(values[field.name], {
+        strict: field.type === 'date',
+        hours,
+        checkClosed: !isCheckOutField(field.name),
+        checkIn: isCheckOutField(field.name) && checkInField && filled(checkInField) ? values[checkInField.name] : null,
+        language
+      });
+    }
+    if (check && !check.ok) {
+      errors.push({ field: field.name, code: check.code, message: getSystemMessage(check.messageKey, language, check.vars) });
+    }
+  }
+  return errors;
+};
+
+/**
  * POST /api/public/service-form/:token/submit
  * Body: { values: { [fieldName]: string } }
  */
@@ -448,6 +488,21 @@ const submitServiceForm = async (req, res, next) => {
       return errorResponse(res, 400, `Missing required field(s): ${missingLabels.join(', ')}`);
     }
 
+    // Name and date answers: 422 with one { field, code, message } per bad field (message in the
+    // customer's language).
+    const language = await loadCustomerLanguage(formToken);
+    const fieldErrors = await validateFormAnswers({
+      businessId: formToken.businessId,
+      flowFields,
+      values,
+      skipNames: new Set(orderPrefill.map(entry => entry.key)),
+      isFieldApplicable,
+      language
+    });
+    if (fieldErrors.length > 0) {
+      return errorResponse(res, 422, fieldErrors[0].message, fieldErrors);
+    }
+
     const collected = {};
     for (const field of flowFields) {
       if (field.type === 'display_text') continue;
@@ -478,7 +533,6 @@ const submitServiceForm = async (req, res, next) => {
     // summaryLabel: the WhatsApp confirmation is in the customer's language
     // where the question has a translation; label (saved on the booking for
     // the owner) stays English.
-    const language = await loadCustomerLanguage(formToken);
     const orderLines = [];
     for (const entry of orderPrefill) {
       if (flowFields.some(f => f.name === entry.key && f.type !== 'display_text')) continue;

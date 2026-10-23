@@ -46,6 +46,8 @@ const { notifyBroadcastProgress } = require('../services/broadcastProgress.servi
 const deliverySignals = require('../services/deliverySignals.service');
 const userPreferencesService = require('../services/userPreferences.service');
 const { splitMessages } = require('../utils/webhookBatch');
+const unsupportedMessageService = require('../services/unsupportedMessage.service');
+const { UNSUPPORTED_REPLY_TYPES } = unsupportedMessageService;
 
 // Exact-match greeting keywords that trigger the welcome message / menu.
 // Kept as exact matches (not substring) so real rule keywords still win.
@@ -627,7 +629,7 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
       interactiveJobFields.interactiveButtons = labels;
     } else {
       interactiveJobFields.interactiveList = labels;
-      interactiveJobFields.listButtonLabel = 'Choose';
+      interactiveJobFields.listButtonLabel = getSystemMessage('listButtonChoose', customer.preferredLanguage);
     }
   } else if (field.fieldType === 'location_request') {
     // Native "Send location" prompt (whatsapp.worker.js#locationRequest) —
@@ -917,6 +919,25 @@ const resendCurrentBookingPrompt = async (ctx, activeSession) => {
   if (!field) return false;
   await sendFieldPrompt({ ...ctx, triggeredRuleId: activeSession.ruleId }, field);
   return true;
+};
+
+/**
+ * Answers a voice note / photo / document / video / sticker / shared location that no step expects:
+ * "I can only read text", once per customer per minute, then the current booking question again.
+ * @param {Object} ctx - { tenant, customer, customerNumber }
+ * @param {Object|null} activeSession
+ * @returns {Promise<'done'|'menu'>} 'menu' when there is no active step, so the caller carries on to the main menu
+ */
+const replyToUnsupportedType = async (ctx, activeSession) => {
+  const claimed = await unsupportedMessageService.claimReply(ctx.tenant.businessId, ctx.customer.id);
+  if (!claimed) return 'done';
+  await sendFallbackTextMessage(
+    { ...ctx, triggeredRuleId: activeSession?.ruleId ?? null },
+    getSystemMessage('unsupportedMessageType', ctx.customer.preferredLanguage)
+  );
+  if (!activeSession) return 'menu';
+  await resendCurrentBookingPrompt(ctx, activeSession);
+  return 'done';
 };
 
 /**
@@ -1727,9 +1748,21 @@ const processWebhookChange = async (entry, changes) => {
     // message is accepted (see the no-active-session guard right after
     // activeSession is loaded).
     const isRoutedButtonTap = !!buttonTap && buttonTap.kind !== 'optout'; // an optout tap already returned above
+    // Set when the customer sent a voice note / photo / ... and the bot answered "I can only read
+    // text" (see replyToUnsupportedType): the main-menu pass that follows is not a customer message
+    // the bot failed to understand, so it neither bumps nor resets the handoff's unmatched count.
+    let isUnsupportedTypeTurn = false;
     if (messageType !== 'text' && !buttonReplyId && !listReplyId && !messageLocation && !isRoutedButtonTap) {
-      logger.info('Non-text message received, skipping chatbot');
-      return;
+      if (!UNSUPPORTED_REPLY_TYPES.has(messageType)) {
+        logger.info('Non-text message received, skipping chatbot');
+        return;
+      }
+      // No flow step accepts media (there is no media question), so every one of these gets the reply.
+      const unsupportedSession = await bookingService.getBookingSession(tenant.businessId, customerNumber);
+      const unsupportedOutcome = await replyToUnsupportedType({ tenant, customer, customerNumber }, unsupportedSession);
+      if (unsupportedOutcome !== 'menu') return;
+      isUnsupportedTypeTurn = true;
+      messageText = 'hi'; // No active step: carry on as if the customer said "hi" (the main menu)
     }
 
     // Step 12 - Check active booking session
@@ -1874,8 +1907,11 @@ const processWebhookChange = async (entry, changes) => {
     // there, rather than letting an empty-text location message reach
     // greeting/rule matching below.
     if (messageLocation && (!activeSession || isSystemTap)) {
-      logger.info('Location message received with no active booking session, skipping chatbot');
-      return;
+      logger.info('Location message received with no active booking session, answering with the text-only notice');
+      const locationOutcome = await replyToUnsupportedType(ctx, null);
+      if (locationOutcome !== 'menu') return;
+      isUnsupportedTypeTurn = true;
+      messageText = 'hi';
     }
 
     if (activeSession && !isSystemTap) {
@@ -2418,7 +2454,7 @@ const processWebhookChange = async (entry, changes) => {
 
     // A rule, a tap or a booking start answered this message: the run of unanswered messages that
     // escalates to a person (handoff) starts over. Never throws.
-    if ((directBookingEntry || matchedNode) && handoffCfg && handoffCfg.unmatchedThreshold > 0) {
+    if ((directBookingEntry || matchedNode) && handoffCfg && handoffCfg.unmatchedThreshold > 0 && !isUnsupportedTypeTurn) {
       await handoffService.resetUnmatched(tenant.businessId, customer.id);
     }
 
@@ -2681,7 +2717,7 @@ const processWebhookChange = async (entry, changes) => {
       // A bare "ok" / "thanks" / 👍 needs no person.
       if (!handoffCfg) {
         if (!notificationService.isAcknowledgement(messageText)) notifyHumanNeeded();
-      } else if (!smartReply && !buttonReplyId && !listReplyId && handoffCfg.unmatchedThreshold > 0 &&
+      } else if (!smartReply && !buttonReplyId && !listReplyId && !isUnsupportedTypeTurn && handoffCfg.unmatchedThreshold > 0 &&
                  !notificationService.isAcknowledgement(messageText)) {
         // Handoff on: not every unmatched message, but the Nth in a row (a message the AI fallback
         // answered, a tap and an acknowledgement do not count). The Nth is answered with the handoff
@@ -2759,7 +2795,7 @@ const processWebhookChange = async (entry, changes) => {
         interactiveJobFields.interactiveButtons = bookingFieldLabels;
       } else {
         interactiveJobFields.interactiveList = bookingFieldLabels;
-        interactiveJobFields.listButtonLabel = 'Choose';
+        interactiveJobFields.listButtonLabel = getSystemMessage('listButtonChoose', customer.preferredLanguage);
       }
     }
 
