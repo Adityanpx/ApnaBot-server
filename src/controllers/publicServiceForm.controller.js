@@ -273,6 +273,31 @@ const resolveTravelFields = (flowFields) => {
 };
 
 /**
+ * errors payload for the 410 "link not available" page: the customer's language plus what the
+ * page needs for its header and Open WhatsApp button (businessName, businessPhone = digits only
+ * with country code, formTitle in that language). Any lookup failure leaves just { language } -
+ * a 410 must never become a 500.
+ */
+const unavailableLinkDetails = async (formToken) => {
+  const language = (await loadCustomerLanguage(formToken)) || 'en';
+  try {
+    const business = await businessService.getBusinessById(formToken.businessId);
+    if (!business) return { language };
+    const formNode = await loadFormNode(formToken);
+    const title = await resolveFormTitle(formToken, formNode, language);
+    return {
+      language,
+      businessName: business.displayName || business.name || null,
+      businessPhone: String(business.whatsappNumber || '').replace(/\D/g, '') || null,
+      formTitle: title ? title.title : null
+    };
+  } catch (detailsError) {
+    logger.error('Error loading unavailable service form details:', detailsError);
+    return { language };
+  }
+};
+
+/**
  * GET /api/public/service-form/:token
  * Returns just enough to render the form: the business's name and its
  * configured fields (node-scoped form_fields when the token's flow node has
@@ -290,10 +315,10 @@ const getServiceForm = async (req, res, next) => {
     }
     // errors.language: lets the page say "link not available" in the customer's language.
     if (status === 'expired') {
-      return errorResponse(res, 410, 'This booking link has expired.', { language: (await loadCustomerLanguage(formToken)) || 'en' });
+      return errorResponse(res, 410, 'This booking link has expired.', await unavailableLinkDetails(formToken));
     }
     if (status === 'used') {
-      return errorResponse(res, 410, 'This booking link has already been used.', { language: (await loadCustomerLanguage(formToken)) || 'en' });
+      return errorResponse(res, 410, 'This booking link has already been used.', await unavailableLinkDetails(formToken));
     }
 
     const business = await businessService.getBusinessById(formToken.businessId);
