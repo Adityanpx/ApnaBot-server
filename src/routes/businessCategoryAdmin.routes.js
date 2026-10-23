@@ -8,6 +8,8 @@ const { requireRole } = require('../middleware/role.middleware');
 router.use(protect, requireRole('superadmin'));
 
 router.get('/', businessCategoryAdminController.getCategories);
+router.post('/', businessCategoryAdminController.createCategory);
 router.put('/:value/toggle', businessCategoryAdminController.toggleCategory);
+router.put('/:value', businessCategoryAdminController.updateCategory);
 
 module.exports = router;

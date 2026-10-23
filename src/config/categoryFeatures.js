@@ -1,6 +1,6 @@
 // Per-category default feature flags applied at business creation time,
-// keyed by the same category strings businesses.business_category (and
-// multi_brand's sub_categories) allow. Each entry maps to a boolean column
+// keyed by business_categories.value (a business's category, and
+// multi_brand's sub_categories). Each entry maps to a boolean column
 // on business_travel_settings (migration 20260921130000) that already
 // exists (enable_fleet, enable_distance_fares, round_trip_driver_da_enabled).
 // enable_distance_fares and round_trip_driver_da_enabled are read by
@@ -44,8 +44,15 @@ const CATEGORY_DEFAULT_FEATURES = {
   tax_consultant: [],
   hotel: [],
   clothing_wholesaler: [],
-  menswear: []
+  menswear: [],
+  mobile_electronics: []
 };
+
+// Categories are rows in business_categories now, so most never get an entry above: an unknown (or missing)
+// category means no category-driven features. Own-property check so a category named after an Object.prototype
+// member ('constructor') can't resolve to a function.
+const featuresFor = (category) =>
+  (Object.hasOwn(CATEGORY_DEFAULT_FEATURES, category) ? CATEGORY_DEFAULT_FEATURES[category] : []);
 
 /**
  * @param {{ businessCategory: string, subCategories?: string[] }} business
@@ -58,7 +65,7 @@ const computeFeatureFlags = ({ businessCategory, subCategories }) => {
 
   const features = new Set();
   categories.forEach((cat) =>
-    (CATEGORY_DEFAULT_FEATURES[cat] || []).forEach((f) => features.add(f))
+    featuresFor(cat).forEach((f) => features.add(f))
   );
 
   return {

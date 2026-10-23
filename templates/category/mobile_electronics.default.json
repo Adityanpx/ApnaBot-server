@@ -1,0 +1,611 @@
+{
+  "category": "mobile_electronics",
+  "name": "Mobile & Electronics — Starter",
+  "description": "Starter flow for mobile / TV / appliance shops, including CSD & CPC canteen dealers: main menu, product enquiry, CSD/CPC info, EMI, store details, talk to a person, and a 4-question enquiry that lands in Bookings.",
+  "nodes": [
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000001",
+      "node_type": "reply",
+      "keyword": "hi",
+      "match_type": "exact",
+      "hindi_aliases": [
+        "hello",
+        "hey",
+        "hii",
+        "hlo",
+        "namaste",
+        "start",
+        "menu"
+      ],
+      "reply_kind": "text",
+      "trigger_count": 0,
+      "content_type": "list",
+      "label": "Namaste {{customerName}} 🙏 Welcome to {{businessName}}! We sell mobiles, TVs and home appliances, including CSD & CPC canteen purchases. What are you looking for?",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 0,
+      "position_y": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000002",
+      "node_type": "reply",
+      "keyword": "mobile",
+      "match_type": "contains",
+      "hindi_aliases": [
+        "phone",
+        "smartphone",
+        "फोन",
+        "मोबाइल"
+      ],
+      "reply_kind": "text",
+      "trigger_count": 0,
+      "content_type": "buttons",
+      "label": "We have the latest smartphones from all major brands. Tell us the model you want and we'll share price & availability.",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 380,
+      "position_y": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000003",
+      "node_type": "reply",
+      "keyword": "tv",
+      "match_type": "contains",
+      "hindi_aliases": [
+        "air conditioner",
+        "fridge",
+        "washing machine",
+        "appliance"
+      ],
+      "reply_kind": "text",
+      "trigger_count": 0,
+      "content_type": "buttons",
+      "label": "TVs, ACs, refrigerators, washing machines and more. Share what you need and we'll send the best price.",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 380,
+      "position_y": 200
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000004",
+      "node_type": "reply",
+      "keyword": "csd",
+      "match_type": "contains",
+      "hindi_aliases": [
+        "cpc",
+        "canteen",
+        "army",
+        "police",
+        "defence"
+      ],
+      "reply_kind": "text",
+      "trigger_count": 0,
+      "content_type": "buttons",
+      "label": "We are an authorised CSD & CPC dealer. Serving and retired Defence personnel and Central Armed Police personnel can buy eligible products at canteen rates. (Owner: please confirm eligibility wording.)",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 380,
+      "position_y": 400
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000005",
+      "node_type": "reply",
+      "keyword": "csd_documents",
+      "match_type": "exact",
+      "hindi_aliases": [],
+      "reply_kind": "text",
+      "trigger_count": 0,
+      "content_type": "buttons",
+      "label": "Please bring your CSD / CPC card and service ID card (or PPO for retired personnel). We'll guide you through the rest. (Owner: please confirm the list.)",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 760,
+      "position_y": 400
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000006",
+      "node_type": "reply",
+      "keyword": "emi",
+      "match_type": "contains",
+      "hindi_aliases": [
+        "loan",
+        "finance",
+        "installment",
+        "किस्त"
+      ],
+      "reply_kind": "text",
+      "trigger_count": 0,
+      "content_type": "buttons",
+      "label": "EMI options are available on many products. Tell us the product and we'll share the EMI plans.",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 380,
+      "position_y": 600
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000007",
+      "node_type": "reply",
+      "keyword": "offer",
+      "match_type": "contains",
+      "hindi_aliases": [
+        "price",
+        "rate",
+        "catalogue"
+      ],
+      "reply_kind": "text",
+      "trigger_count": 0,
+      "content_type": "catalog",
+      "label": "Our latest offers and products",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 380,
+      "position_y": 800
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000008",
+      "node_type": "reply",
+      "keyword": "address",
+      "match_type": "contains",
+      "hindi_aliases": [
+        "location",
+        "shop",
+        "timing",
+        "पता"
+      ],
+      "reply_kind": "text",
+      "trigger_count": 0,
+      "content_type": "buttons",
+      "label": "📍 {{businessAddress}}\n🕒 {{businessHours}}\nSee you soon!",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 380,
+      "position_y": 1000
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000009",
+      "node_type": "reply",
+      "keyword": "call",
+      "match_type": "contains",
+      "hindi_aliases": [
+        "talk",
+        "person"
+      ],
+      "reply_kind": "handoff",
+      "trigger_count": 0,
+      "content_type": "text",
+      "label": "",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 380,
+      "position_y": 1200
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000010",
+      "node_type": "reply",
+      "keyword": "send_enquiry",
+      "match_type": "exact",
+      "hindi_aliases": [],
+      "reply_kind": "booking_trigger",
+      "trigger_count": 0,
+      "content_type": "text",
+      "label": "Great! Let me collect your details.",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 760,
+      "position_y": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000011",
+      "node_type": "question",
+      "keyword": null,
+      "match_type": null,
+      "hindi_aliases": [],
+      "reply_kind": null,
+      "trigger_count": 0,
+      "content_type": "list",
+      "label": "Which product are you looking for?",
+      "field_key": "product",
+      "summary_label": "Product",
+      "required": true,
+      "order": 0,
+      "options": [
+        {
+          "value": "Mobile",
+          "label": "Mobile"
+        },
+        {
+          "value": "TV",
+          "label": "TV"
+        },
+        {
+          "value": "AC",
+          "label": "AC"
+        },
+        {
+          "value": "Fridge",
+          "label": "Fridge"
+        },
+        {
+          "value": "Washing machine",
+          "label": "Washing machine"
+        },
+        {
+          "value": "Other",
+          "label": "Other"
+        }
+      ],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 1140,
+      "position_y": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000012",
+      "node_type": "question",
+      "keyword": null,
+      "match_type": null,
+      "hindi_aliases": [],
+      "reply_kind": null,
+      "trigger_count": 0,
+      "content_type": "text",
+      "label": "Which brand and model do you want? (e.g. Samsung A55, LG 43-inch TV)",
+      "field_key": "brandModel",
+      "summary_label": "Brand & model",
+      "required": true,
+      "order": 1,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 1520,
+      "position_y": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000013",
+      "node_type": "question",
+      "keyword": null,
+      "match_type": null,
+      "hindi_aliases": [],
+      "reply_kind": null,
+      "trigger_count": 0,
+      "content_type": "buttons",
+      "label": "Is this a CSD, CPC or regular purchase?",
+      "field_key": "purchaseType",
+      "summary_label": "Purchase type",
+      "required": true,
+      "order": 2,
+      "options": [
+        {
+          "value": "CSD",
+          "label": "CSD"
+        },
+        {
+          "value": "CPC",
+          "label": "CPC"
+        },
+        {
+          "value": "Regular",
+          "label": "Regular"
+        }
+      ],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 1900,
+      "position_y": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000014",
+      "node_type": "question",
+      "keyword": null,
+      "match_type": null,
+      "hindi_aliases": [],
+      "reply_kind": null,
+      "trigger_count": 0,
+      "content_type": "buttons",
+      "label": "When will you visit the store?",
+      "field_key": "visitWhen",
+      "summary_label": "Visit",
+      "required": true,
+      "order": 3,
+      "options": [
+        {
+          "value": "Today",
+          "label": "Today"
+        },
+        {
+          "value": "Tomorrow",
+          "label": "Tomorrow"
+        },
+        {
+          "value": "This week",
+          "label": "This week"
+        }
+      ],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 2280,
+      "position_y": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000101",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000001",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000002",
+      "label": "📱 Mobiles",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000102",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000001",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000003",
+      "label": "📺 TV & Appliances",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 1
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000103",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000001",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000004",
+      "label": "🪖 CSD / CPC Purchase",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 2
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000104",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000001",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000006",
+      "label": "💳 EMI & Finance",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 3
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000105",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000001",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000007",
+      "label": "🎁 Offers & Products",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 4
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000106",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000001",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000008",
+      "label": "📍 Visit Store",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 5
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000107",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000001",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000009",
+      "label": "👤 Talk to us",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 6
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000108",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000002",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000010",
+      "label": "Send enquiry",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000109",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000002",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000001",
+      "label": "Main menu",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 1
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000110",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000003",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000010",
+      "label": "Send enquiry",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000111",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000003",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000001",
+      "label": "Main menu",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 1
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000112",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000004",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000005",
+      "label": "Documents needed",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000113",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000004",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000010",
+      "label": "Send enquiry",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 1
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000114",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000004",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000001",
+      "label": "Main menu",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 2
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000115",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000005",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000010",
+      "label": "Send enquiry",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000116",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000005",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000001",
+      "label": "Main menu",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 1
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000117",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000006",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000010",
+      "label": "Send enquiry",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000118",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000006",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000001",
+      "label": "Main menu",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 1
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000119",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000008",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000001",
+      "label": "Main menu",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000120",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000010",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000011",
+      "label": null,
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000121",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000011",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000012",
+      "label": null,
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000122",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000012",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000013",
+      "label": null,
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "3b0b11e0-0000-4000-8000-000000000123",
+      "from_node_id": "3b0b11e0-0000-4000-8000-000000000013",
+      "to_node_id": "3b0b11e0-0000-4000-8000-000000000014",
+      "label": null,
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    }
+  ]
+}
