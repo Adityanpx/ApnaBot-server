@@ -530,6 +530,8 @@ const getDashboardStats = async (businessId) => {
     newCustomersToday,
     pendingBookings,
     needsHumanCount,
+    // { used, limit, periodStart, periodEnd, resetsOn, msgCount }; currentMonthUsage is the same object, kept for older clients.
+    usage: currentMonthUsage || null,
     currentMonthUsage: currentMonthUsage || null
   };
 };

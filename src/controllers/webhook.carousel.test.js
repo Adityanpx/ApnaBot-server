@@ -61,7 +61,7 @@ stub('../services/tenant.service', {
 });
 stub('../services/usage.service', {
   checkUsageLimit: async () => ({ allowed: true, current: 0, limit: 500 }),
-  incrementUsage: async (businessId, kind) => { usage.push(kind); }
+  recordOutbound: async () => { usage.push('outbound'); }
 });
 stub('../services/smartFallback.service', { getSmartFallbackReply: async () => null });
 stub('../services/business.service', { getBusinessById: async () => ({ id: BIZ, enabledLanguages: ['en', 'hi'], name: 'Sunrise Hotel' }) });
@@ -148,7 +148,7 @@ test('cards with media: one job for a native carousel, body templated, one outbo
     ]
   });
   assert.equal(job().messageId, row.id);
-  assert.deepEqual(usage.filter(k => k === 'outbound'), ['outbound']);
+  assert.deepEqual(usage, [], 'counted by the queue worker when Meta accepts the job, not by the webhook');
 });
 
 test('cards whose media is null (category template clone): text fallback job with ALL card buttons, not a bare body', async () => {

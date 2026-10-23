@@ -35,12 +35,10 @@ const getCurrentSubscription = async (req, res, next) => {
   try {
     const businessId = req.user.businessId;
 
-    const [subResult, usage] = await Promise.all([
-      getCurrentSubscriptionRow(businessId, { statuses: ['active', 'trial'] }),
-      usageService.getUsageForBusiness(businessId)
-    ]);
-
+    const subResult = await getCurrentSubscriptionRow(businessId, { statuses: ['active', 'trial'] });
     if (subResult.error) throw subResult.error;
+    // { used, limit, periodStart, periodEnd, resetsOn, msgCount } - msgCount equals used, for older clients.
+    const usage = await usageService.getUsageForBusiness(businessId, subResult.data);
     const subscription = subResult.data
       ? { ...toCamelCase(subResult.data), plan: toCamelCase(subResult.data.plan) }
       : null;

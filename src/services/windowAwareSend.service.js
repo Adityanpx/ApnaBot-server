@@ -94,7 +94,6 @@ const sendWindowAwareMessage = async (business, customerRow, { textFor, template
       type: 'text',
       messageId: message.id
     });
-    usageService.incrementUsage(business.id, 'outbound').catch(err => logger.error('Error incrementing outbound usage:', err));
     return { sent: 'text', messageId: message.id, costPaise: 0 };
   }
 
@@ -138,7 +137,8 @@ const sendWindowAwareMessage = async (business, customerRow, { textFor, template
   const message = await recordOutbound(business, customerRow, chatText, 'sent', headerMediaOf(templateRow));
   // Meta's wamid on the row, so its status webhooks find it (never throws).
   await attachMetaMessageId(business.id, message.id, extractMetaMessageId(sendResult));
-  usageService.incrementUsage(business.id, 'outbound').catch(err => logger.error('Error incrementing outbound usage:', err));
+  // Sent straight to Meta (not through the queue worker), so it is counted here. Never throws.
+  usageService.recordOutbound(business.id);
   return { sent: 'template', messageId: message.id, costPaise: ratePaise };
 };
 

@@ -62,7 +62,7 @@ stub('../services/tenant.service', {
 });
 stub('../services/usage.service', {
   checkUsageLimit: async () => ({ allowed: true, current: 0, limit: 500 }),
-  incrementUsage: async (businessId, kind) => { usage.push(kind); }
+  recordOutbound: async () => { usage.push('outbound'); }
 });
 stub('../services/smartFallback.service', { getSmartFallbackReply: async () => null });
 stub('../services/business.service', { getBusinessById: async () => ({ id: BIZ, enabledLanguages: ['en'], name: 'Biz' }) });
@@ -146,7 +146,7 @@ test('each extra is stored as an outbound row (bot, media_url) before the reply 
     ['text', undefined, 'bot', 'Our rooms']
   ]);
   assert.deepEqual(sent().map(j => j.messageId), rows.map(r => r.id), 'each job points at its own row');
-  assert.deepEqual(usage.filter(k => k === 'outbound'), ['outbound', 'outbound', 'outbound'], 'one outbound count per message, reply included');
+  assert.deepEqual(usage, [], 'counted by the queue worker (one unit per job), not by the webhook');
   assert.equal(sockets.filter(m => m && m.direction === 'outbound').length, 3);
 });
 
@@ -207,5 +207,5 @@ test('a node with no extra media: no library lookup, no extra rows, the reply jo
   await say('photos');
   assert.equal(events.length, 1);
   assert.equal(outboundRows().length, 1);
-  assert.deepEqual(usage.filter(k => k === 'outbound'), ['outbound']);
+  assert.deepEqual(usage, [], 'counted by the queue worker when Meta accepts the job, not by the webhook');
 });

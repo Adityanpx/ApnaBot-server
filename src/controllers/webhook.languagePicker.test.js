@@ -49,7 +49,7 @@ stub('../queues/whatsapp.queue', {
 stub('../queues/sessionTimeout.queue', { scheduleSessionTimeout: async () => {}, cancelSessionTimeout: async () => {} });
 stub('../services/socket.service', { emitToBusiness: () => {} });
 stub('../services/tenant.service', { resolveBusinessByPhoneNumberId: async () => tenant });
-stub('../services/usage.service', { checkUsageLimit: async () => ({ allowed: true, current: 0, limit: 500 }), incrementUsage: async () => {} });
+stub('../services/usage.service', { checkUsageLimit: async () => ({ allowed: true, current: 0, limit: 500 }), recordOutbound: async () => {} });
 stub('../services/smartFallback.service', { getSmartFallbackReply: async () => null });
 stub('../services/business.service', { getBusinessById: async () => business });
 stub('../services/booking.service', {

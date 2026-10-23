@@ -11,7 +11,7 @@ let sendImpl; let signals; let refunds;
 const stub = (rel, exports) => { const p = require.resolve(rel); require.cache[p] = { id: p, filename: p, loaded: true, exports }; };
 stub('../config/supabase', {});
 stub('../config/env', { WALLET_BILLING_ENABLED: true });
-stub('./usage.service', { incrementUsage: async () => {} });
+stub('./usage.service', { recordOutbound: async () => {} });
 stub('./socket.service', { emitToBusiness: () => {} });
 stub('./rateCard.service', { getRateForMessage: async () => 100 });
 stub('./wallet.service', { debitWallet: async () => {}, refundToWallet: async (...a) => { refunds.push(a); } });

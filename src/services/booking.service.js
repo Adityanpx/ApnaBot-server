@@ -9,7 +9,6 @@ const businessService = require('./business.service');
 const paymentService = require('./payment.service');
 const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
 const { addToSessionTimeoutQueue } = require('../queues/sessionTimeout.queue');
-const usageService = require('./usage.service');
 const notificationService = require('./notification.service');
 const socketService = require('./socket.service');
 const distanceMatrixService = require('./distanceMatrix.service');
@@ -708,11 +707,6 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
   // Delete session from Redis
   await deleteBookingSession(businessId, customerNumber);
 
-  // Increment booking usage (fire and forget)
-  usageService.incrementUsage(businessId, 'booking').catch(err =>
-    logger.error('Error incrementing booking usage:', err)
-  );
-
   // Push to the owner's phone (fire and forget; covers chat and web-form bookings).
   notificationService.notify(businessId, 'booking_new', {
     bookingId: booking.id,
@@ -739,11 +733,13 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
           intro: getSystemMessage(isAdmissionFee ? 'admissionFeeQrIntro' : 'advanceQrIntro', language, vars),
           languageCode: language
         }),
-        imageUrl: business.paymentQrUrl
+        imageUrl: business.paymentQrUrl,
+        bookingId: booking.id
       }
       : {
         text: getSystemMessage(isAdmissionFee ? 'admissionFeeNoQr' : 'advanceNoQr', language, vars),
-        imageUrl: null
+        imageUrl: null,
+        bookingId: booking.id
       };
 
     try {
@@ -774,7 +770,7 @@ const createBookingAndConfirmation = async (businessId, customerNumber, collecte
     logger.error('Error emitting socket event:', socketError);
   }
 
-  return { text: confirmationText, imageUrl: null };
+  return { text: confirmationText, imageUrl: null, bookingId: booking.id };
 };
 
 /**

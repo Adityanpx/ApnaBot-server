@@ -25,6 +25,8 @@ stub('../services/whatsapp.service', {
     if (to === 'bad') throw new Error('invalid number');
   }
 });
+const usageCalls = [];
+stub('../services/usage.service', { recordOutbound: async (businessId, opts) => { usageCalls.push([businessId, opts]); } });
 const refunds = [];
 stub('../services/wallet.service', {
   refundToWallet: async (businessId, paise) => { refunds.push(paise); }
@@ -43,7 +45,7 @@ const run = (data) => processor({
   }
 });
 
-test.beforeEach(() => { refunds.length = 0; sentComponents.length = 0; billing = false; });
+test.beforeEach(() => { usageCalls.length = 0; refunds.length = 0; sentComponents.length = 0; billing = false; });
 
 // Step A (#6 Phase 2): components on the wire must match what the worker built before.
 test('mapped variables: header passthrough + per-recipient body, values cleaned for Meta', async () => {
@@ -103,4 +105,14 @@ test('rate 0: never refunds', async () => {
   await run({ billed: true, ratePerMessage: 0 });
   await run({ billed: undefined, ratePerMessage: 0 });
   assert.deepEqual(refunds, []);
+});
+
+test('usage: a batch counts the messages Meta accepted, once, for the business (failed sends are not counted)', async () => {
+  await run({ recipients: [{ whatsappNumber: 'good' }, { whatsappNumber: 'good2' }, { whatsappNumber: 'bad' }] });
+  assert.deepEqual(usageCalls, [['b', { count: 2 }]]);
+});
+
+test('usage: a batch where every send failed counts nothing', async () => {
+  await run({ recipients: [{ whatsappNumber: 'bad' }] });
+  assert.deepEqual(usageCalls, []);
 });

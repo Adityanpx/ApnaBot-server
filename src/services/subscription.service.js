@@ -58,7 +58,7 @@ const createSubscription = async (businessId, planId, options = {}) => {
     // the remaining time instead of discarding it.
     const { data: existing } = await supabase
       .from('subscriptions')
-      .select('plan_id, end_date')
+      .select('plan_id, end_date, start_date, current_period_start')
       .eq('business_id', businessId)
       .eq('status', 'active')
       .order('end_date', { ascending: false })
@@ -67,6 +67,10 @@ const createSubscription = async (businessId, planId, options = {}) => {
     const renewFrom = existing && existing.plan_id === planId && new Date(existing.end_date) > new Date()
       ? new Date(existing.end_date)
       : null;
+    // The message counter's period. A stacked early renewal keeps the running period (utils/usagePeriod.js
+    // keeps stepping monthly from it), so buying early never resets the counter; every other purchase -
+    // first, renewal after expiry, reactivation, trial -> paid - starts a new period now.
+    const periodStart = renewFrom ? new Date(existing.current_period_start || existing.start_date) : null;
 
     // Retire the business's other live rows, cancelling any autopay mandate at
     // Razorpay so it stops charging (a Razorpay failure is logged, not thrown).
@@ -85,6 +89,7 @@ const createSubscription = async (businessId, planId, options = {}) => {
         plan_id: planId,
         status: options.status || 'active',
         start_date: startDate.toISOString(),
+        current_period_start: (periodStart || startDate).toISOString(),
         end_date: endDate.toISOString(),
         razorpay_subscription_id: options.razorpaySubscriptionId || null,
         razorpay_payment_id: options.razorpayPaymentId || null,

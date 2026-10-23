@@ -46,6 +46,8 @@ stub('../services/whatsapp.service', {
   sendLocationRequest: sendFn('locationRequest'), sendInteractiveButtons: sendFn('buttons'), sendListMessage: sendFn('list'),
   sendRuleListMessage: sendFn('ruleList'), sendCtaUrlButton: sendFn('cta'), sendCarouselMessage: sendFn('carousel')
 });
+const usageCalls = [];
+stub('../services/usage.service', { recordOutbound: async (businessId, opts) => { usageCalls.push(opts ? [businessId, opts.count] : businessId); } });
 require('./whatsapp.worker');
 
 const B = 'b1';
@@ -53,7 +55,7 @@ const job = (data, attemptsMade = 0) => ({ data: { businessId: B, phoneNumberId:
 const response = (id) => ({ messaging_product: 'whatsapp', contacts: [{ wa_id: '919800000001' }], messages: [{ id }] });
 const bot = () => ({ id: 'row1', business_id: B, direction: 'outbound', sender_type: 'bot', status: 'sent', meta_message_id: null });
 
-test.beforeEach(() => { rows = [bot()]; sends = []; sendImpl = () => response('wamid.OUT1'); });
+test.beforeEach(() => { usageCalls.length = 0; rows = [bot()]; sends = []; sendImpl = () => response('wamid.OUT1'); });
 
 test('a text send: row marked sent with Meta\'s wamid saved on it', async () => {
   await processor(job({}));
@@ -236,4 +238,29 @@ test('after a native 4xx, the fallback keeps going past a failing card too; only
   sendImpl = (name) => { if (name === 'text') throw metaError(503); return response('wamid.H2'); };
   await assert.rejects(() => processor(job({ type: 'carousel', carouselNative: false, carouselCards: CARDS })), /503/);
   assert.deepEqual(names(), ['text']);
+});
+
+test('usage: a successful send counts one outbound unit for the business - a bot reply, an owner reply and a payment link all take this path', async () => {
+  await processor(job({}));
+  await processor(job({ messageId: null, message: 'owner reply from the app' }));
+  assert.deepEqual(usageCalls, [[B, 1], [B, 1]]);
+});
+
+test('usage: a carousel that falls back to several messages is still one unit', async () => {
+  await processor(job({ type: 'carousel', carouselNative: false, carouselCards: [{ index: 1, text: 'a' }, { index: 2, text: 'b' }] }));
+  assert.equal(usageCalls.length, 1);
+});
+
+test('usage: a failed send is not counted, and neither is the retry that fails again', async () => {
+  sendImpl = () => { throw new Error('meta down'); };
+  await assert.rejects(processor(job({})));
+  await assert.rejects(processor(job({}, 2)));
+  assert.equal(usageCalls.length, 0);
+});
+
+test('usage: countAs 0 (the photos of a catalogue page) records nothing; the closing message of the page records its one unit', async () => {
+  for (let i = 0; i < 10; i += 1) await processor(job({ imageUrl: 'https://x/p.jpg', countAs: 0 }));
+  assert.deepEqual(usageCalls, []);
+  await processor(job({ buttons: [{ nextKeyword: 'cat:menu', title: 'Catalogue' }] }));
+  assert.deepEqual(usageCalls, [[B, 1]]);
 });

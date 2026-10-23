@@ -58,7 +58,7 @@ stub('../services/tenant.service', {
 });
 stub('../services/usage.service', {
   checkUsageLimit: async () => ({ allowed: usageAllowed, current: 0, limit: 500 }),
-  incrementUsage: async (businessId, direction) => { calls.push(['incrementUsage', direction]); }
+  recordOutbound: async () => { calls.push(['usage']); }
 });
 stub('../services/smartFallback.service', { getSmartFallbackReply: async () => null });
 stub('../services/business.service', {
@@ -298,11 +298,11 @@ test('over limit + normal button tap: saved, still no reply', async () => {
   assert.ok(!calls.some(c => c[0] === 'findMatchingRule'));
 });
 
-test('over limit: inbound usage is still not counted; under limit it is', async () => {
+test('usage: the webhook counts nothing itself - inbound is never counted (over or under the limit); sends are counted by the queue worker', async () => {
   usageAllowed = false;
   await send({ type: 'text', text: { body: 'price' } });
-  assert.ok(!calls.some(c => c[0] === 'incrementUsage' && c[1] === 'inbound'));
+  assert.ok(!calls.some(c => c[0] === 'usage'));
   usageAllowed = true; calls = [];
   await send({ type: 'text', text: { body: 'price' } });
-  assert.ok(calls.some(c => c[0] === 'incrementUsage' && c[1] === 'inbound'));
+  assert.ok(!calls.some(c => c[0] === 'usage'));
 });

@@ -297,9 +297,6 @@ const sendReplyExtraMedia = async (ctx, node) => {
         });
       }
 
-      usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-        logger.error('Error incrementing outbound usage:', err)
-      );
       try {
         socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', { customer, message: row, customerNumber });
       } catch (socketError) {
@@ -470,9 +467,6 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
         });
       }
 
-      usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-        logger.error('Error incrementing outbound usage:', err)
-      );
       try {
         socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
           customer,
@@ -533,9 +527,6 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
           });
         }
 
-        usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-          logger.error('Error incrementing outbound usage:', err)
-        );
         try {
           socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
             customer,
@@ -594,9 +585,6 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
         });
       }
 
-      usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-        logger.error('Error incrementing outbound usage:', err)
-      );
       try {
         socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
           customer,
@@ -665,9 +653,6 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
   Object.assign(outboundJobData, interactiveJobFields);
   await addToWhatsappQueue(outboundJobData);
 
-  usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-    logger.error('Error incrementing outbound usage:', err)
-  );
   try {
     socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
       customer,
@@ -714,9 +699,6 @@ const sendFallbackTextMessage = async (ctx, text) => {
     type: 'text',
     messageId: fallbackMsg.id
   });
-  usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-    logger.error('Error incrementing outbound usage:', err)
-  );
   try {
     socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
       customer,
@@ -772,9 +754,6 @@ const sendLanguagePicker = async (ctx, businessDoc, enabledLanguages) => {
     ...interactiveFields,
     messageId: pickerMsg.id
   });
-  usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-    logger.error('Error incrementing outbound usage:', err)
-  );
   try {
     socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
       customer,
@@ -826,9 +805,6 @@ const sendOptInConsentQuestion = async (ctx, link) => {
     buttons: consentButtons,
     messageId: consentMsg.id
   });
-  usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-    logger.error('Error incrementing outbound usage:', err)
-  );
   try {
     socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
       customer,
@@ -893,9 +869,6 @@ const sendOptInConfirmation = async (ctx) => {
     type: 'text',
     messageId: confirmMsg.id
   });
-  usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-    logger.error('Error incrementing outbound usage:', err)
-  );
   try {
     socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
       customer,
@@ -1310,7 +1283,7 @@ const processWebhookChange = async (entry, changes) => {
     // an over-limit business must still receive/store the message; only the
     // reply is blocked. See Step 9.5.)
     const msgLimit = tenant.plan?.msg_limit || 500;
-    const usageCheck = await usageService.checkUsageLimit(tenant.businessId, msgLimit);
+    const usageCheck = await usageService.checkUsageLimit(tenant.businessId, msgLimit, tenant.subscription);
 
     // Step 8 - Upsert customer
     const customerInfo = {};
@@ -1325,8 +1298,8 @@ const processWebhookChange = async (entry, changes) => {
 
     // Bot pause: a business owner can silence the bot for this customer
     // (see message.controller.js sendMessage / the pause endpoint) without
-    // blocking them outright. The inbound message is still recorded and
-    // usage still counted below — only the language/greeting/booking/rule
+    // blocking them outright. The inbound message is still recorded —
+    // only the language/greeting/booking/rule
     // matching that would generate a reply is skipped. The booking session
     // in Redis (if any) is deliberately left untouched: it expires on its
     // own TTL, so if the pause lifts first the customer resumes mid-flow.
@@ -1384,27 +1357,11 @@ const processWebhookChange = async (entry, changes) => {
     }
 
     // Step 9.5 - Enforce usage limit (message is already saved above — only
-    // the reply, and the now-meaningless usage increment below, are blocked).
+    // only the reply is blocked; inbound messages are never counted).
     // The return itself is further down, after the STOP/START handling: an
     // opt-out is compliance-sensitive and must be honoured (and confirmed)
     // even when the business is over its limit.
     const overLimit = !usageCheck.allowed;
-
-    if (!overLimit && !replacedMsg) {
-      // Step 10 - Increment usage (fire and forget). Skipped for a message that
-      // replaced an 'unsupported' row: that row already counted.
-      usageService.incrementUsage(tenant.businessId, 'inbound');
-
-      // ADD THIS — Emit usage_update to Flutter dashboard
-      usageService.checkUsageLimit(tenant.businessId, tenant.plan?.msg_limit || 500)
-        .then(usageCheck => {
-          socketService.emitToBusiness(tenant.businessId.toString(), 'usage_update', {
-            msgCount: usageCheck.current,
-            limit: usageCheck.limit
-          });
-        })
-        .catch(err => logger.error('Error emitting usage_update:', err));
-    }
 
     // Customer-controlled pause: checked ahead of both the active-booking-
     // session handling (Step 12) and the isBotPaused early-return below —
@@ -1496,9 +1453,6 @@ const processWebhookChange = async (entry, changes) => {
         type: 'text',
         messageId: stopMsg.id
       });
-      usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-        logger.error('Error incrementing outbound usage:', err)
-      );
       try {
         socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
           customer,
@@ -1555,9 +1509,6 @@ const processWebhookChange = async (entry, changes) => {
         type: 'text',
         messageId: startMsg.id
       });
-      usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-        logger.error('Error incrementing outbound usage:', err)
-      );
       try {
         socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
           customer,
@@ -1712,9 +1663,6 @@ const processWebhookChange = async (entry, changes) => {
           type: 'text',
           messageId: onlyLanguageMsg.id
         });
-        usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-          logger.error('Error incrementing outbound usage:', err)
-        );
         try {
           socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
             customer,
@@ -1958,9 +1906,6 @@ const processWebhookChange = async (entry, changes) => {
           type: 'text',
           messageId: cancelMsg.id
         });
-        usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-          logger.error('Error incrementing outbound usage:', err)
-        );
         try {
           socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
             customer,
@@ -2104,9 +2049,6 @@ const processWebhookChange = async (entry, changes) => {
           imageUrl: confirmation.imageUrl,
           messageId: outboundMsg.id
         });
-        usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-          logger.error('Error incrementing outbound usage:', err)
-        );
         try {
           socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
             customer,
@@ -2164,9 +2106,6 @@ const processWebhookChange = async (entry, changes) => {
               type: 'text',
               messageId: outboundMsg.id
             });
-            usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-              logger.error('Error incrementing outbound usage:', err)
-            );
             try {
               socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
                 customer,
@@ -2353,11 +2292,6 @@ const processWebhookChange = async (entry, changes) => {
           messageId: greetingOutboundMsg.id
         };
         await addToWhatsappQueue(greetingJobData);
-
-        // Increment outbound usage (fire and forget)
-        usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-          logger.error('Error incrementing outbound usage:', err)
-        );
 
         // Emit socket event
         try {
@@ -2596,9 +2530,6 @@ const processWebhookChange = async (entry, changes) => {
               imageUrl: confirmation.imageUrl,
               messageId: outboundMsg.id
             });
-            usageService.incrementUsage(tenant.businessId, 'outbound').catch(err =>
-              logger.error('Error incrementing outbound usage:', err)
-            );
             try {
               socketService.emitToBusiness(tenant.businessId.toString(), 'new_message', {
                 customer,
@@ -2942,9 +2873,6 @@ const processWebhookChange = async (entry, changes) => {
     } catch (socketError) {
       logger.error('Error emitting new_message socket event:', socketError);
     }
-
-    // Step 17 - Increment outbound usage (fire and forget)
-    usageService.incrementUsage(tenant.businessId, 'outbound');
 
     logger.info(`Processed webhook for business ${tenant.businessId}, customer ${customerNumber}`);
 

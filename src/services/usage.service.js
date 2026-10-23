@@ -1,119 +1,161 @@
 const redis = require('../config/redis');
 const supabase = require('../config/supabase');
 const logger = require('../utils/logger');
-const { istMonthKey, istMonthStart } = require('../utils/ist');
+const { resolvePeriod } = require('../utils/usagePeriod');
 const notificationService = require('./notification.service');
 
-/**
- * Get current month key in YYYY-MM format (India time — the server runs in
- * UTC, where the month would roll over at 05:30 IST on the 1st)
- */
-const getCurrentMonthKey = () => istMonthKey(new Date());
+// How long a usage key outlives its period, so a late read still finds it.
+const KEY_GRACE_SECONDS = 7 * 24 * 60 * 60;
+// An autopay row on its placeholder end_date has no known period end.
+const UNKNOWN_END_SECONDS = 31 * 24 * 60 * 60;
 
 /**
- * Build Redis key for usage
+ * Redis key for one business's counter in one period.
  * @param {string} businessId
+ * @param {Date} periodStart
  * @returns {string}
  */
-const getUsageKey = (businessId) => {
-  const month = getCurrentMonthKey();
-  return `usage:${businessId}:${month}`;
+const getUsageKey = (businessId, periodStart) => `usage:${businessId}:${periodStart.toISOString()}`;
+
+// Seconds until the period ends plus the grace window (never less than the grace window).
+const keyTtlSeconds = ({ periodStart, periodEnd }, now = new Date()) => {
+  const end = periodEnd || new Date(periodStart.getTime() + UNKNOWN_END_SECONDS * 1000);
+  return Math.max(Math.ceil((end.getTime() - now.getTime()) / 1000), 0) + KEY_GRACE_SECONDS;
 };
 
-const USAGE_TYPE_COLUMNS = { inbound: 'inbound_count', outbound: 'outbound_count', booking: 'booking_count', paymentLink: 'payment_link_count' };
+// Raises the Redis count to the database's authoritative total (never lowers it, so an out-of-order
+// write cannot walk the counter back) and sets the TTL once.
+const RAISE_COUNT_LUA = `
+local c = tonumber(redis.call('HGET', KEYS[1], 'used') or '0')
+if tonumber(ARGV[1]) > c then redis.call('HSET', KEYS[1], 'used', ARGV[1]) end
+if redis.call('TTL', KEYS[1]) < 0 then redis.call('EXPIRE', KEYS[1], ARGV[2]) end
+return 1
+`;
 
-/**
- * Upsert-and-increment the Supabase usage row. No atomic upsert-increment via
- * REST, so read-then-write — acceptable since this only runs every 10th hit
- * (see incrementUsage), not on every message.
- */
-const persistUsageIncrement = async (businessId, month, typeColumn) => {
+// The business's current subscription row (Redis-cached 5 min), or null. Lazy require: subscription.service
+// is heavier than this module and payment.service loads both.
+const loadSubscription = async (businessId) => {
   try {
-    const { data: existing } = await supabase
-      .from('usage').select('*').eq('business_id', businessId).eq('month', month).maybeSingle();
-
-    if (existing) {
-      const updates = { msg_count: (existing.msg_count || 0) + 10 };
-      if (typeColumn) updates[typeColumn] = (existing[typeColumn] || 0) + 1;
-      await supabase.from('usage').update(updates).eq('id', existing.id);
-    } else {
-      const insertRow = { business_id: businessId, month, msg_count: 10 };
-      if (typeColumn) insertRow[typeColumn] = 1;
-      await supabase.from('usage').insert(insertRow);
-    }
-  } catch (err) {
-    logger.error('Error persisting usage to Supabase:', err);
-  }
-};
-
-/**
- * Increment usage counter for a business
- * @param {string} businessId - The business ID
- * @param {string} type - Type: 'inbound', 'outbound', 'booking', 'paymentLink'
- * @returns {Promise<number>} - Current message count
- */
-const incrementUsage = async (businessId, type) => {
-  const usageKey = getUsageKey(businessId);
-  const month = getCurrentMonthKey();
-
-  try {
-    // Increment counters in Redis atomically
-    await redis.hincrby(usageKey, 'msgCount', 1);
-    await redis.hincrby(usageKey, `${type}Count`, 1);
-
-    // Check/set TTL (only if key is newly created)
-    const ttl = await redis.ttl(usageKey);
-    if (ttl === -1) {
-      // Set TTL to end of current month (India time, matching the key)
-      const now = new Date();
-      const secondsUntilEndOfMonth = Math.ceil((istMonthStart(now, 1) - now) / 1000);
-      await redis.expire(usageKey, secondsUntilEndOfMonth);
-    }
-
-    // Get current count
-    const msgCount = await redis.hget(usageKey, 'msgCount');
-
-    // Every 10 increments, persist to Supabase (fire and forget)
-    if (msgCount % 10 === 0) {
-      persistUsageIncrement(businessId, month, USAGE_TYPE_COLUMNS[type]);
-    }
-
-    return msgCount;
+    return await require('./subscription.service').getActiveSubscription(businessId);
   } catch (error) {
-    logger.error('Error in incrementUsage:', error);
-    throw error;
+    logger.error('Error loading the subscription for usage:', error);
+    return null;
   }
+};
+
+/**
+ * Counts messages ApnaBot actually sent for a business, in its current subscription period.
+ * Called at every successful send point (whatsapp.worker.js for everything queued; the few
+ * direct sends - broadcast template batches, window-aware templates, the web-form confirmation,
+ * the session-timeout notice - call it themselves). The database RPC is the exact, atomic count;
+ * Redis is the read cache. Never throws.
+ * @param {string} businessId
+ * @param {Object} [opts]
+ * @param {number} [opts.count=1] messages sent (a broadcast batch passes its sent total)
+ * @param {Object|null} [opts.subscription] the row, when the caller already has it
+ * @returns {Promise<number|null>} the period's new total, or null when it could not be counted
+ */
+const recordOutbound = async (businessId, { count = 1, subscription } = {}) => {
+  if (!businessId || !(count > 0)) return null;
+  try {
+    const sub = subscription !== undefined ? subscription : await loadSubscription(businessId);
+    const period = resolvePeriod(sub);
+    const key = getUsageKey(businessId, period.periodStart);
+    const ttl = keyTtlSeconds(period);
+
+    let total = null;
+    try {
+      const { data, error } = await supabase.rpc('increment_usage_period', {
+        p_business_id: businessId,
+        p_period_start: period.periodStart.toISOString(),
+        p_period_end: period.periodEnd ? period.periodEnd.toISOString() : null,
+        p_delta: count
+      });
+      if (error) throw error;
+      total = typeof data === 'number' ? data : parseInt(data, 10);
+      if (Number.isNaN(total)) total = null;
+    } catch (rpcError) {
+      logger.error('Error counting outbound usage in the database:', rpcError);
+    }
+
+    try {
+      if (total !== null) {
+        await redis.eval(RAISE_COUNT_LUA, 1, key, String(total), String(ttl));
+      } else {
+        // Database unreachable: keep the cached count moving so the limit still tracks.
+        total = await redis.hincrby(key, 'used', count);
+        if ((await redis.ttl(key)) < 0) await redis.expire(key, ttl);
+      }
+    } catch (redisError) {
+      logger.error('Error counting outbound usage in Redis:', redisError);
+    }
+
+    emitUsageUpdate(businessId, total, sub);
+    return total;
+  } catch (error) {
+    logger.error('Error in recordOutbound:', error);
+    return null;
+  }
+};
+
+// Live counter for the owner's dashboard. Never throws.
+const emitUsageUpdate = (businessId, used, sub) => {
+  if (used === null || used === undefined) return;
+  try {
+    const limit = sub?.plan?.msg_limit;
+    require('./socket.service').emitToBusiness(businessId.toString(), 'usage_update', {
+      msgCount: used,
+      used,
+      limit: limit === undefined ? null : limit
+    });
+  } catch (error) {
+    logger.error('Error emitting usage_update:', error);
+  }
+};
+
+// The count for a period: Redis first, then the database (warming Redis with it). Throws on a database error.
+const readUsed = async (businessId, period) => {
+  const key = getUsageKey(businessId, period.periodStart);
+  let used = null;
+  try {
+    used = await redis.hget(key, 'used');
+  } catch (redisError) {
+    logger.error('Error reading usage from Redis:', redisError);
+  }
+  if (used !== null && used !== undefined) return parseInt(used, 10) || 0;
+
+  const { data: row, error } = await supabase
+    .from('usage_periods').select('outbound_count')
+    .eq('business_id', businessId).eq('period_start', period.periodStart.toISOString()).maybeSingle();
+  if (error) throw error;
+  const count = row ? row.outbound_count : 0;
+  try {
+    await redis.eval(RAISE_COUNT_LUA, 1, key, String(count), String(keyTtlSeconds(period)));
+  } catch (redisError) {
+    logger.error('Error warming the usage cache:', redisError);
+  }
+  return count;
 };
 
 /**
  * Check if business has exceeded usage limit
  * @param {string} businessId - The business ID
  * @param {number} planMsgLimit - Message limit from plan (-1 for unlimited)
+ * @param {Object|null} [subscription] the business's subscription row (the tenant snapshot has it)
  * @returns {Promise<Object>} - { allowed, current, limit }
  */
-const checkUsageLimit = async (businessId, planMsgLimit) => {
+const checkUsageLimit = async (businessId, planMsgLimit, subscription) => {
   if (planMsgLimit === -1) {
     return { allowed: true, current: 0, limit: -1 };
   }
 
-  const usageKey = getUsageKey(businessId);
-  const month = getCurrentMonthKey();
-
   try {
-    // Try to get from Redis first
-    let current = await redis.hget(usageKey, 'msgCount');
+    const sub = subscription !== undefined ? subscription : await loadSubscription(businessId);
+    const period = resolvePeriod(sub);
+    const current = await readUsed(businessId, period);
 
-    if (!current) {
-      // Fall back to Supabase
-      const { data: usageRow } = await supabase
-        .from('usage').select('msg_count').eq('business_id', businessId).eq('month', month).maybeSingle();
-      current = usageRow ? usageRow.msg_count : 0;
-    }
-
-    current = parseInt(current) || 0;
-
-    // Critical push at 90% / 100% of the plan (fire and forget, once per level per month).
-    checkUsageThresholds(businessId, current, planMsgLimit);
+    // Critical push at 90% / 100% of the plan (fire and forget, once per level per period).
+    checkUsageThresholds(businessId, current, planMsgLimit, period);
 
     if (current >= planMsgLimit) {
       return { allowed: false, current, limit: planMsgLimit };
@@ -134,15 +176,16 @@ const USAGE_ALERTS = [
 ];
 
 /**
- * Pushes a critical alert when this month's usage has reached 90% / 100% of the
- * plan limit - once per level per month (Redis key, kept past the end of the
- * month). Fire-and-forget: never throws. Reaching 100% also counts as 90%, but
+ * Pushes a critical alert when this period's usage has reached 90% / 100% of the
+ * plan limit - once per level per period (Redis key named after the period start, kept a week past
+ * the period's end). Fire-and-forget: never throws. Reaching 100% also counts as 90%, but
  * only the highest level reached is sent.
  * @param {string} businessId
- * @param {number} current messages used this month
+ * @param {number} current messages used this period
  * @param {number} limit plan message limit (-1 = unlimited)
+ * @param {{ periodStart: Date, periodEnd: Date|null }} period
  */
-const checkUsageThresholds = async (businessId, current, limit) => {
+const checkUsageThresholds = async (businessId, current, limit, period) => {
   try {
     if (!limit || limit <= 0) return;
     const percent = (current / limit) * 100;
@@ -152,8 +195,8 @@ const checkUsageThresholds = async (businessId, current, limit) => {
       businessId,
       alert.type,
       {},
-      `${businessId}:${getCurrentMonthKey()}`,
-      35 * 24 * 60 * 60
+      `${businessId}:${period.periodStart.toISOString()}`,
+      keyTtlSeconds(period)
     );
   } catch (error) {
     logger.error('Error in checkUsageThresholds:', error);
@@ -161,95 +204,38 @@ const checkUsageThresholds = async (businessId, current, limit) => {
 };
 
 /**
- * Get usage for a business
+ * Usage for the business's current period, for GET /api/subscription and the dashboard stats.
+ * msgCount is the same number as used, for clients that predate the period fields.
  * @param {string} businessId - The business ID
- * @returns {Promise<Object>} - Usage stats
+ * @param {Object|null} [subscription] the business's current subscription row (with its plan), when the caller has it
+ * @returns {Promise<{ used:number, limit:number|null, periodStart:string, periodEnd:string|null, resetsOn:string|null, msgCount:number }>}
  */
-const getUsageForBusiness = async (businessId) => {
-  const usageKey = getUsageKey(businessId);
-  const month = getCurrentMonthKey();
-
+const getUsageForBusiness = async (businessId, subscription) => {
+  const sub = subscription !== undefined ? subscription : await loadSubscription(businessId);
+  const period = resolvePeriod(sub);
+  const limit = sub?.plan?.msg_limit;
+  let used = 0;
   try {
-    // Try Redis first
-    const redisData = await redis.hgetall(usageKey);
-
-    if (redisData && Object.keys(redisData).length > 0) {
-      return {
-        msgCount: parseInt(redisData.msgCount) || 0,
-        inboundCount: parseInt(redisData.inboundCount) || 0,
-        outboundCount: parseInt(redisData.outboundCount) || 0,
-        bookingCount: parseInt(redisData.bookingCount) || 0,
-        paymentLinkCount: parseInt(redisData.paymentLinkCount) || 0,
-        month
-      };
-    }
-
-    // Fall back to Supabase
-    const { data: usageRow } = await supabase
-      .from('usage').select('*').eq('business_id', businessId).eq('month', month).maybeSingle();
-
-    return {
-      msgCount: usageRow ? usageRow.msg_count : 0,
-      inboundCount: usageRow ? usageRow.inbound_count : 0,
-      outboundCount: usageRow ? usageRow.outbound_count : 0,
-      bookingCount: usageRow ? usageRow.booking_count : 0,
-      paymentLinkCount: usageRow ? usageRow.payment_link_count : 0,
-      month
-    };
+    used = await readUsed(businessId, period);
   } catch (error) {
     logger.error('Error in getUsageForBusiness:', error);
-    return {
-      msgCount: 0,
-      inboundCount: 0,
-      outboundCount: 0,
-      bookingCount: 0,
-      paymentLinkCount: 0,
-      month
-    };
   }
-};
-
-/**
- * Force sync Redis counts to Supabase
- * @param {string} businessId - The business ID
- */
-const syncUsageToSupabase = async (businessId) => {
-  const usageKey = getUsageKey(businessId);
-  const month = getCurrentMonthKey();
-
-  try {
-    const redisData = await redis.hgetall(usageKey);
-
-    if (redisData && Object.keys(redisData).length > 0) {
-      const payload = {
-        msg_count: parseInt(redisData.msgCount) || 0,
-        inbound_count: parseInt(redisData.inboundCount) || 0,
-        outbound_count: parseInt(redisData.outboundCount) || 0,
-        booking_count: parseInt(redisData.bookingCount) || 0,
-        payment_link_count: parseInt(redisData.paymentLinkCount) || 0
-      };
-
-      const { data: existing } = await supabase
-        .from('usage').select('id').eq('business_id', businessId).eq('month', month).maybeSingle();
-
-      if (existing) {
-        await supabase.from('usage').update(payload).eq('id', existing.id);
-      } else {
-        await supabase.from('usage').insert({ business_id: businessId, month, ...payload });
-      }
-      logger.info(`Usage synced to Supabase for business ${businessId}`);
-    }
-  } catch (error) {
-    logger.error('Error in syncUsageToSupabase:', error);
-    throw error;
-  }
+  const periodEnd = period.periodEnd ? period.periodEnd.toISOString() : null;
+  return {
+    used,
+    limit: limit === undefined ? null : limit,
+    periodStart: period.periodStart.toISOString(),
+    periodEnd,
+    resetsOn: periodEnd,
+    msgCount: used
+  };
 };
 
 module.exports = {
-  incrementUsage,
+  recordOutbound,
   checkUsageLimit,
   getUsageForBusiness,
-  syncUsageToSupabase,
   checkUsageThresholds,
-  getCurrentMonthKey
+  getUsageKey,
+  keyTtlSeconds
 };

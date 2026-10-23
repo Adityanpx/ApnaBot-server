@@ -12,7 +12,6 @@
 const supabase = require('../config/supabase');
 const { toCamelCase } = require('../utils/caseConvert');
 const businessService = require('./business.service');
-const usageService = require('./usage.service');
 const socketService = require('./socket.service');
 const { addToWhatsappQueue } = require('../queues/whatsapp.queue');
 const { getSystemMessage } = require('../utils/systemMessages');
@@ -114,9 +113,6 @@ const sendQuestion = async ({ businessId, phoneNumberId, encryptedAccessToken, b
     buttons,
     messageId: message.id
   });
-  usageService.incrementUsage(businessId, 'outbound').catch(err =>
-    logger.error('Error incrementing outbound usage:', err)
-  );
   try {
     socketService.emitToBusiness(businessId.toString(), 'new_message', { customer, message, customerNumber });
   } catch (socketError) {

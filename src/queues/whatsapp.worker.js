@@ -6,6 +6,7 @@ const config = require('../config/env');
 const { workerConnection } = require('../config/queueConnection');
 const { extractMetaMessageId, attachMetaMessageId } = require('../services/outboundMessageId.service');
 const { fromSendError } = require('../utils/whatsappErrors');
+const usageService = require('../services/usage.service');
 
 // Must match the prefix used by whatsapp.queue.js - see comment there.
 const prefix = `apnabot:${config.QUEUE_NAMESPACE}`;
@@ -57,7 +58,7 @@ const worker = new Worker('whatsapp-outbound', async (job) => {
           type = 'text', imageUrl = null, videoUrl = null, buttons = [], listOptions = [],
           interactiveButtons = null, interactiveList = null, listButtonLabel = 'Choose',
           step = null, location = null, locationRequest = false, ctaButton = null,
-          carouselCards = null, carouselNative = false } = job.data;
+          carouselCards = null, carouselNative = false, countAs = 1 } = job.data;
 
   // Meta's send response ({ messages: [{ id }] }), whichever branch sends.
   let sendResult = null;
@@ -103,6 +104,12 @@ const worker = new Worker('whatsapp-outbound', async (job) => {
     } else {
       sendResult = await whatsappService.sendTextMessage(phoneNumberId, encryptedAccessToken, to, message);
     }
+
+    // The one place queued sends are counted against the plan: one unit per job (job.countAs, default 1; 0 for
+    // the photos of a catalogue page, whose closing message counts the page), however many
+    // WhatsApp messages a carousel fallback makes. Only after Meta accepted it, so a failed or
+    // retried job is never counted. Not awaited and never throws: counting must not slow or fail a send.
+    if (countAs > 0) usageService.recordOutbound(businessId, { count: countAs });
 
     if (messageId) {
       // Marks it sent and saves Meta's wamid in one write, so Meta's delivered / read

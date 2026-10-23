@@ -1,7 +1,6 @@
 const config = require('../config/env');
 const supabase = require('../config/supabase');
 const businessService = require('./business.service');
-const usageService = require('./usage.service');
 const socketService = require('./socket.service');
 const subscriptionService = require('./subscription.service');
 const tenantService = require('./tenant.service');
@@ -101,6 +100,14 @@ const markEventProcessedOrSkip = async (eventId, eventType) => {
 };
 
 /**
+ * Razorpay's real billing cycle start as the usage period start, so the message counter restarts with each
+ * paid cycle. Empty when the payload carries no current_start (the period then stays as it was).
+ */
+const cyclePatch = (rzpSub) => (rzpSub.current_start
+  ? { current_period_start: new Date(rzpSub.current_start * 1000).toISOString() }
+  : {});
+
+/**
  * subscription.activated — fires once, the first time the mandate is
  * successfully charged. Flips the DB row from its 'active'-placeholder /
  * 'pending_start' state to a real 'active' with the correct end_date.
@@ -113,7 +120,7 @@ const handleSubscriptionActivated = async (payload, eventId) => {
 
   const { data: dbSub, error } = await supabase
     .from('subscriptions')
-    .update({ status: 'active', end_date: currentEnd.toISOString() })
+    .update({ status: 'active', end_date: currentEnd.toISOString(), ...cyclePatch(rzpSub) })
     .eq('razorpay_subscription_id', rzpSub.id)
     .select('business_id, id')
     .maybeSingle();
@@ -188,7 +195,8 @@ const handleSubscriptionCharged = async (payload, eventId) => {
   const { error: subErr } = await supabase.from('subscriptions').update({
     status: 'active',
     end_date: currentEnd.toISOString(),
-    grace_until: null
+    grace_until: null,
+    ...cyclePatch(rzpSub)
   }).eq('id', dbSub.id);
   if (subErr) throw subErr;
 
@@ -508,10 +516,6 @@ const setBookingPaymentStatus = async (businessId, bookingId, status, actorUserI
       type: 'text',
       messageId: message.id
     });
-
-    usageService.incrementUsage(businessId, 'outbound').catch(err =>
-      logger.error('Error incrementing outbound usage:', err)
-    );
 
     try {
       socketService.emitToBusiness(businessId.toString(), 'new_message', {

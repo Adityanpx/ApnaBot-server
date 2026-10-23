@@ -68,7 +68,7 @@ stub('../services/tenant.service', {
 });
 stub('../services/usage.service', {
   checkUsageLimit: async () => ({ allowed: usageAllowed, current: 0, limit: 500 }),
-  incrementUsage: async (businessId, direction) => { calls.push(['incrementUsage', direction]); }
+  recordOutbound: async () => { calls.push(['usage']); }
 });
 stub('../services/smartFallback.service', { getSmartFallbackReply: async () => null });
 stub('../services/business.service', {

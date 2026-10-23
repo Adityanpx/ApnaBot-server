@@ -53,7 +53,7 @@ stub('../services/tenant.service', {
     phoneNumberId: 'pn1', accessToken: 'tok', displayName: 'Biz', businessName: 'Biz'
   })
 });
-stub('../services/usage.service', { checkUsageLimit: async () => ({ allowed: true, current: 0, limit: 500 }), incrementUsage: async () => {} });
+stub('../services/usage.service', { checkUsageLimit: async () => ({ allowed: true, current: 0, limit: 500 }), recordOutbound: async () => {} });
 stub('../services/smartFallback.service', { getSmartFallbackReply: async () => null });
 stub('../services/business.service', {
   getBusinessById: async () => { if (businessError) throw businessError; return business; }

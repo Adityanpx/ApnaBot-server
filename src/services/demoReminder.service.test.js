@@ -48,7 +48,7 @@ const stub = (rel, exports) => {
 stub('../config/supabase', { from });
 stub('../config/env', { get WALLET_BILLING_ENABLED() { return billing; } });
 stub('./business.service', { getBusinessById: async () => ({ id: 'b', name: 'Bright Minds', isWhatsappConnected: true, phoneNumberId: 'pn', accessToken: 'enc' }) });
-stub('./usage.service', { incrementUsage: async () => {} });
+stub('./usage.service', { recordOutbound: async () => {} });
 stub('./socket.service', { emitToBusiness: () => {} });
 stub('./wallet.service', { debitWallet: async (b, amt) => debits.push(amt), refundToWallet: async (b, amt) => debits.push(-amt) });
 stub('./rateCard.service', { getRateForMessage: async () => 12 });

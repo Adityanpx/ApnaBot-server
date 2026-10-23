@@ -31,7 +31,8 @@ const stub = (rel, exports) => {
 };
 stub('../config/supabase', { from });
 stub('../config/env', { get WALLET_BILLING_ENABLED() { return billing; } });
-stub('./usage.service', { incrementUsage: async () => {} });
+const usageCalls = [];
+stub('./usage.service', { recordOutbound: async (businessId) => { usageCalls.push(businessId); } });
 stub('./socket.service', { emitToBusiness: () => {} });
 stub('./rateCard.service', { getRateForMessage: async (country, category) => (category === 'utility' ? 12 : 80) });
 stub('./wallet.service', {
@@ -80,6 +81,21 @@ test('window open: free-form text in the customer\'s language, recorded in the c
   assert.equal(messages[0].customer_number, '919800000001');
   assert.equal(messages[0].sender_type, 'bot');
   assert.equal(wallet.length, 0);
+});
+
+test('usage: a window-open text goes through the queue worker (counted there, not here); a template goes straight to Meta and is counted once here', async () => {
+  reset(); usageCalls.length = 0;
+  await sendWindowAwareMessage(business, customer(), opts());
+  assert.deepEqual(usageCalls, []);
+  await sendWindowAwareMessage(business, customer({ last_message_at: new Date(Date.now() - 25 * HOUR).toISOString() }), opts());
+  assert.deepEqual(usageCalls, [business.id]);
+});
+
+test('usage: a rejected template is not counted', async () => {
+  reset(); usageCalls.length = 0;
+  metaRejects = true;
+  await sendWindowAwareMessage(business, customer({ last_message_at: new Date(Date.now() - 25 * HOUR).toISOString() }), opts());
+  assert.deepEqual(usageCalls, []);
 });
 
 test('window open: a template loader is never called', async () => {

@@ -12,6 +12,7 @@ const { extractMetaMessageId } = require('../services/outboundMessageId.service'
 const { fromSendError } = require('../utils/whatsappErrors');
 const { notifyBroadcastProgress } = require('../services/broadcastProgress.service');
 const deliverySignals = require('../services/deliverySignals.service');
+const usageService = require('../services/usage.service');
 const { isPaymentIssueCode } = require('../services/accountHealth.service');
 
 // Must match the prefix used by broadcast.queue.js - see comment there.
@@ -148,6 +149,10 @@ const worker = new Worker('broadcast-outbound', async (job) => {
       }
     }
   }
+
+  // Template sends go straight to Meta (not through the whatsapp-outbound worker): one unit per message
+  // Meta accepted, counted once for the batch. Never throws.
+  if (sent > 0) usageService.recordOutbound(businessId, { count: sent });
 
   const { error: rpcErr } = await supabase.rpc('increment_broadcast_progress', {
     p_broadcast_id: broadcastId,

@@ -58,7 +58,7 @@ stub('../services/tenant.service', {
 });
 stub('../services/usage.service', {
   checkUsageLimit: async () => ({ allowed: usageAllowed, current: 0, limit: 500 }),
-  incrementUsage: async (businessId, direction) => { calls.push(['incrementUsage', direction]); }
+  recordOutbound: async () => { calls.push(['usage']); }
 });
 stub('../services/smartFallback.service', { getSmartFallbackReply: async () => null });
 stub('../services/business.service', {
@@ -114,7 +114,7 @@ const unsupported = (id = W) => send({ id, type: 'unsupported', errors: [{ code:
 const customer = () => db.customers.find(c => c.whatsapp_number === NUMBER);
 const inbound = () => db.messages.filter(m => m.direction === 'inbound');
 const botRuns = () => calls.filter(c => c[0] === 'findMatchingRule').length;
-const inboundUsage = () => calls.filter(c => c[0] === 'incrementUsage' && c[1] === 'inbound').length;
+const inboundUsage = () => calls.filter(c => c[0] === 'usage').length;
 
 test.beforeEach(() => {
   db = {
@@ -131,7 +131,7 @@ test('lone unsupported: stored with a readable label and the raw payload; counte
   assert.equal(inbound()[0].content, "WhatsApp couldn't show this message here — open it in your WhatsApp Business app.");
   assert.equal(inbound()[0].raw_payload.errors[0].code, 131051);
   assert.equal(customer().total_messages, 4);
-  assert.equal(inboundUsage(), 1);
+  assert.equal(inboundUsage(), 0); // inbound is never counted
   assert.equal(botRuns(), 0);
 });
 
@@ -144,7 +144,7 @@ test('real after unsupported: the row is replaced, processed once, nothing count
   assert.ok(customer().last_activity_at); // the replacing delivery refreshes the inbox stamp too
   assert.equal(inbound()[0].raw_payload, null);
   assert.equal(customer().total_messages, 4); // only the first delivery counted
-  assert.equal(inboundUsage(), 1);
+  assert.equal(inboundUsage(), 0); // inbound is never counted
   assert.equal(botRuns(), 1);
   await text('price'); // and a later retry is a no-op
   assert.equal(inbound().length, 1);
@@ -158,7 +158,7 @@ test('unsupported after real: ignored entirely', async () => {
   assert.equal(inbound().length, 1);
   assert.equal(inbound()[0].type, 'text');
   assert.equal(customer().total_messages, total);
-  assert.equal(inboundUsage(), 1);
+  assert.equal(inboundUsage(), 0); // inbound is never counted
   assert.equal(botRuns(), 1);
 });
 
@@ -167,12 +167,12 @@ test('unsupported after unsupported, and a plain retry of a real message: ignore
   await unsupported();
   assert.equal(inbound().length, 1);
   assert.equal(customer().total_messages, 4);
-  assert.equal(inboundUsage(), 1);
+  assert.equal(inboundUsage(), 0); // inbound is never counted
 
   await text('hello', 'wamid.OTHER');
   await text('hello', 'wamid.OTHER');
   assert.equal(inbound().length, 2);
-  assert.equal(inboundUsage(), 2);
+  assert.equal(inboundUsage(), 0); // inbound is never counted
 });
 
 test('a different id is never a duplicate', async () => {

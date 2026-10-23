@@ -115,17 +115,18 @@ test('payment_received: when a booking payment is marked paid, with the amount a
   assert.equal(only('notify').length, 1);
 });
 
-test('usage_90 / usage_100: checkUsageLimit raises the highest level reached, keyed by business and month', async () => {
-  const month = usageService.getCurrentMonthKey();
+test('usage_90 / usage_100: checkUsageLimit raises the highest level reached, keyed by business and usage period', async () => {
+  const sub = { start_date: '2026-10-01T00:00:00.000Z', current_period_start: '2026-10-01T00:00:00.000Z', end_date: '2099-01-01T00:00:00.000Z', is_autopay: false };
+  const periodStart = '2026-10-01T00:00:00.000Z';
   const used = async (n, limit = 100) => {
-    calls = []; hash.set(`usage:b1:${month}`, { msgCount: String(n) });
-    await usageService.checkUsageLimit('b1', limit);
+    calls = []; hash.set(`usage:b1:${periodStart}`, { used: String(n) });
+    await usageService.checkUsageLimit('b1', limit, sub);
     await new Promise((r) => setImmediate(r));
     return only('notifyOnce');
   };
   assert.equal((await used(89)).length, 0);
   const at90 = await used(90);
-  assert.deepEqual(at90[0].slice(1), ['b1', 'usage_90', {}, `b1:${month}`, 35 * 86400]);
+  assert.deepEqual(at90[0].slice(1, 5), ['b1', 'usage_90', {}, `b1:${periodStart}`]);
   const at100 = await used(100);
   assert.equal(at100.length, 1);
   assert.equal(at100[0][2], 'usage_100');

@@ -86,7 +86,7 @@ stub('../services/tenant.service', {
 });
 stub('../services/usage.service', {
   checkUsageLimit: async () => ({ allowed: true, current: 0, limit: 500 }),
-  incrementUsage: async () => {}
+  recordOutbound: async () => {}
 });
 const realNotification = (() => { const real = require('../services/notification.service'); return { isAcknowledgement: real.isAcknowledgement, asksForHuman: real.asksForHuman }; })();
 stub('../services/notification.service', {

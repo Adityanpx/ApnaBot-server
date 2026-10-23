@@ -27,7 +27,7 @@ const stub = (rel, exports) => {
 };
 stub('../config/supabase', { from });
 stub('../config/env', { WALLET_BILLING_ENABLED: false });
-stub('./usage.service', { incrementUsage: async () => {} });
+stub('./usage.service', { recordOutbound: async () => {} });
 stub('./socket.service', { emitToBusiness: () => {} });
 stub('./rateCard.service', { getRateForMessage: async () => 0 });
 stub('./wallet.service', { debitWallet: async () => {}, refundToWallet: async () => {} });

@@ -61,7 +61,7 @@ stub('../services/tenant.service', {
 });
 stub('../services/usage.service', {
   checkUsageLimit: async () => ({ allowed: usageAllowed, current: 0, limit: 500 }),
-  incrementUsage: async (businessId, direction) => { calls.push(['incrementUsage', direction]); }
+  recordOutbound: async () => { calls.push(['usage']); }
 });
 stub('../services/smartFallback.service', { getSmartFallbackReply: async () => null });
 stub('../services/business.service', {
@@ -129,7 +129,7 @@ const historyValue = () => ({ messaging_product: 'whatsapp', metadata: META, his
 
 const customers = () => db.customers;
 const botRuns = () => calls.filter(c => c[0] === 'findMatchingRule').length;
-const usageCalls = () => calls.filter(c => c[0] === 'incrementUsage').length;
+const usageCalls = () => calls.filter(c => c[0] === 'usage').length;
 
 let logged;
 const realLog = console.log;
@@ -161,7 +161,7 @@ test('an echo and a real customer message in one entry: only the customer messag
   assert.equal(db.messages.filter(m => m.direction === 'inbound').length, 1);
   assert.equal(db.messages.filter(m => m.sender_type === 'phone_app').length, 1);
   assert.equal(botRuns(), 1);
-  assert.equal(usageCalls() > 0, true);
+  assert.equal(usageCalls(), 0); // a real customer message is not counted either
 });
 
 test('history: stored as imports, no bot, no usage, and the body (message text) is not logged', async () => {

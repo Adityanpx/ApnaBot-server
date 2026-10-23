@@ -1,6 +1,7 @@
 const { Worker } = require('bullmq');
 const whatsappService = require('../services/whatsapp.service');
 const bookingService = require('../services/booking.service');
+const usageService = require('../services/usage.service');
 const supabase = require('../config/supabase');
 const { getSystemMessage } = require('../utils/systemMessages');
 const logger = require('../utils/logger');
@@ -32,6 +33,8 @@ const worker = new Worker('session-timeout', async (job) => {
       customerNumber,
       getSystemMessage('sessionTimeout', customer?.preferred_language)
     );
+    // Sent straight to Meta (not through the whatsapp-outbound worker), so counted here. Never throws.
+    usageService.recordOutbound(businessId);
     await bookingService.deleteBookingSession(businessId, customerNumber);
   } catch (error) {
     logger.error(`Session timeout check failed for business ${businessId}, customer ${customerNumber}:`, {

@@ -37,7 +37,7 @@ stub('../services/tenant.service', {
 });
 stub('../services/usage.service', {
   checkUsageLimit: async () => ({ allowed: true, current: 0, limit: 500 }),
-  incrementUsage: async (businessId, kind) => { if (kind === 'outbound') usage.push(kind); }
+  recordOutbound: async () => { usage.push('outbound'); }
 });
 stub('../services/smartFallback.service', { getSmartFallbackReply: async () => null });
 stub('../services/business.service', { getBusinessById: async () => ({ id: BIZ, enabledLanguages: ['en', 'hi'], name: 'Shambhu' }) });
@@ -136,7 +136,7 @@ test('typing the keyword sends ONE native carousel of the active collections, bu
   assert.equal(outbound().length, 1);
   assert.equal(outbound()[0].interactive_payload.kind, 'carousel');
   assert.equal(outbound()[0].triggered_rule_id, NODE);
-  assert.deepEqual(usage, ['outbound']);
+  assert.deepEqual(usage, []);
   await flush();
   assert.deepEqual(db.catalog_events.map(e => [e.event, e.collection_id]),
     [['catalogue_open', null], ['collection_view', C1], ['collection_view', C2], ['collection_view', C3]]);
@@ -200,7 +200,11 @@ test('View designs: the first page is photosPerPage photos in order (caption "de
   const controls = sent[10];
   assert.equal(controls.message, 'Showing 1–10 of 25 designs in Collection 1');
   assert.deepEqual(buttonsOf(controls), [[`cat:${C1}:p:1`, 'Show more designs'], [`cat:${C1}:order`, 'Order'], ['cat:menu', '🛍️ Catalogue']]);
-  assert.deepEqual(usage, ['outbound'], 'the whole page is one usage unit, not 11');
+  assert.deepEqual(usage, [], 'counted by the queue worker, not by the webhook');
+  // What the worker will record for this page: each job counts its countAs (default 1) - 10 photos + the buttons message = 1
+  assert.equal(sent.reduce((total, j) => total + (j.countAs === undefined ? 1 : j.countAs), 0), 1, 'a 10-photo page records exactly 1 unit');
+  assert.deepEqual(sent.slice(0, 10).map(j => j.countAs), Array(10).fill(0));
+  assert.equal(controls.countAs, undefined);
   assert.equal(outbound().length, 11);
   assert.equal(outbound()[0].type, 'image');
   assert.equal(outbound()[0].media_url, 'https://r2.test/photo0.jpg');
@@ -216,7 +220,7 @@ test('Show more: the next page; the last page has no Show more button and ends o
   assert.equal(sent[0].imageUrl, 'https://r2.test/photo20.jpg');
   assert.equal(sent[5].message, 'Showing 21–25 of 25 designs in Collection 1');
   assert.deepEqual(buttonsOf(sent[5]).map(b => b[1]), ['Order', '🛍️ Catalogue']);
-  assert.deepEqual(usage, ['outbound']);
+  assert.deepEqual(usage, []);
   await flush();
   assert.deepEqual(db.catalog_events.map(e => e.event), ['designs_more']);
 });
@@ -240,7 +244,7 @@ test('photoStyle order_button: every photo is a button message with Order this (
     ['https://r2.test/photo2.jpg', 'D-2 · 200', [[`cat:item:${id(602)}:order`, 'Order this']]]
   ]);
   assert.equal(outbound()[0].interactive_payload.kind, 'buttons');
-  assert.deepEqual(usage, ['outbound']);
+  assert.deepEqual(usage, []);
 });
 
 test('order_button style falls back to the collection title as the body of a photo with no text', async () => {
@@ -275,7 +279,7 @@ test('Order on a collection with a message action: the order text (templated, lo
   db.catalogs[0].settings = settings({ orderAction: { type: 'message', text: 'Thanks {{customerName}}, we will call you', textTranslations: { hi: 'HI-thanks' } } });
   await tap(`cat:${C2}:order`);
   assert.equal(jobs()[0].message, 'Thanks Ravi, we will call you');
-  assert.deepEqual(usage, ['outbound']);
+  assert.deepEqual(usage, []);
   await flush();
   assert.deepEqual(db.catalog_events.map(e => [e.event, e.collection_id, e.item_id]), [['order_collection', C2, null]]);
   events = []; db.customers[0].preferred_language = 'hi';
@@ -333,7 +337,7 @@ test('disabled catalogue, no active collection, or the feature switched off: the
   await say('catalogue');
   assert.equal(jobs()[0].message, 'Back soon!');
   assert.equal(jobs()[0].type, 'text');
-  assert.deepEqual(usage, ['outbound']);
+  assert.deepEqual(usage, []);
 
   events = []; db.catalogs[0].settings = settings({ emptyTextTranslations: { hi: 'HI-empty' } });
   db.catalog_collections.forEach(c => { c.is_active = false; });

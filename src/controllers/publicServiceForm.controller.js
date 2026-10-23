@@ -21,7 +21,9 @@ const { isValidLanguageCode } = require('../utils/languageCatalog');
 const { localizedFormTitle, bookingFormTitle } = require('../utils/formTitle');
 const { sanitizePrefill, prefillLabel } = require('../utils/catalogOrder');
 const { getSystemMessage } = require('../utils/systemMessages');
-const { isNameField, isDateField, isCheckInField, isCheckOutField, validateName, validateDateAnswer } = require('../utils/answerValidation');
+const { isNameField, isDateField, isCheckInField, isCheckOutField, fieldRole, validateName, validateDateAnswer } = require('../utils/answerValidation');
+const formSubmitIdempotency = require('../services/formSubmitIdempotency.service');
+const usageService = require('../services/usage.service');
 
 const TOKEN_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
@@ -329,14 +331,15 @@ const getServiceForm = async (req, res, next) => {
       logger.error('Error resolving service form title:', titleError);
     }
 
-    // Forms built without roles: tell the website which field is which (response only, never saved).
+    // Forms built without roles: tell the website which field is which - the travel fields by the
+    // detection above, name / date / checkIn / checkOut / dob by answerValidation.js's (response only, never saved).
     const detected = resolveTravelFields(flowFields);
     const withDetectedRoles = flowFields.map((field) => {
       if (field.role) return field;
       const role = field === detected.tripTypeField ? 'tripType'
         : field === detected.rentalPackageField ? 'rentalPackage'
           : field === detected.pickupField ? 'pickup'
-            : field === detected.dropField ? 'drop' : null;
+            : field === detected.dropField ? 'drop' : fieldRole(field);
       return role ? { ...field, role } : field;
     });
 
@@ -418,8 +421,11 @@ const validateFormAnswers = async ({ businessId, flowFields, values, skipNames, 
 /**
  * POST /api/public/service-form/:token/submit
  * Body: { values: { [fieldName]: string } }
+ * Header (optional): Idempotency-Key - see submitServiceForm.
+ *
+ * idempotency: { complete(bookingId) } when the request carries an Idempotency-Key; called once the booking exists.
  */
-const submitServiceForm = async (req, res, next) => {
+const processServiceFormSubmit = async (req, res, next, idempotency = null) => {
   try {
     const { token } = req.params;
     const { row: formToken, status } = await loadToken(token);
@@ -651,6 +657,7 @@ const submitServiceForm = async (req, res, next) => {
       false,
       formMeta
     );
+    if (idempotency) await idempotency.complete(confirmation.bookingId);
 
     // Booking is already created at this point — a failure marking the
     // token used or sending the WhatsApp confirmation is logged, not
@@ -661,7 +668,8 @@ const submitServiceForm = async (req, res, next) => {
         .from('booking_form_tokens').update({ used_at: new Date().toISOString() }).eq('id', formToken.id);
       if (usedError) throw usedError;
 
-      // imageUrl = payment QR when an advance is requested (text is its caption)
+      // imageUrl = payment QR when an advance is requested (text is its caption). Sent straight to
+      // Meta, not through the queue worker, so it is counted here (recordOutbound never throws).
       if (confirmation.imageUrl) {
         await whatsappService.sendImageMessage(
           business.phoneNumberId,
@@ -678,6 +686,7 @@ const submitServiceForm = async (req, res, next) => {
           confirmation.text
         );
       }
+      usageService.recordOutbound(formToken.businessId);
 
       // One-time marketing-consent question after the confirmation (setting
       // off / not eligible / advance-payment QR / 24h window closed → null).
@@ -708,11 +717,48 @@ const submitServiceForm = async (req, res, next) => {
       });
     }
 
-    return successResponse(res, 200, null, 'Your request has been submitted successfully.');
+    return successResponse(res, 200, null, SUBMIT_SUCCESS_MESSAGE);
   } catch (error) {
     logger.error('Error in submitServiceForm:', error);
     next(error);
   }
+};
+
+const SUBMIT_SUCCESS_MESSAGE = 'Your request has been submitted successfully.';
+const IDEMPOTENT_WAIT_MS = 500;
+const IDEMPOTENT_WAIT_TRIES = 20;
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * POST /api/public/service-form/:token/submit
+ * Optional Idempotency-Key header (8-128 of A-Z a-z 0-9 . _ : -): the first request with a key runs as normal; a repeat
+ * with the same key (and token) returns the original success and creates no booking, even after the token has been
+ * used. A request that fails without creating a booking frees the key, so the customer can correct the form and
+ * resubmit with it. While the first request is still running, a repeat waits for it (up to 10 s, then 409).
+ * Without the header the behaviour is unchanged.
+ */
+const submitServiceForm = async (req, res, next) => {
+  const key = formSubmitIdempotency.readKey(req);
+  if (key === false) return errorResponse(res, 400, 'Idempotency-Key must be 8-128 characters: letters, digits and . _ : -');
+  if (key === null) return processServiceFormSubmit(req, res, next);
+
+  const { token } = req.params;
+  for (let attempt = 0; attempt < IDEMPOTENT_WAIT_TRIES; attempt += 1) {
+    const claim = await formSubmitIdempotency.claim(token, key);
+    if (claim.state === 'done') return successResponse(res, 200, null, SUBMIT_SUCCESS_MESSAGE);
+    if (claim.state === 'new') {
+      let booked = false;
+      try {
+        return await processServiceFormSubmit(req, res, next, {
+          complete: async (bookingId) => { booked = true; await formSubmitIdempotency.complete(token, key, bookingId); }
+        });
+      } finally {
+        if (!booked) await formSubmitIdempotency.release(token, key);
+      }
+    }
+    await sleep(IDEMPOTENT_WAIT_MS);
+  }
+  return errorResponse(res, 409, 'Your request is still being processed. Please wait a moment.');
 };
 
 /**

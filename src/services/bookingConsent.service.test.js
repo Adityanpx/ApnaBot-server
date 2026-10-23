@@ -48,7 +48,7 @@ stub('./business.service', {
     return { id: BIZ, askConsentAfterBooking: setting };
   }
 });
-stub('./usage.service', { incrementUsage: async () => {} });
+stub('./usage.service', { recordOutbound: async () => {} });
 stub('./socket.service', { emitToBusiness: () => {} });
 stub('../queues/whatsapp.queue', { addToWhatsappQueue: async (job) => { queued.push(job); } });
 

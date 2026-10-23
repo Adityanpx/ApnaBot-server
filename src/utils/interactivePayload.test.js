@@ -14,6 +14,7 @@ stub('../config/env', { QUEUE_NAMESPACE: 'test', GRAPH_API_VERSION: 'v99.0' });
 stub('../config/supabase', { from: () => { throw new Error('the database is not used here'); } });
 stub('../utils/logger', { info: () => {}, warn: () => {}, error: () => {} });
 stub('../utils/crypto', { decrypt: () => 'token' });
+stub('../services/usage.service', { recordOutbound: async () => {} });
 
 const axios = require('axios');
 require('../queues/whatsapp.worker');

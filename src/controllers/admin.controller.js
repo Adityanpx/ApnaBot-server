@@ -355,11 +355,17 @@ const extendSubscription = async (req, res, next) => {
 
     if (!sub) return errorResponse(res, 404, 'No subscription found for this business');
 
+    const isRevival = sub.status === 'expired' || new Date(sub.end_date) <= new Date();
     const currentEnd = new Date(sub.end_date) > new Date() ? new Date(sub.end_date) : new Date();
     const newEndDate = new Date(currentEnd.getTime() + days * 24 * 60 * 60 * 1000);
 
+    // Extending a running subscription keeps its message-counter period; reviving an expired one starts a new one now.
     const { data: updatedSub, error: updateErr } = await supabase
-      .from('subscriptions').update({ end_date: newEndDate.toISOString(), status: 'active' })
+      .from('subscriptions').update({
+        end_date: newEndDate.toISOString(),
+        status: 'active',
+        ...(isRevival ? { current_period_start: new Date().toISOString() } : {})
+      })
       .eq('id', sub.id).select().single();
     if (updateErr) throw updateErr;
 
@@ -438,6 +444,7 @@ const grantSubscription = async (req, res, next) => {
         plan_id: planId,
         status,
         start_date: startDate.toISOString(),
+        current_period_start: startDate.toISOString(),
         end_date: endDate.toISOString()
       })
       .select('*, plan:plans(*)')

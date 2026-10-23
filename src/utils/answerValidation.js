@@ -35,6 +35,27 @@ const isNameField = (key) => typeof key === 'string' && NAME_KEY.test(key) && !N
 const isDateField = (key) => typeof key === 'string' && DATE_KEY.test(key) && !BIRTH_KEY.test(key);
 const isCheckInField = (key) => typeof key === 'string' && CHECK_IN_KEY.test(key);
 const isCheckOutField = (key) => typeof key === 'string' && CHECK_OUT_KEY.test(key);
+const isBirthField = (key) => typeof key === 'string' && BIRTH_KEY.test(key);
+
+/**
+ * Which answer rule a form field gets, by the same tests validateFormAnswers (the web form) and the
+ * WhatsApp bot apply: 'checkIn' | 'checkOut' | 'dob' | 'name' | 'date', or null for a field with no
+ * name/date rule. Lets the website pick its inputs without guessing from the field key itself.
+ * @param {{ name?: string, type?: string }} field a form field ({ name: the field key, type })
+ * @returns {'checkIn'|'checkOut'|'dob'|'name'|'date'|null}
+ */
+const fieldRole = (field) => {
+  if (!field || typeof field !== 'object') return null;
+  const { name: key, type } = field;
+  const isDateType = type === 'date';
+  const isTextType = type === 'text';
+  if (isCheckInField(key) && (isDateType || isTextType)) return 'checkIn';
+  if (isCheckOutField(key) && (isDateType || isTextType)) return 'checkOut';
+  if (isBirthField(key) && (isDateType || isTextType)) return 'dob';
+  if (isTextType && isNameField(key)) return 'name';
+  if (isDateType || (isTextType && isDateField(key))) return 'date';
+  return null;
+};
 
 const fail = (code, messageKey, vars) => ({ ok: false, code, messageKey, ...(vars ? { vars } : {}) });
 
@@ -172,6 +193,8 @@ module.exports = {
   isDateField,
   isCheckInField,
   isCheckOutField,
+  isBirthField,
+  fieldRole,
   validateName,
   parseDateInput,
   validateDateAnswer

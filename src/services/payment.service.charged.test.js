@@ -90,3 +90,25 @@ test('payment.failed for a one-time payment is logged with its error details', a
   assert.equal(w[1].source, 'issuer_bank');
   assert.equal(w[1].step, 'payment_authorization');
 });
+
+test('charged: current_period_start becomes Razorpay\'s cycle start, so the message counter restarts with each paid cycle', async () => {
+  fake = seed();
+  const payload = { subscription: { entity: { id: 'sub_live', current_start: Math.floor(Date.parse('2026-11-14T00:00:00Z') / 1000), current_end: Math.floor(Date.parse('2026-12-14T00:00:00Z') / 1000) } } };
+  await handleRazorpayWebhook({ event: 'subscription.charged', payload }, 'evt-5');
+  assert.equal(new Date(row('live').current_period_start).toISOString(), '2026-11-14T00:00:00.000Z');
+  assert.equal(new Date(row('live').end_date).toISOString(), '2026-12-14T00:00:00.000Z');
+});
+
+test('charged without current_start leaves current_period_start as it was', async () => {
+  fake = seed();
+  fake.db.subscriptions.find(r => r.id === 'live').current_period_start = '2026-10-14T00:00:00.000Z';
+  await handleRazorpayWebhook({ event: 'subscription.charged', payload: charged('sub_live') }, 'evt-6');
+  assert.equal(row('live').current_period_start, '2026-10-14T00:00:00.000Z');
+});
+
+test('a charge on a cancelled row does not touch current_period_start', async () => {
+  fake = seed();
+  const payload = { subscription: { entity: { id: 'sub_old', current_start: Math.floor(Date.parse('2026-11-14T00:00:00Z') / 1000), current_end: Math.floor(Date.parse('2026-12-14T00:00:00Z') / 1000) } } };
+  await handleRazorpayWebhook({ event: 'subscription.charged', payload }, 'evt-7');
+  assert.equal(row('superseded').current_period_start, undefined);
+});

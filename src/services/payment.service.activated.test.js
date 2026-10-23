@@ -83,3 +83,19 @@ test('a re-delivered activation event is a no-op (idempotency unchanged)', async
   await send(activated('sub_new', 4));
   assert.equal(rzpCancels.length, 0);
 });
+
+test('activation sets current_period_start to Razorpay\'s cycle start (the real start of the counter period)', async () => {
+  fake = seed();
+  const e = activated('sub_new', 5);
+  e.payload.subscription.entity.current_start = Math.floor(Date.parse('2026-10-14T06:30:00Z') / 1000);
+  await send(e);
+  const row = fake.db.subscriptions.find(r => r.id === 'new');
+  assert.equal(new Date(row.current_period_start).toISOString(), '2026-10-14T06:30:00.000Z');
+  assert.equal(new Date(row.end_date).toISOString(), '2026-11-14T00:00:00.000Z');
+});
+
+test('activation without current_start leaves current_period_start unset (readers fall back to start_date)', async () => {
+  fake = seed();
+  await send(activated('sub_new', 6));
+  assert.equal(fake.db.subscriptions.find(r => r.id === 'new').current_period_start, undefined);
+});

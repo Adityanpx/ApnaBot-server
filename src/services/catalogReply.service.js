@@ -1,7 +1,6 @@
 const supabase = require('../config/supabase');
 const logger = require('../utils/logger');
 const { toCamelCase } = require('../utils/caseConvert');
-const usageService = require('./usage.service');
 const socketService = require('./socket.service');
 const categoryFeatureService = require('./categoryFeature.service');
 const { addToWhatsappQueueAndWait } = require('../queues/whatsapp.queue');
@@ -65,8 +64,9 @@ const logEvents = (ctx, events) => {
 
 /**
  * Saves the outbound row, sends the job (awaited, so order holds) and tells the dashboard. Never throws: a
- * failed send is logged and the next message still goes. Usage is NOT counted here (once per reply, see the
- * callers).
+ * failed send is logged and the next message still goes. Usage is counted by whatsapp.worker.js, one unit per
+ * job unless the job says otherwise: the photos of a page carry countAs 0 and the closing buttons message counts the
+ * page's one unit.
  */
 const sendOne = async (ctx, { content, rowType = 'text', mediaUrl = null, interactivePayload = null, ruleId = null, job }) => {
   const { tenant, customer, customerNumber } = ctx;
@@ -97,11 +97,6 @@ const sendOne = async (ctx, { content, rowType = 'text', mediaUrl = null, intera
       logger.error('Error emitting socket event:', socketError);
     }
   }
-};
-
-const countUsage = (tenant) => {
-  Promise.resolve(usageService.incrementUsage(tenant.businessId, 'outbound'))
-    .catch(err => logger.error('Error incrementing outbound usage:', err));
 };
 
 const sendText = async (ctx, text, ruleId = null) => {
@@ -156,7 +151,6 @@ const getCatalogueNodeId = async (businessId) => {
 const sendEmpty = async (ctx, settings, ruleId) => {
   const text = applyMessageTemplate(message(settings, 'emptyText', 'catalogEmptyText', ctx.customer.preferredLanguage), ctx.tenant, ctx.customer);
   await sendText(ctx, text, ruleId);
-  countUsage(ctx.tenant);
 };
 
 /** The carousel of collections (native Meta carousel, or one message per card - the worker decides on a Meta 4xx). */
@@ -199,7 +193,6 @@ const sendCatalogue = async (ctx, { ruleId = null, state = null } = {}) => {
     interactivePayload: buildInteractivePayload({ message: body, carouselCards: plan.cards }),
     job: { type: 'carousel', message: body, imageUrl: null, carouselCards: plan.cards, carouselNative: plan.native }
   });
-  countUsage(tenant);
 
   const shownIds = plan.cards.map(card => parseCatalogTapId(card.buttons[0].nextKeyword)).filter(Boolean).map(t => t.collectionId);
   logEvents(ctx, [{ event: 'catalogue_open' }, ...shownIds.map(collectionId => ({ event: 'collection_view', collectionId }))]);
@@ -229,7 +222,6 @@ const sendDesigns = async (ctx, collectionId, requestedPage) => {
       content: getSystemMessage('catalogCollectionEmpty', language, { title: collection.title }), ruleId,
       job: { type: 'text', message: getSystemMessage('catalogCollectionEmpty', language, { title: collection.title }), buttons: [{ nextKeyword: MENU_ID, title: menuLabel }] }
     });
-    countUsage(tenant);
     return;
   }
 
@@ -250,10 +242,10 @@ const sendDesigns = async (ctx, collectionId, requestedPage) => {
       const buttons = [{ nextKeyword: itemOrderId(item.id), title: orderThis }];
       await sendOne(ctx, {
         content: body, ruleId, interactivePayload: buildInteractivePayload({ message: body, imageUrl: url, buttons }),
-        job: { type: 'text', message: body, imageUrl: url, buttons }
+        job: { type: 'text', message: body, imageUrl: url, buttons, countAs: 0 }
       });
     } else {
-      await sendOne(ctx, { content: caption, rowType: 'image', mediaUrl: url, ruleId, job: { type: 'text', message: caption, imageUrl: url } });
+      await sendOne(ctx, { content: caption, rowType: 'image', mediaUrl: url, ruleId, job: { type: 'text', message: caption, imageUrl: url, countAs: 0 } });
     }
   }
 
@@ -271,7 +263,6 @@ const sendDesigns = async (ctx, collectionId, requestedPage) => {
     job: { type: 'text', message: body, buttons: controls }
   });
 
-  countUsage(tenant);   // the whole page - photos and the buttons message - is one usage unit
   logEvents(ctx, [{ event: page.page === 0 ? 'designs_view' : 'designs_more', collectionId }]);
 };
 
@@ -279,7 +270,6 @@ const sendDesigns = async (ctx, collectionId, requestedPage) => {
 const sendStale = async (ctx, state, ruleId) => {
   const text = getSystemMessage('catalogTapStale', ctx.customer.preferredLanguage);
   await sendText(ctx, text, ruleId);
-  countUsage(ctx.tenant);
   await sendCatalogue(ctx, { ruleId, state });
 };
 
@@ -307,7 +297,7 @@ const startOrder = async (ctx, tap) => {
   const action = settings.orderAction;
   if (!collectionRow || !action) {
     if (!collectionRow) await sendStale(ctx, state, ruleId);
-    else { await sendText(ctx, getSystemMessage('catalogOrderMessageDefault', language), ruleId); countUsage(tenant); }
+    else { await sendText(ctx, getSystemMessage('catalogOrderMessageDefault', language), ruleId); }
     return { handled: true };
   }
 
@@ -325,7 +315,6 @@ const startOrder = async (ctx, tap) => {
       tenant, customer
     );
     await sendText(ctx, text, ruleId);
-    countUsage(tenant);
     return { handled: true };
   }
 
@@ -336,7 +325,6 @@ const startOrder = async (ctx, tap) => {
       businessId: tenant.businessId, nodeId: action.nodeId, type: action.type
     });
     await sendText(ctx, getSystemMessage('catalogOrderMessageDefault', language), ruleId);
-    countUsage(tenant);
     return { handled: true };
   }
   return { handled: false, orderNode: toCamelCase(node), prefill };

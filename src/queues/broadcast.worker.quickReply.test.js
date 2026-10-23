@@ -15,6 +15,7 @@ stub('bullmq', { Worker: class { constructor(name, fn) { processor = fn; } on() 
 stub('../config/queueConnection', { workerConnection: {} });
 stub('../config/env', { QUEUE_NAMESPACE: 'test', WALLET_BILLING_ENABLED: false });
 stub('../utils/logger', { info: () => {}, warn: () => {}, error: () => {} });
+stub('../services/usage.service', { recordOutbound: async () => {} });
 stub('../config/supabase', { rpc: async () => ({ error: null }) });
 const sent = [];
 stub('../services/whatsapp.service', { sendTemplateMessage: async (pn, token, to, name, lang, components) => { sent.push({ to, components }); } });
