@@ -44,6 +44,23 @@ test('an active, connected business resolves', async () => {
   assert.equal(t.businessId, 'b1');
 });
 
+test('the tenant carries the fields applyMessageTemplate reads: name, address, hours, footer', async () => {
+  businesses = [row({ address: '12 MG Road', business_hours: 'Mon-Sat 9-6', footer_message: 'Thank you!' })];
+  const t = await tenantService.resolveBusinessByPhoneNumberId('pn1');
+  assert.equal(t.name, 'Biz');
+  assert.equal(t.address, '12 MG Road');
+  assert.equal(t.businessHours, 'Mon-Sat 9-6');
+  assert.equal(t.footerMessage, 'Thank you!');
+});
+
+test('applyMessageTemplate fills {{businessAddress}} / {{businessHours}} from a resolved tenant, and the footer shows', async () => {
+  const { applyMessageTemplate, applyMessageTemplateWithFooter } = require('../utils/messageTemplating');
+  businesses = [row({ address: '12 MG Road', business_hours: 'Mon-Sat 9-6', footer_message: 'Thank you!' })];
+  const t = await tenantService.resolveBusinessByPhoneNumberId('pn1');
+  assert.equal(applyMessageTemplate('{{businessAddress}} | {{businessHours}} | {{businessName}}', t, null), '12 MG Road | Mon-Sat 9-6 | Biz');
+  assert.equal(applyMessageTemplateWithFooter('Hi', t, null), 'Hi\n\nThank you!');
+});
+
 test('a business marked disconnected does not resolve (IDs and token are still on the row)', async () => {
   businesses = [row({ is_whatsapp_connected: false })];
   assert.equal(await tenantService.resolveBusinessByPhoneNumberId('pn1'), null);

@@ -61,7 +61,7 @@ test('importTemplateJson accepts the file as is and stores it as an active mobil
   assert.equal(stored.is_category_template, true);
   assert.equal(stored.business_id, null);
   assert.equal(stored.nodes.length, 14);
-  assert.equal(stored.edges.length, 23);
+  assert.equal(stored.edges.length, 22);
 });
 
 test('the body shape is { category, name, description, nodes, edges } with only raw snake_case rows', () => {
@@ -137,7 +137,7 @@ test('the specified nodes: keywords, match types, buttons and where each button 
   assert.deepEqual(nav('csd'), [['Documents needed', 'csd_documents'], ['Send enquiry', 'send_enquiry'], ['Main menu', 'hi']]);
   assert.deepEqual(nav('csd_documents'), [['Send enquiry', 'send_enquiry'], ['Main menu', 'hi']]);
   assert.deepEqual(nav('emi'), [['Send enquiry', 'send_enquiry'], ['Main menu', 'hi']]);
-  assert.deepEqual(nav('address'), [['Main menu', 'hi']]);
+  assert.deepEqual(nav('address'), []);
   assert.deepEqual(nav('call'), []);
   assert.deepEqual(nav('offer'), []);
   for (const kw of ['mobile', 'tv', 'csd', 'offer', 'address', 'call']) assert.equal(byKeyword(kw).match_type, 'contains', kw);
@@ -172,6 +172,13 @@ test('G is the Catalogue reply (catalog content type, no buttons); I is the hand
   const i = byKeyword('call');
   assert.deepEqual([i.reply_kind, i.content_type, i.label], ['handoff', 'text', '']);
   assert.equal(outgoing(i.id).length, 0);
+});
+
+test('H (Visit Store) is a location node: no authored text, no per-node coordinates, so it sends the business pin', () => {
+  const h = byKeyword('address');
+  assert.deepEqual([h.reply_kind, h.content_type, h.label], ['text', 'location', '']);
+  for (const col of ['latitude', 'longitude', 'location_name', 'address']) assert.equal(h[col] ?? null, null, col);
+  assert.equal(outgoing(h.id).length, 0, 'a location reply carries no buttons');
 });
 
 test('copy only uses the four supported placeholders, and no prices or brands except the one example the owner asked for', () => {
@@ -296,7 +303,7 @@ test('copying into a business: the Catalogue reply and its menu row are left out
     require.cache[supabasePath].exports.from = original;
   }
   assert.equal(inserted.flow_nodes.length, 13);
-  assert.equal(inserted.flow_edges.length, 22);
+  assert.equal(inserted.flow_edges.length, 21);
   assert.ok(!inserted.flow_nodes.some((n) => n.content_type === 'catalog'));
   const menu = inserted.flow_nodes.find((n) => n.keyword === 'hi');
   const menuEdges = inserted.flow_edges.filter((e) => e.from_node_id === menu.id);

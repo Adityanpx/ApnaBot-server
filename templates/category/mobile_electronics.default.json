@@ -189,8 +189,8 @@
       ],
       "reply_kind": "text",
       "trigger_count": 0,
-      "content_type": "buttons",
-      "label": "📍 {{businessAddress}}\n🕒 {{businessHours}}\nSee you soon!",
+      "content_type": "location",
+      "label": "",
       "field_key": null,
       "summary_label": null,
       "required": false,
@@ -556,16 +556,6 @@
       "condition": null,
       "preset": null,
       "display_order": 1
-    },
-    {
-      "id": "3b0b11e0-0000-4000-8000-000000000119",
-      "from_node_id": "3b0b11e0-0000-4000-8000-000000000008",
-      "to_node_id": "3b0b11e0-0000-4000-8000-000000000001",
-      "label": "Main menu",
-      "description": null,
-      "condition": null,
-      "preset": null,
-      "display_order": 0
     },
     {
       "id": "3b0b11e0-0000-4000-8000-000000000120",

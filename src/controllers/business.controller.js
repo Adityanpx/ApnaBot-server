@@ -369,20 +369,13 @@ const updateBusiness = async (req, res, next) => {
       }
     }
 
-    // The webhook reads enabledLanguages / languagePicker from the cached tenant too.
-    if (req.body.enabledLanguages !== undefined && business.phoneNumberId) {
+    // The webhook reads the name, address, hours, footer, fallback reply, enabledLanguages etc.
+    // from the cached tenant, so any successful update drops it rather than waiting out the TTL.
+    if (business.phoneNumberId) {
       try {
         await tenantService.invalidateTenantCache(business.phoneNumberId);
       } catch (error) {
-        logger.error('Error invalidating tenant cache after enabledLanguages update:', error);
-      }
-    }
-
-    if ((req.body.name !== undefined || req.body.displayName !== undefined) && business.phoneNumberId) {
-      try {
-        await tenantService.invalidateTenantCache(business.phoneNumberId);
-      } catch (error) {
-        logger.error('Error invalidating tenant cache after business name update:', error);
+        logger.error('Error invalidating tenant cache after business update:', error);
       }
     }
 

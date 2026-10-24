@@ -4,7 +4,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-let created; let updated;
+let created; let updated; let invalidated; let phoneNumberId;
 
 const stub = (rel, exports) => { const p = require.resolve(rel); require.cache[p] = { id: p, filename: p, loaded: true, exports }; };
 stub('../config/env', {});
@@ -15,10 +15,10 @@ stub('../services/whatsapp.service', { META_API_BASE: 'https://graph.test/v25.0'
 stub('../services/business.service', {
   getBusinessByOwnerId: async () => null,
   createBusiness: async (userId, data) => { created.push(data); return { id: 'b1', ...data }; },
-  updateBusiness: async (id, data) => { updated.push(data); return { id, ...data }; },
+  updateBusiness: async (id, data) => { updated.push(data); return { id, phoneNumberId, ...data }; },
   flattenTravelSettings: (b) => ({ ...b })
 });
-stub('../services/tenant.service', { invalidateTenantCache: async () => {} });
+stub('../services/tenant.service', { invalidateTenantCache: async (id) => { invalidated.push(id); } });
 stub('../services/subscription.service', {});
 stub('../services/booking.service', {});
 stub('../services/businessCategory.service', { isEnabledCategory: async () => true, getEnabledCategories: async () => [], getAllCategories: async () => [] });
@@ -39,7 +39,7 @@ const call = async (handler, body) => {
   return out;
 };
 
-test.beforeEach(() => { created = []; updated = []; });
+test.beforeEach(() => { created = []; updated = []; invalidated = []; phoneNumberId = 'pn1'; });
 
 test('create: a name of only spaces is a 400 and nothing is created', async () => {
   const out = await call(createBusiness, { name: '   \n ', businessCategory: 'general' });
@@ -63,4 +63,18 @@ test('update: a request without a name, or with a real one, goes through', async
   assert.equal((await call(updateBusiness, { city: 'Pune' })).status, 200);
   assert.equal((await call(updateBusiness, { name: ' PrimeCare ' })).status, 200);
   assert.equal(updated.length, 2);
+});
+
+test('update: any successful update drops the cached tenant so edits reach WhatsApp at once', async () => {
+  for (const body of [{ address: '12 MG Road' }, { businessHours: 'Mon-Sat 9-6' }, { footerMessage: 'Thanks' }, { fallbackReply: 'Hmm' }, { city: 'Pune' }]) {
+    invalidated = [];
+    assert.equal((await call(updateBusiness, body)).status, 200);
+    assert.deepEqual(invalidated, ['pn1'], JSON.stringify(body));
+  }
+});
+
+test('update: a business with no WhatsApp number has no cache entry to drop', async () => {
+  phoneNumberId = null;
+  assert.equal((await call(updateBusiness, { address: 'x' })).status, 200);
+  assert.deepEqual(invalidated, []);
 });

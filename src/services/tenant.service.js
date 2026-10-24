@@ -44,6 +44,14 @@ const resolveBusinessByPhoneNumberId = async (phoneNumberId) => {
     const tenant = {
       businessId: business.id,
       businessName: business.name,
+      // applyMessageTemplate reads the tenant as a `business`: name (the {{businessName}} fallback
+      // when displayName is empty), address / businessHours ({{businessAddress}} / {{businessHours}})
+      // and footerMessage (appended by applyMessageTemplateWithFooter). Absent on tenants cached
+      // before these existed - they expire within the hour.
+      name: business.name,
+      address: business.address,
+      businessHours: business.business_hours,
+      footerMessage: business.footer_message,
       displayName: business.display_name,
       phoneNumberId: business.phone_number_id,
       accessToken: business.access_token, // Still encrypted here
