@@ -181,7 +181,7 @@ test('copy only uses the four supported placeholders, and no prices or brands ex
   }
   assert.ok(!template.nodes.some((n) => /[₹$]|\bRs\.?\s?\d|\d+\s?(?:rs|rupees)\b/i.test(n.label)), 'no prices');
   const brandMentions = template.nodes.filter((n) => /samsung|apple|iphone|lg\b|sony|oneplus|vivo|oppo|xiaomi|redmi|realme/i.test(n.label));
-  assert.deepEqual(brandMentions.map((n) => n.field_key), ['brandModel'], 'brands only in the model-question example');
+  assert.deepEqual(brandMentions.map((n) => n.field_key), ['catalogDesignNo'], 'brands only in the model-question example');
 });
 
 test('Meta limits: ≤3 buttons per buttons node, ≤10 list rows, title / description / body lengths', () => {
@@ -215,7 +215,7 @@ test('Meta limits: ≤3 buttons per buttons node, ≤10 list rows, title / descr
 test('question nodes: a linear chain of supported field types with sane choices', () => {
   const chain = questions.slice().sort((a, b) => a.order - b.order);
   assert.deepEqual(chain.map((q) => [q.field_key, q.content_type]), [
-    ['product', 'list'], ['brandModel', 'text'], ['purchaseType', 'buttons'], ['visitWhen', 'buttons']
+    ['catalogCollection', 'list'], ['catalogDesignNo', 'text'], ['purchaseType', 'buttons'], ['visitWhen', 'buttons']
   ]);
   assert.deepEqual(chain[0].options.map((o) => o.label), ['Mobile', 'TV', 'AC', 'Fridge', 'Washing machine', 'Other']);
   assert.deepEqual(chain[2].options.map((o) => o.label), ['CSD', 'CPC', 'Regular']);

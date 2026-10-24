@@ -42,8 +42,8 @@ const answerFor = (nodeId, pick = 0) => {
   return q.options.length ? q.options[pick].value : 'Samsung A55';
 };
 
-const walk = async (picks = {}) => {
-  let { session, result } = await bookingGraph.startGraphSession('b1', TRIGGER.id, 'en');
+const walk = async (picks = {}, options = {}) => {
+  let { session, result } = await bookingGraph.startGraphSession('b1', TRIGGER.id, 'en', options);
   const asked = [];
   while (!result.done) {
     asked.push(result.nodeId);
@@ -59,7 +59,7 @@ test('the enquiry asks product -> brand & model -> purchase type -> when, in tha
   const { session, result, asked } = await walk();
   assert.deepEqual(asked, QUESTIONS.map((q) => q.id));
   assert.equal(result.done, true);
-  assert.deepEqual(session.collected, { product: 'Mobile', brandModel: 'Samsung A55', purchaseType: 'CSD', visitWhen: 'Today' });
+  assert.deepEqual(session.collected, { catalogCollection: 'Mobile', catalogDesignNo: 'Samsung A55', purchaseType: 'CSD', visitWhen: 'Today' });
 });
 
 test('every required field_key ends up non-empty in collected', async () => {
@@ -88,4 +88,25 @@ test('the confirmation lists the four answers with their summary labels', async 
     buildBookingSummaryBody(session.collected, session.answeredFields, false, 'en'),
     'Product: *Mobile*\nBrand & model: *Samsung A55*\nPurchase type: *CSD*\nVisit: *Today*'
   );
+});
+
+const qid = (fieldKey) => QUESTIONS.find((q) => q.field_key === fieldKey).id;
+
+test('a catalogue Order (collection + design no prefilled) asks only purchase type and visit time', async () => {
+  const prefill = [{ key: 'catalogCollection', value: 'Samsung Mobiles' }, { key: 'catalogDesignNo', value: 'A55' }];
+  const { session, asked } = await walk({}, { prefill });
+  assert.deepEqual(asked, [qid('purchaseType'), qid('visitWhen')]);
+  assert.equal(session.collected.catalogCollection, 'Samsung Mobiles', 'a title outside the list options is kept as is');
+  assert.equal(session.collected.catalogDesignNo, 'A55');
+});
+
+test('a collection-card Order (no design no.) skips the collection question but still asks brand & model', async () => {
+  const { asked } = await walk({}, { prefill: [{ key: 'catalogCollection', value: 'Samsung Mobiles' }] });
+  assert.deepEqual(asked, [qid('catalogDesignNo'), qid('purchaseType'), qid('visitWhen')]);
+});
+
+test('without prefill all four questions are asked', async () => {
+  const { asked } = await walk();
+  assert.deepEqual(asked, QUESTIONS.map((q) => q.id));
+  assert.equal(asked.length, 4);
 });
