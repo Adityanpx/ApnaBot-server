@@ -72,6 +72,9 @@ module.exports = {
   // Optional: only needed by shops with enableDistanceFares on; read directly
   // from process.env in distanceMatrix.service.js, exported here for consistency.
   GOOGLE_MAPS_API_KEY: process.env.GOOGLE_MAPS_API_KEY,
+  // Optional: comma-separated emails that get the "unlisted business signed up" mail
+  // (businessRequest.service.js). Unset = every active superadmin user's email.
+  BUSINESS_REQUEST_NOTIFY_EMAIL: process.env.BUSINESS_REQUEST_NOTIFY_EMAIL,
   // Optional: country restriction for public-form address search (Places
   // Autocomplete). Comma-separated ISO 3166-1 alpha-2 codes, e.g. "in" or
   // "in,ae". Default "in". Read directly in places.service.js.

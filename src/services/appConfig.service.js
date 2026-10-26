@@ -7,11 +7,14 @@
 // defaults, so a blip can never force an update or a maintenance screen.
 const supabase = require('../config/supabase');
 const logger = require('../utils/logger');
+const { normalizeContactPhone } = require('../utils/contactPhone');
 
 const httpError = (status, message) => Object.assign(new Error(message), { statusCode: status });
 
 const CACHE_TTL_MS = 60 * 1000;
 const VERSION_PATTERN = /^\d+\.\d+\.\d+$/;
+const SUPPORT_MESSAGE_MAX = 500;
+const DEFAULT_SUPPORT_MESSAGE = 'Hi, I need help with ApnaBot. Business: {{businessName}}, email: {{email}}';
 const DEFAULT_STORE_URL = 'https://play.google.com/store/apps/details?id=com.averixsolutions.apnabot';
 
 // Admin/body name -> app_config.key, type and default.
@@ -27,12 +30,19 @@ const FIELDS = {
   translateGlobalMonthlyCap: { key: 'translate_global_monthly_cap', type: 'int', default: 1800000 },
   // Native-script keyword matching for every business whose businesses.unicode_matching is NULL
   // (utils/textNormalize.js, services/unicodeMatching.service.js). Super Admin only, never public.
-  unicodeMatchingDefault:    { key: 'unicode_matching_default',     type: 'boolean', default: false }
+  unicodeMatchingDefault:    { key: 'unicode_matching_default',     type: 'boolean', default: false },
+  // Support chat shown on the login / register screens, public via GET /api/app/version. The number is
+  // digits with the country code ('' = no support button); the message may hold {{businessName}} and
+  // {{email}}, which the CLIENT fills (the server does not know the visitor before login).
+  supportWhatsappNumber:     { key: 'support_whatsapp_number',      type: 'phone',   default: '' },
+  supportMessage:            { key: 'support_message',              type: 'text',    default: DEFAULT_SUPPORT_MESSAGE }
 };
 const FIELD_NAMES = Object.keys(FIELDS);
 
 const isVersion = (v) => typeof v === 'string' && VERSION_PATTERN.test(v);
 const isCount = (v) => /^\d{1,9}$/.test(String(v));
+const isSupportNumber = (v) => v === '' || /^\d{10,15}$/.test(v);
+const isSupportMessage = (v) => typeof v === 'string' && v.trim().length > 0 && v.length <= SUPPORT_MESSAGE_MAX;
 const isHttpsUrl = (v) => {
   if (typeof v !== 'string' || v.length > 2048) return false;
   try { return new URL(v).protocol === 'https:'; } catch { return false; }
@@ -54,6 +64,8 @@ const parseValue = (field, raw) => {
   if (field.type === 'boolean') return raw === 'true' ? true : raw === 'false' ? false : field.default;
   if (field.type === 'version') return isVersion(raw) ? raw : field.default;
   if (field.type === 'int') return isCount(raw) ? Number(raw) : field.default;
+  if (field.type === 'phone') return isSupportNumber(raw) ? raw : field.default;
+  if (field.type === 'text') return isSupportMessage(raw) ? raw : field.default;
   return isHttpsUrl(raw) ? raw : field.default;
 };
 
@@ -79,7 +91,9 @@ const toPublic = (v) => ({
   latestVersion: v.androidLatestVersion,
   forceUpdate: v.forceUpdate,
   maintenanceMode: v.maintenanceMode,
-  storeUrl: v.playStoreUrl
+  storeUrl: v.playStoreUrl,
+  supportWhatsappNumber: v.supportWhatsappNumber,
+  supportMessage: v.supportMessage
 });
 
 const defaultsPublic = () => toPublic(effectiveValues([]));
@@ -155,6 +169,16 @@ const validateChanges = (body) => {
     if (type === 'boolean' && typeof v !== 'boolean') throw httpError(400, `${name} must be true or false`);
     if (type === 'url' && !isHttpsUrl(v)) throw httpError(400, `${name} must be an https:// URL`);
     if (type === 'int' && !(Number.isInteger(v) && v >= 0 && v <= 999999999)) throw httpError(400, `${name} must be a whole number of 0 or more`);
+    if (type === 'phone') {
+      // '' turns the support button off; anything else is normalised like a signup phone (digits, country code).
+      if (typeof v !== 'string') throw httpError(400, `${name} must be a phone number with country code, or empty`);
+      if (v.trim() === '') { changes[name] = ''; continue; }
+      const phone = normalizeContactPhone(v);
+      if (phone.reason) throw httpError(400, `${name} must be 10 digits, or 11-15 digits with the country code, or empty`);
+      changes[name] = phone.phone;
+      continue;
+    }
+    if (type === 'text' && !isSupportMessage(v)) throw httpError(400, `${name} must be 1-${SUPPORT_MESSAGE_MAX} characters`);
     changes[name] = v;
   }
   return changes;

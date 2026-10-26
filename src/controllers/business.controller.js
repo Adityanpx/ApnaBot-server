@@ -6,6 +6,7 @@ const trialService = require('../services/trial.service');
 const { applyDefaultSetup } = require('../services/defaultSetup.service');
 const bookingService = require('../services/booking.service');
 const businessCategoryService = require('../services/businessCategory.service');
+const businessRequestService = require('../services/businessRequest.service');
 const supabase = require('../config/supabase');
 const { successResponse, errorResponse } = require('../utils/response');
 const { generateTokens } = require('../services/auth.service');
@@ -20,6 +21,7 @@ const { businessSlots, businessRowFromCamel, autoTranslatedOf } = require('../ut
 const { statusSummary } = require('../utils/translationStatus');
 const { validateFlowFields } = require('../utils/flowFieldsValidation');
 const { cleanValue } = require('../utils/templateValue');
+const { normalizeContactPhone } = require('../utils/contactPhone');
 const { META_API_BASE } = require('../services/whatsapp.service');
 const templateSyncService = require('../services/templateSync.service');
 const onboardingService = require('../services/whatsappOnboarding.service');
@@ -132,6 +134,12 @@ const getBusiness = async (req, res, next) => {
   }
 };
 
+const CONTACT_PHONE_ERRORS = {
+  empty: 'requestContactPhone is required with requestedCategoryText',
+  invalid_chars: 'requestContactPhone must contain only digits',
+  bad_length: 'requestContactPhone must be a 10-digit number, or 11-15 digits with the country code'
+};
+
 /**
  * POST /api/business
  * Create business (only if user does not have one yet)
@@ -165,6 +173,30 @@ const createBusiness = async (req, res, next) => {
     if (!(await businessCategoryService.isEnabledCategory(businessCategory))) {
       const enabledCategories = await businessCategoryService.getEnabledCategories();
       return errorResponse(res, 400, `Invalid business category. Must be one of: ${enabledCategories.map((category) => category.value).join(', ')}`);
+    }
+
+    // Unlisted business: the owner's kind of business is not in the category list, so they sign up
+    // as 'general' and say what they are. The contact phone is required with it (the team calls back).
+    let requestedCategoryText;
+    let requestContactPhone;
+    const rawRequestedText = req.body.requestedCategoryText;
+    if (rawRequestedText !== undefined && rawRequestedText !== null) {
+      if (typeof rawRequestedText !== 'string') {
+        return errorResponse(res, 400, 'requestedCategoryText must be a string');
+      }
+      const cleanedText = cleanValue(rawRequestedText);
+      if (cleanedText.length > businessRequestService.REQUESTED_TEXT_MAX) {
+        return errorResponse(res, 400, `requestedCategoryText must be ${businessRequestService.REQUESTED_TEXT_MAX} characters or less`);
+      }
+      if (cleanedText) {
+        if (businessCategory !== 'general') {
+          return errorResponse(res, 400, "businessCategory must be 'general' when requestedCategoryText is sent");
+        }
+        const phone = normalizeContactPhone(req.body.requestContactPhone);
+        if (phone.reason) return errorResponse(res, 400, CONTACT_PHONE_ERRORS[phone.reason]);
+        requestedCategoryText = cleanedText;
+        requestContactPhone = phone.phone;
+      }
     }
 
     // Validate sub-categories (only meaningful when businessCategory is
@@ -216,13 +248,22 @@ const createBusiness = async (req, res, next) => {
         address,
         city,
         state,
-        enabledLanguages
+        enabledLanguages,
+        requestedCategoryText
       });
     } catch (createErr) {
       if (createErr.code === '23505' && (createErr.message || '').includes('businesses_owner_user_id_key')) {
         return errorResponse(res, 409, 'You already have a business. Use PUT /api/business to update it.');
       }
       throw createErr;
+    }
+
+    // Record the unlisted-business request and mail the team. Not awaited and never rejects
+    // (recordRequest catches everything): signup must not wait on, or fail because of, a mail.
+    if (requestedCategoryText) {
+      businessRequestService.recordRequest({
+        business, userId: req.user.userId, requestedText: requestedCategoryText, contactPhone: requestContactPhone
+      }).catch((error) => logger.error('Business request recording failed:', error));
     }
 
     // Seed the category's default flow + form fields (best effort; never throws,

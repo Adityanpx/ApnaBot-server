@@ -124,8 +124,51 @@ const sendExpiryWarningEmail = async (toEmail, businessName, expiryDate) => {
   }
 };
 
+const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (c) => (
+  { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]
+));
+
+/**
+ * Tell the Averix team an owner signed up for a kind of business that is not in the category list.
+ * Every value is owner-typed, so it is HTML-escaped. One mail per recipient; a failure for one
+ * recipient does not stop the others. Never throws.
+ * @param {string[]} toEmails
+ * @param {{ businessName: string, requestedText: string, contactPhone: string, ownerName: string, ownerEmail: string }} details
+ * @returns {Promise<number>} how many mails were sent
+ */
+const sendBusinessRequestEmail = async (toEmails, details) => {
+  let sent = 0;
+  const { businessName, requestedText, contactPhone, ownerName, ownerEmail } = details;
+  for (const to of toEmails) {
+    try {
+      await sendEmail({
+        to,
+        subject: `New business request: ${String(requestedText).slice(0, 60)}`,
+        html: `
+          <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2 style="color: #1a1a2e;">New business request</h2>
+            <p>An owner signed up for a kind of business that is not in the category list.</p>
+            <p><strong>Requested:</strong> ${escapeHtml(requestedText)}</p>
+            <p><strong>Business:</strong> ${escapeHtml(businessName)}</p>
+            <p><strong>Contact phone:</strong> ${escapeHtml(contactPhone)}</p>
+            <p><strong>Owner:</strong> ${escapeHtml(ownerName)} (${escapeHtml(ownerEmail)})</p>
+            <p style="color: #777; font-size: 13px;">
+              They are on the General category for now. Open Super Admin, Business Requests.
+            </p>
+          </div>
+        `
+      });
+      sent += 1;
+    } catch (error) {
+      logger.error(`Error sending business request email to ${to}:`, error);
+    }
+  }
+  return sent;
+};
+
 module.exports = {
   sendPasswordResetEmail,
   sendVerificationEmail,
-  sendExpiryWarningEmail
+  sendExpiryWarningEmail,
+  sendBusinessRequestEmail
 };

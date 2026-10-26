@@ -1417,7 +1417,8 @@ Tells the Flutter app which versions to accept. **Server only - no client reads 
   policies; separate from `platform_settings`). Keys: `android_min_version`, `android_latest_version`
   (x.y.z), `force_update`, `maintenance_mode` (`'true'`/`'false'`), `play_store_url`.
 - **Public `GET /api/app/version`** (no auth): `data: { minimumVersion, latestVersion, forceUpdate,
-  maintenanceMode, storeUrl }`, `Cache-Control: public, max-age=60` plus a 60s in-process cache. Fails
+  maintenanceMode, storeUrl, supportWhatsappNumber, supportMessage }` (the last two: see "Unlisted business at signup + support
+  number"), `Cache-Control: public, max-age=60` plus a 60s in-process cache. Fails
   open: a missing/malformed key or a DB error serves 1.0.0 / false / the Play Store URL (a fallback is
   `no-store` and never cached). It is not behind any maintenance gate (none exists); a future one must
   exempt this route (comment in `routes/appVersion.routes.js`).
@@ -1657,6 +1658,41 @@ The plan's `msg_limit` is now counted per **subscription period**, not per calen
 - **Submit 422 codes.** `errors: [{ field, code, message }]` (message localized to the customer's language, top-level `message` = the first): `invalid_name`, `invalid_date`, `date_in_past`, `date_too_far`, `checkout_not_after_checkin`, `closed_day`. Other submit responses: 400 (bad key, missing / invalid values), 409 (still processing), 410 (link expired or used).
 - **Tests.** `usagePeriod.test.js`, `usage.service.test.js`, `subscription.service.usagePeriod.test.js`, `payment.service.activated/charged.test.js`, `admin.extendSubscription.test.js`, `whatsapp.worker.test.js`, `broadcast.worker.test.js`, `windowAwareSend.service.test.js`, `publicServiceForm.idempotency.test.js`, `webhook.catalog.test.js`; the webhook suites assert the webhook counts nothing itself. Any test that loads `whatsapp.worker` must stub `usage.service` (the real one opens Redis).
 - **Deploy.** One-time cutover: apply the migration, run the backfill (dry run, then `--confirm`), then deploy; metering changes for every live business at once (broadcasts and owner replies now count; inbound and bookings no longer do). Known data issue: two businesses (`3e8dea25...`, Shambhu Men's Wear) have both an active and a trial row.
+
+## Unlisted business at signup + support number (built 2026-10-31, migration `20261031120000_business_requests.sql`)
+
+**Unlisted business.** An owner whose kind of business is not in the category list signs up as `general` and says what they are.
+- **Signup body** (`POST /api/business`): optional `requestedCategoryText` (trimmed, inner spaces collapsed, <= 100 chars; blank = not
+  sent) and `requestContactPhone` (REQUIRED when the text is present: 10 digits -> `91` + digits, or 11-15 digits with the country
+  code; separators and a leading `+` dropped; stored digits only - `utils/contactPhone.js`). The category must be `general`, else 400.
+- **Schema.** `businesses.requested_category_text` (written in the same insert as the business) and `business_requests` (`business_id`
+  fk cascade, `requested_text`, `contact_phone`, `owner_name` / `owner_email` snapshot, `status` new|contacted|set_up, `notes`,
+  timestamps; RLS on, no policies).
+- **Recording + notification** (`businessRequest.service.js#recordRequest`): runs right after the business insert, NOT awaited, never
+  rejects - a failed insert, recipient lookup or mail is only logged and signup always succeeds. Notification is **email**
+  (`email.service#sendBusinessRequestEmail`, owner text HTML-escaped) to every active `superadmin` user, or to the comma-separated
+  `BUSINESS_REQUEST_NOTIFY_EMAIL` when set (replaces the list). Push is not used: `notification.service` is scoped to a business's
+  own users/devices and `device_tokens.business_id` is NOT NULL, so a superadmin (no business) has no device row.
+- **Super Admin** (superadmin only, above the `/api/admin` catch-all): `GET /api/admin/business-requests?status=&page=&limit=` (newest
+  first, joined `businessName` / `businessCategory`, `{ requests, pagination }`) and `PUT /api/admin/business-requests/:id`
+  `{ status?, notes? }`. **Changing the business's category:** `PUT /api/admin/businesses/:id/category { businessCategory }` - any known
+  category except `multi_brand`; changes the category AND recomputes `business_travel_settings` enable_fleet / enable_distance_fares /
+  round_trip_driver_da_enabled with `computeFeatureFlags` (overwrites those three), drops the rules cache and the tenant cache (a Redis
+  failure there only sets `cacheInvalidated:false`). It does NOT re-seed the flow or form - use `copy-setup`. If the flags write fails
+  after the category write, repeat the request (idempotent).
+- **Not built:** no Super Admin UI yet; no email to the owner; nothing links a `set_up` request to the copy-setup run.
+
+**Support WhatsApp number.** `GET /api/app/version` (public, no auth - reachable from the login / register screens) now also returns
+`supportWhatsappNumber` (digits with country code, `''` = no support button, default `''`) and `supportMessage` (<= 500 chars; default
+"Hi, I need help with ApnaBot. Business: {{businessName}}, email: {{email}}"). The server returns the marks as written; **clients fill
+`{{businessName}}` and `{{email}}`** (no user exists before login). Editable through `PUT /api/admin/app-config` (keys
+`support_whatsapp_number`, `support_message` in `app_config`; no migration - a missing key serves the default; a number is normalised like
+the signup phone).
+
+- **Deploy.** Apply the migration BEFORE the server. One-time cutover for signup only in the sense that the new fields are accepted from
+  the moment this is deployed; a normal signup (no `requestedCategoryText`) behaves exactly as before. No webhook / booking path touched
+  (Search cab AI unaffected). Tests: `business.requestedCategory.test.js`, `businessRequest.routes.test.js`,
+  `admin.changeCategory.test.js`, `contactPhone.test.js`, `appConfig.routes.test.js`.
 
 ## Known gaps / deferred work
 
@@ -2190,3 +2226,5 @@ The plan's `msg_limit` is now counted per **subscription period**, not per calen
   prevents local/prod BullMQ worker collision.
 - 2026-10-29: per-period message counter (outbound only, `usage_periods`, `increment_usage_period`, `subscriptions.current_period_start`), web-form `Idempotency-Key`, form field roles - see "Message counter per subscription period". Catalogue photo page = 1 unit via `countAs`.
 - 2026-10-30: messages chat time (`wa_timestamp` / generated `message_time`, `before=<messageTime>|<id>` cursor, `messageTime` / `lastMessageTime` / `lastMessageType` / `lastMessageOriginalType`, socket `new_message` times, backfill script) - see "`messages` chat time" under the schema notes. Working tree only; migration not applied.
+
+- 2026-10-31: unlisted business at signup (`requestedCategoryText` + `requestContactPhone`, `business_requests`, team email, Super Admin list/update, `PUT /api/admin/businesses/:id/category`) and `supportWhatsappNumber` / `supportMessage` on `GET /api/app/version` - see "Unlisted business at signup + support number". Migration `20261031120000_business_requests.sql` must be applied BEFORE the server.

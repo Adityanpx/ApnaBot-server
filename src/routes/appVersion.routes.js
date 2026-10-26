@@ -10,7 +10,11 @@ const appConfigController = require('../controllers/appConfig.controller');
 // leave every client unable to ever find out the maintenance has ended.
 
 // GET /api/app/version
-// -> data: { minimumVersion, latestVersion, forceUpdate, maintenanceMode, storeUrl }
+// -> data: { minimumVersion, latestVersion, forceUpdate, maintenanceMode, storeUrl,
+//             supportWhatsappNumber, supportMessage }
+// supportWhatsappNumber: digits with country code, '' = no support button. supportMessage keeps its
+// {{businessName}} / {{email}} marks - the login and register screens read this before any user
+// exists, so the CLIENT fills them in.
 // Cache-Control: public, max-age=60. Defaults (1.0.0 / false) when a key is missing.
 router.get('/version', appConfigController.getVersion);
 

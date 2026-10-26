@@ -11,7 +11,8 @@ router.use(protect, requireRole('superadmin'));
 router.get('/', appConfigController.getAdminConfig);
 
 // PUT /api/admin/app-config
-// Body (partial): { androidMinVersion, androidLatestVersion, forceUpdate, maintenanceMode, playStoreUrl }
+// Body (partial): { androidMinVersion, androidLatestVersion, forceUpdate, maintenanceMode, playStoreUrl,
+//  supportWhatsappNumber, supportMessage, translate caps, unicodeMatchingDefault }
 router.put('/', appConfigController.updateAdminConfig);
 
 module.exports = router;

@@ -7,6 +7,7 @@ const { requireRole } = require('../middleware/role.middleware');
 const {
   getBusinesses,
   getBusinessById,
+  changeBusinessCategory,
   toggleBusiness,
   deleteBusiness,
   changeBusinessPlan,
@@ -35,6 +36,8 @@ router.use(protect, requireRole('superadmin'));
 router.get('/businesses',                getBusinesses);
 router.get('/businesses/:id',            getBusinessById);
 router.put('/businesses/:id/toggle',     toggleBusiness);
+// Body { businessCategory } - also recomputes the travel-settings flags; flow not re-seeded.
+router.put('/businesses/:id/category',   changeBusinessCategory);
 router.delete('/businesses/:id',         deleteBusiness);
 router.put('/businesses/:id/plan',       changeBusinessPlan);
 router.put('/businesses/:id/extend',     extendSubscription);

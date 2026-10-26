@@ -110,7 +110,9 @@ test('public: seeded values in the usual wrapper, booleans real, Cache-Control 6
     latestVersion: '1.0.0',
     forceUpdate: false,
     maintenanceMode: false,
-    storeUrl: 'https://play.google.com/store/apps/details?id=com.averixsolutions.apnabot'
+    storeUrl: 'https://play.google.com/store/apps/details?id=com.averixsolutions.apnabot',
+    supportWhatsappNumber: '',
+    supportMessage: 'Hi, I need help with ApnaBot. Business: {{businessName}}, email: {{email}}'
   });
 });
 
@@ -289,7 +291,7 @@ test('translate caps: editable by the superadmin (whole numbers only) and never 
   tables.app_config.push({ key: 'translate_global_monthly_cap', value: '1800000', updated_at: SEED_AT, updated_by: null });
 
   const pub = await (await getVersion()).json();
-  assert.deepEqual(Object.keys(pub.data).sort(), ['forceUpdate', 'latestVersion', 'maintenanceMode', 'minimumVersion', 'storeUrl']);
+  assert.deepEqual(Object.keys(pub.data).sort(), ['forceUpdate', 'latestVersion', 'maintenanceMode', 'minimumVersion', 'storeUrl', 'supportMessage', 'supportWhatsappNumber']);
   assert.equal(JSON.stringify(pub).includes('translate'), false);
 
   const admin = await (await adminGet()).json();
@@ -305,4 +307,56 @@ test('translate caps: editable by the superadmin (whole numbers only) and never 
   appConfig.clearCache();
   const pubAfter = await (await getVersion()).json();
   assert.equal(JSON.stringify(pubAfter).includes('translate'), false);
+});
+
+test('support: number and message are public (before login), default off, and the marks stay as written', async () => {
+  const { data } = await (await getVersion()).json();
+  assert.equal(data.supportWhatsappNumber, '', 'no number set = no support button');
+  assert.match(data.supportMessage, /{{businessName}}/);
+  assert.match(data.supportMessage, /{{email}}/);
+
+  const message = 'Hello, I am {{businessName}} ({{email}}) and need help';
+  assert.equal((await adminPut({ supportWhatsappNumber: '+91 98765-43210', supportMessage: message })).status, 200);
+  const after = (await (await getVersion()).json()).data;
+  assert.equal(after.supportWhatsappNumber, '919876543210', 'stored as digits with the country code');
+  assert.equal(after.supportMessage, message);
+  assert.equal((await (await adminGet()).json()).data.supportWhatsappNumber, '919876543210');
+});
+
+test('support: a number can be cleared, an 11-15 digit number keeps its own country code', async () => {
+  assert.equal((await adminPut({ supportWhatsappNumber: '971501234567' })).status, 200);
+  assert.equal((await (await getVersion()).json()).data.supportWhatsappNumber, '971501234567');
+  assert.equal((await adminPut({ supportWhatsappNumber: '' })).status, 200);
+  assert.equal((await (await getVersion()).json()).data.supportWhatsappNumber, '');
+});
+
+test('support: validation - number shape, message length, types', async () => {
+  for (const bad of [
+    { supportWhatsappNumber: '12345' },
+    { supportWhatsappNumber: '1234567890123456' },
+    { supportWhatsappNumber: 'call me' },
+    { supportWhatsappNumber: 9876543210 },
+    { supportMessage: '' },
+    { supportMessage: '   ' },
+    { supportMessage: 'x'.repeat(501) },
+    { supportMessage: 5 }
+  ]) {
+    const res = await adminPut(bad);
+    assert.equal(res.status, 400, JSON.stringify(bad));
+  }
+  assert.deepEqual(tables.app_config, seed(), 'a rejected request writes nothing');
+  assert.equal((await adminPut({ supportMessage: 'x'.repeat(500) })).status, 200);
+});
+
+test('support: a malformed stored value falls back to the default instead of leaking', async () => {
+  tables.app_config.push({ key: 'support_whatsapp_number', value: 'abc', updated_at: SEED_AT, updated_by: null });
+  tables.app_config.push({ key: 'support_message', value: '', updated_at: SEED_AT, updated_by: null });
+  const { data } = await (await getVersion()).json();
+  assert.equal(data.supportWhatsappNumber, '');
+  assert.match(data.supportMessage, /ApnaBot/);
+});
+
+test('support: the public endpoint answers without a token even though the admin one refuses it', async () => {
+  assert.equal((await fetch(`${base}/app/version`, { headers: { 'x-anon': '1' } })).status, 200);
+  assert.equal((await adminGet({ 'x-anon': '1' })).status, 401);
 });

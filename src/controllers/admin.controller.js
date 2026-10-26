@@ -5,7 +5,8 @@ const subscriptionService = require('../services/subscription.service');
 const tenantService = require('../services/tenant.service');
 const adminService = require('../services/admin.service');
 const businessService = require('../services/business.service');
-const { isTravelFeaturedCategory } = require('../config/categoryFeatures');
+const { isTravelFeaturedCategory, computeFeatureFlags } = require('../config/categoryFeatures');
+const businessCategoryService = require('../services/businessCategory.service');
 const { invalidateRulesCache } = require('../services/chatbot.service');
 const { successResponse, errorResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
@@ -99,6 +100,75 @@ const getBusinesses = async (req, res, next) => {
     return successResponse(res, 200, { businesses, pagination });
   } catch (error) {
     logger.error('Error in getBusinesses:', error);
+    next(error);
+  }
+};
+
+/**
+ * PUT /api/admin/businesses/:id/category
+ * Body: { businessCategory } - any known category (enabled or not), except 'multi_brand' (it needs
+ * sub-categories this endpoint does not set). Changes ONLY the category and the
+ * business_travel_settings flags that derive from it (enable_fleet / enable_distance_fares /
+ * round_trip_driver_da_enabled, via computeFeatureFlags - the same values signup would have set);
+ * the flow and form are not re-seeded (use copy-setup). Meant for a freshly requested business that
+ * signed up as 'general' (see business_requests): an existing owner's fare toggles are overwritten.
+ */
+const changeBusinessCategory = async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { businessCategory } = req.body || {};
+
+    if (typeof businessCategory !== 'string' || !businessCategory) {
+      return errorResponse(res, 400, 'businessCategory is required');
+    }
+    if (businessCategory === 'multi_brand') {
+      return errorResponse(res, 400, "businessCategory cannot be 'multi_brand' here");
+    }
+    if (!(await businessCategoryService.isKnownCategory(businessCategory))) {
+      return errorResponse(res, 400, `Unknown business category "${businessCategory}"`);
+    }
+
+    const { data: business, error: bizErr } = await supabase
+      .from('businesses').select('id, business_category, sub_categories, phone_number_id').eq('id', id).maybeSingle();
+    if (bizErr) throw bizErr;
+    if (!business) return errorResponse(res, 404, 'Business not found');
+
+    const previousCategory = business.business_category;
+    const { error: updateErr } = await supabase
+      .from('businesses').update({ business_category: businessCategory }).eq('id', id);
+    if (updateErr) throw updateErr;
+
+    // Every business has this row (signup + the 20260921130000 backfill); a re-run of this
+    // endpoint finishes the job if this second write fails after the first succeeded.
+    const flags = computeFeatureFlags({ businessCategory, subCategories: business.sub_categories });
+    const { error: flagsErr } = await supabase
+      .from('business_travel_settings').update(flags).eq('business_id', id);
+    if (flagsErr) {
+      logger.error(`[changeBusinessCategory] business=${id} - category is now ${businessCategory} but the travel settings update failed; repeat the request:`, flagsErr);
+      throw flagsErr;
+    }
+
+    // The category is read from the cached tenant / rules; a Redis failure must not turn a
+    // completed change into an error.
+    let cacheInvalidated = true;
+    try {
+      await invalidateRulesCache(id);
+      if (business.phone_number_id) await tenantService.invalidateTenantCache(business.phone_number_id);
+    } catch (cacheErr) {
+      cacheInvalidated = false;
+      logger.error(`[changeBusinessCategory] business=${id} - category changed but cache invalidation failed (it expires on its own):`, cacheErr);
+    }
+
+    logger.info(`Business ${id} category changed ${previousCategory} -> ${businessCategory} by superadmin ${req.user.userId}`);
+    return successResponse(res, 200, {
+      businessId: id,
+      previousCategory,
+      businessCategory,
+      travelSettings: toCamelCase(flags),
+      cacheInvalidated
+    }, 'Business category updated');
+  } catch (error) {
+    logger.error('Error in changeBusinessCategory:', error);
     next(error);
   }
 };
@@ -826,6 +896,7 @@ module.exports = {
   checkRazorpayPlans,
   getBusinesses,
   getBusinessById,
+  changeBusinessCategory,
   toggleBusiness,
   deleteBusiness,
   changeBusinessPlan,

@@ -173,6 +173,7 @@ const createBusiness = async (ownerUserId, data) => {
       city,
       ...(data.state ? { state: data.state } : {}),
       ...(data.enabledLanguages ? { enabled_languages: data.enabledLanguages } : {}),
+      ...(data.requestedCategoryText ? { requested_category_text: data.requestedCategoryText } : {}),
       display_name: displayName || name,
       owner_user_id: ownerUserId,
       webhook_verify_token: webhookVerifyToken,

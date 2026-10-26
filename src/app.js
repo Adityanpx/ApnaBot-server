@@ -50,6 +50,7 @@ const contactGroupRoutes = require('./routes/contactGroup.routes');
 const featuresRoutes = require('./routes/features.routes');
 const appVersionRoutes = require('./routes/appVersion.routes');
 const appConfigAdminRoutes = require('./routes/appConfigAdmin.routes');
+const businessRequestRoutes = require('./routes/businessRequest.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const catalogRoutes = require('./routes/catalog.routes');
 
@@ -138,6 +139,8 @@ app.use('/api/admin/storage-cleanup', storageCleanupRoutes);
 // Super Admin mobile-app version gate (app_config) - superadmin only; above the
 // /api/admin catch-all. The public read is /api/app/version below.
 app.use('/api/admin/app-config', appConfigAdminRoutes);
+// Super Admin queue of owners who signed up for a business not in the category list.
+app.use('/api/admin/business-requests', businessRequestRoutes);
 app.use('/api/admin/rate-cards', rateCardRoutes);
 app.use('/api/admin/category-templates', categoryTemplateRoutes);
 app.use('/api/admin/whatsapp-flows', whatsappFlowRoutes);
