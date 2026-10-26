@@ -24,7 +24,14 @@ stub('../services/businessRequest.service', {
 stub('../services/tenant.service', {});
 stub('../services/subscription.service', {});
 stub('../services/booking.service', {});
-stub('../services/businessCategory.service', { isEnabledCategory: async () => true, getEnabledCategories: async () => [], getAllCategories: async () => [] });
+// Live shape: 'general' exists but is switched off (hidden from the signup tiles).
+const KNOWN = ['general', 'salon', 'travels']; let disabled = [];
+stub('../services/businessCategory.service', {
+  isEnabledCategory: async (v) => KNOWN.includes(v) && !disabled.includes(v),
+  isKnownCategory: async (v) => KNOWN.includes(v),
+  getEnabledCategories: async () => KNOWN.filter((v) => !disabled.includes(v)).map((value) => ({ value })),
+  getAllCategories: async () => []
+});
 stub('../services/auth.service', { generateTokens: async () => ({ accessToken: 'a', refreshToken: 'r' }), saveTokenToRedis: async () => {} });
 stub('../services/r2.service', {});
 stub('../services/templateSync.service', {});
@@ -45,7 +52,7 @@ const handlerCall = (res, body) => createBusiness({ user: { userId: 'u1', busine
 
 const signup = (extra = {}) => ({ name: 'Rangoli Studio', businessCategory: 'general', ...extra });
 
-test.beforeEach(() => { created = []; recorded = []; errors = []; recordImpl = async () => ({ recorded: true, emailsSent: 1 }); });
+test.beforeEach(() => { disabled = []; created = []; recorded = []; errors = []; recordImpl = async () => ({ recorded: true, emailsSent: 1 }); });
 
 test('a normal signup is untouched: no request is recorded and no request field reaches the service', async () => {
   const out = await call(signup());
@@ -104,6 +111,33 @@ test('a blank or null requestedCategoryText is treated as not sent (no phone nee
 
 test('a blank requestedCategoryText on a non-general category does not block signup', async () => {
   assert.equal((await call(signup({ businessCategory: 'salon', requestedCategoryText: '' }))).status, 201);
+});
+
+test('unlisted signup succeeds while general is disabled', async () => {
+  disabled = ['general'];
+  const out = await call(signup({ requestedCategoryText: 'Florist', requestContactPhone: '9876543210' }));
+  assert.equal(out.status, 201);
+  assert.equal(created[0].businessCategory, 'general');
+  assert.equal(recorded.length, 1);
+});
+
+test('plain general signup (no requestedCategoryText, or blank) is still rejected while general is disabled', async () => {
+  disabled = ['general'];
+  for (const extra of [{}, { requestedCategoryText: '   ' }, { requestedCategoryText: null }]) {
+    const out = await call(signup(extra));
+    assert.equal(out.status, 400, JSON.stringify(extra));
+    assert.match(out.body.message || out.body.error || JSON.stringify(out.body), /Invalid business category/);
+  }
+  assert.equal(created.length, 0);
+});
+
+test('other categories are unchanged: enabled works, disabled is rejected, with or without requestedCategoryText', async () => {
+  assert.equal((await call(signup({ businessCategory: 'salon' }))).status, 201);
+  disabled = ['salon'];
+  assert.equal((await call(signup({ businessCategory: 'salon' }))).status, 400);
+  assert.equal((await call(signup({ businessCategory: 'salon', requestedCategoryText: 'Florist', requestContactPhone: '9876543210' }))).status, 400);
+  assert.equal((await call(signup({ businessCategory: 'nope' }))).status, 400);
+  assert.equal(created.length, 1);
 });
 
 test('signup succeeds even if recording / notifying rejects or throws', async () => {

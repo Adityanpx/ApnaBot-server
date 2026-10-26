@@ -169,12 +169,6 @@ const createBusiness = async (req, res, next) => {
       return errorResponse(res, 400, 'Business category is required');
     }
 
-    // Validate business category
-    if (!(await businessCategoryService.isEnabledCategory(businessCategory))) {
-      const enabledCategories = await businessCategoryService.getEnabledCategories();
-      return errorResponse(res, 400, `Invalid business category. Must be one of: ${enabledCategories.map((category) => category.value).join(', ')}`);
-    }
-
     // Unlisted business: the owner's kind of business is not in the category list, so they sign up
     // as 'general' and say what they are. The contact phone is required with it (the team calls back).
     let requestedCategoryText;
@@ -197,6 +191,16 @@ const createBusiness = async (req, res, next) => {
         requestedCategoryText = cleanedText;
         requestContactPhone = phone.phone;
       }
+    }
+
+    // Validate business category. The unlisted path only needs 'general' to exist: it is hidden
+    // from the signup tiles (disabled) on purpose, so isEnabledCategory would always reject it.
+    const categoryOk = requestedCategoryText
+      ? await businessCategoryService.isKnownCategory(businessCategory)
+      : await businessCategoryService.isEnabledCategory(businessCategory);
+    if (!categoryOk) {
+      const enabledCategories = await businessCategoryService.getEnabledCategories();
+      return errorResponse(res, 400, `Invalid business category. Must be one of: ${enabledCategories.map((category) => category.value).join(', ')}`);
     }
 
     // Validate sub-categories (only meaningful when businessCategory is
