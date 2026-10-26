@@ -1659,7 +1659,7 @@ The plan's `msg_limit` is now counted per **subscription period**, not per calen
 - **Tests.** `usagePeriod.test.js`, `usage.service.test.js`, `subscription.service.usagePeriod.test.js`, `payment.service.activated/charged.test.js`, `admin.extendSubscription.test.js`, `whatsapp.worker.test.js`, `broadcast.worker.test.js`, `windowAwareSend.service.test.js`, `publicServiceForm.idempotency.test.js`, `webhook.catalog.test.js`; the webhook suites assert the webhook counts nothing itself. Any test that loads `whatsapp.worker` must stub `usage.service` (the real one opens Redis).
 - **Deploy.** One-time cutover: apply the migration, run the backfill (dry run, then `--confirm`), then deploy; metering changes for every live business at once (broadcasts and owner replies now count; inbound and bookings no longer do). Known data issue: two businesses (`3e8dea25...`, Shambhu Men's Wear) have both an active and a trial row.
 
-## Unlisted business at signup + support number (built 2026-10-31, migration `20261031120000_business_requests.sql`)
+## Unlisted business at signup + support number (built 2026-10-31, migration `20261026140000_business_requests.sql`)
 
 **Unlisted business.** An owner whose kind of business is not in the category list signs up as `general` and says what they are.
 - **Signup body** (`POST /api/business`): optional `requestedCategoryText` (trimmed, inner spaces collapsed, <= 100 chars; blank = not
@@ -2227,4 +2227,4 @@ the signup phone).
 - 2026-10-29: per-period message counter (outbound only, `usage_periods`, `increment_usage_period`, `subscriptions.current_period_start`), web-form `Idempotency-Key`, form field roles - see "Message counter per subscription period". Catalogue photo page = 1 unit via `countAs`.
 - 2026-10-30: messages chat time (`wa_timestamp` / generated `message_time`, `before=<messageTime>|<id>` cursor, `messageTime` / `lastMessageTime` / `lastMessageType` / `lastMessageOriginalType`, socket `new_message` times, backfill script) - see "`messages` chat time" under the schema notes. Working tree only; migration not applied.
 
-- 2026-10-31: unlisted business at signup (`requestedCategoryText` + `requestContactPhone`, `business_requests`, team email, Super Admin list/update, `PUT /api/admin/businesses/:id/category`) and `supportWhatsappNumber` / `supportMessage` on `GET /api/app/version` - see "Unlisted business at signup + support number". Migration `20261031120000_business_requests.sql` must be applied BEFORE the server.
+- 2026-10-31: unlisted business at signup (`requestedCategoryText` + `requestContactPhone`, `business_requests`, team email, Super Admin list/update, `PUT /api/admin/businesses/:id/category`) and `supportWhatsappNumber` / `supportMessage` on `GET /api/app/version` - see "Unlisted business at signup + support number". Migration `20261026140000_business_requests.sql` must be applied BEFORE the server.
