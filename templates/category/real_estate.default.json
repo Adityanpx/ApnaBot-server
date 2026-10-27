@@ -1,0 +1,529 @@
+{
+  "category": "real_estate",
+  "name": "Real Estate — Starter",
+  "description": "Before going live: add your properties on the Catalogue page (turn on 'Add Catalogue to my main menu'), set your office location in Settings, and edit the Home loan text with the banks you work with.",
+  "nodes": [
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000001",
+      "node_type": "reply",
+      "keyword": "hi",
+      "match_type": "exact",
+      "hindi_aliases": [
+        "hello",
+        "hey",
+        "hii",
+        "hlo",
+        "namaste",
+        "start",
+        "menu"
+      ],
+      "reply_kind": "text",
+      "trigger_count": 0,
+      "content_type": "list",
+      "label": "Namaste {{customerName}} 🙏 Welcome to {{businessName}}! We help you buy, rent and invest in properties. What are you looking for?",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 0,
+      "position_y": 0
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000002",
+      "node_type": "reply",
+      "keyword": "buy",
+      "match_type": "contains",
+      "hindi_aliases": [
+        "flat",
+        "home",
+        "house",
+        "bhk",
+        "plot",
+        "purchase",
+        "घर",
+        "फ्लैट"
+      ],
+      "reply_kind": "text",
+      "trigger_count": 0,
+      "content_type": "buttons",
+      "label": "We have flats, row houses, bungalows, plots and shops across the city. Tell us what you need and your budget — we'll share the best options.",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 380,
+      "position_y": 0
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000003",
+      "node_type": "reply",
+      "keyword": "rent",
+      "match_type": "exact",
+      "hindi_aliases": [
+        "rental",
+        "for rent",
+        "on rent",
+        "to rent",
+        "किराया",
+        "भाडे"
+      ],
+      "reply_kind": "text",
+      "trigger_count": 0,
+      "content_type": "buttons",
+      "label": "Looking for a home or shop on rent? Share your requirement and we'll send matching options with rent and deposit.",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 380,
+      "position_y": 200
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000004",
+      "node_type": "reply",
+      "keyword": "loan",
+      "match_type": "contains",
+      "hindi_aliases": [
+        "home loan",
+        "finance",
+        "कर्ज"
+      ],
+      "reply_kind": "text",
+      "trigger_count": 0,
+      "content_type": "buttons",
+      "label": "We help you get a home loan with quick approval and the right EMI. Share your enquiry and our team will call you.",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 380,
+      "position_y": 400
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000005",
+      "node_type": "reply",
+      "keyword": "address",
+      "match_type": "contains",
+      "hindi_aliases": [
+        "location",
+        "office",
+        "maps",
+        "google map",
+        "पता"
+      ],
+      "reply_kind": "text",
+      "trigger_count": 0,
+      "content_type": "location",
+      "label": "",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 380,
+      "position_y": 600
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000006",
+      "node_type": "reply",
+      "keyword": "call",
+      "match_type": "contains",
+      "hindi_aliases": [
+        "talk",
+        "person",
+        "agent"
+      ],
+      "reply_kind": "handoff",
+      "trigger_count": 0,
+      "content_type": "text",
+      "label": "",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 380,
+      "position_y": 800
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000007",
+      "node_type": "reply",
+      "keyword": "site_visit",
+      "match_type": "exact",
+      "hindi_aliases": [],
+      "reply_kind": "booking_trigger",
+      "trigger_count": 0,
+      "content_type": "text",
+      "label": "Great! Let me collect your details.",
+      "field_key": null,
+      "summary_label": null,
+      "required": false,
+      "order": null,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 760,
+      "position_y": 0
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000011",
+      "node_type": "question",
+      "keyword": null,
+      "match_type": null,
+      "hindi_aliases": [],
+      "reply_kind": null,
+      "trigger_count": 0,
+      "content_type": "list",
+      "label": "What type of property?",
+      "field_key": "catalogCollection",
+      "summary_label": "Property type",
+      "required": true,
+      "order": 0,
+      "options": [
+        {
+          "value": "1 BHK / Studio",
+          "label": "1 BHK / Studio"
+        },
+        {
+          "value": "2 BHK",
+          "label": "2 BHK"
+        },
+        {
+          "value": "3 BHK",
+          "label": "3 BHK"
+        },
+        {
+          "value": "Row house / Bungalow",
+          "label": "Row house / Bungalow"
+        },
+        {
+          "value": "Plot",
+          "label": "Plot"
+        },
+        {
+          "value": "Shop / Office",
+          "label": "Shop / Office"
+        }
+      ],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 1140,
+      "position_y": 0
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000012",
+      "node_type": "question",
+      "keyword": null,
+      "match_type": null,
+      "hindi_aliases": [],
+      "reply_kind": null,
+      "trigger_count": 0,
+      "content_type": "buttons",
+      "label": "Buy or rent?",
+      "field_key": "purpose",
+      "summary_label": "Purpose",
+      "required": true,
+      "order": 1,
+      "options": [
+        {
+          "value": "Buy",
+          "label": "Buy"
+        },
+        {
+          "value": "Rent",
+          "label": "Rent"
+        }
+      ],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 1520,
+      "position_y": 0
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000013",
+      "node_type": "question",
+      "keyword": null,
+      "match_type": null,
+      "hindi_aliases": [],
+      "reply_kind": null,
+      "trigger_count": 0,
+      "content_type": "list",
+      "label": "Your budget?",
+      "field_key": "budget",
+      "summary_label": "Budget",
+      "required": true,
+      "order": 2,
+      "options": [
+        {
+          "value": "Under ₹30 L",
+          "label": "Under ₹30 L"
+        },
+        {
+          "value": "₹30–60 L",
+          "label": "₹30–60 L"
+        },
+        {
+          "value": "₹60 L–1 Cr",
+          "label": "₹60 L–1 Cr"
+        },
+        {
+          "value": "Above ₹1 Cr",
+          "label": "Above ₹1 Cr"
+        },
+        {
+          "value": "Rent under ₹20k",
+          "label": "Rent under ₹20k"
+        },
+        {
+          "value": "Rent ₹20k+",
+          "label": "Rent ₹20k+"
+        }
+      ],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 1900,
+      "position_y": 0
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000014",
+      "node_type": "question",
+      "keyword": null,
+      "match_type": null,
+      "hindi_aliases": [],
+      "reply_kind": null,
+      "trigger_count": 0,
+      "content_type": "text",
+      "label": "Any property ID or preferred area? (e.g. WKD-2B-01 or Wakad, Baner)",
+      "field_key": "catalogDesignNo",
+      "summary_label": "Property ID / area",
+      "required": true,
+      "order": 3,
+      "options": [],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 2280,
+      "position_y": 0
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000015",
+      "node_type": "question",
+      "keyword": null,
+      "match_type": null,
+      "hindi_aliases": [],
+      "reply_kind": null,
+      "trigger_count": 0,
+      "content_type": "buttons",
+      "label": "When would you like a site visit?",
+      "field_key": "visitWhen",
+      "summary_label": "Site visit",
+      "required": true,
+      "order": 4,
+      "options": [
+        {
+          "value": "Today",
+          "label": "Today"
+        },
+        {
+          "value": "Tomorrow",
+          "label": "Tomorrow"
+        },
+        {
+          "value": "This weekend",
+          "label": "This weekend"
+        }
+      ],
+      "is_computed": false,
+      "is_active": true,
+      "position_x": 2660,
+      "position_y": 0
+    }
+  ],
+  "edges": [
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000101",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000001",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000002",
+      "label": "🏠 Buy a property",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000102",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000001",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000003",
+      "label": "🔑 Rent a property",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 1
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000103",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000001",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000007",
+      "label": "📅 Book a site visit",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 2
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000104",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000001",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000004",
+      "label": "💰 Home loan help",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 3
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000105",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000001",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000005",
+      "label": "📍 Our office",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 4
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000106",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000001",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000006",
+      "label": "👤 Talk to us",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 5
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000107",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000002",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000007",
+      "label": "Send enquiry",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000108",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000002",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000001",
+      "label": "Main menu",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 1
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000109",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000003",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000007",
+      "label": "Send enquiry",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000110",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000003",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000001",
+      "label": "Main menu",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 1
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000111",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000004",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000007",
+      "label": "Send enquiry",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000112",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000004",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000001",
+      "label": "Main menu",
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 1
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000113",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000007",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000011",
+      "label": null,
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000114",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000011",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000012",
+      "label": null,
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000115",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000012",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000013",
+      "label": null,
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000116",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000013",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000014",
+      "label": null,
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    },
+    {
+      "id": "8ea17e57-0000-4000-8000-000000000117",
+      "from_node_id": "8ea17e57-0000-4000-8000-000000000014",
+      "to_node_id": "8ea17e57-0000-4000-8000-000000000015",
+      "label": null,
+      "description": null,
+      "condition": null,
+      "preset": null,
+      "display_order": 0
+    }
+  ]
+}
