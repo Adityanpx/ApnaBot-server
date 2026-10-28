@@ -38,8 +38,9 @@ test('the label is trimmed', () => {
   assert.equal(getListButtonLabel(list({ buttonText: '  See courses  ' }), 'en'), 'See courses');
 });
 
-test('the default "Choose" button is translated for Hindi and Marathi', () => {
+test('the default "Choose" button is translated for Hindi and Marathi, machine text for the other Indian languages', () => {
   assert.equal(getListButtonLabel({ contentType: 'list' }, 'hi'), 'चुनें');
   assert.equal(getListButtonLabel({ contentType: 'list' }, 'mr'), 'निवडा');
-  assert.equal(getListButtonLabel({ contentType: 'list' }, 'ta'), 'Choose'); // no reviewed text: English
+  assert.equal(getListButtonLabel({ contentType: 'list' }, 'ta'), require('../utils/systemMessages').MACHINE_MESSAGES.ta.listButtonChoose); // machine-translated, not reviewed
+  assert.equal(getListButtonLabel({ contentType: 'list' }, 'zz'), 'Choose'); // no text at all: English
 });

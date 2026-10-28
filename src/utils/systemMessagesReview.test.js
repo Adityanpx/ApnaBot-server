@@ -87,17 +87,102 @@ test('generated module is valid JS with keys in English order and round-trips', 
 });
 
 test('getSystemMessage: reviewed text for the 8 languages, English fallback for missing keys / files', () => {
+  const { MACHINE_MESSAGES } = require('./systemMessages');
   assert.deepEqual(Object.keys(REVIEWED_MESSAGES).filter((l) => !REVIEW_LANGUAGES.includes(l)), []);
-  assert.equal(getSystemMessage('webFormButtonText', 'gu'), 'Fill booking form', 'no reviewed file yet -> English');
-  assert.equal(getReviewedMessage('webFormButtonText', 'gu'), undefined);
-  REVIEWED_MESSAGES.gu = { optInConfirmed: 'આભાર! {{business}} તરફથી ઑફર મળશે.', webFormButtonText: '   ' };
+  assert.deepEqual(Object.keys(MACHINE_MESSAGES).filter((l) => !REVIEW_LANGUAGES.includes(l)), []);
+  // The real machine files are loaded; isolate this test from them (and from any reviewed file).
+  const saved = { reviewed: { ...REVIEWED_MESSAGES }, machine: { ...MACHINE_MESSAGES } };
+  for (const lang of REVIEW_LANGUAGES) { delete REVIEWED_MESSAGES[lang]; delete MACHINE_MESSAGES[lang]; }
   try {
+    assert.equal(getSystemMessage('webFormButtonText', 'gu'), 'Fill booking form', 'no file yet -> English');
+    assert.equal(getReviewedMessage('webFormButtonText', 'gu'), undefined);
+    REVIEWED_MESSAGES.gu = { optInConfirmed: 'આભાર! {{business}} તરફથી ઑફર મળશે.', webFormButtonText: '   ' };
     assert.equal(getSystemMessage('optInConfirmed', 'gu', { business: 'SG' }), 'આભાર! SG તરફથી ઑફર મળશે.');
     assert.equal(getSystemMessage('webFormButtonText', 'gu'), 'Fill booking form', 'blank reviewed text -> English');
     assert.equal(getSystemMessage('webFormPrompt', 'gu'), SYSTEM_MESSAGES.webFormPrompt.en, 'missing key -> English');
     assert.equal(getSystemMessage('optInConfirmed', 'ta', { business: 'SG' }), getSystemMessage('optInConfirmed', null, { business: 'SG' }));
     assert.equal(getSystemMessage('webFormButtonText', 'hi'), SYSTEM_MESSAGES.webFormButtonText.hi, 'hi / mr still come from SYSTEM_MESSAGES');
   } finally {
-    delete REVIEWED_MESSAGES.gu;
+    for (const lang of REVIEW_LANGUAGES) {
+      delete REVIEWED_MESSAGES[lang]; delete MACHINE_MESSAGES[lang];
+      if (saved.reviewed[lang]) REVIEWED_MESSAGES[lang] = saved.reviewed[lang];
+      if (saved.machine[lang]) MACHINE_MESSAGES[lang] = saved.machine[lang];
+    }
+  }
+});
+
+test('the generated machine files are loaded: every machine key is a real key and keeps placeholders, terms and bold', () => {
+  const { MACHINE_MESSAGES } = require('./systemMessages');
+  assert.deepEqual(Object.keys(MACHINE_MESSAGES).sort(), [...REVIEW_LANGUAGES].sort());
+  const english = englishByKey();
+  for (const [lang, table] of Object.entries(MACHINE_MESSAGES)) {
+    assert.ok(Object.keys(table).length > 60, lang);
+    for (const [key, text] of Object.entries(table)) {
+      assert.ok(english[key] !== undefined, `${lang}.${key} is not a message key`);
+      assert.equal(checkPlaceholders(english[key], text).ok, true, `${lang}.${key} placeholders`);
+      assert.equal(require('./systemMessagesReview').checkProtectedTerms(english[key], text), null, `${lang}.${key} protected terms`);
+    }
+  }
+});
+
+test('checkProtectedTerms: every protected word must appear as often as in English', () => {
+  const { checkProtectedTerms, PROTECTED_TERMS } = require('./systemMessagesReview');
+  assert.deepEqual(PROTECTED_TERMS, ['ApnaBot', 'WhatsApp', 'UPI', 'OTP', 'Razorpay', 'menu', 'STOP', 'START']);
+  assert.equal(checkProtectedTerms('Send *menu* or STOP on WhatsApp', 'WhatsApp પર *menu* અથવા STOP મોકલો'), null);
+  assert.match(checkProtectedTerms('Send *menu*', 'મેનુ મોકલો'), /"menu" was translated or lost/);
+  assert.match(checkProtectedTerms('Pay by UPI', 'UPI UPI'), /"UPI"/);
+  assert.equal(checkProtectedTerms('Thanks', 'આભાર'), null);
+});
+
+test('validateReviewed can read the machine column; the default column is unchanged', () => {
+  const english = { k1: 'Hi {{name}}', k2: 'Plain' };
+  const rows = [
+    { key: 'k1', reviewed_translation: '', machine_translation: 'MT {{name}}' },
+    { key: 'k2', reviewed_translation: 'REV', machine_translation: 'MT bad {{oops}}' }
+  ];
+  assert.deepEqual(validateReviewed(rows, english).accepted, { k2: 'REV' });
+  const machine = validateReviewed(rows, english, 'machine_translation');
+  assert.deepEqual(machine.accepted, { k1: 'MT {{name}}' });
+  assert.deepEqual(machine.rejected.map((r) => r.key), ['k2'], 'placeholder mismatch is dropped');
+});
+
+test('machine module: marked MACHINE-TRANSLATED, valid JS; the reviewed module header is unchanged', () => {
+  const machine = buildLangModule('gu', { a: 'એ' }, ['a'], 'machine');
+  assert.match(machine, /^\/\/ MACHINE-TRANSLATED system messages for 'gu'.*NOT native-reviewed/);
+  const mod = { exports: {} };
+  new Function('module', machine)(mod);
+  assert.deepEqual(mod.exports, { a: 'એ' });
+  assert.match(buildLangModule('gu', { a: 'એ' }, ['a']), /^\/\/ Native-reviewed system messages for 'gu'/);
+});
+
+test('lookup order is reviewed, then machine, then English; hi / mr still come from SYSTEM_MESSAGES', () => {
+  const { MACHINE_MESSAGES, getMachineMessage } = require('./systemMessages');
+  const saved = { reviewed: REVIEWED_MESSAGES.kn, machine: MACHINE_MESSAGES.kn };
+  REVIEWED_MESSAGES.kn = { optInConfirmed: 'REVIEWED {{business}}' };
+  MACHINE_MESSAGES.kn = { optInConfirmed: 'MACHINE {{business}}', webFormButtonText: 'MACHINE-BTN', webFormPrompt: '  ' };
+  try {
+    assert.equal(getSystemMessage('optInConfirmed', 'kn', { business: 'SG' }), 'REVIEWED SG', 'reviewed wins');
+    assert.equal(getSystemMessage('webFormButtonText', 'kn'), 'MACHINE-BTN', 'machine when not reviewed');
+    assert.equal(getReviewedMessage('webFormButtonText', 'kn'), undefined, 'machine text is not "reviewed"');
+    assert.equal(getMachineMessage('webFormButtonText', 'kn'), 'MACHINE-BTN');
+    assert.equal(getSystemMessage('webFormPrompt', 'kn'), SYSTEM_MESSAGES.webFormPrompt.en, 'blank machine text -> English');
+    assert.equal(getSystemMessage('webFormButtonText', 'hi'), SYSTEM_MESSAGES.webFormButtonText.hi);
+  } finally {
+    REVIEWED_MESSAGES.kn = saved.reviewed; MACHINE_MESSAGES.kn = saved.machine;
+    if (saved.reviewed === undefined) delete REVIEWED_MESSAGES.kn;
+    if (saved.machine === undefined) delete MACHINE_MESSAGES.kn;
+  }
+});
+
+test('src/i18n holds only generated files: reviewed <lang>.js or <lang>.machine.js, machine ones carry the marker', () => {
+  const fs = require('fs');
+  const path = require('path');
+  const dir = path.join(__dirname, '..', 'i18n');
+  if (!fs.existsSync(dir)) return;
+  for (const file of fs.readdirSync(dir)) {
+    const m = /^systemMessages\.([a-z]{2})(\.machine)?\.js$/.exec(file);
+    assert.ok(m && REVIEW_LANGUAGES.includes(m[1]), `unexpected file in src/i18n: ${file}`);
+    const source = fs.readFileSync(path.join(dir, file), 'utf8');
+    assert.equal(/^\/\/ MACHINE-TRANSLATED/.test(source), !!m[2], `${file}: only .machine.js files may be machine-translated, and they must say so`);
   }
 });

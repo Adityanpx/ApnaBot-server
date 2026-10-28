@@ -26,10 +26,22 @@ const placeholdersOf = (text) => (String(text || '').match(PLACEHOLDER_RE) || []
 const countOf = (text, re) => (String(text || '').match(re) || []).length;
 const sortedKey = (arr) => [...arr].sort().join('\u0000');
 
-/** Source text -> the HTML fragment to send to Azure. */
-const protect = (text) => {
+const escapeRegExp = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Source text -> the HTML fragment to send to Azure.
+ * @param {string} text
+ * @param {Object} [options]
+ * @param {string[]} [options.terms] whole words (case-sensitive) to leave untranslated, e.g. 'WhatsApp', 'menu'
+ */
+const protect = (text, { terms } = {}) => {
   const placeholders = [];
-  let s = String(text).replace(PLACEHOLDER_RE, (m) => {
+  // A bold term (*menu*) is lifted out whole, like a placeholder: inside <b> Azure moves the tag over the
+  // neighbouring word ("*menuSend*"), which would change the word the customer is told to type.
+  const liftRe = terms && terms.length
+    ? new RegExp(`${PLACEHOLDER_RE.source}|\\*(?:${terms.map(escapeRegExp).join('|')})\\*`, 'g')
+    : PLACEHOLDER_RE;
+  let s = String(text).replace(liftRe, (m) => {
     placeholders.push(m);
     return `${SENTINEL_OPEN}${placeholders.length - 1}${SENTINEL_CLOSE}`;
   });
@@ -38,8 +50,29 @@ const protect = (text) => {
   // _italic_ only at word edges, so snake_case words and URLs are left alone.
   s = s.replace(/(^|[\s(])_([^_\n]+)_(?=$|[\s.,!?;:)])/g, '$1<i>$2</i>');
   s = s.replace(/\r?\n/g, '<br>');
+  if (terms && terms.length) {
+    // Before the placeholder spans go in, so a term inside {{...}} is never wrapped twice.
+    const termRe = new RegExp(`(?<![\\p{L}\\p{N}_])(${terms.map(escapeRegExp).join('|')})(?![\\p{L}\\p{N}_])`, 'gu');
+    s = s.replace(termRe, '<span class="notranslate">$1</span>');
+  }
   s = s.replace(SENTINEL_RE, (_, i) => `<span class="notranslate">${escapeHtml(placeholders[Number(i)])}</span>`);
   return s;
+};
+
+/**
+ * Puts a space between a protected term (optionally in *bold*) and a directly attached letter of another
+ * script, which Azure leaves when the term sits inside a sentence it rebuilt ("WhatsAppપર", "STOPજવાબ").
+ */
+const padTerms = (text, terms) => {
+  if (!terms || !terms.length) return text;
+  // ASCII word edges here (not \p{L}): the neighbour we are looking for is a letter of another script.
+  const termRe = new RegExp(`\\*?(?<![A-Za-z0-9_])(?:${terms.map(escapeRegExp).join('|')})(?![A-Za-z0-9_])\\*?`, 'gu');
+  const isOtherScriptLetter = (ch) => !!ch && /[\p{L}\p{M}]/u.test(ch) && !/[A-Za-z]/.test(ch);
+  return String(text).replace(termRe, (m, offset, str) => {
+    const before = str[offset - 1];
+    const after = str[offset + m.length];
+    return `${isOtherScriptLetter(before) ? ' ' : ''}${m}${isOtherScriptLetter(after) ? ' ' : ''}`;
+  });
 };
 
 /** Azure's HTML answer -> WhatsApp text. */
@@ -71,4 +104,4 @@ const isFaithful = (source, translated) => {
   return null;
 };
 
-module.exports = { protect, restore, isFaithful, placeholdersOf };
+module.exports = { protect, restore, padTerms, isFaithful, placeholdersOf };

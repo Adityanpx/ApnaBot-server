@@ -435,25 +435,42 @@ const BUILT_IN_MESSAGES = {
   chooseLanguageLine: 'Choose your language'
 };
 
-// Native-reviewed text for the languages SYSTEM_MESSAGES has no entry for. One generated file per
-// language (src/i18n/systemMessages.<lang>.js, written by scripts/importReviewedSystemMessages.js
-// from a reviewed CSV); no file or no key = English. Nothing unreviewed is ever loaded from here.
-const REVIEWED_MESSAGES = {};
-for (const lang of ['gu', 'kn', 'ta', 'te', 'ml', 'bn', 'pa', 'or']) {
-  try {
-    REVIEWED_MESSAGES[lang] = require(`../i18n/systemMessages.${lang}`);
-  } catch (error) {
-    if (error.code !== 'MODULE_NOT_FOUND' || !String(error.message).includes(`systemMessages.${lang}`)) throw error;
+// Translated text for the languages SYSTEM_MESSAGES has no entry for, from generated files in src/i18n
+// (scripts/importReviewedSystemMessages.js), two kinds per language:
+//   systemMessages.<lang>.js          native-reviewed (from a reviewed CSV)
+//   systemMessages.<lang>.machine.js  MACHINE-TRANSLATED (--source=machine); an interim fallback that a
+//                                     reviewed key always overrides, so what is still machine text is
+//                                     exactly what is in that file
+// Lookup is reviewed, then machine, then English. Hand-written text for these languages never goes in
+// SYSTEM_MESSAGES (hi / mr are the only ones that do).
+const REVIEW_LANGUAGE_CODES = ['gu', 'kn', 'ta', 'te', 'ml', 'bn', 'pa', 'or'];
+const loadLanguageFiles = (suffix) => {
+  const loaded = {};
+  for (const lang of REVIEW_LANGUAGE_CODES) {
+    const name = `systemMessages.${lang}${suffix}`;
+    try {
+      loaded[lang] = require(`../i18n/${name}`);
+    } catch (error) {
+      if (error.code !== 'MODULE_NOT_FOUND' || !String(error.message).includes(name)) throw error;
+    }
   }
-}
+  return loaded;
+};
+const REVIEWED_MESSAGES = loadLanguageFiles('');
+const MACHINE_MESSAGES = loadLanguageFiles('.machine');
 
 const usable = (text) => text !== undefined && text !== null && String(text).trim() !== '';
 
-/** The reviewed text for (key, language), or undefined (hi / mr / no file / no key). */
-const getReviewedMessage = (key, languageCode) => {
-  const text = languageCode && REVIEWED_MESSAGES[languageCode] ? REVIEWED_MESSAGES[languageCode][key] : undefined;
+const lookup = (table, key, languageCode) => {
+  const text = languageCode && table[languageCode] ? table[languageCode][key] : undefined;
   return usable(text) ? text : undefined;
 };
+
+/** The reviewed text for (key, language), or undefined (hi / mr / no file / no key). */
+const getReviewedMessage = (key, languageCode) => lookup(REVIEWED_MESSAGES, key, languageCode);
+
+/** The machine-translated text for (key, language), or undefined. Never preferred over a reviewed one. */
+const getMachineMessage = (key, languageCode) => lookup(MACHINE_MESSAGES, key, languageCode);
 
 /**
  * Look up a system-authored string by key, falling back to English when
@@ -466,10 +483,14 @@ const getSystemMessage = (key, languageCode, vars) => {
   const entry = SYSTEM_MESSAGES[key];
   if (!entry) return undefined;
   if (languageCode) {
-    const translated = usable(entry[languageCode]) ? entry[languageCode] : getReviewedMessage(key, languageCode);
+    const translated = usable(entry[languageCode])
+      ? entry[languageCode]
+      : getReviewedMessage(key, languageCode) || getMachineMessage(key, languageCode);
     if (usable(translated)) return fill(translated, vars);
   }
   return fill(entry.en, vars);
 };
 
-module.exports = { SYSTEM_MESSAGES, BUILT_IN_MESSAGES, REVIEWED_MESSAGES, getSystemMessage, getReviewedMessage };
+module.exports = {
+  SYSTEM_MESSAGES, BUILT_IN_MESSAGES, REVIEWED_MESSAGES, MACHINE_MESSAGES, getSystemMessage, getReviewedMessage, getMachineMessage
+};

@@ -105,8 +105,15 @@ cutover and the menu picker had always resolved empty in practice.
   free-text question, a stale / option-less tap on a choice question, and a catalogue or template-button tap
   mid-booking are re-asked with a hint ("type your answer" / "tap one of the options", both with "send *menu* to
   leave"; `bookingTapHintText` / `bookingTapHintChoice`) and never stored; the engine also rejects internal ids
-  (uuid, `{node}:{n}`, `cat:`, `lang_`, `optin_`) as typed answers. The 8 review languages fall back to English
-  for the hints until their reviewed files exist.
+  (uuid, `{node}:{n}`, `cat:`, `lang_`, `optin_`) as typed answers.
+- System messages for gu kn ta te ml bn pa or (`utils/systemMessages.js`): lookup is native-reviewed
+  (`src/i18n/systemMessages.<lang>.js`) -> **machine** (`src/i18n/systemMessages.<lang>.machine.js`, Azure
+  Translator, header "MACHINE-TRANSLATED", NOT native-reviewed, generated 2026-10-28 via
+  `exportSystemMessagesForReview.js --confirm` + `importReviewedSystemMessages.js --source=machine --confirm`)
+  -> English. `PROTECTED_TERMS` (ApnaBot, WhatsApp, UPI, OTP, Razorpay, menu, STOP, START) stay as typed; a
+  translation that loses a placeholder, bold span or protected term is dropped (7 messages, mostly payment
+  texts with a bold placeholder, still English). A later native review imports its CSV normally; reviewed keys
+  override machine ones. The followup default texts now pick up these machine translations too.
 - Verified via `src/scripts/verifyBookingGraph.js`. Rewritten 2026-09-07 to
   be fully generic — no hardcoded business id, vehicle id, route-fare id,
   or expected fare/value anywhere in the script, and no default business

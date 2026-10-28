@@ -13,7 +13,7 @@ const nameMapping = [
   { source: 'business.name', fallback: 'us' }
 ];
 
-test('enquiry_nudge: defaults filled in, default text + hi/mr translations copied', () => {
+test('enquiry_nudge: defaults filled in, default text + translations copied (hi/mr hand-written, 8 machine)', () => {
   const r = f.validateAutomation({ preset: 'enquiry_nudge', name: 'Nudge' });
   assert.ok(r.value, r.error);
   assert.equal(r.value.trigger_type, 'after_last_inbound');
@@ -25,7 +25,7 @@ test('enquiry_nudge: defaults filled in, default text + hi/mr translations copie
   assert.equal(r.value.send_end_minute, 1260);
   assert.deepEqual(r.value.trigger_params, { recentBookingDays: 7 });
   assert.match(r.value.message_text, /^Hi \{\{customerName\}\}, just checking in/);
-  assert.deepEqual(Object.keys(r.value.message_text_translations).sort(), ['hi', 'mr']);
+  assert.deepEqual(Object.keys(r.value.message_text_translations).sort(), ['bn', 'gu', 'hi', 'kn', 'ml', 'mr', 'or', 'pa', 'ta', 'te'], 'hi / mr hand-written, the other eight machine-translated');
   assert.equal(r.value.template_id, null);
 });
 

@@ -11,7 +11,7 @@ const supabase = require('../config/supabase');
 const logger = require('../utils/logger');
 const { istMonthKey } = require('../utils/ist');
 const { isValidLanguageCode } = require('../utils/languageCatalog');
-const { protect, restore, isFaithful } = require('../utils/translateProtect');
+const { protect, restore, padTerms, isFaithful } = require('../utils/translateProtect');
 const azure = require('./azureTranslate.service');
 const appConfig = require('./appConfig.service');
 const { TranslateError } = azure;
@@ -96,19 +96,22 @@ const getUsage = async (businessId) => {
  * @param {string[]} args.texts  English source texts (blank strings are returned as null)
  * @param {string[]} args.to     catalog codes, not 'en'
  * @param {'owner'|'flow'|'system'} args.scope
+ * @param {string[]} [args.protectTerms] whole words to leave untranslated. When set the shared cache is neither
+ *   read nor written: a cached translation was made without this protection, and this one must not leak into it.
  * @returns {Promise<{ translations: Object<string,(string|null)[]>, warnings: {index:number, language:string, reason:string}[],
  *   cacheHits: number, charged: number, usage: {used:number|null, cap:number}|null }>}
  *   translations[lang][i] aligns with texts[i]; null = not translated (blank, or dropped as unfaithful).
  * @throws {TranslateError} 429 cap, 503 not configured / unavailable
  */
-const translateTexts = async ({ businessId, texts, to, scope }) => {
+const translateTexts = async ({ businessId, texts, to, scope, protectTerms }) => {
+  const useCache = !(protectTerms && protectTerms.length);
   for (const code of to) {
     if (code === 'en' || !isValidLanguageCode(code)) throw new TranslateError(400, `Cannot translate into "${code}".`, 'TRANSLATE_BAD_LANGUAGE');
   }
 
   const unique = [...new Set(texts.filter((t) => typeof t === 'string' && t.trim() !== ''))];
   const hashOf = new Map(unique.map((t) => [t, sha256(t)]));
-  const cache = unique.length > 0 && to.length > 0 ? await readCache([...hashOf.values()], to) : new Map();
+  const cache = useCache && unique.length > 0 && to.length > 0 ? await readCache([...hashOf.values()], to) : new Map();
 
   // What Azure still has to translate, per language.
   const missing = new Map(to.map((lang) => [lang, unique.filter((t) => !cache.has(`${hashOf.get(t)}:${lang}`))]));
@@ -127,16 +130,16 @@ const translateTexts = async ({ businessId, texts, to, scope }) => {
     try {
       for (const [lang, list] of missing) {
         if (list.length === 0) continue;
-        const raw = await azure.translateHtml(list.map(protect), lang);
+        const raw = await azure.translateHtml(list.map((source) => protect(source, { terms: protectTerms })), lang);
         list.forEach((source, i) => {
-          const restored = raw[i] == null ? null : restore(raw[i]);
+          const restored = raw[i] == null ? null : padTerms(restore(raw[i]), protectTerms);
           const problem = restored == null ? 'No translation returned.' : isFaithful(source, restored);
           if (problem) {
             failures.set(`${lang}:${source}`, problem);
             return;
           }
           cache.set(`${hashOf.get(source)}:${lang}`, restored);
-          cacheRows.push({ source_hash: hashOf.get(source), target_lang: lang, translated_text: restored });
+          if (useCache) cacheRows.push({ source_hash: hashOf.get(source), target_lang: lang, translated_text: restored });
         });
         spent += charges.get(lang);
       }

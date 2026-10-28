@@ -16,6 +16,7 @@
 // Usage:
 //   node src/scripts/importReviewedSystemMessages.js docs/translations-review/system-messages-gu.csv
 //   node src/scripts/importReviewedSystemMessages.js docs/translations-review/system-messages-gu.csv --confirm
+//   node src/scripts/importReviewedSystemMessages.js docs/translations-review/system-messages-gu.csv --source=machine --confirm
 
 const fs = require('fs');
 const path = require('path');
@@ -23,6 +24,10 @@ const { SYSTEM_MESSAGES, BUILT_IN_MESSAGES } = require('../utils/systemMessages'
 const { REVIEW_LANGUAGES, parseCsv, validateReviewed, buildLangModule } = require('../utils/systemMessagesReview');
 
 const CONFIRM = process.argv.includes('--confirm');
+// --source=machine imports the machine_translation column into src/i18n/systemMessages.<lang>.machine.js
+// (an interim fallback a reviewed key always overrides); the default imports reviewed_translation.
+const SOURCE = process.argv.includes('--source=machine') ? 'machine' : 'reviewed';
+const SOURCE_COLUMN = SOURCE === 'machine' ? 'machine_translation' : 'reviewed_translation';
 const I18N_DIR = path.join(__dirname, '..', 'i18n');
 
 const englishByKey = () => ({
@@ -57,18 +62,18 @@ async function main() {
 
   const rows = parseCsv(fs.readFileSync(file, 'utf8'));
   const english = englishByKey();
-  const { accepted, rejected, warnings, skippedEmpty } = validateReviewed(rows, english);
+  const { accepted, rejected, warnings, skippedEmpty } = validateReviewed(rows, english, SOURCE_COLUMN);
 
-  const target = path.join(I18N_DIR, `systemMessages.${lang}.js`);
+  const target = path.join(I18N_DIR, SOURCE === 'machine' ? `systemMessages.${lang}.machine.js` : `systemMessages.${lang}.js`);
   let existing = {};
   if (fs.existsSync(target)) existing = require(target);
   const { merged, added, changed, unchanged } = mergeMessages(existing, accepted);
 
-  console.log(`${lang}: ${rows.length} rows - ${Object.keys(accepted).length} reviewed and valid, ${skippedEmpty} empty (skipped), ${rejected.length} rejected.`);
+  console.log(`${lang}: ${rows.length} rows - ${Object.keys(accepted).length} ${SOURCE} and valid, ${skippedEmpty} empty (skipped), ${rejected.length} rejected.`);
   for (const r of rejected) console.log(`  REJECTED ${r.key}: ${r.reason}`);
   for (const w of warnings) console.log(`  warning  ${w.key}: ${w.reason}`);
   console.log(`File ${path.relative(process.cwd(), target)}: ${added.length} added, ${changed.length} changed, ${unchanged.length} unchanged, ${Object.keys(existing).length - changed.length - unchanged.length} kept from the existing file.`);
-  console.log(`Messages with no reviewed text (English fallback): ${Object.keys(english).length - Object.keys(merged).length}`);
+  console.log(`Messages with no ${SOURCE} text in this file: ${Object.keys(english).length - Object.keys(merged).length}`);
 
   if (rejected.length) console.log('Fix the rejected rows in the CSV and re-run to include them.');
   if (!CONFIRM) {
@@ -76,11 +81,11 @@ async function main() {
     return;
   }
   if (Object.keys(accepted).length === 0) {
-    console.log('Nothing reviewed to write.');
+    console.log(`Nothing ${SOURCE} to write.`);
     return;
   }
   fs.mkdirSync(I18N_DIR, { recursive: true });
-  fs.writeFileSync(target, buildLangModule(lang, merged, Object.keys(english)));
+  fs.writeFileSync(target, buildLangModule(lang, merged, Object.keys(english), SOURCE));
   console.log('Written.');
 }
 

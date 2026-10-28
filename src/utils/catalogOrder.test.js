@@ -40,7 +40,7 @@ test('labels: English for the owner, the customer language for the confirmation,
   assert.equal(prefillLabel('catalogCollection', null), 'Collection');
   assert.equal(prefillLabel('catalogDesignNo', 'en'), 'Design no');
   assert.notEqual(prefillLabel('catalogPrice', 'hi'), 'Price');
-  assert.equal(prefillLabel('catalogPrice', 'gu'), 'Price');
+  assert.equal(prefillLabel('catalogPrice', 'zz'), 'Price'); // a language with no text at all: English
   for (const key of Object.keys(PREFILL_KEYS)) assert.equal(isPrefillKey(key), true);
   assert.equal(isPrefillKey('vehicleId'), false);
 });

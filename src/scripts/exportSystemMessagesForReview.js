@@ -5,13 +5,16 @@
 // gu kn ta te ml bn pa or. One file per language:
 //   docs/translations-review/system-messages-<lang>.csv
 //   columns: key, english, machine_translation, reviewed_translation (empty), notes
-// The machine translation is a starting point for the reviewer only; nothing here reaches a
-// customer. Only the reviewed_translation column is ever imported
-// (scripts/importReviewedSystemMessages.js).
+// The machine translation is a starting point for the reviewer. By default only the
+// reviewed_translation column is imported (scripts/importReviewedSystemMessages.js); with
+// --source=machine the machine column becomes src/i18n/systemMessages.<lang>.machine.js, an interim
+// fallback that any reviewed key overrides.
 //
 // Translation goes through services/translation.service.js with scope 'system' (placeholders and
-// *bold* protected as in the translate endpoint; cached pairs are free; only the GLOBAL monthly
-// Azure counter moves, no business is charged).
+// *bold* protected as in the translate endpoint, plus PROTECTED_TERMS: ApnaBot, WhatsApp, menu, STOP...
+// stay as typed; the shared cache is bypassed; only the GLOBAL monthly Azure counter moves, no
+// business is charged). A rate limit is retried up to 5 times with a growing wait; each language's
+// CSV is written before the next language starts.
 //
 // Dry-run by default: prints how many messages and characters it would send to Azure and writes
 // nothing. Pass --confirm to translate and write the CSVs. Optional: --lang=gu,ta to limit it.
@@ -26,7 +29,12 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { SYSTEM_MESSAGES, BUILT_IN_MESSAGES } = require('../utils/systemMessages');
-const { REVIEW_LANGUAGES, buildCsv, exportNotes } = require('../utils/systemMessagesReview');
+const { REVIEW_LANGUAGES, PROTECTED_TERMS, buildCsv, exportNotes, checkProtectedTerms } = require('../utils/systemMessagesReview');
+
+// Azure's rate limit comes back from azureTranslate.service as a 503 (TRANSLATE_UNAVAILABLE): wait and retry.
+const MAX_ATTEMPTS = 5;
+const RETRY_WAIT_MS = [20000, 40000, 60000, 90000];
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const CONFIRM = process.argv.includes('--confirm');
 const OUT_DIR = path.join(__dirname, '..', '..', 'docs', 'translations-review');
@@ -71,8 +79,27 @@ async function main() {
   fs.mkdirSync(OUT_DIR, { recursive: true });
   const texts = entries.map((e) => e.english);
   for (const lang of langs) {
-    const { translations, warnings, charged, cacheHits } = await translateTexts({ businessId: null, texts, to: [lang], scope: 'system' });
+    let result;
+    for (let attempt = 1; ; attempt += 1) {
+      try {
+        // protectTerms: keywords stay as typed, and the shared cache is bypassed (see translateTexts).
+        result = await translateTexts({ businessId: null, texts, to: [lang], scope: 'system', protectTerms: PROTECTED_TERMS });
+        break;
+      } catch (error) {
+        if (error.code !== 'TRANSLATE_UNAVAILABLE' || attempt >= MAX_ATTEMPTS) throw error;
+        const wait = RETRY_WAIT_MS[attempt - 1];
+        console.log(`  ${lang}: Azure unavailable or rate limited (attempt ${attempt}/${MAX_ATTEMPTS}), waiting ${wait / 1000}s`);
+        await sleep(wait);
+      }
+    }
+    const { translations, warnings, charged, cacheHits } = result;
     const problems = new Map(warnings.filter((w) => w.language === lang).map((w) => [w.index, w.reason]));
+    // A protected word that Azure translated anyway is dropped (English fallback), never shipped.
+    translations[lang] = translations[lang].map((text, i) => {
+      const termProblem = text ? checkProtectedTerms(entries[i].english, text) : null;
+      if (termProblem) problems.set(i, termProblem);
+      return termProblem ? null : text;
+    });
     const file = path.join(OUT_DIR, `system-messages-${lang}.csv`);
     fs.writeFileSync(file, '﻿' + buildCsv(buildRows(entries, translations[lang], problems))); // BOM so Excel reads UTF-8
     console.log(`  ${lang}: ${entries.length - problems.size}/${entries.length} machine-translated (${charged} chars charged, ${cacheHits} cache hits) -> ${path.relative(process.cwd(), file)}`);

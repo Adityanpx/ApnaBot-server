@@ -133,6 +133,17 @@ test('a repeat is served from the global cache: no Azure call, nothing charged',
   assert.equal(azureCalls.length, 1);
 });
 
+test('protectTerms: the words stay as typed on the way out, and the shared cache is neither read nor written', async () => {
+  db.translation_cache.push({ source_hash: translation.sha256('Send *menu* or STOP'), target_lang: 'hi', translated_text: 'STALE unprotected' });
+  const result = await translation.translateTexts({ businessId: null, texts: ['Send *menu* or STOP'], to: ['hi'], scope: 'system', protectTerms: ['menu', 'STOP'] });
+  assert.equal(azureCalls.length, 1, 'the cached pair was ignored');
+  assert.equal(azureCalls[0].texts[0], 'Send <span class="notranslate">*menu*</span> or <span class="notranslate">STOP</span>');
+  assert.equal(result.translations.hi[0], '[hi] Send *menu* or STOP');
+  assert.equal(result.cacheHits, 0);
+  assert.equal(db.translation_cache.length, 1, 'nothing written to the shared cache');
+  assert.equal(db.translation_cache[0].translated_text, 'STALE unprotected');
+});
+
 test('only the languages missing from the cache are sent', async () => {
   await translation.translateTexts({ businessId: BIZ, texts: ['Open today'], to: ['hi'], scope: 'owner' });
   azureCalls = [];

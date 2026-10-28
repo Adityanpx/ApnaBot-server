@@ -26,7 +26,7 @@ test('withTapHint: the hint sits above the question, in the customer\'s language
   assert.equal(withTapHint('Any property ID?', 'en'), 'Please type your answer. Send *menu* to leave this booking.\n\nAny property ID?');
   assert.match(withTapHint('Q', 'hi'), /^कृपया अपना उत्तर टाइप करें।.*\*menu\*/);
   assert.match(withTapHint('Q', 'mr'), /\*menu\*/);
-  assert.match(withTapHint('Q', 'ta'), /^Please type your answer/);
+  assert.match(withTapHint('Q', 'zz'), /^Please type your answer/);
   assert.match(withTapHint('Q', null), /^Please type your answer/);
   assert.equal(withTapHint('', 'en'), 'Please type your answer. Send *menu* to leave this booking.');
   assert.equal(withTapHint('Q', 'en', 'location_request'), withTapHint('Q', 'en', 'text'));
@@ -38,6 +38,6 @@ test('withTapHint: a choice question gets the tap-an-option hint, in the custome
   }
   assert.match(withTapHint('Q', 'hi', 'list'), /^कृपया नीचे दिए गए विकल्पों में से एक चुनें।.*\*menu\*/);
   assert.match(withTapHint('Q', 'mr', 'buttons'), /^कृपया खालील पर्यायांपैकी एक निवडा\..*\*menu\*/);
-  assert.match(withTapHint('Q', 'ta', 'buttons'), /^Please tap one of the options below/);
+  assert.match(withTapHint('Q', 'zz', 'buttons'), /^Please tap one of the options below/);
   assert.equal(withTapHint('', 'en', 'list'), 'Please tap one of the options below. Send *menu* to leave this booking.');
 });
