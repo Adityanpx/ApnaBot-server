@@ -18,6 +18,7 @@ const logger = require('../utils/logger');
 const { getBroadcastStats } = require('../services/broadcastProgress.service');
 const { withRecipientFailure } = require('../utils/whatsappErrors');
 const { BATCH_SIZE, chunk, createRecipientRows, removeRecipientRows } = require('../services/broadcastDispatch.service');
+const { PLAN_BROADCAST_LIMIT, getBroadcastCap, overCapRefusal } = require('../services/broadcastCap.service');
 
 const countTemplateVariables = (bodyText) => {
   const matches = (bodyText || '').match(/\{\{\s*\d+\s*\}\}/g) || [];
@@ -233,8 +234,11 @@ const sendBroadcast = async (req, res, next) => {
     // messaging tier (250/1K/10K/100K recipients per 24h based on quality
     // rating), which Meta enforces independently. This is just a guardrail
     // against a single broadcast running away; adjust via MAX_BROADCAST_RECIPIENTS.
-    if (customers.length > config.MAX_BROADCAST_RECIPIENTS) {
-      return errorResponse(res, 400, `This broadcast has ${customers.length} eligible recipients, which exceeds the current limit of ${config.MAX_BROADCAST_RECIPIENTS}. Contact support to send larger broadcasts.`);
+    // The plan's broadcast_recipient_limit can lower it (broadcastCap.service.js).
+    const refusal = overCapRefusal(customers.length, await getBroadcastCap(businessId));
+    if (refusal) {
+      return errorResponse(res, refusal.status, refusal.message,
+        refusal.code === PLAN_BROADCAST_LIMIT ? { code: refusal.code, limit: refusal.limit, plan: refusal.plan } : null);
     }
 
     // India-only for now — the rate_cards table only has IN rows today;
@@ -516,7 +520,8 @@ const getAudienceCount = async (req, res, next) => {
  * Body: { audienceFilter?, audienceParams?, templateId? } → { selected, willReceive,
  * skipped: { no_number, blocked, opted_out, marketing_stopped, not_opted_in }, overCap, cap }.
  * selected = who the audience picks; willReceive = those a send reaches;
- * overCap = willReceive is above MAX_BROADCAST_RECIPIENTS (a send would be refused).
+ * overCap = willReceive is above cap, the smaller of the plan's broadcast_recipient_limit and
+ * MAX_BROADCAST_RECIPIENTS (a send would be refused).
  * templateId as for audience-count: a UTILITY template never skips for not_opted_in
  * or marketing_stopped.
  */
@@ -527,7 +532,7 @@ const getAudienceSummary = async (req, res, next) => {
     if (audience.error) return errorResponse(res, 400, audience.error);
     const category = await templateCategory(req.user.businessId, templateId);
     const summary = await audienceSummary(req.user.businessId, audience.filter, audience.params, { category });
-    const cap = config.MAX_BROADCAST_RECIPIENTS;
+    const { cap } = await getBroadcastCap(req.user.businessId);
     return successResponse(res, 200, { ...summary, overCap: summary.willReceive > cap, cap });
   } catch (error) {
     logger.error('Error in getAudienceSummary:', error);

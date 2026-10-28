@@ -722,7 +722,7 @@ const createPlan = async (req, res, next) => {
       name, displayName, price, msgLimit, ruleLimit,
       customerLimit, bookingEnabled, paymentLinkEnabled,
       staffEnabled, maxStaff, durationOptions, imagesPerReply, videoPerReply, carouselMaxCards,
-      isActive, isPopular, features, sortOrder, storageLimitMb
+      isActive, isPopular, features, sortOrder, storageLimitMb, broadcastRecipientLimit
     } = req.body;
 
     if (!name || !displayName || price === undefined) {
@@ -734,7 +734,7 @@ const createPlan = async (req, res, next) => {
     }
     const replyMediaError = validateReplyMediaPlanFields({ imagesPerReply, videoPerReply, carouselMaxCards });
     if (replyMediaError) return errorResponse(res, 400, replyMediaError);
-    const extrasError = validatePlanExtras({ features, isPopular, sortOrder, storageLimitMb });
+    const extrasError = validatePlanExtras({ features, isPopular, sortOrder, storageLimitMb, broadcastRecipientLimit });
     if (extrasError) return errorResponse(res, 400, extrasError);
     if (durationOptions !== undefined) {
       const durationError = validateDurationOptions(durationOptions, price);
@@ -757,6 +757,7 @@ const createPlan = async (req, res, next) => {
       images_per_reply: imagesPerReply ?? 1,
       video_per_reply: videoPerReply ?? false,
       carousel_max_cards: carouselMaxCards ?? 3,
+      broadcast_recipient_limit: broadcastRecipientLimit ?? 100,
       is_active: isActive ?? true,
       is_popular: isPopular ?? false,
       features: features ? cleanFeatures(features) : [],
@@ -792,7 +793,7 @@ const updatePlan = async (req, res, next) => {
       'displayName', 'price', 'msgLimit', 'ruleLimit', 'customerLimit',
       'bookingEnabled', 'paymentLinkEnabled', 'staffEnabled', 'maxStaff', 'isActive',
       'durationOptions', 'imagesPerReply', 'videoPerReply', 'carouselMaxCards',
-      'isPopular', 'features', 'sortOrder', 'storageLimitMb'
+      'isPopular', 'features', 'sortOrder', 'storageLimitMb', 'broadcastRecipientLimit'
     ];
     const fieldMap = {
       displayName: 'display_name', msgLimit: 'msg_limit', ruleLimit: 'rule_limit',
@@ -800,7 +801,8 @@ const updatePlan = async (req, res, next) => {
       paymentLinkEnabled: 'payment_link_enabled', staffEnabled: 'staff_enabled',
       maxStaff: 'max_staff', isActive: 'is_active', price: 'price',
       durationOptions: 'duration_options', imagesPerReply: 'images_per_reply', videoPerReply: 'video_per_reply', carouselMaxCards: 'carousel_max_cards',
-      isPopular: 'is_popular', features: 'features', sortOrder: 'sort_order', storageLimitMb: 'storage_limit_mb'
+      isPopular: 'is_popular', features: 'features', sortOrder: 'sort_order', storageLimitMb: 'storage_limit_mb',
+      broadcastRecipientLimit: 'broadcast_recipient_limit'
     };
 
     const replyMediaError = validateReplyMediaPlanFields(req.body);

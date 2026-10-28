@@ -443,3 +443,33 @@ test('send with wallet billing on debits recipients x the marketing rate and tel
   assert.deepEqual([queued[0].billed, queued[0].ratePerMessage], [true, 80]);
   assert.deepEqual(out.data.cost, { category: 'marketing', ratePerMessagePaise: 80, estimatedPaise: 240, walletBilling: true });
 });
+
+test('plan broadcast_recipient_limit: preview and send are held to min(plan, env); no subscription = env cap only', async () => {
+  approve(2, ['en']);
+  db.customers = [customer(1), customer(2), customer(3)];
+  const withPlanLimit = (limit) => {
+    db.subscriptions = [{ id: 's1', business_id: B, status: 'active', end_date: '2027-01-01T00:00:00Z', created_at: '2026-10-01T00:00:00Z',
+      plan: { name: 'basic', display_name: 'Basic', broadcast_recipient_limit: limit } }];
+  };
+
+  withPlanLimit(2);
+  const p = await preview({ collectionIds: C.slice(0, 2) });
+  assert.deepEqual([p.data.audience.overCap, p.data.audience.cap], [true, 2]);
+  assert.deepEqual(p.data.errors.map((e) => [e.code, e.message]), [['PLAN_BROADCAST_LIMIT', 'This plan sends a broadcast to up to 2 customers. Upgrade for more.']]);
+  assert.deepEqual([p.data.canPrepare, p.data.canSend], [false, false]);
+
+  const out = await send({ collectionIds: C.slice(0, 2) });
+  assert.deepEqual([out.status, out.errors.code, out.errors.limit, out.errors.plan], [403, 'PLAN_BROADCAST_LIMIT', 2, 'Basic']);
+  assert.equal(out.message, 'This plan sends a broadcast to up to 2 customers. Upgrade for more.');
+  assert.equal(db.broadcasts.length, 0);
+  assert.equal(queued.length, 0);
+
+  withPlanLimit(3);
+  assert.equal((await preview({ collectionIds: C.slice(0, 2) })).data.audience.overCap, false);
+  assert.equal((await send({ collectionIds: C.slice(0, 2) })).status, 201);
+
+  withPlanLimit(-1);
+  assert.equal((await preview({ collectionIds: C.slice(0, 2) })).data.audience.cap, 1000, 'unlimited = the env cap');
+  db.subscriptions = [];
+  assert.equal((await preview({ collectionIds: C.slice(0, 2) })).data.audience.cap, 1000, 'no subscription = the env cap');
+});

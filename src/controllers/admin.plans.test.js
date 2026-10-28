@@ -124,3 +124,24 @@ test('carouselMaxCards: create defaults to 3, update accepts 2..10, anything els
   }
   assert.equal(row('basic').carousel_max_cards, 5);
 });
+
+test('broadcastRecipientLimit: create defaults to 100, accepts N >= 1 or -1; update likewise; anything else is a 400 that writes nothing', async () => {
+  await call(admin.createPlan, { body: base });
+  assert.equal(row('gold').broadcast_recipient_limit, 100);
+  const unlimited = await call(admin.createPlan, { body: { ...base, name: 'plat', displayName: 'Plat', broadcastRecipientLimit: -1 } });
+  assert.equal(unlimited.status, 201);
+  assert.equal(row('plat').broadcast_recipient_limit, -1);
+  assert.equal(unlimited.body.data.broadcastRecipientLimit, -1);
+
+  const ok = await call(admin.updatePlan, { params: { id: 'p-basic' }, body: { broadcastRecipientLimit: 250 } });
+  assert.equal(ok.status, 200);
+  assert.equal(row('basic').broadcast_recipient_limit, 250);
+  for (const bad of [0, -2, 1.5, '100', null]) {
+    const out = await call(admin.updatePlan, { params: { id: 'p-basic' }, body: { broadcastRecipientLimit: bad } });
+    assert.equal(out.status, 400, String(bad));
+    assert.match(out.body.message, /broadcastRecipientLimit must be a whole number from 1, or -1 for unlimited/);
+  }
+  assert.equal((await call(admin.createPlan, { body: { ...base, name: 'bad', broadcastRecipientLimit: 0 } })).status, 400);
+  assert.equal(row('bad'), undefined);
+  assert.equal(row('basic').broadcast_recipient_limit, 250);
+});

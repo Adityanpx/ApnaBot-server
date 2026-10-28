@@ -9,15 +9,12 @@ const { successResponse, errorResponse } = require('../utils/response');
 const config = require('../config/env');
 const logger = require('../utils/logger');
 const { toCamelCase } = require('../utils/caseConvert');
-const { comparePlans } = require('../utils/planFields');
+const { comparePlans, toPublicPlan } = require('../utils/planFields');
 
 const razorpay = new Razorpay({
   key_id: config.RAZORPAY_KEY_ID,
   key_secret: config.RAZORPAY_KEY_SECRET
 });
-
-// Public plans response: everything a client renders, minus internal Razorpay ids.
-const toPublicPlan = ({ razorpay_plan_id, razorpay_plan_ids, ...plan }) => toCamelCase(plan);
 
 // Same wording on every path that refuses a downgrade while a higher paid plan runs.
 const downgradeBlockedMessage = (higherSub, plan) => {

@@ -1510,8 +1510,29 @@ Goal: a plan created or edited in Super Admin shows up in the web app and Flutte
 - **Script:** `src/scripts/recomputePlanDurationOptions.js` (dry run; `--confirm` writes) recomputes
   `duration_options` for every plan from price + stored discounts and prints a before/after diff per tier. It
   never writes `price`, and its update is guarded on the price it read.
+- **Plan limits clean-up (2026-10-28, migration `20261031120000_plans_broadcast_recipient_limit.sql`,
+  uncommitted until the commit below).**
+  - **Public `GET /api/subscription/plans` is now a whitelist** (`toPublicPlan` in `utils/planFields.js`):
+    `id, name, displayName, price, durationOptions, isPopular, features, sortOrder, msgLimit, imagesPerReply,
+    videoPerReply, carouselMaxCards, storageLimitMb, staffEnabled, maxStaff, bookingEnabled,
+    broadcastRecipientLimit`. `ruleLimit`, `customerLimit` and `paymentLinkEnabled` are no longer advertised
+    (columns kept, nothing lost; the authenticated `GET /api/subscription` still returns the whole plan).
+  - **Payments are not gated.** The Razorpay/UPI payment-link create endpoints no longer exist; `payment_trigger`
+    only sends text; the QR / UPI ID features are the owner's own. `payment_link_enabled` stays in the DB and
+    `requireFeature('paymentLink')` still has no caller.
+  - **`plans.broadcast_recipient_limit`** (int, `-1` = unlimited; basic 100, pro 500, business -1, column
+    default 100, check `-1` or `>= 1`). `services/broadcastCap.service.js`: effective cap = min(plan limit,
+    `MAX_BROADCAST_RECIPIENTS`); `-1`, no active/trial subscription, or a failed subscription read = env cap
+    only. Used by `sendBroadcast`, `getAudienceSummary` (`cap` / `overCap`), catalogue broadcast preview
+    (`audience.cap`, error `PLAN_BROADCAST_LIMIT`) and send. A plan-set cap refuses with **403
+    `PLAN_BROADCAST_LIMIT`** (`errors {code, limit, plan}`, "This plan sends a broadcast to up to N customers.
+    Upgrade for more."); the env cap keeps the old 400 `TOO_MANY_RECIPIENTS`. Admin create/update accept
+    `broadcastRecipientLimit` (integer >= 1 or -1; create default 100).
+  - **Deploy: apply the migration first, then the server.** Not a webhook/booking change. Basic accounts are
+    held to 100 recipients per broadcast from deploy (SG Travels has 47 customers); Search cab AI has no
+    subscription today, so it keeps the env cap until it is given one.
 - **Still needs code for a new plan:** a brand-new kind of feature flag (`requireFeature` only knows
-  `paymentLink` / `staff` / `booking`). `rule_limit` and `customer_limit` are stored and shown but never
+  `paymentLink` / `staff` / `booking`). `rule_limit` and `customer_limit` are stored but never
   enforced. Revenue reports sum `plans.price` (monthly) whatever duration was bought, and no amount paid is
   stored on `subscriptions`. `deletePlan` counts only `active` subscriptions (not trial / past_due).
 - **Deploy: apply the migration first, then the server** (the new code selects/writes the new columns). Not a

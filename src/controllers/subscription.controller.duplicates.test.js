@@ -133,6 +133,32 @@ test('GET /subscription/plans: active only, ordered by sortOrder then price, dis
   }
 });
 
+test('GET /subscription/plans: exactly the whitelisted card fields - no rule / customer limits, payment-link flag, internal or Razorpay columns', async () => {
+  fake = createFakeSupabase({ plans: [{
+    id: 'p1', name: 'pro', display_name: 'Pro', price: 399, is_active: true, is_popular: true, features: ['f'], sort_order: 1,
+    duration_options: [{ months: 1, price: 399 }], razorpay_plan_id: 'plan_old', razorpay_plan_ids: { 'live:399': 'plan_x' },
+    msg_limit: 2000, rule_limit: 50, customer_limit: 500, storage_limit_mb: 300, images_per_reply: 3, video_per_reply: false,
+    carousel_max_cards: 10, payment_link_enabled: true, staff_enabled: true, max_staff: 2, booking_enabled: true,
+    broadcast_recipient_limit: 500, created_at: '2026-01-01T00:00:00Z'
+  }] });
+  const [plan] = (await call(ctrl.getPlans)).body.data.plans;
+  assert.deepEqual(Object.keys(plan).sort(), [
+    'bookingEnabled', 'broadcastRecipientLimit', 'carouselMaxCards', 'displayName', 'durationOptions', 'features', 'id', 'imagesPerReply',
+    'isPopular', 'maxStaff', 'msgLimit', 'name', 'price', 'sortOrder', 'staffEnabled', 'storageLimitMb', 'videoPerReply'
+  ]);
+  assert.equal(plan.broadcastRecipientLimit, 500);
+  assert.equal(plan.msgLimit, 2000);
+});
+
+test('the authenticated GET /subscription still carries the full plan, rule and customer limits included', async () => {
+  fake = createFakeSupabase({
+    plans: [{ id: 'p1', name: 'pro', display_name: 'Pro', price: 399, is_active: true, rule_limit: 50, customer_limit: 500, payment_link_enabled: true }],
+    subscriptions: [{ id: 's1', business_id: 'b1', plan_id: 'p1', status: 'active', end_date: futureIso(10), created_at: '2026-10-01T00:00:00Z' }]
+  });
+  const mine = await call(ctrl.getCurrentSubscription);
+  assert.deepEqual([mine.body.data.plan.ruleLimit, mine.body.data.plan.customerLimit, mine.body.data.plan.paymentLinkEnabled], [50, 500, true]);
+});
+
 test('an inactive plan is hidden from the public list but still resolves for its existing subscriber', async () => {
   fake = createFakeSupabase({
     plans: [{ id: 'old', name: 'old', display_name: 'Old', price: 99, is_active: false, duration_options: [{ months: 1, price: 99 }] }],

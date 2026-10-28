@@ -24,6 +24,7 @@ const { uploadHeaderHandle } = require('./templateSubmit.service');
 const { planOf } = require('./catalog.service');
 const { listCollections } = require('./catalogCollection.service');
 const { BATCH_SIZE, chunk, createRecipientRows, removeRecipientRows } = require('./broadcastDispatch.service');
+const { PLAN_BROADCAST_LIMIT, getBroadcastCap, overCapRefusal, planLimitMessage } = require('./broadcastCap.service');
 const {
   normalizeAudience, resolveAudience, audienceSummary, businessGroupIds, businessCustomerIds
 } = require('./broadcastAudience.service');
@@ -300,9 +301,14 @@ const previewCatalogBroadcast = async (businessId, body) => {
   const errors = selectionErrors(selection, settings);
   const customers = await resolveAudience(businessId, audience.filter, audience.params, { category: MARKETING });
   const summary = await audienceSummary(businessId, audience.filter, audience.params, { category: MARKETING });
-  const cap = config.MAX_BROADCAST_RECIPIENTS;
+  const capInfo = await getBroadcastCap(businessId);
+  const { cap } = capInfo;
   if (customers.length === 0) errors.push({ code: 'NO_RECIPIENTS', message: 'Nobody in this audience can receive a marketing message (not opted in, opted out, blocked, or no valid number).' });
-  if (customers.length > cap) errors.push({ code: 'TOO_MANY_RECIPIENTS', message: `This audience has ${customers.length} eligible recipients, above the limit of ${cap}.` });
+  if (customers.length > cap) {
+    errors.push(capInfo.planLimited
+      ? { code: PLAN_BROADCAST_LIMIT, message: planLimitMessage(cap) }
+      : { code: 'TOO_MANY_RECIPIENTS', message: `This audience has ${customers.length} eligible recipients, above the limit of ${cap}.` });
+  }
 
   const cardCount = selection.cards.length;
   const buttonCount = settings.orderAction ? 2 : 1;
@@ -364,8 +370,9 @@ const sendCatalogBroadcast = async (businessId, body) => {
   if (customers.length === 0) {
     return reply(400, 'Nobody in this audience can receive a marketing message (not opted in, opted out, blocked, or no valid number).', undefined, { code: 'NO_RECIPIENTS' });
   }
-  if (customers.length > config.MAX_BROADCAST_RECIPIENTS) {
-    return reply(400, `This broadcast has ${customers.length} eligible recipients, which exceeds the current limit of ${config.MAX_BROADCAST_RECIPIENTS}. Contact support to send larger broadcasts.`, undefined, { code: 'TOO_MANY_RECIPIENTS' });
+  const refusal = overCapRefusal(customers.length, await getBroadcastCap(businessId));
+  if (refusal) {
+    return reply(refusal.status, refusal.message, undefined, { code: refusal.code, ...(refusal.code === PLAN_BROADCAST_LIMIT ? { limit: refusal.limit, plan: refusal.plan } : {}) });
   }
 
   const cards = selection.cards;

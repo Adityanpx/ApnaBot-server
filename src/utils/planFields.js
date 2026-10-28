@@ -63,8 +63,8 @@ const buildDurationOptions = (price, existingOptions = []) => {
   return [{ months: 1, price, label: 'Monthly', discount: 0 }, ...tiers];
 };
 
-/** Validates features / isPopular / sortOrder / storageLimitMb. Returns an error message or null. */
-const validatePlanExtras = ({ features, isPopular, sortOrder, storageLimitMb }) => {
+/** Validates features / isPopular / sortOrder / storageLimitMb / broadcastRecipientLimit. Returns an error message or null. */
+const validatePlanExtras = ({ features, isPopular, sortOrder, storageLimitMb, broadcastRecipientLimit }) => {
   if (features !== undefined) {
     if (!Array.isArray(features) || features.length > MAX_FEATURES ||
         !features.every(f => typeof f === 'string' && f.trim().length > 0 && f.length <= MAX_FEATURE_LENGTH)) {
@@ -76,8 +76,37 @@ const validatePlanExtras = ({ features, isPopular, sortOrder, storageLimitMb }) 
   if (storageLimitMb !== undefined && (!Number.isInteger(storageLimitMb) || storageLimitMb < 0)) {
     return 'storageLimitMb must be a non-negative integer';
   }
+  if (broadcastRecipientLimit !== undefined &&
+      (!Number.isInteger(broadcastRecipientLimit) || (broadcastRecipientLimit < 1 && broadcastRecipientLimit !== -1))) {
+    return 'broadcastRecipientLimit must be a whole number from 1, or -1 for unlimited';
+  }
   return null;
 };
+
+/**
+ * Public plans API shape (GET /api/subscription/plans): what the plan cards render and the purchase
+ * flow needs. Whitelist, so a new plans column never leaks. Rule / customer limits and the payment-link
+ * flag stay in the DB but are not advertised. Input is a plans row (snake_case); output is camelCase.
+ */
+const toPublicPlan = (p) => ({
+  id: p.id,
+  name: p.name,
+  displayName: p.display_name,
+  price: p.price,
+  durationOptions: p.duration_options,
+  isPopular: p.is_popular,
+  features: p.features,
+  sortOrder: p.sort_order,
+  msgLimit: p.msg_limit,
+  imagesPerReply: p.images_per_reply,
+  videoPerReply: p.video_per_reply,
+  carouselMaxCards: p.carousel_max_cards,
+  storageLimitMb: p.storage_limit_mb,
+  staffEnabled: p.staff_enabled,
+  maxStaff: p.max_staff,
+  bookingEnabled: p.booking_enabled,
+  broadcastRecipientLimit: p.broadcast_recipient_limit
+});
 
 const cleanFeatures = (features) => features.map(f => f.trim());
 
@@ -92,6 +121,7 @@ module.exports = {
   validateDurationOptions,
   buildDurationOptions,
   validatePlanExtras,
+  toPublicPlan,
   cleanFeatures,
   comparePlans
 };
