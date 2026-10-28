@@ -406,11 +406,17 @@ const SYSTEM_MESSAGES = {
   },
 
   // Prepended to the current booking question when the customer taps an old button / list row instead
-  // of answering it (utils/bookingTapGuard.js). The escape word stays the English "menu" on purpose.
-  bookingTapHint: {
+  // of answering it (utils/bookingTapGuard.js): the first for a typed question, the second for a
+  // choice question. The escape word stays the English "menu" on purpose.
+  bookingTapHintText: {
     en: 'Please type your answer. Send *menu* to leave this booking.',
     hi: 'कृपया अपना उत्तर टाइप करें। इस बुकिंग से बाहर निकलने के लिए *menu* भेजें।',
     mr: 'कृपया तुमचे उत्तर टाइप करा. ही बुकिंग सोडण्यासाठी *menu* पाठवा.'
+  },
+  bookingTapHintChoice: {
+    en: 'Please tap one of the options below. Send *menu* to leave this booking.',
+    hi: 'कृपया नीचे दिए गए विकल्पों में से एक चुनें। इस बुकिंग से बाहर निकलने के लिए *menu* भेजें।',
+    mr: 'कृपया खालील पर्यायांपैकी एक निवडा. ही बुकिंग सोडण्यासाठी *menu* पाठवा.'
   },
 
   // Opens a list message (button on the message). Max 20 characters (WhatsApp).

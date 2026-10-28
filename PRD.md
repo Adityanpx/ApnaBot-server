@@ -101,6 +101,12 @@ cutover and the menu picker had always resolved empty in practice.
 - WhatsApp interaction ids: `flow_edges.id` for reply-node buttons/lists,
   `"{node_id}:{index}"` / `"{node_id}:other"` for question-node and
   computed-node (vehicle_carousel/rentalPackage) options
+- Booking tap guard (`utils/bookingTapGuard.js`, webhook Step 12 + `flowGraphPreview.controller.js`): a tap on a
+  free-text question, a stale / option-less tap on a choice question, and a catalogue or template-button tap
+  mid-booking are re-asked with a hint ("type your answer" / "tap one of the options", both with "send *menu* to
+  leave"; `bookingTapHintText` / `bookingTapHintChoice`) and never stored; the engine also rejects internal ids
+  (uuid, `{node}:{n}`, `cat:`, `lang_`, `optin_`) as typed answers. The 8 review languages fall back to English
+  for the hints until their reviewed files exist.
 - Verified via `src/scripts/verifyBookingGraph.js`. Rewritten 2026-09-07 to
   be fully generic — no hardcoded business id, vehicle id, route-fare id,
   or expected fare/value anywhere in the script, and no default business

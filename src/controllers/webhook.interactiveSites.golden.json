@@ -37,14 +37,14 @@
   ],
   "booking question as a list": [
     {
-      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Please type your answer. Send *menu* to leave this booking.\\n\\nWhich car?\",\"type\":\"text\",\"messageId\":\"messages-2\",\"step\":\"q9\",\"interactiveList\":[\"Swift\",\"Innova\"],\"listButtonLabel\":\"Choose\"}",
-      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"list\",\"body\":{\"text\":\"Please type your answer. Send *menu* to leave this booking.\\n\\nWhich car?\"},\"action\":{\"button\":\"Choose\",\"sections\":[{\"rows\":[{\"id\":\"q9:0\",\"title\":\"Swift\"},{\"id\":\"q9:1\",\"title\":\"Innova\"}]}]}}}"
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Please tap one of the options below. Send *menu* to leave this booking.\\n\\nWhich car?\",\"type\":\"text\",\"messageId\":\"messages-2\",\"step\":\"q9\",\"interactiveList\":[\"Swift\",\"Innova\"],\"listButtonLabel\":\"Choose\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"list\",\"body\":{\"text\":\"Please tap one of the options below. Send *menu* to leave this booking.\\n\\nWhich car?\"},\"action\":{\"button\":\"Choose\",\"sections\":[{\"rows\":[{\"id\":\"q9:0\",\"title\":\"Swift\"},{\"id\":\"q9:1\",\"title\":\"Innova\"}]}]}}}"
     }
   ],
   "booking question as buttons": [
     {
-      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Please type your answer. Send *menu* to leave this booking.\\n\\nTrip type?\",\"type\":\"text\",\"messageId\":\"messages-2\",\"step\":\"q8\",\"interactiveButtons\":[\"One way\",\"Round trip\"]}",
-      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"button\",\"body\":{\"text\":\"Please type your answer. Send *menu* to leave this booking.\\n\\nTrip type?\"},\"action\":{\"buttons\":[{\"type\":\"reply\",\"reply\":{\"id\":\"q8:0\",\"title\":\"One way\"}},{\"type\":\"reply\",\"reply\":{\"id\":\"q8:1\",\"title\":\"Round trip\"}}]}}}"
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Please tap one of the options below. Send *menu* to leave this booking.\\n\\nTrip type?\",\"type\":\"text\",\"messageId\":\"messages-2\",\"step\":\"q8\",\"interactiveButtons\":[\"One way\",\"Round trip\"]}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"interactive\",\"interactive\":{\"type\":\"button\",\"body\":{\"text\":\"Please tap one of the options below. Send *menu* to leave this booking.\\n\\nTrip type?\"},\"action\":{\"buttons\":[{\"type\":\"reply\",\"reply\":{\"id\":\"q8:0\",\"title\":\"One way\"}},{\"type\":\"reply\",\"reply\":{\"id\":\"q8:1\",\"title\":\"Round trip\"}}]}}}"
     }
   ],
   "booking question asks for a location": [
@@ -61,8 +61,8 @@
   ],
   "vehicle carousel": [
     {
-      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Please type your answer. Send *menu* to leave this booking.\\n\\nPick a vehicle\",\"type\":\"text\",\"messageId\":\"messages-2\"}",
-      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"text\",\"text\":{\"body\":\"Please type your answer. Send *menu* to leave this booking.\\n\\nPick a vehicle\",\"preview_url\":false}}"
+      "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Please tap one of the options below. Send *menu* to leave this booking.\\n\\nPick a vehicle\",\"type\":\"text\",\"messageId\":\"messages-2\"}",
+      "meta": "{\"messaging_product\":\"whatsapp\",\"recipient_type\":\"individual\",\"to\":\"919800000001\",\"type\":\"text\",\"text\":{\"body\":\"Please tap one of the options below. Send *menu* to leave this booking.\\n\\nPick a vehicle\",\"preview_url\":false}}"
     },
     {
       "job": "{\"businessId\":\"b1\",\"phoneNumberId\":\"pn1\",\"encryptedAccessToken\":\"tok\",\"to\":\"919800000001\",\"message\":\"Swift • 4 seats • ₹1200\",\"type\":\"text\",\"imageUrl\":\"https://img/swift.png\",\"buttons\":[{\"title\":\"Book this\",\"nextKeyword\":\"v1:0\"}],\"messageId\":\"messages-3\"}",

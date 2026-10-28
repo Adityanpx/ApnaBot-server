@@ -902,7 +902,7 @@ const resendCurrentBookingPrompt = async (ctx, activeSession, { withHint = false
  */
 const sendHintedFieldPrompt = async (ctx, field, withHint) => {
   if (!withHint) return sendFieldPrompt(ctx, field);
-  const hintedLabel = withTapHint(field.label, ctx.customer.preferredLanguage);
+  const hintedLabel = withTapHint(field.label, ctx.customer.preferredLanguage, field.fieldType);
   if (field.fieldType === 'vehicle_carousel') return sendFieldPrompt(ctx, field, hintedLabel);
   return sendFieldPrompt(ctx, { ...field, label: hintedLabel });
 };

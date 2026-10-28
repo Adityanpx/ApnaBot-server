@@ -14,6 +14,7 @@ const SECRET = 'test-secret';
 const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const Q_TEXT = id(1); const Q_CHOICE = id(2); const EDGE = id(50); const BOOK = id(30);
 const HINT = 'Please type your answer. Send *menu* to leave this booking.';
+const CHOICE_HINT = 'Please tap one of the options below. Send *menu* to leave this booking.';
 
 let fake; let events; let activeSession; let currentField; let advanceCalls; let deletedSessions;
 
@@ -135,7 +136,7 @@ test('a stale tap (another node\'s id, or an edge id) during a choice question: 
     await tapButton(staleId);
     assert.equal(advanceCalls.length, 0, staleId);
     assert.equal(events.length, 1, staleId);
-    assert.equal(events[0].message, `${HINT}\n\nBuy or rent?`, staleId);
+    assert.equal(events[0].message, `${CHOICE_HINT}\n\nBuy or rent?`, staleId);
     assert.deepEqual(events[0].interactiveButtons, ['Buy', 'Rent'], 'the options are shown again');
   }
 });
@@ -144,7 +145,7 @@ test('a tap for the right question but an index it has no option for: re-asked w
   activeSession.currentNodeId = Q_CHOICE; currentField = choiceField();
   await tapButton(`${Q_CHOICE}:7`);
   assert.equal(advanceCalls.length, 0);
-  assert.equal(events[0].message, `${HINT}\n\nBuy or rent?`);
+  assert.equal(events[0].message, `${CHOICE_HINT}\n\nBuy or rent?`);
 });
 
 test('a valid tap on the current choice question is still an answer', async () => {
@@ -193,7 +194,7 @@ test('preview: a stale tap and an option-less tap during a choice question re-as
   currentField = choiceField();
   for (const tapId of [EDGE, `${Q_CHOICE}:9`]) {
     const out = await preview({ message: tapId, buttonReplyId: tapId, session });
-    assert.ok(out.replyText.startsWith(HINT), tapId);
+    assert.ok(out.replyText.startsWith(CHOICE_HINT), tapId);
     assert.deepEqual(out.buttons.map(b => b.title || b.label), ['Buy', 'Rent'], tapId);
   }
   assert.equal(advanceCalls.length, 0);

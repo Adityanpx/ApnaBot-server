@@ -339,7 +339,7 @@ const handleActiveSession = async (business, session, messageText, buttonReplyId
     // footer/template treatment — a vehicle_carousel's intro text is sent as-is by the real webhook,
     // so the preview must match.
     const reAskWithHint = () => {
-      const hintedLabel = withTapHint(currentField.label, null);
+      const hintedLabel = withTapHint(currentField.label, null, currentField.fieldType);
       const rendered = buildFieldOptions(currentField);
       const replyText = currentField.fieldType === 'vehicle_carousel'
         ? hintedLabel

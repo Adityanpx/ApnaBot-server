@@ -20,9 +20,9 @@ const isInternalId = (value) => {
   return UUID_RE.test(colonIdx === -1 ? trimmed : trimmed.slice(0, colonIdx));
 };
 
-/** The booking question with the "type your answer / send menu" hint above it. */
-const withTapHint = (label, languageCode) => {
-  const hint = getSystemMessage('bookingTapHint', languageCode);
+/** The booking question with the hint above it: "type your answer" for a typed question, "tap an option" for a choice. */
+const withTapHint = (label, languageCode, fieldType) => {
+  const hint = getSystemMessage(isChoiceFieldType(fieldType) ? 'bookingTapHintChoice' : 'bookingTapHintText', languageCode);
   return label ? `${hint}\n\n${label}` : hint;
 };
 
