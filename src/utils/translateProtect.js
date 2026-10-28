@@ -75,6 +75,15 @@ const padTerms = (text, terms) => {
   });
 };
 
+/**
+ * A space between a placeholder and a directly attached letter ("{{business}}તરફથી" -> "{{business}} તરફથી"),
+ * and between a letter and a following placeholder. For machine-translated system messages, where Azure
+ * glues the notranslate span to the neighbouring word.
+ */
+const spaceAroundPlaceholders = (text) => String(text)
+  .replace(/\}\}(?=[\p{L}\p{M}])/gu, '}} ')
+  .replace(/([\p{L}\p{M}])(?=\{\{)/gu, '$1 ');
+
 /** Azure's HTML answer -> WhatsApp text. */
 const restore = (html) => {
   let s = String(html);
@@ -95,8 +104,9 @@ const restore = (html) => {
 const isFaithful = (source, translated) => {
   if (typeof translated !== 'string' || !translated.trim()) return 'Empty translation.';
   if (sortedKey(placeholdersOf(source)) !== sortedKey(placeholdersOf(translated))) return 'Placeholder mismatch.';
-  // Strip placeholders before counting markers, so {{customer_name}} cannot look like italic.
-  const bare = (t) => String(t || '').replace(PLACEHOLDER_RE, '');
+  // Swap each placeholder for a plain letter before counting markers: its underscores ("{{customer_name}}")
+  // cannot look like italic, and bold that wraps only a placeholder ("*{{code}}*") still counts as a span.
+  const bare = (t) => String(t || '').replace(PLACEHOLDER_RE, 'x');
   if (countOf(bare(source), /\*[^*\n]+\*/g) !== countOf(bare(translated), /\*[^*\n]+\*/g)) return 'Bold formatting lost.';
   if (countOf(bare(source), /(^|[\s(])_[^_\n]+_(?=$|[\s.,!?;:)])/g) !== countOf(bare(translated), /(^|[\s(])_[^_\n]+_(?=$|[\s.,!?;:)])/g)) return 'Italic formatting lost.';
   if (countOf(source, /\n/g) !== countOf(translated, /\n/g)) return 'Line breaks changed.';
@@ -104,4 +114,4 @@ const isFaithful = (source, translated) => {
   return null;
 };
 
-module.exports = { protect, restore, padTerms, isFaithful, placeholdersOf };
+module.exports = { protect, restore, padTerms, spaceAroundPlaceholders, isFaithful, placeholdersOf };

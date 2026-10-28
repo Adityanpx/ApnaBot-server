@@ -12,7 +12,7 @@ vehicleNoLongerAvailable,"Sorry, that vehicle is no longer available for this ro
 bookingReceived,✅ *Booking request received!*,✅ *ബുക്കിംഗ് അഭ്യർത്ഥന ലഭിച്ചു!*,,*bold* markers must stay around the same words
 bookingIdLine,Booking ID: *{{code}}*,ബുക്കിംഗ് ഐഡി: *{{code}}*,,Keep unchanged: {{code}}; *bold* markers must stay around the same words
 bookingContactSoon,Our team will contact you shortly to confirm.,സ്ഥിരീകരിക്കാൻ ഞങ്ങളുടെ ടീം ഉടൻ തന്നെ നിങ്ങളെ ബന്ധപ്പെടും.,,
-summaryFare,Fare: *₹{{fare}}*,,,Keep unchanged: {{fare}}; *bold* markers must stay around the same words; Machine translation unavailable: Bold formatting lost.
+summaryFare,Fare: *₹{{fare}}*,നിരക്കൂലി: ₹ *{{fare}}*,,Keep unchanged: {{fare}}; *bold* markers must stay around the same words
 summaryFareEstimated,"Fare: *₹{{fare}} (estimated, based on distance)*",നിരക്ക്: ₹ *{{fare}} (ദൂരം അടിസ്ഥാനമാക്കി)*,,Keep unchanged: {{fare}}; *bold* markers must stay around the same words
 summaryDistance,Distance: *{{km}} km*,ദൂരം: *{{km}} കി.മീ.*,,Keep unchanged: {{km}}; *bold* markers must stay around the same words
 summaryDriverDa,Driver DA: *₹{{total}} ({{days}} days × ₹{{perDay}})*,ഡ്രൈവർ ഡിഎ: ₹ *{{total}} ({{days}} ദിവസം × ₹{{perDay}})*,,Keep unchanged: {{total}} {{days}} {{perDay}}; *bold* markers must stay around the same words
@@ -20,42 +20,45 @@ summaryTollNote,_Note: Toll & parking charges are not included in this fare and 
 summaryExtraRate,"_Extra km: ₹{{km}}/km, Extra hour: ₹{{hr}}/hr beyond package limits._","_അധിക കിലോമീറ്റർ: ₹{{km}}/ കിലോമീറ്റർ, അധിക മണിക്കൂർ: പാക്കേജ് പരിധിക്കപ്പുറം ₹{{hr}}/ മണിക്കൂർ._",,Keep unchanged: {{km}} {{hr}}
 summaryRentalUnconfigured,_Note: this business hasn't set up rental packages yet — our team will call you to confirm pricing for this rental._,_കുറിപ്പ്: ഈ ബിസിനസ്സ് ഇതുവരെ വാടക പാക്കേജുകൾ സജ്ജീകരിച്ചിട്ടില്ല - ഈ വാടകയ്ക്കുള്ള വിലനിർണ്ണയം സ്ഥിരീകരിക്കാൻ ഞങ്ങളുടെ ടീം നിങ്ങളെ വിളിക്കും._,,
 advanceQrIntro,"Almost done! To confirm your booking *{{code}}*, please pay the advance of *{{amount}}* by scanning this QR code.","ഏതാണ്ട് പൂർത്തിയായി! നിങ്ങളുടെ ബുക്കിംഗ് *{{code}}*സ്ഥിരീകരിക്കുന്നതിന്, ഈ QR കോഡ് സ്കാൻ ചെയ്തുകൊണ്ട് *{{amount}}* അഡ്വാൻസ് അടയ്ക്കുക.",,Keep unchanged: {{code}} {{amount}}; *bold* markers must stay around the same words
-admissionFeeQrIntro,"Almost done! To confirm admission *{{code}}*, please pay the admission fee of *{{amount}}* by scanning this QR code.","ഏതാണ്ട് പൂർത്തിയായി! അഡ്മിഷൻ *{{code}}സ്ഥിരീകരിക്കുന്നതിന്*, ഈ ക്യുആർ കോഡ് സ്കാൻ ചെയ്ത് *{{amount}}* അഡ്മിഷൻ ഫീസ് അടയ്ക്കുക.",,Keep unchanged: {{code}} {{amount}}; *bold* markers must stay around the same words
+admissionFeeQrIntro,"Almost done! To confirm admission *{{code}}*, please pay the admission fee of *{{amount}}* by scanning this QR code.","ഏതാണ്ട് പൂർത്തിയായി! അഡ്മിഷൻ *{{code}} സ്ഥിരീകരിക്കുന്നതിന്*, ഈ ക്യുആർ കോഡ് സ്കാൻ ചെയ്ത് *{{amount}}* അഡ്മിഷൻ ഫീസ് അടയ്ക്കുക.",,Keep unchanged: {{code}} {{amount}}; *bold* markers must stay around the same words
 advanceNoQr,"Almost done! To confirm your booking, an advance of *{{amount}}* is required. Our team will share the payment details with you shortly.
 
-Booking ID: *{{code}}*",,,Keep unchanged: {{amount}} {{code}}; *bold* markers must stay around the same words; Keep the line breaks; Machine translation unavailable: Bold formatting lost.
+Booking ID: *{{code}}*","ഏതാണ്ട് പൂർത്തിയായി! നിങ്ങളുടെ ബുക്കിംഗ് സ്ഥിരീകരിക്കുന്നതിന്, *{{amount}} മുൻകൂർ* ആവശ്യമാണ്. ഞങ്ങളുടെ ടീം ഉടൻ തന്നെ പേയ് മെന്റ് വിശദാംശങ്ങൾ നിങ്ങളുമായി പങ്കിടും.
+
+ബുക്കിംഗ് ഐഡി: *{{code}}*",,Keep unchanged: {{amount}} {{code}}; *bold* markers must stay around the same words; Keep the line breaks
 admissionFeeNoQr,"Almost done! To confirm admission, the admission fee of *{{amount}}* is required. Our team will share the payment details with you shortly.
 
 Admission ID: *{{code}}*","ഏതാണ്ട് പൂർത്തിയായി! പ്രവേശനം സ്ഥിരീകരിക്കുന്നതിന്, *{{amount}}* അഡ്മിഷൻ ഫീസ് ആവശ്യമാണ്. ഞങ്ങളുടെ ടീം ഉടൻ തന്നെ പേയ് മെന്റ് വിശദാംശങ്ങൾ നിങ്ങളുമായി പങ്കിടും.
 
 അഡ്മിഷൻ ഐഡി: *{{code}}*",,Keep unchanged: {{amount}} {{code}}; *bold* markers must stay around the same words; Keep the line breaks
 qrPay,Please pay by scanning this QR code.,ഈ QR കോഡ് സ്കാൻ ചെയ്തുകൊണ്ട് പണമടയ്ക്കുക.,,
-qrPayAmount,Please pay *₹{{amount}}* by scanning this QR code.,ഈ QR കോഡ് സ്കാൻ ചെയ്തുകൊണ്ട് ₹ *{{amount}}അടയ്ക്കുക*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
-qrPayCode,Please pay for booking *{{code}}* by scanning this QR code.,,,Keep unchanged: {{code}}; *bold* markers must stay around the same words; Machine translation unavailable: Bold formatting lost.
-qrPayAmountCode,Please pay *₹{{amount}}* for booking *{{code}}* by scanning this QR code.,,,Keep unchanged: {{amount}} {{code}}; *bold* markers must stay around the same words; Machine translation unavailable: Bold formatting lost.
+qrPayAmount,Please pay *₹{{amount}}* by scanning this QR code.,ഈ QR കോഡ് സ്കാൻ ചെയ്തുകൊണ്ട് ₹ *{{amount}} അടയ്ക്കുക*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
+qrPayCode,Please pay for booking *{{code}}* by scanning this QR code.,ഈ QR കോഡ് സ്കാൻ ചെയ്തുകൊണ്ട് *{{code}} ബുക്ക്* ചെയ്യുന്നതിന് പണമടയ്ക്കുക,,Keep unchanged: {{code}}; *bold* markers must stay around the same words
+qrPayAmountCode,Please pay *₹{{amount}}* for booking *{{code}}* by scanning this QR code.,ഈ QR കോഡ് സ്കാൻ ചെയ്തുകൊണ്ട് *{{code}} ബുക്ക്* ചെയ്യുന്നതിന് ദയവായി *₹{{amount}} നൽകുക*,,Keep unchanged: {{amount}} {{code}}; *bold* markers must stay around the same words
 qrHowTo,"Paying from this phone? Save this image, then in any UPI app (GPay, PhonePe, Paytm) tap *Scan* → *Upload from gallery*.","ഈ ഫോണിൽ നിന്ന് പണമടയ്ക്കുക? ഈ ചിത്രം സംരക്ഷിക്കുക, തുടർന്ന് ഏതെങ്കിലും UPI അപ്ലിക്കേഷനിൽ (GPay, PhonePe, Paytm) *സ്കാൻ ചെയ്യുക* → *ഗാലറിയിൽ നിന്ന് അപ് ലോഡ് ചെയ്യുക* ടാപ്പുചെയ്യുക.",,*bold* markers must stay around the same words
 qrUpiId,Or pay to UPI ID: {{upiId}},അല്ലെങ്കിൽ UPI ഐഡിയിലേക്ക് പണമടയ്ക്കുക: {{upiId}},,Keep unchanged: {{upiId}}
 qrScreenshot,Please share a screenshot here after paying.,പണമടച്ചതിന് ശേഷം ഇവിടെ ഒരു സ്ക്രീൻഷോട്ട് പങ്കിടുക.,,
 advancePaid,✅ Advance received! Your booking {{code}} is confirmed. Our team will contact you shortly.,✅ അഡ്വാൻസ് ലഭിച്ചു! നിങ്ങളുടെ ബുക്കിംഗ് {{code}} സ്ഥിരീകരിച്ചു. ഞങ്ങളുടെ ടീം ഉടൻ നിങ്ങളെ ബന്ധപ്പെടും.,,Keep unchanged: {{code}}
-admissionFeePaid,✅ Fees received! Admission {{code}} is confirmed. Welcome to {{business}}!,✅ ഫീസ് ലഭിച്ചു! പ്രവേശന {{code}} സ്ഥിരീകരിച്ചു. {{business}}സ്വാഗതം!,,Keep unchanged: {{code}} {{business}}
+admissionFeePaid,✅ Fees received! Admission {{code}} is confirmed. Welcome to {{business}}!,✅ ഫീസ് ലഭിച്ചു! പ്രവേശന {{code}} സ്ഥിരീകരിച്ചു. {{business}} സ്വാഗതം!,,Keep unchanged: {{code}} {{business}}
 sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,നിങ്ങൾ മാറിയതായി തോന്നുന്നു - നിഷ്ക്രിയത്വം കാരണം ഞാൻ ഈ സെഷൻ അവസാനിപ്പിച്ചു. വീണ്ടും ആരംഭിക്കാൻ എപ്പോൾ വേണമെങ്കിലും 'പുസ്തകം' അയയ്ക്കുക.,,
-stopOptOutDefault,Done — you won't receive offers or reminders from us. Reply START anytime to turn them back on.,പൂർത്തിയായി - നിങ്ങൾക്ക് ഞങ്ങളിൽ നിന്ന് ഓഫറുകളോ ഓർമ്മപ്പെടുത്തലുകളോ ലഭിക്കില്ല. അവ ഓണാക്കാൻ എപ്പോൾ വേണമെങ്കിലും START മറുപടി നൽകുക.,,
+stopOptOutDefault,Done — you won't receive offers or reminders from us. Reply START anytime to turn them back on.,ശരി — ഇനി ഞങ്ങളിൽ നിന്ന് ഓഫറുകളോ ഓർമ്മപ്പെടുത്തലുകളോ നിങ്ങൾക്ക് ലഭിക്കില്ല. വീണ്ടും ഓണാക്കാൻ എപ്പോൾ വേണമെങ്കിലും START എന്ന് അയയ്ക്കുക.,,Hand-corrected wording (still machine-marked): needs native review
+startOptInDefault,You're all set — messages have resumed.,എല്ലാം തയ്യാർ — സന്ദേശങ്ങൾ വീണ്ടും തുടങ്ങിയിരിക്കുന്നു.,,Machine translation unavailable: not translated; Hand-corrected wording (still machine-marked): needs native review
 optInConsentQuestion,"{{business}} would like to send you offers and updates on WhatsApp. Would you like to receive them?
 
-You can reply STOP anytime to stop.","WhatsApp ൽ നിങ്ങൾക്ക് ഓഫറുകളും അപ് ഡേറ്റുകളും അയയ്ക്കാൻ {{business}} ആഗ്രഹിക്കുന്നു. അവ സ്വീകരിക്കാൻ നിങ്ങൾ ആഗ്രഹിക്കുന്നുണ്ടോ?
+You can reply STOP anytime to stop.","{{business}} നിങ്ങൾക്ക് WhatsApp ൽ ഓഫറുകളും അപ്ഡേറ്റുകളും അയയ്ക്കാൻ ആഗ്രഹിക്കുന്നു. നിങ്ങൾക്ക് അവ ലഭിക്കണോ?
 
-നിർത്താൻ നിങ്ങൾക്ക് എപ്പോൾ വേണമെങ്കിലും STOP മറുപടി നൽകാം.",,Keep unchanged: {{business}}; Keep the line breaks
-optInYesButton,"Yes, send offers","അതെ, ഓഫറുകൾ അയയ്ക്കുക",,
-optInNoButton,No thanks,വേണ്ട നന്ദി,,
-bookingConsentQuestion,{{business}} would like to send you offers and updates on WhatsApp. You can stop anytime by replying STOP.,WhatsApp ൽ നിങ്ങൾക്ക് ഓഫറുകളും അപ് ഡേറ്റുകളും അയയ്ക്കാൻ {{business}} ആഗ്രഹിക്കുന്നു. STOP മറുപടി നൽകി നിങ്ങൾക്ക് എപ്പോൾ വേണമെങ്കിലും നിർത്താം.,,Keep unchanged: {{business}}
-bookingConsentDeclined,No problem 👍 You'll only get messages about your bookings.,"കുഴപ്പമില്ല 👍, നിങ്ങളുടെ ബുക്കിംഗുകളെക്കുറിച്ചുള്ള സന്ദേശങ്ങൾ മാത്രമേ നിങ്ങൾക്ക് ലഭിക്കുകയുള്ളൂ.",,
-optInConfirmed,Thanks! You'll now get offers and updates from {{business}}. Reply STOP anytime to stop.,നന്ദി! നിങ്ങൾക്ക് ഇപ്പോൾ {{business}}ൽ നിന്ന് ഓഫറുകളും അപ് ഡേറ്റുകളും ലഭിക്കും. നിർത്താൻ എപ്പോൾ വേണമെങ്കിലും STOP മറുപടി നൽകുക.,,Keep unchanged: {{business}}
+നിർത്താൻ എപ്പോൾ വേണമെങ്കിലും STOP എന്ന് അയയ്ക്കാം.",,Keep unchanged: {{business}}; Keep the line breaks; Hand-corrected wording (still machine-marked): needs native review
+optInYesButton,"Yes, send offers","അതെ, അയയ്ക്കൂ",,Hand-corrected wording (still machine-marked): needs native review
+optInNoButton,No thanks,"വേണ്ട, നന്ദി",,Hand-corrected wording (still machine-marked): needs native review
+bookingConsentQuestion,{{business}} would like to send you offers and updates on WhatsApp. You can stop anytime by replying STOP.,{{business}} നിങ്ങൾക്ക് WhatsApp ൽ ഓഫറുകളും അപ്ഡേറ്റുകളും അയയ്ക്കാൻ ആഗ്രഹിക്കുന്നു. STOP എന്ന് അയച്ച് നിങ്ങൾക്ക് എപ്പോൾ വേണമെങ്കിലും നിർത്താം.,,Keep unchanged: {{business}}; Hand-corrected wording (still machine-marked): needs native review
+bookingConsentDeclined,No problem 👍 You'll only get messages about your bookings.,കുഴപ്പമില്ല 👍 നിങ്ങളുടെ ബുക്കിംഗുകളെക്കുറിച്ചുള്ള സന്ദേശങ്ങൾ മാത്രമേ ലഭിക്കൂ.,,Hand-corrected wording (still machine-marked): needs native review
+optInConfirmed,Thanks! You'll now get offers and updates from {{business}}. Reply STOP anytime to stop.,നന്ദി! ഇനി മുതൽ {{business}} ൽ നിന്ന് ഓഫറുകളും അപ്ഡേറ്റുകളും നിങ്ങൾക്ക് ലഭിക്കും. നിർത്താൻ എപ്പോൾ വേണമെങ്കിലും STOP എന്ന് അയയ്ക്കുക.,,Keep unchanged: {{business}}; Hand-corrected wording (still machine-marked): needs native review
 followupEnquiryNudge,"Hi {{customerName}}, just checking in — did you find what you were looking for? Reply here and we'll help, or type *menu* to see options.","ഹായ് {{customerName}}, വെറുതെ ചെക്ക് ഇൻ ചെയ്യുന്നു - നിങ്ങൾ തിരയുന്നത് കണ്ടെത്തിയോ? ഇവിടെ മറുപടി നൽകുക, ഞങ്ങൾ സഹായിക്കും, അല്ലെങ്കിൽ ഓപ്ഷനുകൾ കാണാൻ *menu* ടൈപ്പ് ചെയ്യുക.",,Keep unchanged: {{customerName}}; *bold* markers must stay around the same words
 followupWinBack,"Hi {{customerName}}, it's been a while! We'd love to help you again — reply here anytime.","ഹായ് {{customerName}}, കുറച്ച് സമയമായി! നിങ്ങളെ വീണ്ടും സഹായിക്കാൻ ഞങ്ങൾ ആഗ്രഹിക്കുന്നു - എപ്പോൾ വേണമെങ്കിലും ഇവിടെ മറുപടി നൽകുക.",,Keep unchanged: {{customerName}}
-followupReviewRequest,"Hi {{customerName}}, thank you for choosing {{businessName}}! How was your experience? Reply here — we'd love your feedback.","ഹായ് {{customerName}}, {{businessName}}തിരഞ്ഞെടുത്തതിന് നന്ദി! നിങ്ങളുടെ അനുഭവം എങ്ങനെയായിരുന്നു? ഇവിടെ മറുപടി നൽകുക - നിങ്ങളുടെ ഫീഡ് ബാക്ക് ഞങ്ങൾ ഇഷ്ടപ്പെടുന്നു.",,Keep unchanged: {{customerName}} {{businessName}}
+followupReviewRequest,"Hi {{customerName}}, thank you for choosing {{businessName}}! How was your experience? Reply here — we'd love your feedback.","ഹായ് {{customerName}}, {{businessName}} തിരഞ്ഞെടുത്തതിന് നന്ദി! നിങ്ങളുടെ അനുഭവം എങ്ങനെയായിരുന്നു? ഇവിടെ മറുപടി നൽകുക - നിങ്ങളുടെ ഫീഡ് ബാക്ക് ഞങ്ങൾ ഇഷ്ടപ്പെടുന്നു.",,Keep unchanged: {{customerName}} {{businessName}}
 followupPaymentPending,"Hi {{customerName}}, a gentle reminder: {{amount}} for booking {{bookingCode}} is still pending. Reply here if you need the payment details again.","ഹായ് {{customerName}}, ഒരു സൗമ്യമായ ഓർമ്മപ്പെടുത്തൽ: {{bookingCode}} ബുക്ക് ചെയ്യുന്നതിനുള്ള {{amount}} ഇപ്പോഴും തീർപ്പുകൽപ്പിക്കാനുണ്ട്. നിങ്ങൾക്ക് പേയ് മെന്റ് വിശദാംശങ്ങൾ വീണ്ടും ആവശ്യമുണ്ടെങ്കിൽ ഇവിടെ മറുപടി നൽകുക.",,Keep unchanged: {{customerName}} {{amount}} {{bookingCode}}
-demoFixed,✅ {{student}}'s free demo class for {{course}} is fixed for {{time}}. Reply here if you need to change it.,✅ {{course}} {{student}}ന്റെ സൗജന്യ ഡെമോ ക്ലാസ് {{time}}നായി നിശ്ചയിച്ചിരിക്കുന്നു. നിങ്ങൾക്ക് ഇത് മാറ്റണമെങ്കിൽ ഇവിടെ മറുപടി നൽകുക.,,Keep unchanged: {{student}} {{course}} {{time}}
-demoReminder,⏰ Reminder: {{student}}'s free demo class for {{course}} at {{business}} is on {{time}}. Reply here if you can't make it.,⏰ ഓർമ്മപ്പെടുത്തൽ: {{business}} {{course}} {{student}}സൗജന്യ ഡെമോ ക്ലാസ് {{time}}ആണ്. നിങ്ങൾക്ക് ഇത് ചെയ്യാൻ കഴിയുന്നില്ലെങ്കിൽ ഇവിടെ മറുപടി നൽകുക.,,Keep unchanged: {{student}} {{course}} {{business}} {{time}}
+demoFixed,✅ {{student}}'s free demo class for {{course}} is fixed for {{time}}. Reply here if you need to change it.,✅ {{course}} {{student}} ന്റെ സൗജന്യ ഡെമോ ക്ലാസ് {{time}} നായി നിശ്ചയിച്ചിരിക്കുന്നു. നിങ്ങൾക്ക് ഇത് മാറ്റണമെങ്കിൽ ഇവിടെ മറുപടി നൽകുക.,,Keep unchanged: {{student}} {{course}} {{time}}
+demoReminder,⏰ Reminder: {{student}}'s free demo class for {{course}} at {{business}} is on {{time}}. Reply here if you can't make it.,⏰ ഓർമ്മപ്പെടുത്തൽ: {{business}} {{course}} {{student}} സൗജന്യ ഡെമോ ക്ലാസ് {{time}} ആണ്. നിങ്ങൾക്ക് ഇത് ചെയ്യാൻ കഴിയുന്നില്ലെങ്കിൽ ഇവിടെ മറുപടി നൽകുക.,,Keep unchanged: {{student}} {{course}} {{business}} {{time}}
 catalogDefaultText,Here is our catalogue 👇,ഇതാ ഞങ്ങളുടെ കാറ്റലോഗ് 👇,,
 catalogEmptyText,Our catalogue is being updated. Please check back soon.,ഞങ്ങളുടെ കാറ്റലോഗ് അപ് ഡേറ്റ് ചെയ്യുന്നു. ദയവായി ഉടൻ വീണ്ടും പരിശോധിക്കുക.,,
 catalogViewButton,View designs,ഡിസൈനുകൾ കാണുക,,
@@ -63,7 +66,7 @@ catalogOrderButton,Order,ഓർഡർ,,
 catalogOrderThisButton,Order this,ഇത് ഓർഡർ ചെയ്യൂ,,
 catalogShowMoreButton,Show more designs,കൂടുതൽ ഡിസൈനുകൾ കാണിക്കുക,,
 catalogMenuLabel,🛍️ Catalogue,🛍️ കാറ്റലോഗ്,,
-catalogPageSummary,Showing {{from}}–{{to}} of {{total}} designs in {{title}},{{from}}കാണിക്കുന്നു - {{title}}{{to}} {{total}} ഡിസൈനുകൾ,,Keep unchanged: {{from}} {{to}} {{total}} {{title}}
+catalogPageSummary,Showing {{from}}–{{to}} of {{total}} designs in {{title}},{{from}} കാണിക്കുന്നു - {{title}}{{to}} {{total}} ഡിസൈനുകൾ,,Keep unchanged: {{from}} {{to}} {{total}} {{title}}
 catalogCollectionEmpty,There are no designs in {{title}} yet.,{{title}} ഇതുവരെ ഡിസൈനുകളൊന്നും ഉണ്ടായിട്ടില്ല.,,Keep unchanged: {{title}}
 catalogOrderMessageDefault,Thank you! We have noted your order request and our team will contact you shortly.,"നന്ദി! നിങ്ങളുടെ ഓർഡർ അഭ്യർത്ഥന ഞങ്ങൾ ശ്രദ്ധിച്ചു, ഞങ്ങളുടെ ടീം ഉടൻ നിങ്ങളെ ബന്ധപ്പെടും.",,
 catalogTapStale,That item is no longer available. Here is our catalogue again.,ആ ഇനം ഇപ്പോൾ ലഭ്യമല്ല. ഇതാ ഞങ്ങളുടെ കാറ്റലോഗ് വീണ്ടും.,,
@@ -74,8 +77,8 @@ invalidName,"Please enter a valid name (letters only, 2–60 characters).","സ�
 invalidDate,"Please enter a valid date, for example 25/12/2026.","സാധുവായ തീയതി നൽകുക, ഉദാഹരണത്തിന് 25/12/2026.",,
 datePast,That date has already passed. Please enter today's date or a later date.,ആ തീയതി ഇതിനകം കഴിഞ്ഞു. ഇന്നത്തെ തീയതിയോ പിന്നീടുള്ള തീയതിയോ നൽകുക.,,
 dateTooFar,Please enter a date within the next {{days}} days.,അടുത്ത {{days}} ദിവസത്തിനുള്ളിൽ ഒരു തീയതി നൽകുക.,,Keep unchanged: {{days}}
-checkoutNotAfterCheckin,Check-out must be at least 1 night after check-in. Please enter a later check-out date.,ചെക്ക്-ഇൻ കഴിഞ്ഞ് കുറഞ്ഞത് 1 രാത്രിയെങ്കിലും ചെക്ക്-ഔട്ട് ആയിരിക്കണം. പിന്നീടുള്ള ചെക്ക്-out ട്ട് തീയതി നൽകുക.,,
-dateClosed,We're closed on {{day}}. Next available: {{date}}.,ഞങ്ങൾ {{day}}അടച്ചിരിക്കുന്നു. അടുത്തത് ലഭ്യമാണ്: {{date}}.,,Keep unchanged: {{day}} {{date}}
+checkoutNotAfterCheckin,Check-out must be at least 1 night after check-in. Please enter a later check-out date.,ചെക്ക്-ഇൻ കഴിഞ്ഞ് കുറഞ്ഞത് 1 രാത്രിയെങ്കിലും ചെക്ക്-ഔട്ട് ആയിരിക്കണം. പിന്നീടുള്ള ചെക്ക്-ഔട്ട് തീയതി നൽകുക.,,Hand-corrected wording (still machine-marked): needs native review
+dateClosed,We're closed on {{day}}. Next available: {{date}}.,ഞങ്ങൾ {{day}} അടച്ചിരിക്കുന്നു. അടുത്തത് ലഭ്യമാണ്: {{date}}.,,Keep unchanged: {{day}} {{date}}
 unsupportedMessageType,"Sorry, I can only read text messages. Please type your reply or pick an option below.","ക്ഷമിക്കണം, എനിക്ക് ടെക്സ്റ്റ് സന്ദേശങ്ങൾ മാത്രമേ വായിക്കാൻ കഴിയൂ. നിങ്ങളുടെ മറുപടി ടൈപ്പ് ചെയ്യുക അല്ലെങ്കിൽ ചുവടെയുള്ള ഒരു ഓപ്ഷൻ തിരഞ്ഞെടുക്കുക.",,
 bookingTapHintText,Please type your answer. Send *menu* to leave this booking.,ദയവായി നിങ്ങളുടെ ഉത്തരം ടൈപ്പ് ചെയ്യുക. ഈ ബുക്കിംഗ് ഉപേക്ഷിക്കാൻ *menu* അയയ്ക്കുക.,,*bold* markers must stay around the same words
 bookingTapHintChoice,Please tap one of the options below. Send *menu* to leave this booking.,ചുവടെയുള്ള ഓപ്ഷനുകളിൽ ഒന്ന് ടാപ്പുചെയ്യുക. ഈ ബുക്കിംഗ് ഉപേക്ഷിക്കാൻ *menu* അയയ്ക്കുക.,,*bold* markers must stay around the same words

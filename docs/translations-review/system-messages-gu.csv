@@ -19,41 +19,46 @@ summaryDriverDa,Driver DA: *₹{{total}} ({{days}} days × ₹{{perDay}})*,ડ�
 summaryTollNote,_Note: Toll & parking charges are not included in this fare and will be collected separately._,_નોંધ: આ ભાડામાં ટોલ અને પાર્કિંગ ચાર્જનો સમાવેશ કરવામાં આવ્યો નથી અને અલગથી વસૂલવામાં આવશે._,,
 summaryExtraRate,"_Extra km: ₹{{km}}/km, Extra hour: ₹{{hr}}/hr beyond package limits._","_વધારાનો કિમી: ₹{{km}}/ કિમી, વધારાનો કલાક: પેકેજ મર્યાદાથી આગળ ₹{{hr}}/ કલાક._",,Keep unchanged: {{km}} {{hr}}
 summaryRentalUnconfigured,_Note: this business hasn't set up rental packages yet — our team will call you to confirm pricing for this rental._,_નોંધ: આ વ્યવસાયે હજી સુધી ભાડાના પેકેજો સેટ કર્યા નથી - અમારી ટીમ આ ભાડાની કિંમતની પુષ્ટિ કરવા માટે તમને કૉલ કરશે._,,
-advanceQrIntro,"Almost done! To confirm your booking *{{code}}*, please pay the advance of *{{amount}}* by scanning this QR code.","લગભગ પૂર્ણ થઈ ગયું! તમારા બુકિંગ *{{code}}પુષ્ટિ*કરવા માટે, કૃપા કરીને આ QR કોડ સ્કેન કરીને *{{amount}}* એડવાન્સ ચૂકવો.",,Keep unchanged: {{code}} {{amount}}; *bold* markers must stay around the same words
+advanceQrIntro,"Almost done! To confirm your booking *{{code}}*, please pay the advance of *{{amount}}* by scanning this QR code.","લગભગ પૂર્ણ થઈ ગયું! તમારા બુકિંગ *{{code}} પુષ્ટિ*કરવા માટે, કૃપા કરીને આ QR કોડ સ્કેન કરીને *{{amount}}* એડવાન્સ ચૂકવો.",,Keep unchanged: {{code}} {{amount}}; *bold* markers must stay around the same words
 admissionFeeQrIntro,"Almost done! To confirm admission *{{code}}*, please pay the admission fee of *{{amount}}* by scanning this QR code.","લગભગ પૂર્ણ થઈ ગયું છે! પ્રવેશ *{{code}}*પુષ્ટિ કરવા માટે, કૃપા કરીને આ QR કોડ સ્કેન કરીને *{{amount}}* પ્રવેશ ફી ચૂકવો.",,Keep unchanged: {{code}} {{amount}}; *bold* markers must stay around the same words
 advanceNoQr,"Almost done! To confirm your booking, an advance of *{{amount}}* is required. Our team will share the payment details with you shortly.
 
-Booking ID: *{{code}}*",,,Keep unchanged: {{amount}} {{code}}; *bold* markers must stay around the same words; Keep the line breaks; Machine translation unavailable: Bold formatting lost.
+Booking ID: *{{code}}*","લગભગ પૂર્ણ થઈ ગયું! તમારા બુકિંગની પુષ્ટિ કરવા માટે, *{{amount}} એડવાન્સ* જરૂરી છે. અમારી ટીમ ટૂંક સમયમાં તમારી સાથે ચુકવણીની વિગતો શેર કરશે.
+
+બુકિંગ ID: *{{code}}*",,Keep unchanged: {{amount}} {{code}}; *bold* markers must stay around the same words; Keep the line breaks
 admissionFeeNoQr,"Almost done! To confirm admission, the admission fee of *{{amount}}* is required. Our team will share the payment details with you shortly.
 
-Admission ID: *{{code}}*",,,Keep unchanged: {{amount}} {{code}}; *bold* markers must stay around the same words; Keep the line breaks; Machine translation unavailable: Bold formatting lost.
+Admission ID: *{{code}}*","લગભગ પૂર્ણ થઈ ગયું! પ્રવેશની પુષ્ટિ કરવા માટે, *{{amount}} પ્રવેશ* ફી જરૂરી છે. અમારી ટીમ ટૂંક સમયમાં તમારી સાથે ચુકવણીની વિગતો શેર કરશે.
+
+એડમિશન આઈડી: *{{code}}*",,Keep unchanged: {{amount}} {{code}}; *bold* markers must stay around the same words; Keep the line breaks
 qrPay,Please pay by scanning this QR code.,કૃપા કરીને આ QR કોડ સ્કેન કરીને ચૂકવણી કરો.,,
-qrPayAmount,Please pay *₹{{amount}}* by scanning this QR code.,કૃપયા આ QR કોડ સ્કેન કરીને *₹{{amount}}ચૂકવો*.,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
-qrPayCode,Please pay for booking *{{code}}* by scanning this QR code.,,,Keep unchanged: {{code}}; *bold* markers must stay around the same words; Machine translation unavailable: Bold formatting lost.
-qrPayAmountCode,Please pay *₹{{amount}}* for booking *{{code}}* by scanning this QR code.,,,Keep unchanged: {{amount}} {{code}}; *bold* markers must stay around the same words; Machine translation unavailable: Bold formatting lost.
+qrPayAmount,Please pay *₹{{amount}}* by scanning this QR code.,કૃપયા આ QR કોડ સ્કેન કરીને *₹{{amount}} ચૂકવો*.,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
+qrPayCode,Please pay for booking *{{code}}* by scanning this QR code.,કૃપયા આ QR કોડ સ્કેન કરીને *{{code}} બુકિંગ* માટે ચૂકવણી કરો.,,Keep unchanged: {{code}}; *bold* markers must stay around the same words
+qrPayAmountCode,Please pay *₹{{amount}}* for booking *{{code}}* by scanning this QR code.,કૃપયા આ QR કોડ સ્કેન કરીને *{{code}} બુકિંગ* કરવા માટે ₹ *{{amount}} ચૂકવો*.,,Keep unchanged: {{amount}} {{code}}; *bold* markers must stay around the same words
 qrHowTo,"Paying from this phone? Save this image, then in any UPI app (GPay, PhonePe, Paytm) tap *Scan* → *Upload from gallery*.","આ ફોનથી ચૂકવણી કરી રહ્યા છો? આ છબી સાચવો, પછી કોઈપણ UPI એપ્લિકેશનમાં (જીપે, ફોનપે, પેટીએમ) *ગેલેરીમાંથી* *સ્કેન કરો* → અપલોડ કરો પર ટેપ કરો.",,*bold* markers must stay around the same words
 qrUpiId,Or pay to UPI ID: {{upiId}},અથવા UPI આઈડીને ચૂકવણી કરો: {{upiId}},,Keep unchanged: {{upiId}}
 qrScreenshot,Please share a screenshot here after paying.,કૃપા કરીને ચૂકવણી કર્યા પછી અહીં સ્ક્રીનશોટ શેર કરો.,,
 advancePaid,✅ Advance received! Your booking {{code}} is confirmed. Our team will contact you shortly.,✅ એડવાન્સ પ્રાપ્ત થયું! તમારી બુકિંગ {{code}} પુષ્ટિ થઈ ગઈ છે. અમારી ટીમ ટૂંક સમયમાં તમારો સંપર્ક કરશે.,,Keep unchanged: {{code}}
-admissionFeePaid,✅ Fees received! Admission {{code}} is confirmed. Welcome to {{business}}!,✅ ફી પ્રાપ્ત થઈ! પ્રવેશ {{code}} પુષ્ટિ થઈ ગઈ છે. {{business}}માં આપનું સ્વાગત છે!,,Keep unchanged: {{code}} {{business}}
+admissionFeePaid,✅ Fees received! Admission {{code}} is confirmed. Welcome to {{business}}!,✅ ફી પ્રાપ્ત થઈ! પ્રવેશ {{code}} પુષ્ટિ થઈ ગઈ છે. {{business}} માં આપનું સ્વાગત છે!,,Keep unchanged: {{code}} {{business}}
 sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,એવું લાગે છે કે તમે દૂર થઈ ગયા છો - નિષ્ક્રિયતાને કારણે મેં આ સત્ર સમાપ્ત કર્યું છે. ફરીથી શરૂ કરવા માટે કોઈપણ સમયે 'પુસ્તક' મોકલો.,,
-stopOptOutDefault,Done — you won't receive offers or reminders from us. Reply START anytime to turn them back on.,થઈ ગયું - તમને અમારી તરફથી ઑફર્સ અથવા રીમાઇન્ડર્સ મળશે નહીં. તેમને ફરીથી ચાલુ કરવા માટે કોઈપણ સમયે START જવાબ આપો.,,
+stopOptOutDefault,Done — you won't receive offers or reminders from us. Reply START anytime to turn them back on.,થઈ ગયું — હવે તમને અમારા તરફથી ઑફર્સ કે રિમાઇન્ડર્સ મળશે નહીં. તેમને ફરી ચાલુ કરવા માટે ગમે ત્યારે START લખીને મોકલો.,,Hand-corrected wording (still machine-marked): needs native review
+startOptInDefault,You're all set — messages have resumed.,બધું તૈયાર છે — સંદેશા ફરી શરૂ થઈ ગયા છે.,,Machine translation unavailable: not translated; Hand-corrected wording (still machine-marked): needs native review
 optInConsentQuestion,"{{business}} would like to send you offers and updates on WhatsApp. Would you like to receive them?
 
-You can reply STOP anytime to stop.","{{business}} તમને WhatsApp પર ઑફર્સ અને અપડેટ્સ મોકલવા માંગો છો. શું તમે તેમને પ્રાપ્ત કરવા માંગો છો?
+You can reply STOP anytime to stop.","{{business}} તમને WhatsApp પર ઑફર્સ અને અપડેટ્સ મોકલવા માંગે છે. શું તમે તે મેળવવા માંગો છો?
 
-તમે રોકવા માટે ગમે ત્યારે STOP જવાબ આપી શકો છો.",,Keep unchanged: {{business}}; Keep the line breaks
-optInYesButton,"Yes, send offers","હા, ઓફર્સ મોકલો",,
-optInNoButton,No thanks,ના આભાર,,
-bookingConsentQuestion,{{business}} would like to send you offers and updates on WhatsApp. You can stop anytime by replying STOP.,{{business}} તમને WhatsApp પર ઓફર્સ અને અપડેટ્સ મોકલવા માંગો છો. તમે STOP નો જવાબ આપીને કોઈપણ સમયે રોકી શકો છો.,,Keep unchanged: {{business}}
-bookingConsentDeclined,No problem 👍 You'll only get messages about your bookings.,કોઈ વાંધો નથી 👍 તમને ફક્ત તમારા બુકિંગ વિશે સંદેશાઓ મળશે.,,
-optInConfirmed,Thanks! You'll now get offers and updates from {{business}}. Reply STOP anytime to stop.,આભાર! હવે તમને {{business}}તરફથી offersફર્સ અને અપડેટ્સ મળશે. રોકવા માટે કોઈપણ સમયે STOP જવાબ આપો.,,Keep unchanged: {{business}}
+બંધ કરવા માટે તમે ગમે ત્યારે STOP લખીને મોકલી શકો છો.",,Keep unchanged: {{business}}; Keep the line breaks; Hand-corrected wording (still machine-marked): needs native review
+optInYesButton,"Yes, send offers","હા, ઑફર્સ મોકલો",,Hand-corrected wording (still machine-marked): needs native review
+optInNoButton,No thanks,"ના, આભાર",,Hand-corrected wording (still machine-marked): needs native review
+bookingConsentQuestion,{{business}} would like to send you offers and updates on WhatsApp. You can stop anytime by replying STOP.,{{business}} તમને WhatsApp પર ઑફર્સ અને અપડેટ્સ મોકલવા માંગે છે. તમે ગમે ત્યારે STOP લખીને મોકલીને બંધ કરી શકો છો.,,Keep unchanged: {{business}}; Hand-corrected wording (still machine-marked): needs native review
+bookingConsentDeclined,No problem 👍 You'll only get messages about your bookings.,કોઈ વાંધો નથી 👍 તમને ફક્ત તમારા બુકિંગ વિશેના સંદેશા જ મળશે.,,Hand-corrected wording (still machine-marked): needs native review
+optInConfirmed,Thanks! You'll now get offers and updates from {{business}}. Reply STOP anytime to stop.,આભાર! હવે તમને {{business}} તરફથી ઑફર્સ અને અપડેટ્સ મળશે. બંધ કરવા માટે ગમે ત્યારે STOP લખીને મોકલો.,,Keep unchanged: {{business}}; Hand-corrected wording (still machine-marked): needs native review
 followupEnquiryNudge,"Hi {{customerName}}, just checking in — did you find what you were looking for? Reply here and we'll help, or type *menu* to see options.","હાય {{customerName}}, ફક્ત તપાસ કરી રહ્યા છીએ - શું તમે જે શોધી રહ્યા હતા તે મળ્યું? અહીં જવાબ આપો અને અમે મદદ કરીશું, અથવા વિકલ્પો જોવા માટે *menu* ટાઇપ કરીશું.",,Keep unchanged: {{customerName}}; *bold* markers must stay around the same words
 followupWinBack,"Hi {{customerName}}, it's been a while! We'd love to help you again — reply here anytime.","હાય {{customerName}}, થોડો સમય થઈ ગયો છે! અમે તમને ફરીથી મદદ કરવાનું પસંદ કરીએ છીએ - કોઈપણ સમયે અહીં જવાબ આપો.",,Keep unchanged: {{customerName}}
-followupReviewRequest,"Hi {{customerName}}, thank you for choosing {{businessName}}! How was your experience? Reply here — we'd love your feedback.","હાય {{customerName}}, {{businessName}}પસંદ કરવા બદલ આભાર! તમારો અનુભવ કેવો રહ્યો? અહીં જવાબ આપો - અમને તમારો પ્રતિસાદ ગમશે.",,Keep unchanged: {{customerName}} {{businessName}}
+followupReviewRequest,"Hi {{customerName}}, thank you for choosing {{businessName}}! How was your experience? Reply here — we'd love your feedback.","હાય {{customerName}}, {{businessName}} પસંદ કરવા બદલ આભાર! તમારો અનુભવ કેવો રહ્યો? અહીં જવાબ આપો - અમને તમારો પ્રતિસાદ ગમશે.",,Keep unchanged: {{customerName}} {{businessName}}
 followupPaymentPending,"Hi {{customerName}}, a gentle reminder: {{amount}} for booking {{bookingCode}} is still pending. Reply here if you need the payment details again.","હાય {{customerName}}, એક સૌમ્ય રીમાઇન્ડર: બુકિંગ {{bookingCode}} માટે {{amount}} હજી બાકી છે. જો તમને ફરીથી ચુકવણીની વિગતોની જરૂર હોય તો અહીં જવાબ આપો.",,Keep unchanged: {{customerName}} {{amount}} {{bookingCode}}
-demoFixed,✅ {{student}}'s free demo class for {{course}} is fixed for {{time}}. Reply here if you need to change it.,✅ {{course}} માટે {{student}}નો મફત ડેમો વર્ગ {{time}}માટે નક્કી કરવામાં આવ્યો છે. જો તમારે તેને બદલવાની જરૂર હોય તો અહીં જવાબ આપો.,,Keep unchanged: {{student}} {{course}} {{time}}
-demoReminder,⏰ Reminder: {{student}}'s free demo class for {{course}} at {{business}} is on {{time}}. Reply here if you can't make it.,⏰ રીમાઇન્ડર: {{student}}{{business}} પર {{course}} માટે મફત ડેમો વર્ગ {{time}}પર છે. જો તમે તેને બનાવી શકતા ન હોવ તો અહીં જવાબ આપો.,,Keep unchanged: {{student}} {{course}} {{business}} {{time}}
+demoFixed,✅ {{student}}'s free demo class for {{course}} is fixed for {{time}}. Reply here if you need to change it.,✅ {{course}} માટે {{student}} નો મફત ડેમો વર્ગ {{time}} માટે નક્કી કરવામાં આવ્યો છે. જો તમારે તેને બદલવાની જરૂર હોય તો અહીં જવાબ આપો.,,Keep unchanged: {{student}} {{course}} {{time}}
+demoReminder,⏰ Reminder: {{student}}'s free demo class for {{course}} at {{business}} is on {{time}}. Reply here if you can't make it.,⏰ રીમાઇન્ડર: {{student}}{{business}} પર {{course}} માટે મફત ડેમો વર્ગ {{time}} પર છે. જો તમે તેને બનાવી શકતા ન હોવ તો અહીં જવાબ આપો.,,Keep unchanged: {{student}} {{course}} {{business}} {{time}}
 catalogDefaultText,Here is our catalogue 👇,અહીં અમારી સૂચિ છે 👇,,
 catalogEmptyText,Our catalogue is being updated. Please check back soon.,અમારી સૂચિ અપડેટ કરવામાં આવી રહી છે. કૃપા કરીને ટૂંક સમયમાં પાછા તપાસો.,,
 catalogViewButton,View designs,ડિઝાઇન જુઓ,,
@@ -61,7 +66,7 @@ catalogOrderButton,Order,ક્રમ,,
 catalogOrderThisButton,Order this,આનો ક્રમ આપો,,
 catalogShowMoreButton,Show more designs,વધારે ડિઝાઇન બતાવો,,
 catalogMenuLabel,🛍️ Catalogue,🛍️ કેટલોગ,,
-catalogPageSummary,Showing {{from}}–{{to}} of {{total}} designs in {{title}},{{from}}બતાવી રહ્યા છે - {{title}} માં {{total}} ડિઝાઇનની{{to}},,Keep unchanged: {{from}} {{to}} {{total}} {{title}}
+catalogPageSummary,Showing {{from}}–{{to}} of {{total}} designs in {{title}},{{from}} બતાવી રહ્યા છે - {{title}} માં {{total}} ડિઝાઇનની {{to}},,Keep unchanged: {{from}} {{to}} {{total}} {{title}}
 catalogCollectionEmpty,There are no designs in {{title}} yet.,{{title}} માં હજી સુધી કોઈ ડિઝાઇન નથી.,,Keep unchanged: {{title}}
 catalogOrderMessageDefault,Thank you! We have noted your order request and our team will contact you shortly.,આભાર! અમે તમારી ઓર્ડર વિનંતીની નોંધ લીધી છે અને અમારી ટીમ ટૂંક સમયમાં તમારો સંપર્ક કરશે.,,
 catalogTapStale,That item is no longer available. Here is our catalogue again.,તે વસ્તુ હવે ઉપલબ્ધ નથી. અહીં ફરીથી અમારી સૂચિ છે.,,
@@ -73,7 +78,7 @@ invalidDate,"Please enter a valid date, for example 25/12/2026.","કૃપા �
 datePast,That date has already passed. Please enter today's date or a later date.,તે તારીખ પહેલેથી જ પસાર થઈ ગઈ છે. કૃપા કરીને આજની તારીખ અથવા પછીની તારીખ દાખલ કરો.,,
 dateTooFar,Please enter a date within the next {{days}} days.,કૃપા કરીને આગામી {{days}} દિવસની અંદર તારીખ દાખલ કરો.,,Keep unchanged: {{days}}
 checkoutNotAfterCheckin,Check-out must be at least 1 night after check-in. Please enter a later check-out date.,ચેક-આઉટ ચેક-ઇન પછી ઓછામાં ઓછી 1 રાત હોવું આવશ્યક છે. કૃપા કરીને પછીની ચેક-આઉટ તારીખ દાખલ કરો.,,
-dateClosed,We're closed on {{day}}. Next available: {{date}}.,અમે {{day}}પર બંધ છીએ. આગળ ઉપલબ્ધ: {{date}}.,,Keep unchanged: {{day}} {{date}}
+dateClosed,We're closed on {{day}}. Next available: {{date}}.,અમે {{day}} પર બંધ છીએ. આગળ ઉપલબ્ધ: {{date}}.,,Keep unchanged: {{day}} {{date}}
 unsupportedMessageType,"Sorry, I can only read text messages. Please type your reply or pick an option below.","માફ કરશો, હું ફક્ત ટેક્સ્ટ સંદેશાઓ વાંચી શકું છું. કૃપા કરીને તમારો જવાબ લખો અથવા નીચે એક વિકલ્પ પસંદ કરો.",,
 bookingTapHintText,Please type your answer. Send *menu* to leave this booking.,કૃપા કરીને તમારો જવાબ લખો. આ બુકિંગ છોડવા માટે *menu* મોકલો.,,*bold* markers must stay around the same words
 bookingTapHintChoice,Please tap one of the options below. Send *menu* to leave this booking.,કૃપા કરીને નીચેના વિકલ્પોમાંથી એકને ટેપ કરો. આ બુકિંગ છોડવા માટે *menu* મોકલો.,,*bold* markers must stay around the same words

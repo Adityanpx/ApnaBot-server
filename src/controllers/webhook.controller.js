@@ -1507,7 +1507,7 @@ const processWebhookChange = async (entry, changes) => {
         logger.error('Error fetching business for START-keyword reply text, falling back to default:', fetchError);
       }
       const startText = getLocalizedText(startBusinessDoc, 'startMessage', customer.preferredLanguage) ||
-        "You're all set — messages have resumed.";
+        getSystemMessage('startOptInDefault', customer.preferredLanguage);
       const startMsg = await saveMessage({
         business_id: tenant.businessId,
         customer_id: customer.id,

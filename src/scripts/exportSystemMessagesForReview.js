@@ -29,7 +29,8 @@ require('dotenv').config();
 const fs = require('fs');
 const path = require('path');
 const { SYSTEM_MESSAGES, BUILT_IN_MESSAGES } = require('../utils/systemMessages');
-const { REVIEW_LANGUAGES, PROTECTED_TERMS, buildCsv, exportNotes, checkProtectedTerms } = require('../utils/systemMessagesReview');
+const { REVIEW_LANGUAGES, PROTECTED_TERMS, buildCsv, parseCsv, exportNotes, checkProtectedTerms } = require('../utils/systemMessagesReview');
+const { spaceAroundPlaceholders } = require('../utils/translateProtect');
 
 // Azure's rate limit comes back from azureTranslate.service as a 503 (TRANSLATE_UNAVAILABLE): wait and retry.
 const MAX_ATTEMPTS = 5;
@@ -63,22 +64,48 @@ const selectedLanguages = () => {
   return wanted;
 };
 
+/** --keys=a,b: translate only these keys (see below), or null for every message. */
+const selectedKeys = (allEntries) => {
+  const arg = process.argv.find((a) => a.startsWith('--keys='));
+  if (!arg) return null;
+  const wanted = arg.slice('--keys='.length).split(',').map((s) => s.trim()).filter(Boolean);
+  const known = new Set(allEntries.map((e) => e.key));
+  const bad = wanted.filter((k) => !known.has(k));
+  if (bad.length) throw new Error(`--keys has unknown key(s): ${bad.join(', ')}`);
+  return new Set(wanted);
+};
+
+const csvPath = (lang) => path.join(OUT_DIR, `system-messages-${lang}.csv`);
+const readExistingRows = (lang) => (fs.existsSync(csvPath(lang)) ? parseCsv(fs.readFileSync(csvPath(lang), 'utf8')) : []);
+
 async function main() {
   const langs = selectedLanguages();
-  const entries = collectEntries();
-  const chars = entries.reduce((sum, e) => sum + e.english.length, 0);
-  console.log(`${entries.length} messages (${Object.keys(SYSTEM_MESSAGES).length} system + ${Object.keys(BUILT_IN_MESSAGES).length} built-in), ${chars} characters each.`);
-  console.log(`Languages: ${langs.join(' ')}  ->  up to ${chars * langs.length} Azure characters (cached pairs are free), global cap only.`);
+  const allEntries = collectEntries();
+  const onlyKeys = selectedKeys(allEntries);
+  // With --keys the existing CSV is kept: only the listed keys that have no machine text yet are translated
+  // and merged in, so hand-corrected rows and reviewer input are never overwritten. Without it the CSV is rebuilt.
+  const todoFor = (lang) => {
+    if (!onlyKeys) return allEntries;
+    const done = new Set(readExistingRows(lang).filter((r) => r.machine_translation).map((r) => r.key));
+    return allEntries.filter((e) => onlyKeys.has(e.key) && !done.has(e.key));
+  };
+  const chars = allEntries.reduce((sum, e) => sum + e.english.length, 0);
+  console.log(`${allEntries.length} messages (${Object.keys(SYSTEM_MESSAGES).length} system + ${Object.keys(BUILT_IN_MESSAGES).length} built-in), ${chars} characters each.`);
+  const planned = langs.map((l) => [l, todoFor(l)]);
+  const plannedChars = planned.reduce((sum, [, list]) => sum + list.reduce((s, e) => s + e.english.length, 0), 0);
+  console.log(`Languages: ${langs.join(' ')}  ->  up to ${plannedChars} Azure characters${onlyKeys ? ` (only ${[...onlyKeys].join(', ')}, where missing)` : ''}, global cap only.`);
 
   if (!CONFIRM) {
+    for (const [lang, list] of planned) console.log(`  ${lang}: ${list.length} message(s)${onlyKeys ? `: ${list.map((e) => e.key).join(', ')}` : ''}`);
     console.log(`Dry run - nothing translated or written. Would write ${langs.map((l) => `system-messages-${l}.csv`).join(', ')} to docs/translations-review/. Re-run with --confirm.`);
     return;
   }
 
   const { translateTexts } = require('../services/translation.service'); // loads Supabase: only needed to translate
   fs.mkdirSync(OUT_DIR, { recursive: true });
-  const texts = entries.map((e) => e.english);
-  for (const lang of langs) {
+  for (const [lang, entries] of planned) {
+    if (entries.length === 0) { console.log(`  ${lang}: nothing to translate`); continue; }
+    const texts = entries.map((e) => e.english);
     let result;
     for (let attempt = 1; ; attempt += 1) {
       try {
@@ -98,11 +125,18 @@ async function main() {
     translations[lang] = translations[lang].map((text, i) => {
       const termProblem = text ? checkProtectedTerms(entries[i].english, text) : null;
       if (termProblem) problems.set(i, termProblem);
-      return termProblem ? null : text;
+      return termProblem ? null : (text && spaceAroundPlaceholders(text));
     });
-    const file = path.join(OUT_DIR, `system-messages-${lang}.csv`);
-    fs.writeFileSync(file, '﻿' + buildCsv(buildRows(entries, translations[lang], problems))); // BOM so Excel reads UTF-8
-    console.log(`  ${lang}: ${entries.length - problems.size}/${entries.length} machine-translated (${charged} chars charged, ${cacheHits} cache hits) -> ${path.relative(process.cwd(), file)}`);
+    let rows = buildRows(entries, translations[lang], problems);
+    if (onlyKeys) {
+      const fresh = new Map(rows.map((r) => [r.key, r]));
+      const existing = new Map(readExistingRows(lang).map((r) => [r.key, r]));
+      rows = allEntries.map((e) => fresh.get(e.key) || existing.get(e.key)
+        || { key: e.key, english: e.english, machine_translation: '', reviewed_translation: '', notes: exportNotes(e.english, 'not translated') });
+    }
+    const file = csvPath(lang);
+    fs.writeFileSync(file, '﻿' + buildCsv(rows)); // BOM so Excel reads UTF-8
+    console.log(`  ${lang}: ${entries.length - problems.size}/${entries.length} machine-translated${problems.size ? ` (dropped: ${[...problems].map(([i, why]) => `${entries[i].key} - ${why}`).join('; ')})` : ''} (${charged} chars charged, ${cacheHits} cache hits) -> ${path.relative(process.cwd(), file)}`);
   }
 }
 

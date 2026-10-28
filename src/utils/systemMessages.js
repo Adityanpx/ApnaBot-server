@@ -204,6 +204,15 @@ const SYSTEM_MESSAGES = {
     mr: 'ठीक आहे — आता तुम्हाला आमच्याकडून ऑफर्स किंवा रिमाइंडर्स मिळणार नाहीत. ते पुन्हा सुरू करण्यासाठी कधीही START पाठवा.'
   },
 
+  // ── Customer sent START (webhook.controller.js) ──
+  // Used only when the business has no start message of its own. Was a hardcoded English string, so
+  // hi / mr customers got English; now translated like the STOP reply.
+  startOptInDefault: {
+    en: "You're all set — messages have resumed.",
+    hi: 'सब ठीक है — संदेश फिर से शुरू हो गए हैं।',
+    mr: 'सर्व तयार आहे — संदेश पुन्हा सुरू झाले आहेत.'
+  },
+
   // ── Opt-in link consent (webhook.controller.js, utils/optInLink.js) ──
   // Sent when a customer messages a JOIN-<code> from an opt-in link / QR
   // poster. Must name the business and mention STOP in every language

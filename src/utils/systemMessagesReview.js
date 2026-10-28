@@ -55,6 +55,21 @@ const checkProtectedTerms = (english, translated) => {
   return null;
 };
 
+/**
+ * Words that mix Latin letters with letters of another script ("offersફર્સ", "WhatsApp-এ"): a sign Azure
+ * transliterated half a word or glued a protected term to a suffix. Placeholders are ignored; surrounding
+ * punctuation and *bold* marks do not count as part of the word.
+ * @returns {string[]}
+ */
+const mixedScriptTokens = (text) => String(text)
+  .replace(/\{\{[^}]+\}\}/g, ' ')
+  .split(/\s+/)
+  .map((token) => token.replace(/^[^\p{L}\p{M}]+|[^\p{L}\p{M}]+$/gu, ''))
+  .filter((token) => /\p{Script=Latin}/u.test(token) && /(?!\p{Script=Latin})[\p{L}\p{M}]/u.test(token));
+
+/** True when a placeholder is attached to a letter ("{{business}}તરફથી", "તરફથી{{business}}"). */
+const hasGluedPlaceholder = (text) => /\}\}[\p{L}\p{M}]|[\p{L}\p{M}]\{\{/u.test(String(text));
+
 /** What the exporter writes in `notes` for a row. */
 const exportNotes = (english, problem) => {
   const notes = [];
@@ -115,5 +130,5 @@ const buildLangModule = (lang, messages, keyOrder, source = 'reviewed') => {
 };
 
 module.exports = {
-  REVIEW_LANGUAGES, PROTECTED_TERMS, CSV_COLUMNS, buildCsv, parseCsv, checkPlaceholders, checkProtectedTerms, exportNotes, validateReviewed, buildLangModule
+  REVIEW_LANGUAGES, PROTECTED_TERMS, CSV_COLUMNS, buildCsv, parseCsv, checkPlaceholders, checkProtectedTerms, mixedScriptTokens, hasGluedPlaceholder, exportNotes, validateReviewed, buildLangModule
 };

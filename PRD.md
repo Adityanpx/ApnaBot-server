@@ -111,9 +111,15 @@ cutover and the menu picker had always resolved empty in practice.
   Translator, header "MACHINE-TRANSLATED", NOT native-reviewed, generated 2026-10-28 via
   `exportSystemMessagesForReview.js --confirm` + `importReviewedSystemMessages.js --source=machine --confirm`)
   -> English. `PROTECTED_TERMS` (ApnaBot, WhatsApp, UPI, OTP, Razorpay, menu, STOP, START) stay as typed; a
-  translation that loses a placeholder, bold span or protected term is dropped (7 messages, mostly payment
-  texts with a bold placeholder, still English). A later native review imports its CSV normally; reviewed keys
-  override machine ones. The followup default texts now pick up these machine translations too.
+  translation that loses a placeholder, bold span or protected term is dropped (2 left: `qrHowTo` in ta and bn,
+  still English). `isFaithful` counts bold that wraps only a placeholder (`*{{code}}*`) as a span. The consent
+  texts (opt-in question / confirmation, STOP and START replies, booking consent, Yes/No buttons) were
+  hand-corrected in the CSVs and are still marked machine for native review; the START reply is now the system
+  message `startOptInDefault` (it was a hardcoded English string). Machine files must have no placeholder glued
+  to a word and no Latin/Indic mixed word (tested). `exportSystemMessagesForReview.js --keys=a,b --confirm`
+  re-translates only those keys where a language has no text, keeping the rest of the CSV. A later native review
+  imports its CSV normally; reviewed keys override machine ones. The followup default texts pick up these
+  machine translations too.
 - Verified via `src/scripts/verifyBookingGraph.js`. Rewritten 2026-09-07 to
   be fully generic — no hardcoded business id, vehicle id, route-fare id,
   or expected fare/value anywhere in the script, and no default business

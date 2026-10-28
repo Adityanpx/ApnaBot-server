@@ -116,7 +116,7 @@ test('the generated machine files are loaded: every machine key is a real key an
   assert.deepEqual(Object.keys(MACHINE_MESSAGES).sort(), [...REVIEW_LANGUAGES].sort());
   const english = englishByKey();
   for (const [lang, table] of Object.entries(MACHINE_MESSAGES)) {
-    assert.ok(Object.keys(table).length > 60, lang);
+    assert.ok(Object.keys(table).length > 70, lang);
     for (const [key, text] of Object.entries(table)) {
       assert.ok(english[key] !== undefined, `${lang}.${key} is not a message key`);
       assert.equal(checkPlaceholders(english[key], text).ok, true, `${lang}.${key} placeholders`);
@@ -184,5 +184,49 @@ test('src/i18n holds only generated files: reviewed <lang>.js or <lang>.machine.
     assert.ok(m && REVIEW_LANGUAGES.includes(m[1]), `unexpected file in src/i18n: ${file}`);
     const source = fs.readFileSync(path.join(dir, file), 'utf8');
     assert.equal(/^\/\/ MACHINE-TRANSLATED/.test(source), !!m[2], `${file}: only .machine.js files may be machine-translated, and they must say so`);
+  }
+});
+
+test('mixedScriptTokens / hasGluedPlaceholder: the checks themselves', () => {
+  const { mixedScriptTokens, hasGluedPlaceholder } = require('./systemMessagesReview');
+  assert.deepEqual(mixedScriptTokens('offersફર્સ WhatsApp પર *menu* STOP જવાબ {{x}}'), ['offersફર્સ']);
+  assert.deepEqual(mixedScriptTokens('WhatsApp-এ পাঠান, IDକୁ ଦିଅ'), ['WhatsApp-এ', 'IDକୁ']);
+  assert.deepEqual(mixedScriptTokens('WhatsApp પર STOP ₹{{fare}} 10:30 (GPay, PhonePe) જુઓ.'), [], 'pure-Latin and pure-Indic words are fine');
+  assert.equal(hasGluedPlaceholder('{{business}}તરફથી'), true);
+  assert.equal(hasGluedPlaceholder('તરફથી{{business}}'), true);
+  assert.equal(hasGluedPlaceholder('તરફથી {{business}}, ₹{{fare}}: {{a}}{{b}}'), false);
+});
+
+test('machine files: no placeholder glued to a word and no word that mixes Latin with another script', () => {
+  const { MACHINE_MESSAGES } = require('./systemMessages');
+  const { mixedScriptTokens, hasGluedPlaceholder } = require('./systemMessagesReview');
+  for (const [lang, table] of Object.entries(MACHINE_MESSAGES)) {
+    for (const [key, text] of Object.entries(table)) {
+      assert.equal(hasGluedPlaceholder(text), false, `${lang}.${key}: placeholder glued to a word: ${text}`);
+      assert.deepEqual(mixedScriptTokens(text), [], `${lang}.${key}: Latin letters mixed into a word of another script`);
+    }
+  }
+});
+
+test('machine files: every message that went to a customer button fits WhatsApp\'s 20 characters', () => {
+  const { MACHINE_MESSAGES } = require('./systemMessages');
+  const graphemes = (s) => [...new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(s)].length;
+  const buttonKeys = Object.keys(SYSTEM_MESSAGES).filter((k) => SYSTEM_MESSAGES[k].en.length <= 24 && !SYSTEM_MESSAGES[k].en.includes('{{'));
+  for (const [lang, table] of Object.entries(MACHINE_MESSAGES)) {
+    for (const key of buttonKeys) if (table[key]) assert.ok(graphemes(table[key]) <= 20, `${lang}.${key} is ${graphemes(table[key])} characters`);
+  }
+});
+
+test('consent texts keep what English says: the business, WhatsApp, offers and updates, and STOP / START', () => {
+  const { MACHINE_MESSAGES } = require('./systemMessages');
+  for (const [lang, table] of Object.entries(MACHINE_MESSAGES)) {
+    for (const key of ['optInConsentQuestion', 'bookingConsentQuestion', 'optInConfirmed']) {
+      assert.ok(table[key].includes('{{business}}'), `${lang}.${key} names the business`);
+      assert.ok(table[key].includes('STOP'), `${lang}.${key} says STOP`);
+    }
+    for (const key of ['optInConsentQuestion', 'bookingConsentQuestion']) assert.ok(table[key].includes('WhatsApp'), `${lang}.${key} says WhatsApp`);
+    assert.ok(table.stopOptOutDefault.includes('START'), `${lang}.stopOptOutDefault says START`);
+    assert.ok(table.startOptInDefault, `${lang} has the START reply`);
+    assert.ok(table.optInConsentQuestion.includes('\n\n'), `${lang}.optInConsentQuestion keeps the two paragraphs`);
   }
 });

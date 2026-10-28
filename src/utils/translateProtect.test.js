@@ -69,3 +69,13 @@ test('padTerms: a protected term glued to a letter of another script gets a spac
   assert.equal(padTerms('Hello', undefined), 'Hello');
   assert.equal(padTerms('WhatsAppપર', []), 'WhatsAppપર');
 });
+
+test('isFaithful: bold or italic wrapping only a placeholder is a span, and still has to survive', () => {
+  const src = 'An advance of *{{amount}}* is required.\n\nBooking ID: *{{code}}*';
+  assert.equal(isFaithful(src, 'अग्रिम *{{amount}}* आवश्यक है।\n\nबुकिंग आईडी: *{{code}}*'), null);
+  assert.equal(isFaithful(src, 'अग्रिम {{amount}} आवश्यक है।\n\nबुकिंग आईडी: *{{code}}*'), 'Bold formatting lost.');
+  assert.equal(isFaithful('Pay *₹{{amount}}* for *{{code}}*', '*{{code}}* के लिए *₹{{amount}}* दें'), null, 'reordered spans are fine');
+  assert.equal(isFaithful('Fare: *₹{{fare}}*', 'किराया: ₹{{fare}}'), 'Bold formatting lost.');
+  assert.equal(isFaithful('Code _{{code}}_ ok', 'कोड _{{code}}_ ठीक'), null);
+  assert.equal(isFaithful('Hi {{customer_name}} bye', 'नमस्ते {{customer_name}} अलविदा'), null, 'underscores inside a placeholder are not italic');
+});
