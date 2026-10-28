@@ -21,6 +21,7 @@ const { getLocalizedText, getListButtonLabel } = require('../utils/localization'
 const { getSystemMessage } = require('../utils/systemMessages');
 const { cleanValue } = require('../utils/templateValue');
 const { isIndefinitePause } = require('../utils/botPause');
+const { isChoiceFieldType, withTapHint } = require('../utils/bookingTapGuard');
 const { parseJoinCode, isSystemTapId, parseOptInTapId, OPT_IN_YES_PREFIX, OPT_IN_NO_PREFIX } = require('../utils/optInLink');
 const optInLinkService = require('../services/optInLink.service');
 const bookingConsentService = require('../services/bookingConsent.service');
@@ -887,11 +888,23 @@ const sendOptInConfirmation = async (ctx) => {
  * @param {Object} ctx - { tenant, customer, customerNumber }
  * @param {Object} activeSession
  */
-const resendCurrentBookingPrompt = async (ctx, activeSession) => {
+const resendCurrentBookingPrompt = async (ctx, activeSession, { withHint = false } = {}) => {
   const field = await bookingGraphService.getCurrentNodeField(ctx.tenant.businessId, activeSession, ctx.customer.preferredLanguage);
   if (!field) return false;
-  await sendFieldPrompt({ ...ctx, triggeredRuleId: activeSession.ruleId }, field);
+  await sendHintedFieldPrompt({ ...ctx, triggeredRuleId: activeSession.ruleId }, field, withHint);
   return true;
+};
+
+/**
+ * sendFieldPrompt, optionally with the "type your answer / send menu" hint above the question
+ * (the customer tapped something that is not an answer to it). A carousel's intro is its label,
+ * so the hint goes through the intro override there.
+ */
+const sendHintedFieldPrompt = async (ctx, field, withHint) => {
+  if (!withHint) return sendFieldPrompt(ctx, field);
+  const hintedLabel = withTapHint(field.label, ctx.customer.preferredLanguage);
+  if (field.fieldType === 'vehicle_carousel') return sendFieldPrompt(ctx, field, hintedLabel);
+  return sendFieldPrompt(ctx, { ...field, label: hintedLabel });
 };
 
 /**
@@ -1828,7 +1841,7 @@ const processWebhookChange = async (entry, changes) => {
         customer.preferredLanguage = toCamelCase(tapLangCustomer).preferredLanguage;
       }
 
-      if (activeSession && await resendCurrentBookingPrompt(ctx, activeSession)) {
+      if (activeSession && await resendCurrentBookingPrompt(ctx, activeSession, { withHint: true })) {
         return; // Back to the pending booking question - session untouched
       }
 
@@ -1953,8 +1966,17 @@ const processWebhookChange = async (entry, changes) => {
       } else if (replyId !== null) {
         const currentField = await bookingGraphService.getCurrentNodeField(tenant.businessId, activeSession, customer.preferredLanguage);
 
-        if (currentField &&
-            (currentField.fieldType === 'buttons' || currentField.fieldType === 'list' || currentField.fieldType === 'vehicle_carousel')) {
+        const promptCtx = { tenant, customer, customerNumber, triggeredRuleId: activeSession.ruleId };
+
+        if (currentField && !isChoiceFieldType(currentField.fieldType)) {
+          // A tap (an older welcome message's row, ...) while a typed answer is expected: its id is
+          // not an answer, so store nothing and ask the question again with the hint.
+          await sendHintedFieldPrompt(promptCtx, currentField, true);
+          logger.info(`Ignored tap during a typed question for ${customerNumber} (tap ${replyId}, current node ${activeSession.currentNodeId}, ${currentField.fieldType})`);
+          return; // Do not advance the session or run rule matching
+        }
+
+        if (currentField) {
           const lastColonIdx = replyId.lastIndexOf(':');
           const tappedNodeId = lastColonIdx === -1 ? null : replyId.slice(0, lastColonIdx);
           const suffix = lastColonIdx === -1 ? null : replyId.slice(lastColonIdx + 1);
@@ -1963,13 +1985,11 @@ const processWebhookChange = async (entry, changes) => {
             // Stale tap from an already-answered question (or a malformed
             // id) — don't resolve it as an answer to the current question.
             // Silently ignore it and re-send the current question's prompt
-            // so the customer sees the bot is still waiting here, without
-            // advancing the session. Unlike the old {step}/vehicle_ scheme,
-            // this check now also covers vehicle_carousel taps.
-            await sendFieldPrompt(
-              { tenant, customer, customerNumber, triggeredRuleId: activeSession.ruleId },
-              currentField
-            );
+            // (with the hint on how to leave) so the customer sees the bot
+            // is still waiting here, without advancing the session. Unlike
+            // the old {step}/vehicle_ scheme, this check now also covers
+            // vehicle_carousel taps.
+            await sendHintedFieldPrompt(promptCtx, currentField, true);
             logger.info(`Ignored stale tap for ${customerNumber} (tapped node ${tappedNodeId}, current node ${activeSession.currentNodeId})`);
             return; // Do not advance the session or run rule matching
           }
@@ -1981,9 +2001,13 @@ const processWebhookChange = async (entry, changes) => {
             resolvedReply = suffix;
           } else {
             const tappedIndex = parseInt(suffix, 10);
-            if (!Number.isNaN(tappedIndex) && currentField.options[tappedIndex] !== undefined) {
-              resolvedReply = currentField.options[tappedIndex].value;
+            if (Number.isNaN(tappedIndex) || currentField.options[tappedIndex] === undefined) {
+              // Right question, but an index it has no option for: same as a stale tap.
+              await sendHintedFieldPrompt(promptCtx, currentField, true);
+              logger.info(`Ignored tap with no matching option for ${customerNumber} (tap ${replyId}, node ${activeSession.currentNodeId})`);
+              return;
             }
+            resolvedReply = currentField.options[tappedIndex].value;
           }
         }
       }
@@ -2255,7 +2279,7 @@ const processWebhookChange = async (entry, changes) => {
     let catalogOrder = null;
     const catalogTap = parseCatalogTapId(buttonReplyId);
     if (catalogTap) {
-      if (activeSession && await resendCurrentBookingPrompt(ctx, activeSession)) {
+      if (activeSession && await resendCurrentBookingPrompt(ctx, activeSession, { withHint: true })) {
         return; // Back to the pending booking question - session untouched
       }
       const catalogOutcome = await catalogReply.handleTap(ctx, catalogTap);

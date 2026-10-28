@@ -386,7 +386,7 @@ test('mid-booking, a catalogue tap only re-shows the pending question and never 
   activeSession = { currentNodeId: 'q1', ruleId: BOOK, collected: {} };
   await tap(`cat:${C1}:order`);
   assert.equal(events.length, 1);
-  assert.equal(jobs()[0].message, 'Your name?');
+  assert.equal(jobs()[0].message, 'Please type your answer. Send *menu* to leave this booking.\n\nYour name?');
   assert.equal(startArgs, null);
   assert.equal(db.catalog_events.length, 0);
 });

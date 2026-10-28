@@ -405,6 +405,14 @@ const SYSTEM_MESSAGES = {
     mr: 'माफ करा, मी फक्त मजकूर संदेश वाचू शकतो. कृपया तुमचे उत्तर टाइप करा किंवा खालील पर्यायांपैकी एक निवडा.'
   },
 
+  // Prepended to the current booking question when the customer taps an old button / list row instead
+  // of answering it (utils/bookingTapGuard.js). The escape word stays the English "menu" on purpose.
+  bookingTapHint: {
+    en: 'Please type your answer. Send *menu* to leave this booking.',
+    hi: 'कृपया अपना उत्तर टाइप करें। इस बुकिंग से बाहर निकलने के लिए *menu* भेजें।',
+    mr: 'कृपया तुमचे उत्तर टाइप करा. ही बुकिंग सोडण्यासाठी *menu* पाठवा.'
+  },
+
   // Opens a list message (button on the message). Max 20 characters (WhatsApp).
   listButtonChoose: {
     en: 'Choose',

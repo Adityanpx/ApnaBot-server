@@ -64,6 +64,7 @@ const businessService = require('./business.service');
 const bookingService = require('./booking.service');
 const { sanitizePrefill, prefillLabel } = require('../utils/catalogOrder');
 const { isNameField, isDateField, isCheckOutField, validateName, validateDateAnswer } = require('../utils/answerValidation');
+const { isInternalId, withTapHint } = require('../utils/bookingTapGuard');
 
 const MAX_HOPS = 25; // cycle guard for pickNextNodeId's skip-forward walk
 
@@ -774,6 +775,8 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
         longitude: reply.longitude,
         address: reply.address || reply.name || null
       };
+    } else if (isInternalId(trimmedReply)) {
+      return { session, result: withTapHint(getLocalizedText(currentNode, 'label', languageCode), languageCode) };
     } else if (trimmedReply !== '') {
       // Manual fallback — customer typed an address instead of sharing location.
       session.collected[currentNode.fieldKey] = trimmedReply;
@@ -783,6 +786,11 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
       session.collected[currentNode.fieldKey] = null;
     }
   } else {
+    // Last line of defence behind the callers' tap checks: an internal id (a stale tap that reached
+    // here as text) is never a stored answer, whatever the field's own validator would have said.
+    if (isInternalId(trimmedReply)) {
+      return { session, result: withTapHint(getLocalizedText(currentNode, 'label', languageCode), languageCode) };
+    }
     if (currentNode.required === true && trimmedReply === '') {
       return { session, result: getLocalizedText(currentNode, 'label', languageCode) };
     }

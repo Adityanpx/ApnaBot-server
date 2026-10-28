@@ -189,7 +189,7 @@ test('mid-booking, any other tap re-shows the pending question and is not an ans
   await tap(pay(0), 'Prices');
   assert.ok(!calls.includes('advanceGraphSession'));
   assert.ok(!calls.some(c => c[0] === 'findMatchingRule'));
-  assert.deepEqual(sentTexts(), ['What is your name?']);
+  assert.deepEqual(sentTexts(), ['Please type your answer. Send *menu* to leave this booking.\n\nWhat is your name?']);
 });
 
 test('paused bot: a non-opt-out tap is recorded, no reply', async () => {

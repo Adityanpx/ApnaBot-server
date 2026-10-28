@@ -10,6 +10,8 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const crypto = require('crypto');
 const GOLDEN = require('./webhook.interactiveSites.golden.json');
+// A template-button tap mid-booking re-asks the pending question with this above it.
+const TAP_HINT = 'Please type your answer. Send *menu* to leave this booking.\n\n';
 
 const BIZ = 'b1';
 const NODE = '33333333-3333-4333-8333-333333333333';
@@ -189,17 +191,17 @@ const CASES = {
   'booking question as a list': {
     arrange: () => { session = MID_BOOKING; currentField = { fieldType: 'list', label: 'Which car?', nodeId: 'q9', options: [{ label: 'Swift' }, { label: 'Innova' }] }; },
     act: () => tap(0, 'Prices'),
-    payload: { kind: 'list', body: 'Which car?', buttonText: 'Choose', options: [{ id: 'q9:0', title: 'Swift' }, { id: 'q9:1', title: 'Innova' }] }
+    payload: { kind: 'list', body: `${TAP_HINT}Which car?`, buttonText: 'Choose', options: [{ id: 'q9:0', title: 'Swift' }, { id: 'q9:1', title: 'Innova' }] }
   },
   'booking question as buttons': {
     arrange: () => { session = MID_BOOKING; currentField = { fieldType: 'buttons', label: 'Trip type?', nodeId: 'q8', options: [{ label: 'One way' }, { label: 'Round trip' }] }; },
     act: () => tap(0, 'Prices'),
-    payload: { kind: 'buttons', body: 'Trip type?', options: [{ id: 'q8:0', title: 'One way' }, { id: 'q8:1', title: 'Round trip' }] }
+    payload: { kind: 'buttons', body: `${TAP_HINT}Trip type?`, options: [{ id: 'q8:0', title: 'One way' }, { id: 'q8:1', title: 'Round trip' }] }
   },
   'booking question asks for a location': {
     arrange: () => { session = MID_BOOKING; currentField = { fieldType: 'location_request', label: 'Share pickup', nodeId: 'q7' }; },
     act: () => tap(0, 'Prices'),
-    payload: { kind: 'location_request', body: 'Share pickup' }
+    payload: { kind: 'location_request', body: `${TAP_HINT}Share pickup` }
   },
   'booking question as plain text': {
     arrange: () => { session = MID_BOOKING; currentField = { fieldType: 'text', label: 'Your name?', nodeId: 'q1' }; },

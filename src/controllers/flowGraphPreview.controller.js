@@ -26,6 +26,7 @@ const { GREETING_KEYWORDS } = require('./webhook.controller');
 const { applyMessageTemplate, applyMessageTemplateWithFooter } = require('../utils/messageTemplating');
 const { getLocalizedText } = require('../utils/localization');
 const { getSystemMessage } = require('../utils/systemMessages');
+const { isChoiceFieldType, withTapHint } = require('../utils/bookingTapGuard');
 const { successResponse, errorResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 
@@ -333,32 +334,42 @@ const handleActiveSession = async (business, session, messageText, buttonReplyId
   if (buttonReplyId) {
     const currentField = await bookingGraphService.getCurrentNodeField(business.id, session, null);
 
-    if (currentField &&
-        (currentField.fieldType === 'buttons' || currentField.fieldType === 'list' || currentField.fieldType === 'vehicle_carousel')) {
+    // Re-render the current question without advancing, with the "type your answer / send menu"
+    // hint — same as the real webhook. Mirrors sendFieldPrompt: only the non-carousel path gets the
+    // footer/template treatment — a vehicle_carousel's intro text is sent as-is by the real webhook,
+    // so the preview must match.
+    const reAskWithHint = () => {
+      const hintedLabel = withTapHint(currentField.label, null);
+      const rendered = buildFieldOptions(currentField);
+      const replyText = currentField.fieldType === 'vehicle_carousel'
+        ? hintedLabel
+        : applyMessageTemplateWithFooter(hintedLabel, business, null);
+      return { replyText, buttons: rendered.buttons, listOptions: rendered.listOptions, session };
+    };
+
+    if (currentField && !isChoiceFieldType(currentField.fieldType)) {
+      // A tap while a typed answer is expected - its id is never the answer (see the real webhook).
+      return reAskWithHint();
+    }
+
+    if (currentField) {
       const lastColonIdx = buttonReplyId.lastIndexOf(':');
       const tappedNodeId = lastColonIdx === -1 ? null : buttonReplyId.slice(0, lastColonIdx);
       const suffix = lastColonIdx === -1 ? null : buttonReplyId.slice(lastColonIdx + 1);
 
       if (tappedNodeId === null || tappedNodeId !== session.currentNodeId) {
-        // Stale tap - re-render the current question without advancing,
-        // same as the real webhook's stale-tap guard.
-        // Mirrors sendFieldPrompt: only the non-carousel path gets the
-        // footer/template treatment — a vehicle_carousel's intro text is
-        // sent as-is by the real webhook, so the preview must match.
-        const rendered = buildFieldOptions(currentField);
-        const staleReplyText = currentField.fieldType === 'vehicle_carousel'
-          ? currentField.label
-          : applyMessageTemplateWithFooter(currentField.label, business, null);
-        return { replyText: staleReplyText, buttons: rendered.buttons, listOptions: rendered.listOptions, session };
+        // Stale tap - same as the real webhook's stale-tap guard.
+        return reAskWithHint();
       }
 
       if (currentField.fieldType === 'vehicle_carousel') {
         resolvedReply = suffix;
       } else {
         const tappedIndex = parseInt(suffix, 10);
-        if (!Number.isNaN(tappedIndex) && currentField.options[tappedIndex] !== undefined) {
-          resolvedReply = currentField.options[tappedIndex].value;
+        if (Number.isNaN(tappedIndex) || currentField.options[tappedIndex] === undefined) {
+          return reAskWithHint(); // Right question, no such option: same as a stale tap
         }
+        resolvedReply = currentField.options[tappedIndex].value;
       }
     }
   }

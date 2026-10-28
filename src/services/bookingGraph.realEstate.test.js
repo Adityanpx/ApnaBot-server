@@ -67,6 +67,26 @@ test('the enquiry asks type -> buy/rent -> budget -> ID/area -> visit time, in t
   });
 });
 
+test('an internal id arriving as the typed answer (stale tap) is never stored: the question again with the hint', async () => {
+  const idArea = qid('catalogDesignNo');
+  let { session } = await bookingGraph.startGraphSession('b1', TRIGGER.id, 'en');
+  let result;
+  while (session.currentNodeId !== idArea) {
+    ({ session, result } = await bookingGraph.advanceGraphSession({ businessId: 'b1', session, reply: answerFor(session.currentNodeId), languageCode: 'en' }));
+  }
+  const answeredBefore = session.answeredFields.length;
+  for (const staleId of ['ad074bf9-1111-4222-8333-944455556666', 'ad074bf9-1111-4222-8333-944455556666:2', 'cat:menu']) {
+    ({ session, result } = await bookingGraph.advanceGraphSession({ businessId: 'b1', session, reply: staleId, languageCode: 'en' }));
+    assert.equal(typeof result, 'string', staleId);
+    assert.ok(result.startsWith('Please type your answer. Send *menu* to leave this booking.\n\n'), staleId);
+    assert.equal(session.currentNodeId, idArea, staleId);
+    assert.equal(session.collected.catalogDesignNo, undefined, staleId);
+    assert.equal(session.answeredFields.length, answeredBefore, staleId);
+  }
+  ({ session } = await bookingGraph.advanceGraphSession({ businessId: 'b1', session, reply: '10:30 flat in Baner', languageCode: 'en' }));
+  assert.equal(session.collected.catalogDesignNo, '10:30 flat in Baner', 'a colon in a real answer is fine');
+});
+
 test('every required field_key ends up non-empty in collected', async () => {
   const { session } = await walk();
   for (const q of QUESTIONS.filter((x) => x.required)) assert.ok(session.collected[q.field_key], q.field_key);
