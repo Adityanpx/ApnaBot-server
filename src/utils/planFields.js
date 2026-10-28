@@ -90,6 +90,7 @@ const validatePlanExtras = ({ features, isPopular, sortOrder, storageLimitMb, br
  */
 const toPublicPlan = (p) => ({
   id: p.id,
+  _id: p.id, // toCamelCase adds this alias to every row; clients send planId: plan._id for checkout
   name: p.name,
   displayName: p.display_name,
   price: p.price,

@@ -143,10 +143,12 @@ test('GET /subscription/plans: exactly the whitelisted card fields - no rule / c
   }] });
   const [plan] = (await call(ctrl.getPlans)).body.data.plans;
   assert.deepEqual(Object.keys(plan).sort(), [
-    'bookingEnabled', 'broadcastRecipientLimit', 'carouselMaxCards', 'displayName', 'durationOptions', 'features', 'id', 'imagesPerReply',
+    '_id', 'bookingEnabled', 'broadcastRecipientLimit', 'carouselMaxCards', 'displayName', 'durationOptions', 'features', 'id', 'imagesPerReply',
     'isPopular', 'maxStaff', 'msgLimit', 'name', 'price', 'sortOrder', 'staffEnabled', 'storageLimitMb', 'videoPerReply'
   ]);
   assert.equal(plan.broadcastRecipientLimit, 500);
+  assert.equal(plan.id, 'p1');
+  assert.equal(plan._id, 'p1', 'checkout sends planId: plan._id');
   assert.equal(plan.msgLimit, 2000);
 });
 

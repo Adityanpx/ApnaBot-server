@@ -1513,7 +1513,7 @@ Goal: a plan created or edited in Super Admin shows up in the web app and Flutte
 - **Plan limits clean-up (2026-10-28, migration `20261031120000_plans_broadcast_recipient_limit.sql`,
   uncommitted until the commit below).**
   - **Public `GET /api/subscription/plans` is now a whitelist** (`toPublicPlan` in `utils/planFields.js`):
-    `id, name, displayName, price, durationOptions, isPopular, features, sortOrder, msgLimit, imagesPerReply,
+    `id, _id (same value, the toCamelCase alias checkout sends), name, displayName, price, durationOptions, isPopular, features, sortOrder, msgLimit, imagesPerReply,
     videoPerReply, carouselMaxCards, storageLimitMb, staffEnabled, maxStaff, bookingEnabled,
     broadcastRecipientLimit`. `ruleLimit`, `customerLimit` and `paymentLinkEnabled` are no longer advertised
     (columns kept, nothing lost; the authenticated `GET /api/subscription` still returns the whole plan).
