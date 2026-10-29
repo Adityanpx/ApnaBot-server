@@ -112,6 +112,15 @@ const replyTextFor = (settings, language, now = new Date()) => {
   return usable(own) ? own : getSystemMessage('handoffReply', language);
 };
 
+/** The business's own media-received text (in the customer's language) or the built-in one. */
+const mediaReplyTextFor = (settings, language) => {
+  const own = getLocalizedText(settings, 'mediaReplyText', language);
+  return usable(own) ? own : getSystemMessage('mediaReceived', language);
+};
+
+/** Whether the business chose "Thank them and alert the team" for photos / PDFs / documents. */
+const isMediaAlertOn = (settings) => !!settings && settings.mediaReplyMode === 'thank_and_alert';
+
 // ── State on the customer row ────────────────────────────────────────────────
 const toNeedsHuman = (customerRow) => {
   const since = customerRow && (customerRow.needsHumanAt || customerRow.needs_human_at);
@@ -165,7 +174,7 @@ const pauseBotFor = async (businessId, customer, minutes) => {
 
 /**
  * Opens an escalation for a customer.
- * @param {{businessId: string, customer: object, customerNumber: string, reason: 'tap'|'keyword'|'unmatched', settings: object}} args
+ * @param {{businessId: string, customer: object, customerNumber: string, reason: 'tap'|'keyword'|'unmatched'|'media', settings: object}} args
  *   customer is the camelCase row; it is updated in place (needsHumanAt, botPausedUntil)
  * @returns {Promise<{claimed: boolean}>} claimed false = one is already open (or, for 'unmatched', was
  *   cleared under 30 minutes ago): nothing was sent. Throws only if the claim itself fails.
@@ -289,6 +298,8 @@ module.exports = {
   saveSettings,
   effectiveKeywords,
   replyTextFor,
+  mediaReplyTextFor,
+  isMediaAlertOn,
   toNeedsHuman,
   bumpUnmatched,
   resetUnmatched,

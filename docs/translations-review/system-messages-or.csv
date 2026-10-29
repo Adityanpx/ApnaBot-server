@@ -7,6 +7,7 @@ paymentTriggerDefault,Please complete your payment.,ଦୟାକରି ଆପଣ
 genericFallbackReply,Thank you for your message. We will get back to you soon.,ଆପଣଙ୍କ ବାର୍ତ୍ତା ପାଇଁ ଧନ୍ୟବାଦ । ଆମେ ଶୀଘ୍ର ଆପଣଙ୍କ ପାଖକୁ ଫେରିବୁ ।,,
 handoffReply,Thank you! 🙏 Our team has been told and will reply to you here shortly.,ଧନ୍ୟବାଦ! 🙏 ଆମ ଦଳକୁ କୁହାଯାଇଛି ଏବଂ ଖୁବ୍ ଶୀଘ୍ର ଆପଣଙ୍କୁ ଏଠାରେ ଉତ୍ତର ଦେବ |,,
 handoffClosed,Thank you! 🙏 We are closed right now. Our team will reply to you here {{nextOpening}}.,ଧନ୍ୟବାଦ! 🙏 ଆମେ ବର୍ତ୍ତମାନ ବନ୍ଦ ହୋଇଛୁ । ଆମର ଟିମ୍ ଆପଣଙ୍କୁ ଏଠାରେ ଉତ୍ତର ଦେବ {{nextOpening}}।,,Keep unchanged: {{nextOpening}}
+mediaReceived,Thanks! We've received your file. Our team will reply with details shortly.,ଧନ୍ୟବାଦ! ଆମେ ଆପଣଙ୍କର ଫାଇଲ୍ ଗ୍ରହଣ କରିଛୁ । ଆମର ଟିମ୍ ଶୀଘ୍ର ସବିଶେଷ ତଥ୍ୟ ସହିତ ଉତ୍ତର ଦେବ ।,,
 locationNotConfigured,"Sorry, our location is not set up yet.","ଦୁଃଖିତ, ଆମର ଅବସ୍ଥାନ ଏପର୍ଯ୍ୟନ୍ତ ସେଟ୍ ଅପ୍ ହୋଇନାହିଁ।",,
 vehicleNoLongerAvailable,"Sorry, that vehicle is no longer available for this route. Here are the current options:","ଦୁଃଖିତ, ସେହି ଗାଡି ଏହି ମାର୍ଗ ପାଇଁ ଆଉ ଉପଲବ୍ଧ ନାହିଁ। ଏଠାରେ ସାମ୍ପ୍ରତିକ ବିକଳ୍ପଗୁଡ଼ିକ ଅଛି:",,
 bookingReceived,✅ *Booking request received!*,✅ *ବୁକିଂ ଅନୁରୋଧ ପ୍ରାପ୍ତ ହୋଇଛି!*,,*bold* markers must stay around the same words
@@ -82,5 +83,8 @@ dateClosed,We're closed on {{day}}. Next available: {{date}}.,ଆମେ {{day}} 
 unsupportedMessageType,"Sorry, I can only read text messages. Please type your reply or pick an option below.","ଦୁଃଖିତ, ମୁଁ କେବଳ ଟେକ୍ସଟ୍ ମେସେଜ୍ ପଢିପାରେ । ଦୟାକରି ଆପଣଙ୍କର ଉତ୍ତର ଟାଇପ୍ କରନ୍ତୁ କିମ୍ବା ନିମ୍ନରେ ଏକ ବିକଳ୍ପ ବାଛନ୍ତୁ ।",,
 bookingTapHintText,Please type your answer. Send *menu* to leave this booking.,ଦୟାକରି ଆପଣଙ୍କର ଉତ୍ତର ଟାଇପ୍ କରନ୍ତୁ । ଏହି ବୁକିଂ ଛାଡିବାକୁ *menu* ପଠାନ୍ତୁ ।,,*bold* markers must stay around the same words
 bookingTapHintChoice,Please tap one of the options below. Send *menu* to leave this booking.,ଦୟାକରି ନିମ୍ନରେ ଥିବା ବିକଳ୍ପଗୁଡ଼ିକ ମଧ୍ୟରୁ ଗୋଟିଏ ଟ୍ୟାପ୍ କରନ୍ତୁ। ଏହି ବୁକିଂ ଛାଡିବାକୁ *menu* ପଠାନ୍ତୁ।,,*bold* markers must stay around the same words
+bookingTapHintFile,Please send a photo or file as your answer. Send *menu* to leave this booking.,ଦୟାକରି ଆପଣଙ୍କର ଉତ୍ତର ଭାବରେ ଏକ ଫଟୋ କିମ୍ବା ଫାଇଲ୍ ପଠାନ୍ତୁ । ଏହି ବୁକିଂ ଛାଡିବାକୁ *menu* ପଠାନ୍ତୁ ।,,*bold* markers must stay around the same words
+bookingFileRejected,"Sorry, we couldn't accept that file. Please send a JPG, PNG, WEBP, PDF, XLSX, XLS, CSV or DOCX file under 16 MB.","ଦୁଃଖିତ, ଆମେ ସେହି ଫାଇଲକୁ ଗ୍ରହଣ କରିପାରିଲୁ ନାହିଁ । ଦୟାକରି 16 MB ତଳେ ଏକ JPG, PNG, WEBP, PDF, XLSX, XLS, CSV କିମ୍ବା DOCX ଫାଇଲ୍ ପଠାନ୍ତୁ ।",,
+summaryFileReceived,received,ପ୍ରାପ୍ତ ହୋଇଛି,,
 listButtonChoose,Choose,ବାଛନ୍ତୁ,,
 chooseLanguageLine,Choose your language,ଆପଣଙ୍କ ଭାଷା ବାଛନ୍ତୁ,,

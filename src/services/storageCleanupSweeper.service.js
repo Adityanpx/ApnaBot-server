@@ -143,6 +143,19 @@ const clearReferences = async (item, nowIso, ctx, snapshotIds = []) => {
   // Messages that carried this file (e.g. a library file sent from the inbox).
   must(await supabase.from('messages').update({ media_url: null, media_removed_at: nowIso }).eq('media_url', url));
 
+  // A customer's booking file with no booking (never created, or the booking was deleted): its row goes
+  // and its bytes stop counting. Files of a live booking never get here (protected in the inventory).
+  const bookingFile = must(await supabase.from('booking_files').select('id, business_id, size_bytes').eq('r2_key', key).maybeSingle());
+  if (bookingFile) {
+    const removedFile = must(await supabase.from('booking_files').delete().eq('id', bookingFile.id).select('id'));
+    if (removedFile && removedFile.length > 0) {
+      const { error } = await supabase.rpc('increment_business_storage_used', {
+        p_business_id: bookingFile.business_id, p_delta_bytes: -bookingFile.size_bytes
+      });
+      if (error) logger.error('Storage cleanup: booking file row deleted but storage_used_bytes decrement failed', { businessId: bookingFile.business_id, error: error.message });
+    }
+  }
+
   // Library row last, and the storage counter only when this call really removed the row.
   if (media) {
     const removed = must(await supabase.from('business_media').delete().eq('id', mediaId).select('id'));

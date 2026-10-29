@@ -36,6 +36,32 @@ const uploadImage = async (fileBuffer, folder, publicId, mimetype) => {
 };
 
 /**
+ * Upload a file whose extension and content type are already decided (documents: the extension
+ * cannot be taken from the MIME subtype the way uploadImage does it).
+ * @param {Buffer} fileBuffer
+ * @param {string} folder - e.g. 'booking-files/<businessId>'
+ * @param {string} publicId - filename without extension
+ * @param {string} ext - e.g. 'pdf'
+ * @param {string} contentType - e.g. 'application/pdf'
+ * @returns {Promise<{ url: string, key: string }>}
+ */
+const uploadFile = async (fileBuffer, folder, publicId, ext, contentType) => {
+  const key = `${folder}/${publicId}.${ext}`;
+
+  await r2.send(new PutObjectCommand({
+    Bucket: config.R2_BUCKET_NAME,
+    Key: key,
+    Body: fileBuffer,
+    ContentType: contentType,
+  }));
+
+  return {
+    url: `${config.R2_PUBLIC_URL}/${key}`,
+    key,
+  };
+};
+
+/**
  * Delete a file from R2 by its key
  * @param {string} key
  */
@@ -91,4 +117,4 @@ const deleteObjects = async (keys) => {
   return { failed };
 };
 
-module.exports = { uploadImage, deleteImage, listObjects, deleteObjects, DELETE_BATCH_MAX };
+module.exports = { uploadImage, uploadFile, deleteImage, listObjects, deleteObjects, DELETE_BATCH_MAX };

@@ -7,6 +7,7 @@ paymentTriggerDefault,Please complete your payment.,దయచేసి మీ �
 genericFallbackReply,Thank you for your message. We will get back to you soon.,మీ సందేశానికి ధన్యవాదాలు. మేము త్వరలో మిమ్మల్ని సంప్రదిస్తాము.,,
 handoffReply,Thank you! 🙏 Our team has been told and will reply to you here shortly.,ధన్యవాదాలు! మా 🙏 బృందానికి చెప్పబడింది మరియు త్వరలో ఇక్కడ మీకు ప్రత్యుత్తరం ఇస్తుంది.,,
 handoffClosed,Thank you! 🙏 We are closed right now. Our team will reply to you here {{nextOpening}}.,ధన్యవాదాలు! మేము 🙏 ప్రస్తుతం మూసివేయబడ్డాము. మా బృందం మీకు ఇక్కడ ప్రత్యుత్తరం ఇస్తుంది {{nextOpening}}.,,Keep unchanged: {{nextOpening}}
+mediaReceived,Thanks! We've received your file. Our team will reply with details shortly.,ధన్యవాదాలు! మేము మీ ఫైల్ ను స్వీకరించాము. మా బృందం త్వరలో వివరాలతో ప్రత్యుత్తరం ఇస్తుంది.,,
 locationNotConfigured,"Sorry, our location is not set up yet.","క్షమించండి, మా లొకేషన్ ఇంకా సెటప్ చేయబడలేదు.",,
 vehicleNoLongerAvailable,"Sorry, that vehicle is no longer available for this route. Here are the current options:","క్షమించండి, ఆ వాహనం ఇకపై ఈ మార్గం కోసం అందుబాటులో లేదు. ప్రస్తుత ఎంపికలు ఇక్కడ ఉన్నాయి:",,
 bookingReceived,✅ *Booking request received!*,✅ *బుకింగ్ అభ్యర్ధన అందుకుంది!*,,*bold* markers must stay around the same words
@@ -82,5 +83,8 @@ dateClosed,We're closed on {{day}}. Next available: {{date}}.,మేము {{day
 unsupportedMessageType,"Sorry, I can only read text messages. Please type your reply or pick an option below.","క్షమించండి, నేను వచన సందేశాలను మాత్రమే చదవగలను. దయచేసి మీ ప్రత్యుత్తరాన్ని టైప్ చేయండి లేదా క్రింద ఉన్న ఎంపికను ఎంచుకోండి.",,
 bookingTapHintText,Please type your answer. Send *menu* to leave this booking.,దయచేసి మీ సమాధానాన్ని టైప్ చేయండి. ఈ బుకింగ్ ను విడిచిపెట్టడానికి *menu* పంపండి.,,*bold* markers must stay around the same words
 bookingTapHintChoice,Please tap one of the options below. Send *menu* to leave this booking.,దయచేసి దిగువ ఎంపికలలో ఒకదాన్ని నొక్కండి. ఈ బుకింగ్ ను విడిచిపెట్టడానికి *menu* పంపండి.,,*bold* markers must stay around the same words
+bookingTapHintFile,Please send a photo or file as your answer. Send *menu* to leave this booking.,దయచేసి మీ సమాధానంగా ఫోటో లేదా ఫైల్ ను పంపండి. ఈ బుకింగ్ ను విడిచిపెట్టడానికి *menu* పంపండి.,,*bold* markers must stay around the same words
+bookingFileRejected,"Sorry, we couldn't accept that file. Please send a JPG, PNG, WEBP, PDF, XLSX, XLS, CSV or DOCX file under 16 MB.","క్షమించండి, మేము ఆ ఫైల్ ను అంగీకరించలేకపోయాము. దయచేసి 16 MB లోపు JPG, PNG, WEBP, PDF, XLSX, XLS, CSV లేదా DOCX ఫైల్ ను పంపండి.",,
+summaryFileReceived,received,స్వీకరించబడింది,,
 listButtonChoose,Choose,ఎంచుకోండి,,
 chooseLanguageLine,Choose your language,మీ భాషను ఎంచుకోండి,,

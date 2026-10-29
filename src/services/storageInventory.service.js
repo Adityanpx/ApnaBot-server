@@ -22,6 +22,7 @@ const PROTECTED_IMAGE_ONLY = 'image-only reply';
 const PROTECTED_ADVANCE_PAYMENT = 'advance payment is on';
 const PROTECTED_SHARED_CATALOG = 'shared catalog photo';
 const PROTECTED_CATEGORY_TEMPLATE = 'used by category template';
+const PROTECTED_BOOKING_FILE = 'attached to a booking';
 
 const chunksOf = (list, size) => {
   const out = [];
@@ -135,6 +136,14 @@ const loadReferences = async ({ businessId = null } = {}) => {
   for (const i of catalogItems) {
     const m = mediaById.get(i.media_id);
     add(m && m.r2_key, { type: 'catalog', id: i.id, businessId: i.business_id, label: i.design_no || 'Catalogue photo', protected: false, reason: null });
+  }
+
+  // A customer's file answering a booking "file" question is kept while its booking exists (booking_id is
+  // set when the booking is created and goes NULL if it is deleted); a row with no booking is an orphan.
+  const bookingFiles = await fetchAll('booking_files', 'id, business_id, booking_id, r2_key',
+    (q) => scoped(q).not('booking_id', 'is', null));
+  for (const f of bookingFiles) {
+    add(f.r2_key, { type: 'booking', id: f.booking_id, businessId: f.business_id, label: 'Booking file', protected: true, reason: PROTECTED_BOOKING_FILE });
   }
 
   const bizRows = await fetchAll('businesses', 'id, name, payment_qr_url, profile_image, require_advance_payment',

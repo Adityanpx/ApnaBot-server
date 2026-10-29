@@ -6,9 +6,15 @@
 //     replyText: string, replyTextTranslations: { <lang>: string },
 //     closedText: string, closedTextTranslations: { <lang>: string },
 //     pauseBotMinutes: 0-10080, reminderMinutes: 0-1440, autoResumeBot: bool,
+//     mediaReplyMode: 'default' | 'thank_and_alert',
+//     mediaReplyText: string, mediaReplyTextTranslations: { <lang>: string },
 //     hours: { mon: [{ open: 'HH:mm', close: 'HH:mm' }], ... } | null }
 // GET always returns `keywords` as the list in effect (the defaults when the row stores none).
 // PUT takes any subset; `keywords: null` goes back to the defaults.
+// mediaReplyMode is the "When a customer sends a photo, PDF or document" setting: 'default' keeps the
+// "I can only read text" reply; 'thank_and_alert' thanks the customer (mediaReplyText, '' = the built-in
+// text), raises the handoff with reason 'media' and stores the customer's documents in the chat. It works
+// with `enabled` false: the keyword / unmatched triggers stay off.
 const { HANDOFF_MAX_WORDS } = require('./handoffMatch');
 const { validateHours } = require('./handoffHours');
 const { isValidLanguageCode } = require('./languageCatalog');
@@ -22,6 +28,7 @@ const DEFAULT_KEYWORDS = [
 ];
 
 const TEXT_MAX = 1000;
+const MEDIA_REPLY_MODES = ['default', 'thank_and_alert'];
 const KEYWORDS_MAX = 50;
 const KEYWORD_MAX_CHARS = 60;
 
@@ -36,6 +43,9 @@ const DEFAULTS = {
   pauseBotMinutes: 0,
   reminderMinutes: 15,
   autoResumeBot: false,
+  mediaReplyMode: 'default',
+  mediaReplyText: '',
+  mediaReplyTextTranslations: {},
   hours: null
 };
 
@@ -55,6 +65,9 @@ const fromRow = (row) => ({
   pauseBotMinutes: row.pause_bot_minutes ?? DEFAULTS.pauseBotMinutes,
   reminderMinutes: row.reminder_minutes ?? DEFAULTS.reminderMinutes,
   autoResumeBot: row.auto_resume_bot === true,
+  mediaReplyMode: MEDIA_REPLY_MODES.includes(row.media_reply_mode) ? row.media_reply_mode : DEFAULTS.mediaReplyMode,
+  mediaReplyText: row.media_reply_text || '',
+  mediaReplyTextTranslations: isPlainObject(row.media_reply_text_translations) ? row.media_reply_text_translations : {},
   hours: isPlainObject(row.hours) ? row.hours : null
 });
 
@@ -70,6 +83,9 @@ const toRow = (settings) => ({
   pause_bot_minutes: settings.pauseBotMinutes,
   reminder_minutes: settings.reminderMinutes,
   auto_resume_bot: settings.autoResumeBot,
+  media_reply_mode: settings.mediaReplyMode,
+  media_reply_text: settings.mediaReplyText,
+  media_reply_text_translations: settings.mediaReplyTextTranslations,
   hours: settings.hours
 });
 
@@ -147,13 +163,18 @@ const validateSettingsInput = (body, business = {}) => {
     patch[key] = body[key];
   }
 
-  for (const key of ['replyText', 'closedText']) {
+  if (body.mediaReplyMode !== undefined) {
+    if (!MEDIA_REPLY_MODES.includes(body.mediaReplyMode)) return bad('mediaReplyMode', `must be one of: ${MEDIA_REPLY_MODES.join(', ')}`);
+    patch.mediaReplyMode = body.mediaReplyMode;
+  }
+
+  for (const key of ['replyText', 'closedText', 'mediaReplyText']) {
     if (body[key] === undefined) continue;
     if (typeof body[key] !== 'string') return bad(key, 'must be text');
     if (body[key].length > TEXT_MAX) return bad(key, `at most ${TEXT_MAX} characters`);
     patch[key] = body[key].trim();
   }
-  for (const key of ['replyTextTranslations', 'closedTextTranslations']) {
+  for (const key of ['replyTextTranslations', 'closedTextTranslations', 'mediaReplyTextTranslations']) {
     if (body[key] === undefined) continue;
     const clean = validateTranslations(body[key], key, enabledLanguages, bad);
     if (clean.ok === false) return clean;
@@ -169,6 +190,6 @@ const validateSettingsInput = (body, business = {}) => {
 };
 
 module.exports = {
-  DEFAULT_KEYWORDS, DEFAULTS, FIELDS,
+  DEFAULT_KEYWORDS, DEFAULTS, FIELDS, MEDIA_REPLY_MODES,
   fromRow, toRow, toApi, effectiveKeywords, validateSettingsInput
 };

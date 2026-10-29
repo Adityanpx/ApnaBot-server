@@ -7,6 +7,7 @@ paymentTriggerDefault,Please complete your payment.,ਕਿਰਪਾ ਕਰਕੇ
 genericFallbackReply,Thank you for your message. We will get back to you soon.,ਤੁਹਾਡੇ ਸੰਦੇਸ਼ ਲਈ ਧੰਨਵਾਦ. ਅਸੀਂ ਜਲਦੀ ਹੀ ਤੁਹਾਡੇ ਕੋਲ ਵਾਪਸ ਆਵਾਂਗੇ.,,
 handoffReply,Thank you! 🙏 Our team has been told and will reply to you here shortly.,ਤੁਹਾਡਾ ਧੰਨਵਾਦ! 🙏 ਸਾਡੀ ਟੀਮ ਨੂੰ ਦੱਸਿਆ ਗਿਆ ਹੈ ਅਤੇ ਜਲਦੀ ਹੀ ਤੁਹਾਨੂੰ ਇੱਥੇ ਜਵਾਬ ਦੇਵੇਗਾ.,,
 handoffClosed,Thank you! 🙏 We are closed right now. Our team will reply to you here {{nextOpening}}.,ਤੁਹਾਡਾ ਧੰਨਵਾਦ! ਅਸੀਂ 🙏 ਇਸ ਸਮੇਂ ਬੰਦ ਹਾਂ. ਸਾਡੀ ਟੀਮ ਤੁਹਾਨੂੰ ਇੱਥੇ ਜਵਾਬ ਦੇਵੇਗੀ {{nextOpening}}.,,Keep unchanged: {{nextOpening}}
+mediaReceived,Thanks! We've received your file. Our team will reply with details shortly.,ਧੰਨਵਾਦ! ਸਾਨੂੰ ਤੁਹਾਡੀ ਫਾਈਲ ਮਿਲੀ ਹੈ. ਸਾਡੀ ਟੀਮ ਜਲਦੀ ਹੀ ਵੇਰਵਿਆਂ ਦੇ ਨਾਲ ਜਵਾਬ ਦੇਵੇਗੀ.,,
 locationNotConfigured,"Sorry, our location is not set up yet.","ਮਾਫ਼ ਕਰਨਾ, ਸਾਡਾ ਟਿਕਾਣਾ ਅਜੇ ਸਥਾਪਤ ਨਹੀਂ ਹੋਇਆ ਹੈ।",,
 vehicleNoLongerAvailable,"Sorry, that vehicle is no longer available for this route. Here are the current options:","ਮਾਫ ਕਰਨਾ, ਉਹ ਵਾਹਨ ਹੁਣ ਇਸ ਰੂਟ ਲਈ ਉਪਲਬਧ ਨਹੀਂ ਹੈ. ਇੱਥੇ ਮੌਜੂਦਾ ਵਿਕਲਪ ਹਨ:",,
 bookingReceived,✅ *Booking request received!*,✅ *ਬੁਕਿੰਗ ਬੇਨਤੀ ਪ੍ਰਾਪਤ ਹੋਈ!*,,*bold* markers must stay around the same words
@@ -82,5 +83,8 @@ dateClosed,We're closed on {{day}}. Next available: {{date}}.,ਅਸੀਂ {{day
 unsupportedMessageType,"Sorry, I can only read text messages. Please type your reply or pick an option below.","ਮਾਫ ਕਰਨਾ, ਮੈਂ ਸਿਰਫ ਟੈਕਸਟ ਸੁਨੇਹੇ ਪੜ੍ਹ ਸਕਦਾ ਹਾਂ. ਕਿਰਪਾ ਕਰਕੇ ਆਪਣਾ ਜਵਾਬ ਟਾਈਪ ਕਰੋ ਜਾਂ ਹੇਠਾਂ ਇੱਕ ਵਿਕਲਪ ਚੁਣੋ.",,
 bookingTapHintText,Please type your answer. Send *menu* to leave this booking.,ਕਿਰਪਾ ਕਰਕੇ ਆਪਣਾ ਜਵਾਬ ਟਾਈਪ ਕਰੋ। ਇਸ ਬੁਕਿੰਗ ਨੂੰ ਛੱਡਣ ਲਈ *menu* ਭੇਜੋ।,,*bold* markers must stay around the same words
 bookingTapHintChoice,Please tap one of the options below. Send *menu* to leave this booking.,ਕਿਰਪਾ ਕਰਕੇ ਹੇਠਾਂ ਦਿੱਤੇ ਵਿਕਲਪਾਂ ਵਿੱਚੋਂ ਇੱਕ 'ਤੇ ਟੈਪ ਕਰੋ. ਇਸ ਬੁਕਿੰਗ ਨੂੰ ਛੱਡਣ ਲਈ *menu* ਭੇਜੋ.,,*bold* markers must stay around the same words
+bookingTapHintFile,Please send a photo or file as your answer. Send *menu* to leave this booking.,ਕਿਰਪਾ ਕਰਕੇ ਆਪਣੇ ਜਵਾਬ ਵਜੋਂ ਇੱਕ ਫੋਟੋ ਜਾਂ ਫਾਈਲ ਭੇਜੋ. ਇਸ ਬੁਕਿੰਗ ਨੂੰ ਛੱਡਣ ਲਈ *menu* ਭੇਜੋ.,,*bold* markers must stay around the same words
+bookingFileRejected,"Sorry, we couldn't accept that file. Please send a JPG, PNG, WEBP, PDF, XLSX, XLS, CSV or DOCX file under 16 MB.","ਮਾਫ ਕਰਨਾ, ਅਸੀਂ ਉਸ ਫਾਈਲ ਨੂੰ ਸਵੀਕਾਰ ਨਹੀਂ ਕਰ ਸਕੇ. ਕਿਰਪਾ ਕਰਕੇ 16 MB ਤੋਂ ਘੱਟ JPG, PNG, WEBP, PDF, XLSX, XLS, CSV ਜਾਂ DOCX ਫਾਈਲ ਭੇਜੋ.",,
+summaryFileReceived,received,ਪ੍ਰਾਪਤ ਹੋਇਆ,,
 listButtonChoose,Choose,ਚੁਣੋ,,
 chooseLanguageLine,Choose your language,ਆਪਣੀ ਭਾਸ਼ਾ ਚੁਣੋ,,

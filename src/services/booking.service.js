@@ -545,6 +545,9 @@ const buildBookingSummaryBody = (collected, orderedFields, localRentalUnconfigur
         return null;
       }
       const label = f.summaryLabel || f.label.replace('?', '');
+      // A 'file' question's answer is the stored file's link: the WhatsApp text only says it arrived
+      // (the link stays in bookings.fields for the owner).
+      if (f.isFile) return label + ': *' + getSystemMessage('summaryFileReceived', languageCode) + '*';
       // A 'location_request' field's collected value is a structured
       // {latitude, longitude, address} object (see bookingGraph.service.js's
       // advanceGraphSession), not a string, unless the customer used the
@@ -797,7 +800,16 @@ const finalizeGraphBooking = async (businessId, customerNumber, session) => {
     // both engines' completion paths funnel through, so it's never visible
     // to edge-condition matching.
     const displayCollected = { ...session.collected, ...(session.displayOverrides || {}) };
-    return await createBookingAndConfirmation(businessId, customerNumber, displayCollected, session.answeredFields, session.localRentalUnconfigured);
+    const confirmation = await createBookingAndConfirmation(businessId, customerNumber, displayCollected, session.answeredFields, session.localRentalUnconfigured);
+    // 'file' answers: tie the stored files to the booking so they are kept while it exists.
+    const fileUrls = (session.answeredFields || [])
+      .filter(f => f.isFile && typeof displayCollected[f.fieldKey] === 'string')
+      .map(f => displayCollected[f.fieldKey]);
+    if (fileUrls.length > 0 && confirmation && confirmation.bookingId) {
+      // Lazy: pulls in R2 and the Meta client, which a booking without files never needs.
+      await require('./bookingFile.service').attachFilesToBooking(businessId, confirmation.bookingId, fileUrls);
+    }
+    return confirmation;
   } catch (error) {
     logger.error('Error finalizing graph booking:', error);
     throw error;

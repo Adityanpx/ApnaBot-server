@@ -52,6 +52,13 @@ const SYSTEM_MESSAGES = {
     hi: 'धन्यवाद! 🙏 हम अभी बंद हैं। हमारी टीम {{nextOpening}} आपको यहीं जवाब देगी।',
     mr: 'धन्यवाद! 🙏 आम्ही सध्या बंद आहोत. आमची टीम {{nextOpening}} तुम्हाला इथेच उत्तर देईल.'
   },
+  // "When a customer sends a photo, PDF or document" = thank them and alert the team (the business's own
+  // text, when it has one, replaces this: handoff.service.js#mediaReplyTextFor).
+  mediaReceived: {
+    en: "Thanks! We've received your file. Our team will reply with details shortly.",
+    hi: 'धन्यवाद! हमें आपकी फ़ाइल मिल गई है। हमारी टीम जल्द ही विवरण के साथ जवाब देगी।',
+    mr: 'धन्यवाद! आम्हाला तुमची फाइल मिळाली आहे. आमची टीम लवकरच तपशिलांसह उत्तर देईल.'
+  },
   locationNotConfigured: {
     en: 'Sorry, our location is not set up yet.',
     hi: 'माफ़ कीजिए, हमारा लोकेशन अभी सेट नहीं किया गया है।',
@@ -426,6 +433,25 @@ const SYSTEM_MESSAGES = {
     en: 'Please tap one of the options below. Send *menu* to leave this booking.',
     hi: 'कृपया नीचे दिए गए विकल्पों में से एक चुनें। इस बुकिंग से बाहर निकलने के लिए *menu* भेजें।',
     mr: 'कृपया खालील पर्यायांपैकी एक निवडा. ही बुकिंग सोडण्यासाठी *menu* पाठवा.'
+  },
+
+  // A booking question that takes a photo / PDF / document (content type 'file'): the hint when the customer
+  // typed something instead, and the reply when the file was not accepted (wrong type, over 16 MB, or it
+  // could not be saved). The confirmation summary shows "received" in place of the file's link.
+  bookingTapHintFile: {
+    en: 'Please send a photo or file as your answer. Send *menu* to leave this booking.',
+    hi: 'कृपया अपने उत्तर के रूप में एक फ़ोटो या फ़ाइल भेजें। इस बुकिंग से बाहर निकलने के लिए *menu* भेजें।',
+    mr: 'कृपया तुमचे उत्तर म्हणून एक फोटो किंवा फाइल पाठवा. ही बुकिंग सोडण्यासाठी *menu* पाठवा.'
+  },
+  bookingFileRejected: {
+    en: "Sorry, we couldn't accept that file. Please send a JPG, PNG, WEBP, PDF, XLSX, XLS, CSV or DOCX file under 16 MB.",
+    hi: 'माफ़ कीजिए, हम वह फ़ाइल स्वीकार नहीं कर सके। कृपया 16 MB से छोटी JPG, PNG, WEBP, PDF, XLSX, XLS, CSV या DOCX फ़ाइल भेजें।',
+    mr: 'माफ करा, आम्ही ती फाइल स्वीकारू शकलो नाही. कृपया 16 MB पेक्षा लहान JPG, PNG, WEBP, PDF, XLSX, XLS, CSV किंवा DOCX फाइल पाठवा.'
+  },
+  summaryFileReceived: {
+    en: 'received',
+    hi: 'प्राप्त हुआ',
+    mr: 'मिळाले'
   },
 
   // Opens a list message (button on the message). Max 20 characters (WhatsApp).

@@ -48,6 +48,7 @@ const deliverySignals = require('../services/deliverySignals.service');
 const userPreferencesService = require('../services/userPreferences.service');
 const { splitMessages } = require('../utils/webhookBatch');
 const unsupportedMessageService = require('../services/unsupportedMessage.service');
+const { MAX_FILE_BYTES, resolveStorableFile } = require('../utils/inboundFiles');
 const { UNSUPPORTED_REPLY_TYPES } = unsupportedMessageService;
 
 // Exact-match greeting keywords that trigger the welcome message / menu.
@@ -145,6 +146,56 @@ const storeInboundImage = async (tenant, inboundMsg, mediaId) => {
     }
   } catch (error) {
     logger.error('Error storing inbound image', {
+      businessId: tenant.businessId,
+      messageId: inboundMsg.id,
+      message: error.response?.data || error.message
+    });
+  }
+};
+
+/**
+ * Copies an inbound customer document (PDF, Excel, Word, CSV, ...) to R2 under the normal chat folder
+ * and sets the message's media_url plus wa_media_mime / wa_media_filename, so the owner can open it
+ * from the chat. Only for a business on "Thank them and alert the team" (the default keeps the old
+ * label-only behaviour). Fire-and-forget like storeInboundImage; the allow-list and the 16 MB cap are
+ * utils/inboundFiles.js. A file that is not stored keeps its "📄 filename" label.
+ * @param {Object} tenant - resolved tenant (businessId, accessToken)
+ * @param {Object} inboundMsg - the saved camelCase message row
+ * @param {Object} document - message.document from the webhook payload ({ id, mime_type, filename })
+ */
+const storeInboundDocument = async (tenant, inboundMsg, document) => {
+  try {
+    const settings = await handoffService.getSettings(tenant.businessId);
+    if (!handoffService.isMediaAlertOn(settings)) return;
+    const filename = document.filename || null;
+    // The payload's own type lets an unsupported file skip the download.
+    if (!resolveStorableFile(document.mime_type, filename) && (document.mime_type || filename)) {
+      logger.info(`Inbound document ${inboundMsg.id} has type ${document.mime_type} — not stored`);
+      return;
+    }
+    const { buffer, mimeType } = await whatsappService.downloadMedia(document.id, tenant.accessToken, MAX_FILE_BYTES);
+    const file = resolveStorableFile(mimeType, filename);
+    if (!file || buffer.length > MAX_FILE_BYTES) {
+      logger.info(`Inbound document ${inboundMsg.id} (${mimeType}, ${buffer.length} bytes) — not stored`);
+      return;
+    }
+    const { url } = await r2.uploadFile(buffer, `inbound-media/${tenant.businessId}`, inboundMsg.id, file.ext, file.contentType);
+    const { error } = await supabase.from('messages')
+      .update({ media_url: url, wa_media_mime: file.contentType, wa_media_filename: filename }).eq('id', inboundMsg.id);
+    if (error) throw error;
+    try {
+      socketService.emitToBusiness(tenant.businessId.toString(), 'message_media', {
+        messageId: inboundMsg.id,
+        customerId: inboundMsg.customerId,
+        mediaUrl: url,
+        mediaFilename: filename,
+        mediaMime: file.contentType
+      });
+    } catch (socketError) {
+      logger.error('Error emitting message_media socket event:', socketError);
+    }
+  } catch (error) {
+    logger.error('Error storing inbound document', {
       businessId: tenant.businessId,
       messageId: inboundMsg.id,
       message: error.response?.data || error.message
@@ -927,6 +978,75 @@ const replyToUnsupportedType = async (ctx, activeSession) => {
 };
 
 /**
+ * A customer's photo / document answering the active booking question of type 'file': downloads and
+ * stores it (bookingFile.service.js). When it cannot be accepted (wrong type, over 16 MB, storage limit
+ * reached, a Meta / R2 failure) the customer is told and the question is asked again, once per minute
+ * (shared cooldown with the "I can only read text" reply, so a burst of bad files gets one answer).
+ * @param {Object} ctx - { tenant, customer, customerNumber }
+ * @param {Object} activeSession
+ * @param {Object} field - the session's current field (fieldType 'file')
+ * @param {Object} message - Meta webhook message (type image or document)
+ * @returns {Promise<{fileUrl: string}|null>} the answer for advanceGraphSession, or null when rejected
+ */
+const acceptFileAnswer = async (ctx, activeSession, field, message) => {
+  const media = message.type === 'image' ? message.image : message.document;
+  // Lazy: only a business with a 'file' question gets here; the module pulls in R2, Meta and subscriptions.
+  const stored = media && media.id
+    ? await require('../services/bookingFile.service').storeBookingFile({
+      tenant: ctx.tenant,
+      customerId: ctx.customer.id,
+      fieldKey: field.fieldKey,
+      media: { id: media.id, mimeType: media.mime_type || null, filename: message.type === 'document' ? (media.filename || null) : null }
+    })
+    : { status: 'rejected', reason: 'failed' };
+  if (stored.status === 'stored') return { fileUrl: stored.url };
+
+  logger.info(`Booking file from ${ctx.customerNumber} not accepted for business ${ctx.tenant.businessId} (${stored.reason})`);
+  const claimed = await unsupportedMessageService.claimReply(ctx.tenant.businessId, ctx.customer.id);
+  if (claimed) {
+    await sendFallbackTextMessage(
+      { ...ctx, triggeredRuleId: activeSession.ruleId ?? null },
+      getSystemMessage('bookingFileRejected', ctx.customer.preferredLanguage)
+    );
+    await resendCurrentBookingPrompt(ctx, activeSession);
+  }
+  return null;
+};
+
+/**
+ * "When a customer sends a photo, PDF or document" = "Thank them and alert the team": opens the
+ * handoff (reason 'media', so it shows as Needs reply and pushes the owner / staff) and thanks the
+ * customer in their language, once per minute. Mid-booking the pending question follows the thank-you.
+ * Works whether or not the human-needed alert itself is switched on (settings.enabled only gates the
+ * keyword / unmatched triggers).
+ * @param {Object} ctx - { tenant, customer, customerNumber }
+ * @param {Object|null} activeSession
+ * @param {Object} settings - the business's handoff settings (mediaReplyMode 'thank_and_alert')
+ * @returns {Promise<boolean>} false when the alert could not be raised: the caller carries on with the default reply
+ */
+const alertTeamAboutMedia = async (ctx, activeSession, settings) => {
+  try {
+    await handoffService.raise({
+      businessId: ctx.tenant.businessId, customer: ctx.customer, customerNumber: ctx.customerNumber, reason: 'media', settings
+    });
+  } catch (raiseError) {
+    // Not told the owner, so not told the customer either.
+    logger.error('Error raising the handoff for a customer file, using the default reply:', raiseError);
+    return false;
+  }
+  const claimed = await unsupportedMessageService.claimReply(ctx.tenant.businessId, ctx.customer.id);
+  if (claimed) {
+    await sendFallbackTextMessage(
+      { ...ctx, triggeredRuleId: activeSession?.ruleId ?? null },
+      applyMessageTemplate(handoffService.mediaReplyTextFor(settings, handoffLanguage(ctx.tenant, ctx.customer)), ctx.tenant, ctx.customer)
+    );
+    if (activeSession) await resendCurrentBookingPrompt(ctx, activeSession);
+  }
+  logger.info(`Customer file from ${ctx.customerNumber} for business ${ctx.tenant.businessId}: team alerted`);
+  return true;
+};
+
+/**
  * GET /api/webhook/verify
  * Meta webhook verification
  */
@@ -1374,6 +1494,10 @@ const processWebhookChange = async (entry, changes) => {
     if (messageType === 'image' && message.image?.id) {
       storeInboundImage(tenant, inboundMsg, message.image.id);
     }
+    // Customer documents → R2 too, but only for a business on "Thank them and alert the team".
+    if (messageType === 'document' && message.document?.id) {
+      storeInboundDocument(tenant, inboundMsg, message.document);
+    }
 
     // Step 9.5 - Enforce usage limit (message is already saved above — only
     // only the reply is blocked; inbound messages are never counted).
@@ -1719,17 +1843,40 @@ const processWebhookChange = async (entry, changes) => {
     // text" (see replyToUnsupportedType): the main-menu pass that follows is not a customer message
     // the bot failed to understand, so it neither bumps nor resets the handoff's unmatched count.
     let isUnsupportedTypeTurn = false;
+    // Set when a photo / document answers the active booking question of type 'file': { fileUrl } of the
+    // stored file, handed to advanceGraphSession at Step 12.
+    let fileAnswer = null;
     if (messageType !== 'text' && !buttonReplyId && !listReplyId && !messageLocation && !isRoutedButtonTap) {
       if (!UNSUPPORTED_REPLY_TYPES.has(messageType)) {
         logger.info('Non-text message received, skipping chatbot');
         return;
       }
-      // No flow step accepts media (there is no media question), so every one of these gets the reply.
       const unsupportedSession = await bookingService.getBookingSession(tenant.businessId, customerNumber);
-      const unsupportedOutcome = await replyToUnsupportedType({ tenant, customer, customerNumber }, unsupportedSession);
-      if (unsupportedOutcome !== 'menu') return;
-      isUnsupportedTypeTurn = true;
-      messageText = 'hi'; // No active step: carry on as if the customer said "hi" (the main menu)
+      const isPhotoOrDocument = messageType === 'image' || messageType === 'document';
+      // 1. A booking question of type 'file' takes the photo / document as its answer (stored first, so a
+      // file that cannot be kept re-asks the question instead of advancing the booking).
+      let fileFieldHandled = false;
+      if (isPhotoOrDocument && unsupportedSession) {
+        const fileField = await bookingGraphService.getCurrentNodeField(tenant.businessId, unsupportedSession, customer.preferredLanguage);
+        if (fileField && fileField.fieldType === 'file') {
+          fileFieldHandled = true;
+          fileAnswer = await acceptFileAnswer({ tenant, customer, customerNumber }, unsupportedSession, fileField, message);
+          if (!fileAnswer) return;
+        }
+      }
+      if (!fileFieldHandled) {
+        // 2. The business chose "Thank them and alert the team" for photos / PDFs / documents.
+        if (isPhotoOrDocument) {
+          const mediaSettings = await handoffService.getSettings(tenant.businessId);
+          if (handoffService.isMediaAlertOn(mediaSettings)
+            && await alertTeamAboutMedia({ tenant, customer, customerNumber }, unsupportedSession, mediaSettings)) return;
+        }
+        // 3. Default: no other flow step accepts media, so every one of these gets the "text only" reply.
+        const unsupportedOutcome = await replyToUnsupportedType({ tenant, customer, customerNumber }, unsupportedSession);
+        if (unsupportedOutcome !== 'menu') return;
+        isUnsupportedTypeTurn = true;
+        messageText = 'hi'; // No active step: carry on as if the customer said "hi" (the main menu)
+      }
     }
 
     // Step 12 - Check active booking session
@@ -1952,7 +2099,10 @@ const processWebhookChange = async (entry, changes) => {
       // loadGraph+business round trip on every free-text answer.
       let resolvedReply = messageText;
       const replyId = listReplyId !== null ? listReplyId : buttonReplyId;
-      if (messageLocation) {
+      if (fileAnswer) {
+        // Stored at Step 11; the session is the same one that Step 11 read the 'file' question from.
+        resolvedReply = fileAnswer;
+      } else if (messageLocation) {
         // A shared location only ever answers a 'location_request' field —
         // if the session has moved on (or never had one), this is the
         // active-session counterpart of the guard above: don't half-handle

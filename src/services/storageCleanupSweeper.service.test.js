@@ -377,3 +377,24 @@ test('purging a file used by a carousel card clears just that card\'s media (tex
   assert.equal(h.state.bucket.has(key), false);
   assert.ok(h.state.invalidated.includes(B1), 'flow cache flushed');
 });
+
+test('booking files: an orphan one (no booking) is removed and stops counting; one kept by a live booking is never purged', async () => {
+  const orphanKey = h.put(`booking-files/${B1}/${uuid(1)}.pdf`, { age: 100 * HOUR });
+  const keptKey = h.put(`booking-files/${B1}/${uuid(2)}.pdf`, { age: 100 * HOUR });
+  db.booking_files = [
+    { id: uuid(10), business_id: B1, booking_id: null, r2_key: orphanKey, size_bytes: 1200 },
+    { id: uuid(11), business_id: B1, booking_id: uuid(50), r2_key: keptKey, size_bytes: 800 }
+  ];
+  const run = await cleanup.createRun({
+    filters: { kinds: [], from: null, to: null, businessId: 'all', minBytes: 0, includeInUse: false, orphanMode: true },
+    entries: [{ key: orphanKey, url: url(orphanKey), kind: 'orphan', businessId: B1, sizeBytes: 1200, objectDate: null, inUse: false, usedBy: [] }]
+  });
+  db.storage_cleanup_items.forEach(i => { i.pending_delete_at = new Date(Date.now() - 1000).toISOString(); });
+  const res = await sweeper.runTick({ retention: false });
+  assert.equal(res.purged, 1);
+  assert.equal(h.state.bucket.has(orphanKey), false);
+  assert.equal(h.state.bucket.has(keptKey), true);
+  assert.deepEqual(db.booking_files.map(f => f.id), [uuid(11)], 'the orphan row is gone, the booking\'s file row stays');
+  assert.equal(db.businesses[0].storage_used_bytes, 5000 - 1200, 'its bytes no longer count toward the media storage limit');
+  assert.equal(runRow(run.id).status, 'done');
+});

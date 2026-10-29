@@ -21,6 +21,7 @@ const logger = require('../utils/logger');
 const { shapeNodeForApi, shapeEdgeForApi } = require('../utils/translationSlots');
 const { statusSummary, isTranslating } = require('../utils/translationStatus');
 const { buildLanguageNode } = require('../services/languagePicker.service');
+const { flowWarnings } = require('../utils/flowWarnings');
 
 // Shared with flowGraph.service.js#saveFullGraph (the canvas batch save /
 // AI-flow apply core), which is where these now live — moved there as-is.
@@ -1053,7 +1054,9 @@ const getFullGraph = async (req, res, next) => {
       // { <lang>: 'pending'|'done'|'failed' } of the signup default-flow translation; while `translating`
       // is true PUT /full answers 409 (a copy loaded now would overwrite the translations arriving).
       translationStatus,
-      translating: isTranslating(translationStatus)
+      translating: isTranslating(translationStatus),
+      // Non-blocking notes about the saved flow (utils/flowWarnings.js); [] when there is nothing to say.
+      warnings: flowWarnings({ replyNodes: replyRows, questionNodes: questionRows, edges: edgesRes.data || [] })
     });
   } catch (error) {
     logger.error('Error in getFullGraph:', error);

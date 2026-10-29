@@ -29,8 +29,9 @@ const logger = require('../utils/logger');
 
 const VALID_MATCH_TYPES = ['exact', 'contains', 'startsWith'];
 const VALID_CONTENT_TYPES = ['text', 'buttons', 'list', 'location', 'location_request', 'carousel'];
-// Question nodes (booking fields) never send a carousel.
-const VALID_QUESTION_CONTENT_TYPES = VALID_CONTENT_TYPES.filter(t => t !== 'carousel');
+// Question nodes (booking fields) never send a carousel; 'file' (answered with a photo / PDF / document)
+// is a question-only type, never a reply's.
+const VALID_QUESTION_CONTENT_TYPES = [...VALID_CONTENT_TYPES.filter(t => t !== 'carousel'), 'file'];
 // 'handoff': the "talk to a person" reply (webhook.controller.js; services/handoff.service.js). Its label may be empty.
 const VALID_REPLY_KINDS = ['text', 'booking_trigger', 'payment_trigger', 'web_form_trigger', 'handoff'];
 // 'rentalPackage' deliberately excluded — still engine-internal/migration-only,

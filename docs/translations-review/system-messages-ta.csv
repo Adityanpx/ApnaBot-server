@@ -7,6 +7,7 @@ paymentTriggerDefault,Please complete your payment.,உங்கள் கட்
 genericFallbackReply,Thank you for your message. We will get back to you soon.,உங்கள் செய்திக்கு நன்றி. விரைவில் உங்களைத் தொடர்புகொள்வோம்.,,
 handoffReply,Thank you! 🙏 Our team has been told and will reply to you here shortly.,"நன்றி! எங்கள் 🙏 அணிக்கு சொல்லப்பட்டுள்ளது, விரைவில் உங்களுக்கு இங்கே பதிலளிக்கும்.",,
 handoffClosed,Thank you! 🙏 We are closed right now. Our team will reply to you here {{nextOpening}}.,நன்றி! நாங்கள் 🙏 இப்போது மூடப்பட்டுள்ளோம். எங்கள் குழு உங்களுக்கு இங்கே பதிலளிக்கும் {{nextOpening}}.,,Keep unchanged: {{nextOpening}}
+mediaReceived,Thanks! We've received your file. Our team will reply with details shortly.,நன்றி! உங்கள் கோப்பை நாங்கள் பெற்றுள்ளோம். எங்கள் குழு விரைவில் விவரங்களுடன் பதிலளிக்கும்.,,
 locationNotConfigured,"Sorry, our location is not set up yet.","மன்னிக்கவும், எங்கள் இருப்பிடம் இன்னும் அமைக்கப்படவில்லை.",,
 vehicleNoLongerAvailable,"Sorry, that vehicle is no longer available for this route. Here are the current options:","மன்னிக்கவும், அந்த வாகனம் இனி இந்த பாதைக்கு கிடைக்காது. தற்போதைய விருப்பங்கள் இங்கே:",,
 bookingReceived,✅ *Booking request received!*,✅ *முன்பதிவு கோரிக்கை கிடைத்தது!*,,*bold* markers must stay around the same words
@@ -82,5 +83,8 @@ dateClosed,We're closed on {{day}}. Next available: {{date}}.,நாங்கள
 unsupportedMessageType,"Sorry, I can only read text messages. Please type your reply or pick an option below.","மன்னிக்கவும், என்னால் உரை செய்திகளை மட்டுமே படிக்க முடியும். உங்கள் பதிலைத் தட்டச்சு செய்யவும் அல்லது கீழே உள்ள விருப்பத்தைத் தேர்ந்தெடுக்கவும்.",,
 bookingTapHintText,Please type your answer. Send *menu* to leave this booking.,உங்கள் பதிலைத் தட்டச்சு செய்யவும். இந்த முன்பதிவை விட்டு வெளியேற *menu* அனுப்பவும்.,,*bold* markers must stay around the same words
 bookingTapHintChoice,Please tap one of the options below. Send *menu* to leave this booking.,கீழே உள்ள விருப்பங்களில் ஒன்றைத் தட்டவும். இந்த முன்பதிவை விட்டு வெளியேற *menu* அனுப்பவும்.,,*bold* markers must stay around the same words
+bookingTapHintFile,Please send a photo or file as your answer. Send *menu* to leave this booking.,உங்கள் பதிலாக ஒரு புகைப்படம் அல்லது கோப்பை அனுப்பவும். இந்த முன்பதிவை விட்டு வெளியேற *menu* அனுப்பவும்.,,*bold* markers must stay around the same words
+bookingFileRejected,"Sorry, we couldn't accept that file. Please send a JPG, PNG, WEBP, PDF, XLSX, XLS, CSV or DOCX file under 16 MB.","மன்னிக்கவும், அந்த கோப்பை எங்களால் ஏற்க முடியவில்லை. 16 MB க்கு கீழ் JPG, PNG, WEBP, PDF, XLSX, XLS, CSV அல்லது DOCX கோப்பை அனுப்பவும்.",,
+summaryFileReceived,received,பெறப்பட்டது,,
 listButtonChoose,Choose,தேர்வு செய்,,
 chooseLanguageLine,Choose your language,உங்கள் மொழியைத் தேர்வுசெய்க,,

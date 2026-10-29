@@ -7,6 +7,7 @@ paymentTriggerDefault,Please complete your payment.,ದಯವಿಟ್ಟು ನ
 genericFallbackReply,Thank you for your message. We will get back to you soon.,ನಿಮ್ಮ ಸಂದೇಶಕ್ಕೆ ಧನ್ಯವಾದಗಳು. ನಾವು ಶೀಘ್ರದಲ್ಲೇ ನಿಮ್ಮನ್ನು ಸಂಪರ್ಕಿಸುತ್ತೇವೆ.,,
 handoffReply,Thank you! 🙏 Our team has been told and will reply to you here shortly.,ಧನ್ಯವಾದಗಳು! ನಮ್ಮ 🙏 ತಂಡಕ್ಕೆ ತಿಳಿಸಲಾಗಿದೆ ಮತ್ತು ಶೀಘ್ರದಲ್ಲೇ ನಿಮಗೆ ಇಲ್ಲಿ ಉತ್ತರಿಸುತ್ತೇವೆ.,,
 handoffClosed,Thank you! 🙏 We are closed right now. Our team will reply to you here {{nextOpening}}.,ಧನ್ಯವಾದಗಳು! ನಾವು 🙏 ಇದೀಗ ಮುಚ್ಚಿದ್ದೇವೆ. ನಮ್ಮ ತಂಡವು ನಿಮಗೆ ಇಲ್ಲಿ ಉತ್ತರಿಸುತ್ತದೆ {{nextOpening}}.,,Keep unchanged: {{nextOpening}}
+mediaReceived,Thanks! We've received your file. Our team will reply with details shortly.,ಧನ್ಯವಾದಗಳು! ನಾವು ನಿಮ್ಮ ಫೈಲ್ ಅನ್ನು ಸ್ವೀಕರಿಸಿದ್ದೇವೆ. ನಮ್ಮ ತಂಡವು ಶೀಘ್ರದಲ್ಲೇ ವಿವರಗಳೊಂದಿಗೆ ಉತ್ತರಿಸುತ್ತದೆ.,,
 locationNotConfigured,"Sorry, our location is not set up yet.","ಕ್ಷಮಿಸಿ, ನಮ್ಮ ಸ್ಥಳವನ್ನು ಇನ್ನೂ ಸೆಟ್ ಅಪ್ ಮಾಡಲಾಗಿಲ್ಲ.",,
 vehicleNoLongerAvailable,"Sorry, that vehicle is no longer available for this route. Here are the current options:","ಕ್ಷಮಿಸಿ, ಆ ವಾಹನವು ಈ ಮಾರ್ಗಕ್ಕೆ ಇನ್ನು ಮುಂದೆ ಲಭ್ಯವಿಲ್ಲ. ಪ್ರಸ್ತುತ ಆಯ್ಕೆಗಳು ಇಲ್ಲಿವೆ:",,
 bookingReceived,✅ *Booking request received!*,✅ *ಬುಕಿಂಗ್ ವಿನಂತಿ ಸ್ವೀಕರಿಸಲಾಗಿದೆ!*,,*bold* markers must stay around the same words
@@ -82,5 +83,8 @@ dateClosed,We're closed on {{day}}. Next available: {{date}}.,ನಾವು {{day
 unsupportedMessageType,"Sorry, I can only read text messages. Please type your reply or pick an option below.","ಕ್ಷಮಿಸಿ, ನಾನು ಪಠ್ಯ ಸಂದೇಶಗಳನ್ನು ಮಾತ್ರ ಓದಬಲ್ಲೆ. ದಯವಿಟ್ಟು ನಿಮ್ಮ ಪ್ರತ್ಯುತ್ತರವನ್ನು ಟೈಪ್ ಮಾಡಿ ಅಥವಾ ಕೆಳಗಿನ ಆಯ್ಕೆಯನ್ನು ಆರಿಸಿ.",,
 bookingTapHintText,Please type your answer. Send *menu* to leave this booking.,ದಯವಿಟ್ಟು ನಿಮ್ಮ ಉತ್ತರವನ್ನು ಟೈಪ್ ಮಾಡಿ. ಈ ಬುಕಿಂಗ್ ಅನ್ನು ಬಿಡಲು *menu* ಕಳುಹಿಸಿ.,,*bold* markers must stay around the same words
 bookingTapHintChoice,Please tap one of the options below. Send *menu* to leave this booking.,ದಯವಿಟ್ಟು ಕೆಳಗಿನ ಆಯ್ಕೆಗಳಲ್ಲಿ ಒಂದನ್ನು ಟ್ಯಾಪ್ ಮಾಡಿ. ಈ ಬುಕಿಂಗ್ ಅನ್ನು ಬಿಡಲು *menu* ಕಳುಹಿಸಿ.,,*bold* markers must stay around the same words
+bookingTapHintFile,Please send a photo or file as your answer. Send *menu* to leave this booking.,ದಯವಿಟ್ಟು ನಿಮ್ಮ ಉತ್ತರವಾಗಿ ಫೋಟೋ ಅಥವಾ ಫೈಲ್ ಅನ್ನು ಕಳುಹಿಸಿ. ಈ ಬುಕಿಂಗ್ ಅನ್ನು ಬಿಡಲು *menu* ಕಳುಹಿಸಿ.,,*bold* markers must stay around the same words
+bookingFileRejected,"Sorry, we couldn't accept that file. Please send a JPG, PNG, WEBP, PDF, XLSX, XLS, CSV or DOCX file under 16 MB.","ಕ್ಷಮಿಸಿ, ನಾವು ಆ ಫೈಲ್ ಅನ್ನು ಸ್ವೀಕರಿಸಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು 16 MB ಗಿಂತ ಕಡಿಮೆ JPG, PNG, WEBP, PDF, XLSX, XLS, CSV ಅಥವಾ DOCX ಫೈಲ್ ಅನ್ನು ಕಳುಹಿಸಿ.",,
+summaryFileReceived,received,ಸ್ವೀಕರಿಸಲಾಗಿದೆ,,
 listButtonChoose,Choose,ಆಯ್ಕೆಮಾಡಿ,,
 chooseLanguageLine,Choose your language,ನಿಮ್ಮ ಭಾಷೆಯನ್ನು ಆಯ್ಕೆಮಾಡಿ,,

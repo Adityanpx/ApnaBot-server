@@ -1734,6 +1734,35 @@ the signup phone).
   (Search cab AI unaffected). Tests: `business.requestedCategory.test.js`, `businessRequest.routes.test.js`,
   `admin.changeCategory.test.js`, `contactPhone.test.js`, `appConfig.routes.test.js`.
 
+## Customer photos / PDFs / documents + booking "file" question (built 2026-11-01, migration `20261101120000_media_reply_and_file_questions.sql`, uncommitted)
+
+**Setting "When a customer sends a photo, PDF or document"** (`business_handoff_settings`, same `GET/PUT /api/business/handoff-settings`):
+`mediaReplyMode` `'default'` (today: "I can only read text", nothing alerted) | `'thank_and_alert'`; `mediaReplyText` + `mediaReplyTextTranslations`
+('' = built-in `mediaReceived`, en/hi/mr + 8 machine languages). **Cutover:** existing businesses stay on `default`, so nothing changes on deploy.
+- `thank_and_alert` (webhook Step 11, `alertTeamAboutMedia`): `handoffService.raise({ reason: 'media' })` (Needs reply + `human_needed` push + the row's
+  reminder/pause settings), then the thank-you (shared 60 s per-customer cooldown with the "text only" reply, so a burst gets one). Mid-booking the pending
+  question follows the thank-you. Works with `enabled = false`: saving the setting on a business with no row creates one with `enabled = false`, so the
+  keyword / unmatched triggers stay off. If `raise` throws, the default reply is used. Only image and document messages; video / audio / sticker keep the default reply.
+- Documents (PDF, xlsx, xls, csv, docx, ...) are stored to R2 under `inbound-media/<biz>/<messageId>.<ext>` (`chat_inbound`, retention applies, NOT counted
+  in storage) only in this mode (`storeInboundDocument`); images are stored as before (JPEG/PNG, all businesses). The row gets `media_url`,
+  `wa_media_mime`, `wa_media_filename`; socket `message_media` = `{ messageId, customerId, mediaUrl, mediaFilename, mediaMime }`; chat history rows carry
+  `mediaUrl`, `mediaFilename`, `mediaMime` (`mediaUrl` null until stored / after cleanup).
+- File rules (`utils/inboundFiles.js`): jpg/jpeg, png, webp, pdf, xlsx, xls, csv, docx; 16 MB; extension from a fixed MIME map, else the filename extension if listed.
+
+**Booking question type `file`** (`flow_nodes.content_type = 'file'`, question nodes only): answered with a photo / document. Webhook Step 11 hands it to
+`bookingFile.service#storeBookingFile` BEFORE the session advances; the engine (`advanceGraphSession`) gets `{ fileUrl }`. Stored in R2 `booking-files/<biz>/<uuid>.<ext>`,
+tracked in `booking_files`, **counted in `businesses.storage_used_bytes`** and checked against the plan's `storage_limit_mb` (no active plan = not blocked). A file
+that cannot be stored (type, >16 MB, limit, Meta/R2 failure) -> `bookingFileRejected` + the question again, nothing advances. Typed text: required = asked again with the
+`bookingTapHintFile` hint, optional = skipped (null). Tap guard unchanged (`file` is a typed type). Confirmation shows `Label: *received*`; the URL stays in `bookings.fields`.
+Files are linked to the booking in `finalizeGraphBooking` (`booking_files.booking_id`) and are `protected` in the storage inventory (kind `booking_file`) while the
+booking exists; a row with no booking (abandoned session, deleted booking) is an orphan and the orphan sweep removes it AND decrements the storage counter.
+The web booking form takes its fields from `form_fields`, never from question nodes, so it never asks a `file` question; `GET` / `PUT /api/flow-graph/full` return
+`warnings: [{ code: 'file_question_web_form', nodeId, fieldKey, message }]` (never blocks a save; single-node endpoints do not return warnings). Preview: the `file` question
+shows an informational entry; uploads are not simulated.
+- **Deploy:** apply the migration BEFORE the server. Search cab AI is unaffected (no row = default; no `file` node).
+- Tests: `webhook.mediaReply`, `bookingFile.service`, `bookingGraph.fileQuestion`, `inboundFiles`, `flowWarnings`, `flowGraph.fileContentType`, additions to `handoffSettings`,
+  `handoff.service`, `bookingTapGuard`, `storageInventory.service`, `storageCleanupSweeper.service`.
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism

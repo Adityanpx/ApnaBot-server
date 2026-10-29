@@ -627,8 +627,8 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
   const fieldType = effectiveFieldType(currentNode);
   // reply is a plain string for every fieldType except 'location_request',
   // where the caller (webhook.controller.js) may instead pass the raw
-  // {latitude, longitude, address} object Meta's payload carries — guard
-  // against calling .trim() on that object.
+  // {latitude, longitude, address} object Meta's payload carries, and 'file',
+  // where it passes { fileUrl } — guard against calling .trim() on those objects.
   const trimmedReply = typeof reply === 'string' ? reply.trim() : '';
 
   if (fieldType === 'vehicle_carousel') {
@@ -785,6 +785,17 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
     } else {
       session.collected[currentNode.fieldKey] = null;
     }
+  } else if (fieldType === 'file') {
+    // The answer is a photo / document the caller (webhook.controller.js) has already downloaded and
+    // stored (bookingFile.service.js), passed as { fileUrl }. Anything else (typed text, a stale tap
+    // id) is not an answer: a required question asks for the file again, an optional one is skipped.
+    if (reply && typeof reply === 'object' && typeof reply.fileUrl === 'string') {
+      session.collected[currentNode.fieldKey] = reply.fileUrl;
+    } else if (currentNode.required === true || isInternalId(trimmedReply)) {
+      return { session, result: withTapHint(getLocalizedText(currentNode, 'label', languageCode), languageCode, 'file') };
+    } else {
+      session.collected[currentNode.fieldKey] = null;
+    }
   } else {
     // Last line of defence behind the callers' tap checks: an internal id (a stale tap that reached
     // here as text) is never a stored answer, whatever the field's own validator would have said.
@@ -808,7 +819,9 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
   session.answeredFields.push({
     fieldKey: currentNode.fieldKey,
     label: currentNode.label,
-    summaryLabel: currentNode.summaryLabel
+    summaryLabel: currentNode.summaryLabel,
+    // The answer is a file link: the confirmation says "received" instead of printing it.
+    ...(fieldType === 'file' ? { isFile: true } : {})
   });
 
   // ---- advance ----

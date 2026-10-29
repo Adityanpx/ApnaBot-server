@@ -299,3 +299,19 @@ test('catalogue photos and covers are in use (kind catalog_image), never an unus
   assert.deepEqual(find(entries, keys[0]).usedBy, [{ type: 'catalog', id: uuid(500), label: 'A-1' }]);
   assert.equal(find(entries, keys[0]).businessId, B1);
 });
+
+test('booking files: kept (protected, in use) while their booking exists; one with no booking is an orphan', async () => {
+  const kept = h.put(`booking-files/${B1}/${uuid(1)}.pdf`);
+  const detached = h.put(`booking-files/${B1}/${uuid(2)}.pdf`);
+  db.booking_files = [
+    { id: uuid(10), business_id: B1, booking_id: uuid(50), r2_key: kept },
+    { id: uuid(11), business_id: B1, booking_id: null, r2_key: detached }
+  ];
+  const entries = await scan();
+  const keptEntry = find(entries, kept);
+  assert.deepEqual([keptEntry.kind, keptEntry.referenced, keptEntry.inUse, keptEntry.protected, keptEntry.protectedReason, keptEntry.businessId],
+    ['booking_file', true, true, true, 'attached to a booking', B1]);
+  assert.deepEqual(keptEntry.usedBy, [{ type: 'booking', id: uuid(50), label: 'Booking file' }]);
+  const detachedEntry = find(entries, detached);
+  assert.deepEqual([detachedEntry.kind, detachedEntry.referenced, detachedEntry.protected, detachedEntry.businessId], ['orphan', false, false, B1]);
+});

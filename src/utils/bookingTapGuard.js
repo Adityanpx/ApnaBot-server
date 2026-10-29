@@ -20,9 +20,11 @@ const isInternalId = (value) => {
   return UUID_RE.test(colonIdx === -1 ? trimmed : trimmed.slice(0, colonIdx));
 };
 
-/** The booking question with the hint above it: "type your answer" for a typed question, "tap an option" for a choice. */
+/** The booking question with the hint above it: "type your answer" for a typed question, "tap an option" for a choice, "send a file" for a file question. */
 const withTapHint = (label, languageCode, fieldType) => {
-  const hint = getSystemMessage(isChoiceFieldType(fieldType) ? 'bookingTapHintChoice' : 'bookingTapHintText', languageCode);
+  // A 'file' question is typed-type for the guard (a tap is not its answer) but wants a file, not text.
+  const hintKey = fieldType === 'file' ? 'bookingTapHintFile' : isChoiceFieldType(fieldType) ? 'bookingTapHintChoice' : 'bookingTapHintText';
+  const hint = getSystemMessage(hintKey, languageCode);
   return label ? `${hint}\n\n${label}` : hint;
 };
 

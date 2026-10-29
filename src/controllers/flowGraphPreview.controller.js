@@ -82,6 +82,12 @@ const buildFieldOptions = (field) => {
     return { buttons: [], listOptions: [{ nextKeyword: null, label: '📍 Send location button', description: 'Customer can also type an address instead' }] };
   }
 
+  if (field.fieldType === 'file') {
+    // Answered with a photo / document in a real chat; a browser preview cannot send one. Informational
+    // only (nextKeyword: null, like location_request) - typing in the text box shows the re-ask / skip.
+    return { buttons: [], listOptions: [{ nextKeyword: null, label: '📎 Customer sends a photo or file', description: 'Not simulated in the preview' }] };
+  }
+
   if (field.fieldType === 'buttons' || field.fieldType === 'list') {
     const options = (field.options || []).map(bookingService.normalizeOption);
     if (field.fieldType === 'buttons') {

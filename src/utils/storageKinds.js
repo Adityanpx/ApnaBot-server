@@ -4,6 +4,7 @@ const config = require('../config/env');
 
 const PREFIX_KIND = {
   'inbound-media/': 'chat_inbound',     // customer photos           inbound-media/{businessId}/{messageId}.ext
+  'booking-files/': 'booking_file',     // customer files answering a booking "file" question   booking-files/{businessId}/{uuid}.ext
   'echo-media/': 'chat_echo',           // owner phone-app media     echo-media/{businessId}/{messageId}.ext
   'business-media/': 'library',         // media library             business-media/{businessId}-{ts}-{n}.ext
   'template-headers/': 'template_header', // legacy template header image
@@ -16,7 +17,7 @@ const KNOWN_PREFIXES = Object.keys(PREFIX_KIND);
 
 const KINDS = [
   'chat_inbound', 'chat_echo', 'library', 'template_header', 'bot_node_image',
-  'payment_qr', 'logo', 'vehicle_photo', 'course_image', 'catalog_image', 'orphan'
+  'payment_qr', 'logo', 'vehicle_photo', 'course_image', 'catalog_image', 'booking_file', 'orphan'
 ];
 const CHAT_KINDS = ['chat_inbound', 'chat_echo'];
 
@@ -43,7 +44,7 @@ const parseKey = (key) => {
     businessId = UUID_RE.test(biz || '') ? biz : null;
     const m = (file || '').match(UUID_RE);
     messageId = m ? m[0] : null;
-  } else if (['payment_qr', 'logo', 'vehicle_photo'].includes(prefixKind) && prefix !== 'vehicle-catalog/') {
+  } else if (['payment_qr', 'logo', 'vehicle_photo', 'booking_file'].includes(prefixKind) && prefix !== 'vehicle-catalog/') {
     const m = rest.match(UUID_RE);
     businessId = m ? m[0] : null;
   }

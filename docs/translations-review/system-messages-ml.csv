@@ -7,6 +7,7 @@ paymentTriggerDefault,Please complete your payment.,നിങ്ങളുടെ 
 genericFallbackReply,Thank you for your message. We will get back to you soon.,നിങ്ങളുടെ സന്ദേശത്തിന് നന്ദി. ഞങ്ങൾ ഉടൻ തന്നെ നിങ്ങളെ ബന്ധപ്പെടും.,,
 handoffReply,Thank you! 🙏 Our team has been told and will reply to you here shortly.,"നന്ദി! ഞങ്ങളുടെ 🙏 ടീമിനോട് പറഞ്ഞിട്ടുണ്ട്, ഉടൻ തന്നെ നിങ്ങൾക്ക് ഇവിടെ മറുപടി നൽകും.",,
 handoffClosed,Thank you! 🙏 We are closed right now. Our team will reply to you here {{nextOpening}}.,നന്ദി! ഞങ്ങൾ 🙏 ഇപ്പോൾ അടച്ചിരിക്കുന്നു. ഞങ്ങളുടെ ടീം നിങ്ങൾക്ക് ഇവിടെ മറുപടി നൽകും {{nextOpening}}.,,Keep unchanged: {{nextOpening}}
+mediaReceived,Thanks! We've received your file. Our team will reply with details shortly.,നന്ദി! ഞങ്ങൾക്ക് നിങ്ങളുടെ ഫയൽ ലഭിച്ചു. ഞങ്ങളുടെ ടീം ഉടൻ തന്നെ വിശദാംശങ്ങൾ നൽകും.,,
 locationNotConfigured,"Sorry, our location is not set up yet.","ക്ഷമിക്കണം, ഞങ്ങളുടെ ലൊക്കേഷൻ ഇതുവരെ സജ്ജീകരിച്ചിട്ടില്ല.",,
 vehicleNoLongerAvailable,"Sorry, that vehicle is no longer available for this route. Here are the current options:","ക്ഷമിക്കണം, ആ വാഹനം ഈ റൂട്ടിൽ ലഭ്യമല്ല. നിലവിലെ ഓപ്ഷനുകൾ ഇതാ:",,
 bookingReceived,✅ *Booking request received!*,✅ *ബുക്കിംഗ് അഭ്യർത്ഥന ലഭിച്ചു!*,,*bold* markers must stay around the same words
@@ -82,5 +83,8 @@ dateClosed,We're closed on {{day}}. Next available: {{date}}.,ഞങ്ങൾ {{
 unsupportedMessageType,"Sorry, I can only read text messages. Please type your reply or pick an option below.","ക്ഷമിക്കണം, എനിക്ക് ടെക്സ്റ്റ് സന്ദേശങ്ങൾ മാത്രമേ വായിക്കാൻ കഴിയൂ. നിങ്ങളുടെ മറുപടി ടൈപ്പ് ചെയ്യുക അല്ലെങ്കിൽ ചുവടെയുള്ള ഒരു ഓപ്ഷൻ തിരഞ്ഞെടുക്കുക.",,
 bookingTapHintText,Please type your answer. Send *menu* to leave this booking.,ദയവായി നിങ്ങളുടെ ഉത്തരം ടൈപ്പ് ചെയ്യുക. ഈ ബുക്കിംഗ് ഉപേക്ഷിക്കാൻ *menu* അയയ്ക്കുക.,,*bold* markers must stay around the same words
 bookingTapHintChoice,Please tap one of the options below. Send *menu* to leave this booking.,ചുവടെയുള്ള ഓപ്ഷനുകളിൽ ഒന്ന് ടാപ്പുചെയ്യുക. ഈ ബുക്കിംഗ് ഉപേക്ഷിക്കാൻ *menu* അയയ്ക്കുക.,,*bold* markers must stay around the same words
+bookingTapHintFile,Please send a photo or file as your answer. Send *menu* to leave this booking.,നിങ്ങളുടെ ഉത്തരമായി ഒരു ഫോട്ടോ അല്ലെങ്കിൽ ഫയലോ അയയ്ക്കുക. ഈ ബുക്കിംഗ് ഉപേക്ഷിക്കാൻ *menu* അയയ്ക്കുക.,,*bold* markers must stay around the same words
+bookingFileRejected,"Sorry, we couldn't accept that file. Please send a JPG, PNG, WEBP, PDF, XLSX, XLS, CSV or DOCX file under 16 MB.","ക്ഷമിക്കണം, ഞങ്ങൾക്ക് ആ ഫയൽ സ്വീകരിക്കാൻ കഴിഞ്ഞില്ല. 16 MB യിൽ താഴെയുള്ള JPG, PNG, WEBP, PDF, XLSX, XLS, CSV അല്ലെങ്കിൽ DOCX ഫയൽ അയയ്ക്കുക.",,
+summaryFileReceived,received,സ്വീകരിച്ചു,,
 listButtonChoose,Choose,തിരഞ്ഞെടുക്കുക,,
 chooseLanguageLine,Choose your language,നിങ്ങളുടെ ഭാഷ തിരഞ്ഞെടുക്കുക,,

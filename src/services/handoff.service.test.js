@@ -380,3 +380,44 @@ test('toNeedsHuman: { since, reason } or null, from either row shape', () => {
   assert.deepEqual(svc.toNeedsHuman({ needsHumanAt: '2026-10-21T10:00:00Z', needsHumanReason: 'tap' }), { since: '2026-10-21T10:00:00Z', reason: 'tap' });
   assert.deepEqual(svc.toNeedsHuman({ needs_human_at: '2026-10-21T10:00:00Z', needs_human_reason: 'keyword' }), { since: '2026-10-21T10:00:00Z', reason: 'keyword' });
 });
+
+// ── media (photo / PDF / document) setting ──────────────────────────────────
+test('media alert: only the thank_and_alert mode counts, whether or not the human-needed alert is on', () => {
+  assert.equal(svc.isMediaAlertOn({ ...DEFAULTS, mediaReplyMode: 'thank_and_alert' }), true);
+  assert.equal(svc.isMediaAlertOn({ ...DEFAULTS, enabled: true, mediaReplyMode: 'default' }), false);
+  assert.equal(svc.isMediaAlertOn(DEFAULTS), false);
+  assert.equal(svc.isMediaAlertOn(null), false);
+});
+
+test('mediaReplyTextFor: the business text in the customer language, else its base text, else the built-in text in that language', () => {
+  const own = { ...DEFAULTS, mediaReplyText: 'Got it!', mediaReplyTextTranslations: { hi: 'मिल गया' } };
+  assert.equal(svc.mediaReplyTextFor(own, 'hi'), 'मिल गया');
+  assert.equal(svc.mediaReplyTextFor(own, 'mr'), 'Got it!');
+  assert.equal(svc.mediaReplyTextFor(own, 'en'), 'Got it!');
+  assert.equal(svc.mediaReplyTextFor(DEFAULTS, 'en'), "Thanks! We've received your file. Our team will reply with details shortly.");
+  assert.match(svc.mediaReplyTextFor(DEFAULTS, 'hi'), /फ़ाइल/);
+  assert.equal(svc.mediaReplyTextFor({ ...DEFAULTS, mediaReplyText: '   ' }, 'en'), "Thanks! We've received your file. Our team will reply with details shortly.");
+});
+
+test('raise: reason media works with the human-needed alert switched off - pushes once, stamps the reason, shows as needing a reply', async () => {
+  const settings = { ...DEFAULTS, enabled: false, mediaReplyMode: 'thank_and_alert' };
+  const r = await raise('media', settings);
+  assert.deepEqual(r, { claimed: true });
+  assert.equal(row().needs_human_reason, 'media');
+  assert.equal(pushes.length, 1);
+  assert.equal(pushes[0][1], 'human_needed');
+  assert.deepEqual(sockets[0][2].needsHuman.reason, 'media');
+  assert.deepEqual(await raise('media', settings), { claimed: false });
+  assert.equal(pushes.length, 1);
+});
+
+test('saveSettings: choosing the media mode on a business with no row creates one with the alert still off', async () => {
+  const saved = await svc.saveSettings(BIZ, { mediaReplyMode: 'thank_and_alert', mediaReplyText: 'Got it' });
+  assert.equal(saved.enabled, false);
+  assert.equal(saved.mediaReplyMode, 'thank_and_alert');
+  assert.equal(saved.mediaReplyText, 'Got it');
+  assert.equal(db.business_handoff_settings[0].enabled, false);
+  assert.equal(db.business_handoff_settings[0].media_reply_mode, 'thank_and_alert');
+  assert.equal(await svc.getActiveSettings(BIZ), null, 'the keyword / unmatched triggers stay off');
+  assert.equal(svc.isMediaAlertOn(await svc.getSettings(BIZ)), true);
+});

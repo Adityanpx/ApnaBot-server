@@ -7,6 +7,7 @@ paymentTriggerDefault,Please complete your payment.,કૃપા કરીને
 genericFallbackReply,Thank you for your message. We will get back to you soon.,તમારા સંદેશ માટે આભાર. અમે ટૂંક સમયમાં તમારી પાસે પાછા આવીશું.,,
 handoffReply,Thank you! 🙏 Our team has been told and will reply to you here shortly.,આભાર! અમારી 🙏 ટીમને કહેવામાં આવ્યું છે અને ટૂંક સમયમાં અહીં તમને જવાબ આપશે.,,
 handoffClosed,Thank you! 🙏 We are closed right now. Our team will reply to you here {{nextOpening}}.,આભાર! અમે 🙏 હમણાં જ બંધ છીએ. અમારી ટીમ તમને અહીં જવાબ આપશે {{nextOpening}}.,,Keep unchanged: {{nextOpening}}
+mediaReceived,Thanks! We've received your file. Our team will reply with details shortly.,આભાર! અમને તમારી ફાઇલ મળી છે. અમારી ટીમ ટૂંક સમયમાં વિગતો સાથે જવાબ આપશે.,,
 locationNotConfigured,"Sorry, our location is not set up yet.","માફ કરશો, અમારું લોકેશન હજી સેટ થયું નથી.",,
 vehicleNoLongerAvailable,"Sorry, that vehicle is no longer available for this route. Here are the current options:","માફ કરશો, તે વાહન હવે આ માર્ગ માટે ઉપલબ્ધ નથી. અહીં વર્તમાન વિકલ્પો છે:",,
 bookingReceived,✅ *Booking request received!*,✅ *બુકિંગ વિનંતી પ્રાપ્ત થઈ!*,,*bold* markers must stay around the same words
@@ -82,5 +83,8 @@ dateClosed,We're closed on {{day}}. Next available: {{date}}.,અમે {{day}} 
 unsupportedMessageType,"Sorry, I can only read text messages. Please type your reply or pick an option below.","માફ કરશો, હું ફક્ત ટેક્સ્ટ સંદેશાઓ વાંચી શકું છું. કૃપા કરીને તમારો જવાબ લખો અથવા નીચે એક વિકલ્પ પસંદ કરો.",,
 bookingTapHintText,Please type your answer. Send *menu* to leave this booking.,કૃપા કરીને તમારો જવાબ લખો. આ બુકિંગ છોડવા માટે *menu* મોકલો.,,*bold* markers must stay around the same words
 bookingTapHintChoice,Please tap one of the options below. Send *menu* to leave this booking.,કૃપા કરીને નીચેના વિકલ્પોમાંથી એકને ટેપ કરો. આ બુકિંગ છોડવા માટે *menu* મોકલો.,,*bold* markers must stay around the same words
+bookingTapHintFile,Please send a photo or file as your answer. Send *menu* to leave this booking.,કૃપા કરીને તમારા જવાબ તરીકે ફોટો અથવા ફાઇલ મોકલો. આ બુકિંગ છોડવા માટે *menu* મોકલો.,,*bold* markers must stay around the same words
+bookingFileRejected,"Sorry, we couldn't accept that file. Please send a JPG, PNG, WEBP, PDF, XLSX, XLS, CSV or DOCX file under 16 MB.","માફ કરશો, અમે તે ફાઇલ સ્વીકારી શક્યા નહીં. કૃપા કરીને 16 MB હેઠળ JPG, PNG, WEBP, PDF, XLSX, XLS, CSV અથવા DOCX ફાઇલ મોકલો.",,
+summaryFileReceived,received,મળેલ છે,,
 listButtonChoose,Choose,પસંદ કરો,,
 chooseLanguageLine,Choose your language,તમારી ભાષા પસંદ કરો,,

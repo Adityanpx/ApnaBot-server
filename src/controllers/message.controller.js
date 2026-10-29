@@ -139,7 +139,13 @@ const getChatHistory = async (req, res, next) => {
     return successResponse(res, 200, {
       customer: withWindowExpiresAt(toCamelCase(customerRow)),
       // chronological order; each message carries `failure` (null unless it failed) and `messageTime`
-      messages: rows.map((m) => ({ ...withFailure(toCamelCase(m)), messageTime: messageTimeOf(m) })).reverse(),
+      // mediaUrl (the file; null until stored or after cleanup), mediaFilename / mediaMime (documents) - the same names as the socket `message_media` event
+      messages: rows.map((m) => ({
+        ...withFailure(toCamelCase(m)),
+        messageTime: messageTimeOf(m),
+        mediaFilename: m.wa_media_filename ?? null,
+        mediaMime: m.wa_media_mime ?? null
+      })).reverse(),
       pagination
     });
   } catch (error) {

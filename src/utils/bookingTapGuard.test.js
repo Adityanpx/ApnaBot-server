@@ -17,6 +17,13 @@ test('isInternalId: ordinary typed answers are never internal (including colon s
   }
 });
 
+test('a file question is a typed question for the guard but its hint asks for a file, not text', () => {
+  assert.equal(isChoiceFieldType('file'), false);
+  assert.match(withTapHint('Send your ID', 'en', 'file'), /^Please send a photo or file as your answer\. Send \*menu\*.*\n\nSend your ID$/);
+  assert.match(withTapHint('Q', 'hi', 'file'), /\*menu\*/);
+  assert.match(withTapHint('Q', 'en', 'text'), /^Please type your answer/);
+});
+
 test('isChoiceFieldType: only buttons / list / vehicle_carousel take a tap', () => {
   for (const type of ['buttons', 'list', 'vehicle_carousel']) assert.equal(isChoiceFieldType(type), true, type);
   for (const type of ['text', 'textarea', 'location_request', undefined]) assert.equal(isChoiceFieldType(type), false, String(type));

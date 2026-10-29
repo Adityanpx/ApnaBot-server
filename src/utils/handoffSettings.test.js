@@ -19,7 +19,8 @@ test('default keywords are the agreed list, without "person" and bare "बात
 test('defaults: off, 3 unmatched, no pause, 15-minute reminder, no hours', () => {
   assert.deepEqual(DEFAULTS, {
     enabled: false, keywords: null, unmatchedThreshold: 3, replyText: '', replyTextTranslations: {},
-    closedText: '', closedTextTranslations: {}, pauseBotMinutes: 0, reminderMinutes: 15, autoResumeBot: false, hours: null
+    closedText: '', closedTextTranslations: {}, pauseBotMinutes: 0, reminderMinutes: 15, autoResumeBot: false,
+    mediaReplyMode: 'default', mediaReplyText: '', mediaReplyTextTranslations: {}, hours: null
   });
 });
 
@@ -79,4 +80,23 @@ test('validate: unknown keys and bad values are refused, naming the field', () =
   assert.equal(field({ replyTextTranslations: { zz: 'x' } }), 'replyTextTranslations.zz');
   assert.equal(field({ closedTextTranslations: { hi: 5 } }), 'closedTextTranslations.hi');
   assert.equal(field({ hours: { mon: [{ open: '09:00' }] } }), 'hours.mon[0].close');
+});
+
+test('media reply setting: default mode, round trip, validation', () => {
+  assert.equal(DEFAULTS.mediaReplyMode, 'default');
+  // A row from before the columns existed reads as the default mode.
+  assert.equal(fromRow({ enabled: true }).mediaReplyMode, 'default');
+  const settings = { ...DEFAULTS, mediaReplyMode: 'thank_and_alert', mediaReplyText: 'Got it', mediaReplyTextTranslations: { hi: 'ठीक है' } };
+  assert.deepEqual(fromRow({ ...toRow(settings), business_id: 'b' }), settings);
+  assert.equal(toRow(settings).media_reply_mode, 'thank_and_alert');
+
+  const ok = check({ mediaReplyMode: 'thank_and_alert', mediaReplyText: ' Thanks ', mediaReplyTextTranslations: { hi: ' शुक्रिया ' } });
+  assert.equal(ok.ok, true);
+  assert.deepEqual(ok.patch, { mediaReplyMode: 'thank_and_alert', mediaReplyText: 'Thanks', mediaReplyTextTranslations: { hi: 'शुक्रिया' } });
+
+  assert.equal(check({ mediaReplyMode: 'always' }).field, 'mediaReplyMode');
+  assert.equal(check({ mediaReplyMode: true }).field, 'mediaReplyMode');
+  assert.equal(check({ mediaReplyText: 5 }).field, 'mediaReplyText');
+  assert.equal(check({ mediaReplyText: 'x'.repeat(1001) }).field, 'mediaReplyText');
+  assert.equal(check({ mediaReplyTextTranslations: { mr: 'x' } }).field, 'mediaReplyTextTranslations.mr');
 });
