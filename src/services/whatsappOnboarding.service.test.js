@@ -72,6 +72,13 @@ test('shouldRegister: only cloud_api, and not when Meta already says CLOUD_API',
   assert.equal(svc.shouldRegister('coexistence', 'CLOUD_API'), false);
 });
 
+test('withDeregisterInfo: only a coexistence number cannot be deregistered', () => {
+  assert.equal(svc.withDeregisterInfo({ whatsappOnboardingType: 'coexistence' }).canDeregister, false);
+  assert.equal(svc.withDeregisterInfo({ whatsappOnboardingType: 'cloud_api' }).canDeregister, true);
+  assert.equal(svc.withDeregisterInfo({ whatsappOnboardingType: null }).canDeregister, true);
+  assert.equal(svc.withDeregisterInfo({}).canDeregister, true);
+});
+
 test('mapRegisterError: PIN mismatch tells the owner to turn off two-step verification', () => {
   const m = svc.mapRegisterError({ response: { data: { error: { code: 133005, message: 'PIN incorrect' } } } });
   assert.equal(m.status, 409);

@@ -118,6 +118,7 @@ const getBusiness = async (req, res, next) => {
     delete businessData.accessToken;
     delete businessData.whatsappRegisterPin;
     withPaymentIssue(businessData);
+    onboardingService.withDeregisterInfo(businessData);
 
     withTranslationInfo(businessData);
 
@@ -871,6 +872,7 @@ const connectWhatsapp = async (req, res, next) => {
     delete businessData.accessToken;
     delete businessData.whatsappRegisterPin;
     withPaymentIssue(businessData);
+    onboardingService.withDeregisterInfo(businessData);
 
     logger.info('connectWhatsapp: connection saved, returning success', { businessId, wabaId, phoneNumberId, onboardingType });
 

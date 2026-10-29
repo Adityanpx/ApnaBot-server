@@ -755,9 +755,11 @@ for what is actually deployed before assuming.
   **Never verified against a real fresh number yet** - the first Path A test
   (spare SIM) must log the phone node before/after `/register` (the code does).
 - **Connect page** (`public/whatsapp-connect.html`, used by Flutter; apnabot-web
-  has its OWN copy in `use-whatsapp-signup.ts` and still has no guidance screen
-  or `onboardingType`): `featureType: 'whatsapp_business_app_onboarding'` is
-  always on; the three guidance cards are advice only. Sends once, when both the
+  has its OWN copy in `use-whatsapp-signup.ts`, with the same guidance cards,
+  changed 2026-10-30): **Embedded Signup v5** launch, `extras: { setup: {}, version: 'v5' }`
+  (Meta retired v2/v3 on 2026-10-15; in v5 coexistence is on by default, so no
+  `featureType` / `sessionInfoVersion`). One launch for every card; the three
+  guidance cards are advice only. Sends once, when both the
   auth code and both IDs are in (30s timeout); strict `facebook.com` origin check;
   auth `code` redacted from debug payloads.
 - **Webhook dispatch** (`webhook.controller.js`): every entry, change and message of
@@ -851,8 +853,17 @@ for what is actually deployed before assuming.
 - **Flags / Meta dashboard.** `COEXISTENCE_SYNC_ENABLED` (env, default off): turn it on
   only when the history / contact-sync handlers are deployed, or Meta's one-time
   sync is spent and lost. The webhook fields `history`, `smb_app_state_sync` and
-  `smb_message_echoes` are NOT yet subscribed in the Meta App Dashboard; subscribe
-  them together with the flag, then check the first real echo's stored row.
+  `smb_message_echoes` are being subscribed in the Meta App Dashboard by the owner
+  (as of 2026-10-30; confirm in the dashboard before relying on it). Set the flag in
+  Render (never in code), then check the first real echo's stored row.
+- **`canDeregister`** (2026-10-30): `GET /api/business` and the `business` object of
+  `POST /api/business/connect-whatsapp` carry `canDeregister` (false for
+  `whatsappOnboardingType === 'coexistence'`, true otherwise;
+  `whatsappOnboarding.service.js#withDeregisterInfo`). Meta blocks `/deregister` for a
+  number on both the Cloud API and the Business app, and our Disconnect never calls
+  it; the owner must also disconnect in the app (Settings > Account > Business
+  Platform > Disconnect Account). A `phone_number_id` already connected to another
+  business is rejected with 409 (pre-existing, not new).
   Search cab AI is already a coexistence number, so its owner's phone replies
   start appearing in the dashboard the moment echoes are subscribed.
   `ECHO_AUTO_PAUSE` (env, default off) is separate from `COEXISTENCE_SYNC_ENABLED`:

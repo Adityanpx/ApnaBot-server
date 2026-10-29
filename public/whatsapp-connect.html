@@ -93,7 +93,7 @@
 <div id="fb-root"></div>
 <div class="wrap">
   <div id="chooser">
-    <p class="question">Is this number already on the WhatsApp Business app?</p>
+    <p class="question">Which WhatsApp number do you want customers to message?</p>
     <div class="choices">
       <button type="button" id="choiceYes" class="choice" aria-pressed="false">Yes, I use WhatsApp Business app on this number</button>
       <button type="button" id="choiceNo" class="choice" aria-pressed="false">No, it's a new number / not on WhatsApp</button>
@@ -125,9 +125,11 @@
       'Before you start:\n' +
       '• Update the WhatsApp Business app to the latest version (at least 2.24.17).\n' +
       '• Keep your phone nearby and the app open while your chats sync.\n\n' +
-      'In the Meta window, choose the option to connect your existing WhatsApp Business app number.',
+      'In the Meta window, open the phone-number dropdown and choose your existing WhatsApp Business app number ' +
+      '(not "Add a new phone number").\n\n' +
+      'If Meta asks for an SMS or call code while connecting a Business-app number, stop and contact us.',
     cloud_api:
-      'In the Meta window, choose the option to add a new phone number. ' +
+      'In the Meta window, open the phone-number dropdown and choose "Add a new phone number". ' +
       'The number must not be registered on WhatsApp.',
     personal:
       'Coexistence only works with the WhatsApp Business app. Either switch this number to the ' +
@@ -336,10 +338,10 @@
       response_type: 'code',
       override_default_response_type: true,
       scope: 'whatsapp_business_management,whatsapp_business_messaging',
+      // Embedded Signup v5: coexistence is on by default - no featureType / sessionInfoVersion.
       extras: {
         setup: {},
-        featureType: 'whatsapp_business_app_onboarding',
-        sessionInfoVersion: '3'
+        version: 'v5'
       }
     });
   }

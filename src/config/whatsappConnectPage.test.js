@@ -99,14 +99,14 @@ test('personal WhatsApp: instructions, no Connect button, no FB.login', async ()
   assert.equal(page.fb.loginCalls.length, 0);
 });
 
-test('FB.login: featureType always on, whichever card was chosen', async () => {
+test('FB.login: same Embedded Signup v5 launch, whichever card was chosen', async () => {
   for (const card of ['choiceYes', 'choiceNo']) {
     const page = await connectFlow(card);
     const { opts } = page.fb.loginCalls[0];
     assert.equal(opts.config_id, 'cfg1');
     assert.equal(opts.response_type, 'code');
     assert.equal(opts.override_default_response_type, true);
-    assert.deepEqual(JSON.parse(JSON.stringify(opts.extras)), { setup: {}, featureType: 'whatsapp_business_app_onboarding', sessionInfoVersion: '3' });
+    assert.deepEqual(JSON.parse(JSON.stringify(opts.extras)), { setup: {}, version: 'v5' });
   }
 });
 

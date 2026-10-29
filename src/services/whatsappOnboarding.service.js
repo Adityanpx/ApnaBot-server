@@ -70,6 +70,17 @@ const deriveOnboardingType = (isOnBizApp, clientHint) => {
 const shouldRegister = (type, platformType) => type === 'cloud_api' && platformType !== 'CLOUD_API';
 
 /**
+ * Meta blocks /deregister for a number used with both the Cloud API and the
+ * WhatsApp Business app, so a coexistence number can only be disconnected from
+ * the phone (Settings > Account > Business Platform > Disconnect Account).
+ * Adds the flag to a business response object.
+ */
+const withDeregisterInfo = (businessData) => {
+  businessData.canDeregister = businessData.whatsappOnboardingType !== 'coexistence';
+  return businessData;
+};
+
+/**
  * GET /{phone-number-id}. is_on_biz_app is not in Meta's documented field
  * list, so if Meta ever rejects it the node is re-read without it.
  * @returns {Promise<Object>} the node (is_on_biz_app absent = unknown)
@@ -238,6 +249,7 @@ module.exports = {
   parseConnectBody,
   deriveOnboardingType,
   shouldRegister,
+  withDeregisterInfo,
   fetchPhoneNode,
   ensureRegisterPin,
   mapRegisterError,
