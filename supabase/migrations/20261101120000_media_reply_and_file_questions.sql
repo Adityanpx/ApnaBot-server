@@ -38,7 +38,7 @@ alter table customers add constraint customers_needs_human_reason_check
 
 alter table flow_nodes drop constraint if exists flow_nodes_content_type_check;
 alter table flow_nodes add constraint flow_nodes_content_type_check
-  check (content_type in ('text','buttons','list','location','location_request','carousel','file'));
+  check (content_type in ('text','buttons','list','location','location_request','carousel','catalog','file'));
 
 create table if not exists booking_files (
   id uuid primary key default gen_random_uuid(),
