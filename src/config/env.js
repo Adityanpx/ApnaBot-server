@@ -133,6 +133,10 @@ module.exports = {
   ENABLE_STORAGE_SWEEPER: process.env.ENABLE_STORAGE_SWEEPER === 'true',
   // (Bot Builder + Courses are switched per category from Super Admin —
   // category_features — not by an environment variable.)
+  // Owner phone at signup. Off by default: POST /api/auth/register accepts a missing phone (stored
+  // null) but still rejects a present-but-invalid one. Set REQUIRE_OWNER_PHONE=true once the
+  // Flutter and web signup forms send `phone`; a missing phone is then a 400.
+  REQUIRE_OWNER_PHONE: process.env.REQUIRE_OWNER_PHONE === 'true',
   // Optional: configurable ceiling on recipients per broadcast send. See the
   // comment above MAX_BROADCAST_RECIPIENTS' usage in broadcast.controller.js
   // for why this isn't tied to any real Meta/infra limit.

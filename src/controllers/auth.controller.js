@@ -14,11 +14,14 @@ const { errorResponse, successResponse } = require('../utils/response');
 const logger = require('../utils/logger');
 const { generateResetToken, generateOtp } = require('../utils/crypto');
 const redis = require('../config/redis');
+const config = require('../config/env');
+const { normalizeOwnerPhone, OWNER_PHONE_MESSAGES } = require('../utils/ownerPhone');
 
 const toUserResponse = (user) => ({
   _id: user.id,
   name: user.name,
   email: user.email,
+  phone: user.phone || null,
   role: user.role,
   businessId: user.business_id,
   permissions: {
@@ -32,7 +35,7 @@ const toUserResponse = (user) => ({
 
 const register = async (req, res, next) => {
   try {
-    const { name, email, password } = req.body;
+    const { name, email, password, phone } = req.body;
 
     if (!name || !email || !password) {
       return errorResponse(res, 400, 'Name, email, and password are required');
@@ -40,6 +43,17 @@ const register = async (req, res, next) => {
 
     if (password.length < 6) {
       return errorResponse(res, 400, 'Password must be at least 6 characters');
+    }
+
+    // REQUIRE_OWNER_PHONE off: a missing phone is stored null, a present one must still be valid.
+    let normalizedPhone = null;
+    const phoneResult = normalizeOwnerPhone(phone);
+    if (phoneResult.phone) {
+      normalizedPhone = phoneResult.phone;
+    } else if (phoneResult.reason === 'invalid') {
+      return errorResponse(res, 400, OWNER_PHONE_MESSAGES.invalid);
+    } else if (config.REQUIRE_OWNER_PHONE) {
+      return errorResponse(res, 400, OWNER_PHONE_MESSAGES.required);
     }
 
     const { data: existingUser } = await supabase
@@ -54,6 +68,7 @@ const register = async (req, res, next) => {
     const { data: user, error } = await supabase.from('users').insert({
       name,
       email: email.toLowerCase(),
+      phone: normalizedPhone,
       password_hash: passwordHash,
       role: 'owner',
       business_id: null,
@@ -385,7 +400,62 @@ const resendVerificationOtp = async (req, res, next) => {
   }
 };
 
+// GET /api/auth/me - the caller's own profile (any role).
+const getMe = async (req, res, next) => {
+  try {
+    const { data: user, error } = await supabase
+      .from('users').select('*').eq('id', req.user.userId).maybeSingle();
+    if (error) throw error;
+    if (!user) return errorResponse(res, 404, 'User not found');
+    return successResponse(res, 200, { user: toUserResponse(user) });
+  } catch (error) {
+    logger.error('Get me error:', error);
+    next(error);
+  }
+};
+
+// PATCH /api/auth/me - name and phone only; email and every other field are ignored. A phone
+// that is set cannot be cleared.
+const updateMe = async (req, res, next) => {
+  try {
+    const body = req.body || {};
+    const updates = {};
+
+    if (body.name !== undefined) {
+      const name = typeof body.name === 'string' ? body.name.trim() : '';
+      if (!name) return errorResponse(res, 400, 'Name cannot be empty');
+      updates.name = name;
+    }
+
+    if (body.phone !== undefined) {
+      const phoneResult = normalizeOwnerPhone(body.phone);
+      if (phoneResult.reason === 'empty') {
+        const { data: current, error: fetchErr } = await supabase
+          .from('users').select('phone').eq('id', req.user.userId).maybeSingle();
+        if (fetchErr) throw fetchErr;
+        return errorResponse(res, 400, current && current.phone ? 'Phone number cannot be removed' : OWNER_PHONE_MESSAGES.required);
+      }
+      if (phoneResult.reason) return errorResponse(res, 400, OWNER_PHONE_MESSAGES.invalid);
+      updates.phone = phoneResult.phone;
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return errorResponse(res, 400, 'Nothing to update. Send name and/or phone');
+    }
+
+    const { data: user, error } = await supabase
+      .from('users').update(updates).eq('id', req.user.userId).select().single();
+    if (error) throw error;
+    return successResponse(res, 200, { user: toUserResponse(user) }, 'Profile updated');
+  } catch (error) {
+    logger.error('Update me error:', error);
+    next(error);
+  }
+};
+
 module.exports = {
+  getMe,
+  updateMe,
   register,
   login,
   refresh,

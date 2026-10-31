@@ -1817,6 +1817,34 @@ shows an informational entry; uploads are not simulated.
 - Tests: `webhook.mediaReply`, `bookingFile.service`, `bookingGraph.fileQuestion`, `inboundFiles`, `flowWarnings`, `flowGraph.fileContentType`, additions to `handoffSettings`,
   `handoff.service`, `bookingTapGuard`, `storageInventory.service`, `storageCleanupSweeper.service`.
 
+## Owner phone number - `users.phone` (built 2026-11-03, migration `20261103120000_users_phone.sql`, uncommitted)
+
+- **Column.** `users.phone text NULL`, CHECK `users_phone_format_check`: NULL or `^\+91[6-9][0-9]{9}$`. Not unique, no backfill
+  (existing owners and all staff are NULL). Stored WITH the `+` (`+919876543210`), unlike `customers.whatsapp_number` / wa_id
+  (digits only, `919876543210`) - convert before comparing the two.
+- **Normalization.** `utils/ownerPhone.js#normalizeOwnerPhone` wraps `utils/phone.js#normalizePhone`: `9876543210`,
+  `+919876543210`, `09876543210`, `919876543210` (spaces/dashes ok) -> `+919876543210`. Landlines, foreign numbers and anything else
+  -> `{reason:'invalid'}`; blank/missing -> `{reason:'empty'}`. Messages: "Phone number is required" / "Enter a valid 10-digit Indian mobile number".
+- **`REQUIRE_OWNER_PHONE` (env, default false; `config/env.js`).** `POST /api/auth/register` accepts `phone`. Flag off: a missing or blank
+  phone is accepted (stored NULL) but a present, invalid phone is a 400. Flag on: a missing phone is a 400. **Set it to `true` on Render only
+  after the Flutter and web signup forms send `phone`** - until then old builds keep registering with NULL phone. The phone is checked
+  before the email-exists lookup. There is no Google/other sign-in path (email + password only); if one is added, collect the phone in a
+  "complete your profile" step via `PATCH /api/auth/me` (users stay NULL until then).
+- **Profile endpoints (new - none existed).** `GET /api/auth/me` and `PATCH /api/auth/me` (`protect`, any role, in `auth.routes.js`). The
+  user shape (`toUserResponse`, also returned by login/register) now includes `phone` (null when unset). PATCH accepts `name` (trimmed,
+  non-empty) and `phone` (same validation); `email` and every other field are ignored; a phone that is set cannot be cleared
+  (400 "Phone number cannot be removed"); an empty body or email-only body is a 400. Staff have no phone on invite and set their own here.
+- **Super Admin (`/api/admin`).** `GET /businesses` and `GET /businesses/:id` add top-level `ownerName`, `ownerEmail`, `ownerPhone` (null
+  when there is no owner/phone) next to the existing nested `ownerUserId` object (which now also carries `phone`); detail `users[]`
+  carry `phone` too. List `search` also matches the owner's phone: a term with 4+ digits looks up owner users whose `phone` contains
+  those digits and ORs `owner_user_id.in.(...)` into the name/city filter.
+- **Search sanitising.** The list's `search` goes through `utils/searchTerm.js#sanitizeSearchTerm` before it is put in the PostgREST
+  `.or()` string: `, ( ) % * \ " ' :` and backtick become spaces, whitespace collapses, a non-string (`?search=a&search=b`) or an
+  all-stripped value applies no search filter.
+- **Deploy:** apply the migration BEFORE the server (register/PATCH write the column; Super Admin selects it). Search cab AI is
+  unaffected (account-level only; no WhatsApp/booking path touched).
+- Tests: `utils/ownerPhone.test.js`, `controllers/auth.ownerPhone.test.js`, `controllers/admin.ownerPhone.test.js`.
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism
@@ -2351,3 +2379,4 @@ shows an informational entry; uploads are not simulated.
 - 2026-10-30: messages chat time (`wa_timestamp` / generated `message_time`, `before=<messageTime>|<id>` cursor, `messageTime` / `lastMessageTime` / `lastMessageType` / `lastMessageOriginalType`, socket `new_message` times, backfill script) - see "`messages` chat time" under the schema notes. Working tree only; migration not applied.
 
 - 2026-10-31: unlisted business at signup (`requestedCategoryText` + `requestContactPhone`, `business_requests`, team email, Super Admin list/update, `PUT /api/admin/businesses/:id/category`) and `supportWhatsappNumber` / `supportMessage` on `GET /api/app/version` - see "Unlisted business at signup + support number". Migration `20261026140000_business_requests.sql` must be applied BEFORE the server.
+- 2026-11-03: owner phone (`users.phone`, `REQUIRE_OWNER_PHONE`, `GET/PATCH /api/auth/me`, Super Admin `ownerName/ownerEmail/ownerPhone` + phone search, sanitised list search) - see "Owner phone number". Working tree only; migration not applied.

@@ -10,6 +10,7 @@ const businessCategoryService = require('../services/businessCategory.service');
 const { invalidateRulesCache } = require('../services/chatbot.service');
 const { successResponse, errorResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
+const { sanitizeSearchTerm } = require('../utils/searchTerm');
 const logger = require('../utils/logger');
 const {
   isPrice, validateDurationOptions, buildDurationOptions, validatePlanExtras, cleanFeatures, comparePlans
@@ -51,7 +52,21 @@ const getBusinesses = async (req, res, next) => {
 
     let query = supabase.from('businesses').select('*', { count: 'exact' });
 
-    if (search) query = query.or(`name.ilike.%${search}%,city.ilike.%${search}%`);
+    // Name / city, plus the owner's phone when the term has 4+ digits (matched on users.phone,
+    // then folded in as owner_user_id.in.(uuids) - ids come from the database, not the request).
+    const term = sanitizeSearchTerm(search);
+    if (term) {
+      const clauses = [`name.ilike.%${term}%`, `city.ilike.%${term}%`];
+      const digits = term.replace(/\D/g, '');
+      if (digits.length >= 4) {
+        const { data: phoneOwners, error: phoneErr } = await supabase
+          .from('users').select('id').eq('role', 'owner').ilike('phone', `%${digits}%`).limit(200);
+        if (phoneErr) throw phoneErr;
+        const ids = (phoneOwners || []).map((u) => u.id);
+        if (ids.length > 0) clauses.push(`owner_user_id.in.(${ids.join(',')})`);
+      }
+      query = query.or(clauses.join(','));
+    }
     if (isActive !== undefined) query = query.eq('is_active', isActive === 'true');
     if (businessCategory) query = query.eq('business_category', businessCategory);
 
@@ -63,7 +78,7 @@ const getBusinesses = async (req, res, next) => {
     let ownersById = {};
     if (ownerIds.length > 0) {
       const { data: owners, error: ownersErr } = await supabase
-        .from('users').select('id, name, email').in('id', ownerIds);
+        .from('users').select('id, name, email, phone').in('id', ownerIds);
       if (ownersErr) throw ownersErr;
       ownersById = Object.fromEntries((owners || []).map((o) => [o.id, o]));
     }
@@ -87,7 +102,13 @@ const getBusinesses = async (req, res, next) => {
     const businesses = rows.map((b) => {
       const { access_token, whatsapp_register_pin, ...safeRow } = b; // never expose encrypted secrets
       const owner = ownersById[b.owner_user_id];
-      let camelBusiness = { ...toCamelCase(safeRow), ownerUserId: owner ? toCamelCase(owner) : b.owner_user_id };
+      let camelBusiness = {
+        ...toCamelCase(safeRow),
+        ownerUserId: owner ? toCamelCase(owner) : b.owner_user_id,
+        ownerName: owner ? owner.name : null,
+        ownerEmail: owner ? owner.email : null,
+        ownerPhone: owner ? owner.phone || null : null
+      };
       if (isTravelFeaturedCategory(b.business_category, b.sub_categories)) {
         const travelSettingsRow = travelSettingsByBusinessId[b.id];
         camelBusiness.travelSettings = travelSettingsRow ? toCamelCase(travelSettingsRow) : null;
@@ -191,9 +212,9 @@ const getBusinessById = async (req, res, next) => {
     const { accessToken, whatsappRegisterPin, ...safeBusinessRow } = flattenedBusiness;
 
     const [ownerRes, staffRes, subRes, customerCountRes, bookingCountRes] = await Promise.all([
-      supabase.from('users').select('id, name, email, role, last_login_at, is_active')
+      supabase.from('users').select('id, name, email, phone, role, last_login_at, is_active')
         .eq('id', businessRow.owner_user_id).maybeSingle(),
-      supabase.from('users').select('id, name, email, role, last_login_at, is_active')
+      supabase.from('users').select('id, name, email, phone, role, last_login_at, is_active')
         .eq('business_id', id).eq('role', 'staff'),
       supabase.from('subscriptions').select('*, plan:plans(*)')
         .eq('business_id', id).in('status', ['active', 'trial'])
@@ -215,7 +236,13 @@ const getBusinessById = async (req, res, next) => {
     const subscription = subscriptionRow ? toCamelCaseDeep(subscriptionRow, ['plan']) : null;
 
     return successResponse(res, 200, {
-      business: { ...safeBusinessRow, ownerUserId: owner || safeBusinessRow.ownerUserId },
+      business: {
+        ...safeBusinessRow,
+        ownerUserId: owner || safeBusinessRow.ownerUserId,
+        ownerName: owner ? owner.name : null,
+        ownerEmail: owner ? owner.email : null,
+        ownerPhone: owner ? owner.phone || null : null
+      },
       subscription,
       plan: subscription?.plan || null,
       users,
