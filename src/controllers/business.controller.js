@@ -595,7 +595,8 @@ const getServedCitySuggestions = async (req, res, next) => {
  *    contacts + history syncs.
  * The path is derived server-side from Meta's phone-number node; the body's
  * onboardingType is only a fallback hint. Body (camelCase or snake_case):
- * { code, wabaId, phoneNumberId?, onboardingType? }
+ * { code, wabaId, phoneNumberId?, onboardingType?, metaBusinessId?, primaryWaacIds?, isOnBizApp? }
+ * wabaId may be omitted only for a coexistence finish that sends phoneNumberId.
  */
 const connectWhatsapp = async (req, res, next) => {
   // Diagnostics (whatsappDiagnostics.service.js): every step is kept and written to
@@ -629,8 +630,15 @@ const connectWhatsapp = async (req, res, next) => {
       return failWith(400, parsed.error, 'invalid_request');
     }
 
-    const { code, wabaId, onboardingHint } = parsed;
-    let { phoneNumberId } = parsed;
+    const { code, onboardingHint, metaBusinessId, primaryWaacIds } = parsed;
+    // wabaId is absent on a coexistence finish (resolved below, before anything uses it).
+    let { wabaId, phoneNumberId } = parsed;
+    trace.step('received_extras', {
+      wabaIdSent: !!wabaId,
+      metaBusinessId: metaBusinessId || null,
+      primaryWaacIds: primaryWaacIds || [],
+      clientIsOnBizApp: parsed.isOnBizApp === undefined ? null : parsed.isOnBizApp
+    });
 
     // If the client already has phoneNumberId (the normal case), keep the
     // early duplicate check before hitting Meta at all.
@@ -672,7 +680,29 @@ const connectWhatsapp = async (req, res, next) => {
       return failWith(400, 'Meta did not return an access token', 'no_access_token');
     }
 
-    await diagnostics.traceDebugToken(trace, accessToken);
+    const debugInfo = await diagnostics.traceDebugToken(trace, accessToken);
+
+    // Coexistence finish with no waba_id: find the WABA that owns the phone number.
+    // Never saves a null or unverified id - nothing found means the connect fails.
+    if (!wabaId) {
+      const resolved = await onboardingService.resolveWabaId({
+        accessToken,
+        phoneNumberId,
+        primaryWaacIds,
+        granularScopes: debugInfo && debugInfo.granularScopes,
+        metaBusinessId,
+        trace
+      });
+      if (!resolved.wabaId) {
+        logger.error('connectWhatsapp: could not resolve the WABA', { businessId, phoneNumberId, reason: resolved.reason });
+        return failWith(400, "We couldn't find your WhatsApp account yet. Please wait a minute and retry.", 'waba_unresolved');
+      }
+      wabaId = resolved.wabaId;
+      logger.info('connectWhatsapp: WABA resolved', { businessId, wabaId, phoneNumberId, method: resolved.method });
+    } else if (phoneNumberId) {
+      // Logging only: does the client's wabaId list this phone? Changes nothing.
+      await onboardingService.checkClientWaba({ wabaId, phoneNumberId, accessToken, trace });
+    }
 
     // phoneNumberId is missing: Meta's finish event can fire before the number
     // has finished onboarding server-side. Fetch it from the WABA directly now

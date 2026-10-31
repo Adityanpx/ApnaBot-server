@@ -21,29 +21,63 @@ const pick = (obj, ...keys) => {
   return undefined;
 };
 
+const MAX_WABA_CANDIDATES = 10;
+
+/**
+ * Meta's primary_waac_ids (shape not documented): strings or numbers are taken as
+ * ids, objects by their waba_id / id. Only numeric ids survive; deduped, capped.
+ * These are candidates only - resolveWabaId verifies each against Meta.
+ * @param {*} raw
+ * @returns {string[]}
+ */
+const normalizeWabaCandidates = (raw) => {
+  const list = Array.isArray(raw) ? raw : (raw === undefined || raw === null ? [] : [raw]);
+  const ids = [];
+  for (const item of list) {
+    const value = item && typeof item === 'object' ? pick(item, 'waba_id', 'wabaId', 'id') : item;
+    const id = typeof value === 'number' ? String(value) : value;
+    if (isNumericId(id) && !ids.includes(id)) ids.push(id);
+    if (ids.length >= MAX_WABA_CANDIDATES) break;
+  }
+  return ids;
+};
+
 /**
  * Validate and normalise the connect-whatsapp body (camelCase or snake_case).
+ * wabaId is optional ONLY for a coexistence finish that carries phoneNumberId
+ * (Meta's FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING has no waba_id); the server
+ * then resolves it (resolveWabaId). Everything else still requires it.
+ * metaBusinessId / primaryWaacIds / isOnBizApp are only present when sent.
  * @param {Object} body
- * @returns {{error:string}|{code:string, wabaId:string, phoneNumberId:string|undefined, onboardingHint:string|undefined}}
+ * @returns {{error:string}|{code:string, wabaId:string|undefined, phoneNumberId:string|undefined, onboardingHint:string|undefined}}
  */
 const parseConnectBody = (body) => {
   const code = pick(body, 'code');
   const wabaId = pick(body, 'wabaId', 'waba_id');
   const phoneNumberId = pick(body, 'phoneNumberId', 'phone_number_id');
   const onboardingHint = pick(body, 'onboardingType', 'onboarding_type');
+  const metaBusinessId = pick(body, 'metaBusinessId', 'meta_business_id');
+  const primaryWaacIds = normalizeWabaCandidates(pick(body, 'primaryWaacIds', 'primary_waac_ids'));
+  const isOnBizApp = pick(body, 'isOnBizApp', 'is_on_biz_app');
 
   if (!code || typeof code !== 'string') return { error: 'Authorization code is required' };
-  if (!wabaId) return { error: 'WhatsApp Business Account ID is required' };
-  if (!isNumericId(String(wabaId))) return { error: 'WhatsApp Business Account ID must be numeric' };
+  if (wabaId) {
+    if (!isNumericId(String(wabaId))) return { error: 'WhatsApp Business Account ID must be numeric' };
+  } else if (!(onboardingHint === 'coexistence' && phoneNumberId)) {
+    return { error: 'WhatsApp Business Account ID is required' };
+  }
   if (phoneNumberId !== undefined && !isNumericId(String(phoneNumberId))) return { error: 'Phone number ID must be numeric' };
   if (onboardingHint !== undefined && !ONBOARDING_TYPES.includes(onboardingHint)) {
     return { error: `onboardingType must be one of: ${ONBOARDING_TYPES.join(', ')}` };
   }
   return {
     code,
-    wabaId: String(wabaId),
+    wabaId: wabaId ? String(wabaId) : undefined,
     phoneNumberId: phoneNumberId === undefined ? undefined : String(phoneNumberId),
-    onboardingHint
+    onboardingHint,
+    ...(metaBusinessId !== undefined && isNumericId(String(metaBusinessId)) ? { metaBusinessId: String(metaBusinessId) } : {}),
+    ...(primaryWaacIds.length ? { primaryWaacIds } : {}),
+    ...(typeof isOnBizApp === 'boolean' ? { isOnBizApp } : {})
   };
 };
 
@@ -246,10 +280,135 @@ const requestCoexistenceSyncs = async (phoneNumberId, accessToken, which, trace)
   return accepted;
 };
 
+/**
+ * Does this WABA own the phone number? GET /{waba}/phone_numbers. Throws on a
+ * Graph error (not a WABA, no access, ...); the caller records it.
+ */
+const wabaHasPhone = async (wabaId, phoneNumberId, accessToken) => {
+  const response = await axios.get(`${META_API_BASE}/${wabaId}/phone_numbers`, {
+    params: { fields: 'id', limit: 100 },
+    headers: { Authorization: `Bearer ${accessToken}` }
+  });
+  return ((response.data && response.data.data) || []).some((n) => String(n.id) === String(phoneNumberId));
+};
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Find the WABA that owns phoneNumberId when Meta's finish event gave no waba_id
+ * (coexistence). Every id is only a candidate: it counts only if that WABA's
+ * phone_numbers edge, read with the token from the code exchange, lists
+ * phoneNumberId. Methods in order, the first with exactly one match wins:
+ *   primary_waac_ids -> debug_token granular scope targets -> metaBusinessId's
+ *   owned / client WABAs (best effort: needs a permission the token may lack).
+ * More than one match within a method is ambiguous and refused. When nothing
+ * matches it retries (the number can lag on Meta's side right after onboarding).
+ * Never throws; records each method on the trace.
+ * @param {Object} p
+ * @param {string} p.accessToken
+ * @param {string} p.phoneNumberId
+ * @param {string[]} [p.primaryWaacIds]
+ * @param {Array<{scope:string, targetIds:string[]}>} [p.granularScopes] - from debugToken
+ * @param {string} [p.metaBusinessId]
+ * @param {Object} [p.trace] - connect trace (whatsappDiagnostics.service.js)
+ * @param {number} [p.attempts]
+ * @param {number} [p.delayMs]
+ * @returns {Promise<{wabaId:string, method:string}|{wabaId:null, reason:'ambiguous'|'not_found', method?:string}>}
+ */
+const resolveWabaId = async ({
+  accessToken, phoneNumberId, primaryWaacIds = [], granularScopes = [], metaBusinessId, trace, attempts = 3, delayMs = 2000
+}) => {
+  const note = (name, data, level) => { if (trace) trace.step(name, data, level); };
+
+  const matchesIn = async (candidates, stepName) => {
+    const matches = [];
+    for (const id of candidates) {
+      try {
+        if (await wabaHasPhone(id, phoneNumberId, accessToken)) matches.push(id);
+      } catch (error) {
+        if (trace) trace.fail(stepName, 'GET', `/${id}/phone_numbers`, error);
+      }
+    }
+    return matches;
+  };
+
+  const businessCandidates = async () => {
+    const ids = [];
+    for (const edge of ['owned_whatsapp_business_accounts', 'client_whatsapp_business_accounts']) {
+      try {
+        const response = await axios.get(`${META_API_BASE}/${metaBusinessId}/${edge}`, {
+          params: { fields: 'id', limit: 100 },
+          headers: { Authorization: `Bearer ${accessToken}` }
+        });
+        for (const w of (response.data && response.data.data) || []) {
+          if (w.id && !ids.includes(String(w.id))) ids.push(String(w.id));
+        }
+      } catch (error) {
+        if (trace) trace.fail('resolve_waba_meta_business_id', 'GET', `/${metaBusinessId}/${edge}`, error);
+      }
+    }
+    return ids;
+  };
+
+  const scopeTargets = () => {
+    const ids = [];
+    for (const g of granularScopes || []) {
+      if (g && g.scope === 'whatsapp_business_management') {
+        for (const id of g.targetIds || []) if (!ids.includes(String(id))) ids.push(String(id));
+      }
+    }
+    return ids;
+  };
+
+  const methods = [
+    { method: 'primary_waac_ids', candidates: async () => primaryWaacIds },
+    { method: 'debug_token', candidates: async () => scopeTargets() },
+    { method: 'meta_business_id', candidates: async () => (metaBusinessId ? businessCandidates() : []) }
+  ];
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    for (const { method, candidates } of methods) {
+      const list = await candidates();
+      const matches = await matchesIn(list, `resolve_waba_${method}`);
+      note('resolve_waba_method', { attempt, method, candidates: list, matches });
+      if (matches.length === 1) {
+        note('resolve_waba', { ok: true, method, wabaId: matches[0], phoneNumberId, attempt });
+        return { wabaId: matches[0], method };
+      }
+      if (matches.length > 1) {
+        note('resolve_waba', { ok: false, reason: 'ambiguous', method, matches, phoneNumberId }, 'error');
+        return { wabaId: null, reason: 'ambiguous', method };
+      }
+    }
+    if (attempt < attempts) await sleep(delayMs);
+  }
+  note('resolve_waba', { ok: false, reason: 'not_found', phoneNumberId, attempts }, 'error');
+  return { wabaId: null, reason: 'not_found' };
+};
+
+/**
+ * Logging-only check of a client-supplied wabaId: does it list phoneNumberId?
+ * Never throws and never decides anything.
+ * @returns {Promise<{checked:boolean, contains?:boolean}>}
+ */
+const checkClientWaba = async ({ wabaId, phoneNumberId, accessToken, trace }) => {
+  try {
+    const contains = await wabaHasPhone(wabaId, phoneNumberId, accessToken);
+    if (trace) trace.step('waba_client_check', { ok: true, wabaId, phoneNumberId, contains });
+    return { checked: true, contains };
+  } catch (error) {
+    if (trace) trace.fail('waba_client_check', 'GET', `/${wabaId}/phone_numbers`, error);
+    return { checked: false };
+  }
+};
+
 module.exports = {
   ONBOARDING_TYPES,
   SYNC_WINDOW_MS,
   parseConnectBody,
+  normalizeWabaCandidates,
+  resolveWabaId,
+  checkClientWaba,
   deriveOnboardingType,
   shouldRegister,
   withDeregisterInfo,

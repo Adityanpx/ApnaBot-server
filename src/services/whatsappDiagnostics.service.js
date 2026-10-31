@@ -251,10 +251,11 @@ const tracedRead = async (trace, name, method, path, fn) => {
   }
 };
 
-/** debug_token step of a connect. */
+/** debug_token step of a connect. Returns what it read (null on failure) for the WABA resolver. */
 const traceDebugToken = async (trace, accessToken) => {
   const out = await tracedRead(trace, 'debug_token', 'GET', '/debug_token', () => debugToken(accessToken));
   if (out.ok) trace.step('debug_token', { ok: true, ...out.result });
+  return out.ok ? out.result : null;
 };
 
 /** Phone node + WABA reads of a connect (steps phone_node and waba). */
