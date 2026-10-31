@@ -43,7 +43,9 @@ const from = (table) => {
 const stub = (rel, exports) => { const p = require.resolve(rel); require.cache[p] = { id: p, filename: p, loaded: true, exports }; };
 stub('../config/env', { META_APP_SECRET: SECRET, FRONTEND_URL: 'https://app.test' });
 stub('../config/supabase', { from });
-stub('../utils/logger', { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} });
+// Logger lines land in `logged` too, so the no-message-text guard covers them.
+const captureLog = (...a) => { if (logged) logged.push('logger: ' + a.map(x => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ')); };
+stub('../utils/logger', { info: captureLog, warn: captureLog, error: captureLog, debug: captureLog });
 stub('../config/redis', {});
 stub('../config/queueConnection', { queueConnection: {}, workerConnection: {} });
 stub('../queues/whatsapp.queue', {
@@ -178,7 +180,7 @@ test('history: stored as imports, no bot, no usage, and the body (message text) 
   assert.equal(usageCalls(), 0);
   assert.equal(queued.length, 0);
   assert.ok(!logged.some(l => l.includes('secret old chat text')));
-  assert.ok(logged.some(l => /body not logged/.test(l)));
+  assert.ok(logged.some(l => l.includes('"history_messages":2')));
 });
 
 test('contact sync: contacts become customers, body not logged', async () => {
@@ -188,12 +190,38 @@ test('contact sync: contacts become customers, body not logged', async () => {
   assert.equal(customers().length, 1);
   assert.equal(customers()[0].name, 'Phone Contact');
   assert.equal(botRuns(), 0);
-  assert.ok(logged.some(l => /body not logged/.test(l)));
+  assert.ok(!logged.some(l => l.includes('Phone Contact') || l.includes('919800000007')));
 });
 
-test('echoes and messages are still logged in full (only history / contact sync are summarised)', async () => {
-  await sendBody(field('smb_message_echoes', echoValue('wamid.E1', '919800000001', 'visible echo text')));
-  assert.ok(logged.some(l => l.includes('visible echo text')));
+// Guard: message text, captions, contact names and customer phone numbers must never reach a log line.
+// Message text, captions and contact names: no log line at all. Customer numbers: the webhook body log (console.log);
+// operational logger lines still name the customer number (known, reported separately).
+const TEXT_CANARIES = ['CANARY-TEXT', 'CANARY-CAPTION', 'CANARY-NAME'];
+const leaked = () => logged.filter(l => TEXT_CANARIES.some(c => l.includes(c)) || (!l.startsWith('logger: ') && l.includes('919811112222')));
+
+test('no log line carries message text, captions, contact names or customer numbers (messages, echoes, history, statuses)', async () => {
+  await send({ id: 'wamid.IN1', from: '919811112222', type: 'text', text: { body: 'CANARY-TEXT' } });
+  await sendBody({ entry: [{ id: 'waba1', changes: [{ field: 'messages', value: {
+    metadata: META, contacts: [{ profile: { name: 'CANARY-NAME' }, wa_id: '919811112222' }],
+    messages: [{ id: 'wamid.IN2', from: '919811112222', type: 'image', image: { id: 'm1', caption: 'CANARY-CAPTION' } }]
+  } }] }] });
+  await sendBody(field('smb_message_echoes', echoValue('wamid.E1', '919811112222', 'CANARY-TEXT')));
+  await sendBody(field('history', { messaging_product: 'whatsapp', metadata: META, history: [{ metadata: { phase: 0, chunk_order: 1, progress: 10 }, threads: [{ id: '919811112222', messages: [
+    { from: '919811112222', to: BIZ_NUMBER, id: 'wamid.H9', timestamp: '1759000000', type: 'text', text: { body: 'CANARY-TEXT' }, history_context: { status: 'READ' } }
+  ] }] }] }));
+  await sendBody({ entry: [{ id: 'waba1', changes: [{ field: 'messages', value: {
+    metadata: META, statuses: [{ id: 'wamid.S1', status: 'failed', recipient_id: '919811112222', errors: [{ code: 131026, title: 'CANARY-TEXT' }] }]
+  } }] }] });
+  assert.ok(logged.length > 0);
+  assert.deepEqual(leaked(), []);
+  // What is logged: ids, types, counts.
+  assert.ok(logged.some(l => l.includes('wamid.IN2') && l.includes('"image":1') && l.includes('"waba_id":"waba1"') && l.includes('"phone_number_id":"pn1"')));
+  assert.ok(logged.some(l => l.includes('"failed":1') && l.includes('131026')));
+});
+
+test('the controller source never logs a whole webhook body', () => {
+  const src = require('fs').readFileSync(require.resolve('./webhook.controller'), 'utf8');
+  assert.ok(!/(console\.log|logger\.\w+)\((?:[^()]*,\s*)?(JSON\.stringify\(req\.body|req\.body\s*[,)])/.test(src));
 });
 
 test('account_update PARTNER_REMOVED: disconnected, IDs and token kept, tenant cache cleared; no bot', async () => {

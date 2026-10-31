@@ -37,11 +37,11 @@ const { buildInteractivePayload } = require('../utils/interactivePayload');
 const { locationPinLabel } = require('../utils/locationLabel');
 const { getReplyMediaLimits, getCarouselMaxCards, planReplyMediaSend } = require('../utils/replyMediaLimits');
 const { planCarouselSend, cardsOf } = require('../utils/carouselPayload');
-const { isBulkSyncBody } = require('../utils/coexistencePayload');
+const { webhookLogSummary } = require('../utils/webhookLogSummary');
 const coexistenceService = require('../services/coexistence.service');
 const catalogReply = require('../services/catalogReply.service');
 const { parseCatalogTapId } = require('../utils/catalogIds');
-const { buildStatusEvents, statusOnlySummary } = require('../utils/statusPayload');
+const { buildStatusEvents } = require('../utils/statusPayload');
 const { withFailure } = require('../utils/whatsappErrors');
 const { notifyBroadcastProgress } = require('../services/broadcastProgress.service');
 const deliverySignals = require('../services/deliverySignals.service');
@@ -1114,19 +1114,10 @@ const applyStatusEvents = async (events) => {
  * Main webhook handler for WhatsApp events
  */
 const receiveWebhook = async (req, res) => {
-  // History chunks and contact syncs can hold thousands of messages / contacts
-  // (with their text): those log a one-line summary from their handler instead
-  // of the whole body. A body of only message statuses (3 per message, so a
-  // broadcast sends thousands) logs one line too. Everything else is logged in
-  // full, as before.
-  const statusSummary = statusOnlySummary(req.body);
-  if (statusSummary) {
-    console.log(statusSummary);
-  } else if (isBulkSyncBody(req.body)) {
-    console.log('WEBHOOK POST received (history / contact sync - body not logged, see the handler summary)');
-  } else {
-    console.log('WEBHOOK POST received:', JSON.stringify(req.body, null, 2));
-  }
+  // Never the whole body: it carries customers' message text, captions, contact
+  // names and phone numbers. One summary line (utils/webhookLogSummary.js): object,
+  // field / event, waba_id, phone_number_id, message ids and types, status values, counts.
+  console.log(webhookLogSummary(req.body));
   // Step 1 - Return 200 immediately
   res.status(200).json({ status: 'ok' });
 

@@ -290,7 +290,8 @@ test('a status-only POST logs one summary line, not the whole body', async () =>
     await sendBody(statusBody([{ id: 'wamid.OUT1', status: 'delivered', recipient_id: '919800000001' }, { id: 'wamid.X', status: 'failed', recipient_id: '919800000002', errors: [{ code: 131026 }] }]));
   } finally { console.log = realLog; }
   assert.equal(lines.length, 1);
-  assert.match(lines[0], /statuses only\): 2 - delivered x1, failed x1 \[131026\]/);
+  assert.match(lines[0], /"statuses":\{"delivered":1,"failed":1\}/);
+  assert.match(lines[0], /"error_codes":\["131026"\]/);
   assert.ok(!lines[0].includes('9198000'));
 });
 
