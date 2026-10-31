@@ -22,6 +22,7 @@ const vehicleCatalogRoutes = require('./routes/vehicleCatalog.routes');
 const courseCatalogRoutes = require('./routes/courseCatalog.routes');
 const categoryFeatureRoutes = require('./routes/categoryFeature.routes');
 const storageCleanupRoutes = require('./routes/storageCleanup.routes');
+const whatsappDiagnosticsRoutes = require('./routes/whatsappDiagnostics.routes');
 const botSettingsRoutes = require('./routes/botSettings.routes');
 const courseRoutes = require('./routes/course.routes');
 const vehicleRoutes = require('./routes/vehicle.routes');
@@ -82,6 +83,8 @@ app.use(cors({
 app.use('/api/broadcasts', express.json({ limit: '1mb' }));
 // Category-template JSON import carries a whole flow (nodes + edges).
 app.use('/api/admin/category-templates', express.json({ limit: '1mb' }));
+// Client connect log: up to 100 entries of 4 KB each.
+app.use('/api/business/whatsapp-connect-log', express.json({ limit: '1mb' }));
 app.use(express.json({
   verify: (req, res, buf) => {
     req.rawBody = buf;
@@ -136,6 +139,8 @@ app.use('/api/admin/course-catalog', courseCatalogRoutes);
 app.use('/api/admin/category-features', categoryFeatureRoutes);
 // Super Admin storage cleanup (R2) - superadmin only; above the /api/admin catch-all.
 app.use('/api/admin/storage-cleanup', storageCleanupRoutes);
+// Super Admin WhatsApp connection diagnostics - superadmin only.
+app.use('/api/super-admin', whatsappDiagnosticsRoutes);
 // Super Admin mobile-app version gate (app_config) - superadmin only; above the
 // /api/admin catch-all. The public read is /api/app/version below.
 app.use('/api/admin/app-config', appConfigAdminRoutes);

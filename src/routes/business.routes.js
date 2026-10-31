@@ -6,6 +6,7 @@ const handoffController = require('../controllers/handoff.controller');
 const { protect, requireBusiness } = require('../middleware/auth.middleware');
 const { requireRole } = require('../middleware/role.middleware');
 const { uploadSingle, uploadMediaSingle } = require('../middleware/upload.middleware');
+const { connectLogLimiter } = require('../middleware/rateLimiter.middleware');
 
 // GET    /                   → protect, requireBusiness, business.controller.getBusiness
 // POST   /                   → protect, business.controller.createBusiness
@@ -14,6 +15,7 @@ const { uploadSingle, uploadMediaSingle } = require('../middleware/upload.middle
 // PUT    /served-cities       → protect, requireBusiness, business.controller.updateServedCities
 // GET    /served-cities/suggestions → protect, requireBusiness, business.controller.getServedCitySuggestions
 // POST   /connect-whatsapp   → protect, requireBusiness, requireRole('owner'), business.controller.connectWhatsapp
+// POST   /whatsapp-connect-log → protect, requireBusiness, requireRole('owner'), connectLogLimiter, business.controller.logWhatsappConnect
 // DELETE /disconnect-whatsapp → protect, requireBusiness, requireRole('owner'), business.controller.disconnectWhatsapp
 // POST   /payment-issue/dismiss → protect, requireBusiness, requireRole('owner'), business.controller.dismissPaymentIssue
 // GET    /dashboard-stats     → protect, requireBusiness, business.controller.getDashboardStats
@@ -68,6 +70,17 @@ router.post(
   requireBusiness,
   requireRole('owner'),
   businessController.connectWhatsapp
+);
+
+// POST /whatsapp-connect-log - the client's log of a connect attempt (diagnostics)
+// Body: { entries: [...], outcome? } - max 100 entries of 4 KB; secret-named keys are stripped.
+router.post(
+  '/whatsapp-connect-log',
+  protect,
+  requireBusiness,
+  requireRole('owner'),
+  connectLogLimiter,
+  businessController.logWhatsappConnect
 );
 
 // DELETE /disconnect-whatsapp - Disconnect WhatsApp

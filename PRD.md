@@ -870,6 +870,49 @@ for what is actually deployed before assuming.
   subscribe `smb_message_echoes`, check the first real echoes in the logs, then
   turn it on. Search cab AI (live) is affected by both the moment they are on.
 
+## WhatsApp connection diagnostics (built 2026-11-02, migration `20261102120000_whatsapp_connect_attempts.sql`)
+
+Why connects fail is now answerable from data. **Never log or store: access tokens, the
+exchanged code, the app secret, the encryption key, the system-user token. IDs and field
+names only.** Every Graph call in the diagnostics sends its token in the `Authorization`
+header and records failures from Meta's response body, never from `error.config`.
+
+- **Table `whatsapp_connect_attempts`** (RLS on, no policies - service role only): `id`,
+  `business_id` (cascade), `user_id`, `outcome`, `entries` jsonb (what the client logged),
+  `server_steps` jsonb (what the server did), `config_id`, `app_id`, `created_at`. Index
+  `(business_id, created_at desc)`. Last 50 per business kept (pruned on insert).
+- **`POST /api/business/whatsapp-connect-log`** (owner; 20/hour/business via `connectLogLimiter`;
+  1 MB body parser in `app.js`). Body `{ entries, outcome? }`. Max 100 entries, 4 KB each (an
+  oversized one becomes `{truncated, originalBytes, preview}`); keys named code / token /
+  access_token / secret (any casing, any depth, plus client_secret, app_secret, authorization)
+  are stripped, and `code=` / `access_token=` in string values are redacted. Attaches to the
+  business's attempt row of the last 10 minutes when that row has no client entries yet,
+  otherwise inserts its own row (`outcome` = the client's, or `client_only`).
+- **Server steps** (`services/whatsappDiagnostics.service.js#createConnectTrace`, used by
+  `connectWhatsapp`): the row is created at request start (`outcome: 'started'`) and updated by
+  `finish(outcome)` on every exit. Steps: `received_request`, `token_exchange`, `debug_token`,
+  `phone_node`, `waba`, `registration_decision`, `subscribed_apps`, `register`,
+  `coexistence_sync_decision`, `smb_app_data` (with `request_id`), `finished`. Each step is also one
+  structured log line (`whatsapp_connect_step`). A failed Graph call records method, path (no
+  query), HTTP status, message, `code`, `error_subcode`, `fbtrace_id`. The phone node / WABA
+  reads are SEPARATE diagnostic calls (fields `is_on_biz_app,platform_type,status,
+  code_verification_status,name_status,quality_rating,display_phone_number` and
+  `id,name,account_review_status,business_verification_status`) so the connect's own node read
+  is unchanged. All diagnostics are non-fatal: a diagnostics failure never fails a connect.
+- **Super Admin** (`/api/super-admin`, superadmin only - note: NOT under `/api/admin`):
+  `GET /whatsapp-diagnostics[?businessId=]` runs (stores nothing) the app's
+  `/{app_id}/subscriptions` check with pass/fail for messages, account_update, history,
+  smb_app_state_sync, smb_message_echoes; `debug_token` of the system-user token (taken to be
+  `PLATFORM_WHATSAPP_ACCESS_TOKEN`, the only platform-level token in config); `META_APP_ID`,
+  `META_CONFIG_ID`, `GRAPH_API_VERSION`, `COEXISTENCE_SYNC_ENABLED`, `ECHO_AUTO_PAUSE`; and with
+  `businessId` the phone-node + WABA reads using that business's stored token.
+  `GET /whatsapp-connect-attempts?businessId=` returns the last attempts.
+- **Webhook log lines** (`coexistence.service.js#logEvent`): one line per account_update /
+  history / smb_app_state_sync / smb_message_echoes event - event type, waba_id, phone_number_id,
+  and (account_update) `disconnection_info` reason / `initiated_by` when they are primitives,
+  plus the key names of `disconnection_info`. The `disconnection_info` shape is NOT verified
+  against a real payload yet - check the first real one.
+
 ## Owner phone-app media & storage cleanup (built 2026-10-09)
 
 Commits a506c5b (owner media switch) and 1bc9a8f (storage cleanup). Migrations

@@ -8,7 +8,7 @@ const assert = require('node:assert/strict');
 const BIZ = 'b1';
 
 let config; let metaCalls; let node; let registerError; let syncFails; let previous; let otherOwner;
-let saved; let invalidated; let marked; let pinRows; let trialCalls; let trialResult;
+let stepLogs; let saved; let invalidated; let marked; let pinRows; let trialCalls; let trialResult;
 
 const stub = (rel, exports) => { const p = require.resolve(rel); require.cache[p] = { id: p, filename: p, loaded: true, exports }; };
 
@@ -51,7 +51,8 @@ stub('../config/supabase', {
     return q;
   }
 });
-stub('../utils/logger', { info: () => {}, warn: () => {}, error: () => {} });
+const capture = (m, d) => { if (m === 'whatsapp_connect_step') stepLogs.push(d); };
+stub('../utils/logger', { info: capture, warn: capture, error: capture });
 stub('../utils/crypto', { encrypt: (t) => `enc(${t})`, decrypt: (t) => t.replace(/^enc\((.*)\)$/, '$1'), generateWebhookToken: () => 'x' });
 stub('../services/whatsapp.service', { META_API_BASE: 'https://graph.test/v25.0' });
 stub('../services/business.service', {
@@ -94,7 +95,7 @@ const route = (n) => { node = n; };
 
 test.beforeEach(() => {
   config = { META_APP_ID: 'app', META_APP_SECRET: 'secret', COEXISTENCE_SYNC_ENABLED: false };
-  metaCalls = []; node = NODE_A; registerError = null; syncFails = false; previous = { id: BIZ, phoneNumberId: null, isWhatsappConnected: false };
+  stepLogs = []; metaCalls = []; node = NODE_A; registerError = null; syncFails = false; previous = { id: BIZ, phoneNumberId: null, isWhatsappConnected: false };
   trialCalls = []; trialResult = { granted: true, endsAt: '2026-10-24T00:00:00.000Z' };
   otherOwner = null; saved = null; invalidated = []; marked = null; pinRows = [{ id: BIZ, whatsapp_register_pin: null }];
 });
@@ -272,4 +273,36 @@ test('a connect that fails never reaches the trial step (no claim is created)', 
   const conflict = await call(NUMERIC);
   assert.equal(conflict.code, 409);
   assert.equal(trialCalls.length, 0);
+});
+
+test('diagnostics: a coexistence connect logs each step with IDs and flags only - never the code or the token', async () => {
+  config.COEXISTENCE_SYNC_ENABLED = true;
+  route(NODE_COEX);
+  await call({ ...NUMERIC, onboardingType: 'coexistence' });
+  const names = stepLogs.map(s => s.step);
+  for (const n of ['received_request', 'token_exchange', 'registration_decision', 'subscribed_apps', 'coexistence_sync_decision', 'smb_app_data', 'finished']) {
+    assert.ok(names.includes(n), `missing step ${n}`);
+  }
+  assert.equal(stepLogs.find(s => s.step === 'received_request').codePresent, true);
+  assert.equal(stepLogs.find(s => s.step === 'registration_decision').shouldRegister, false);
+  assert.equal(stepLogs.find(s => s.step === 'coexistence_sync_decision').coexistenceSyncEnabled, true);
+  assert.equal(stepLogs.find(s => s.step === 'smb_app_data').requestId, 'R');
+  assert.equal(stepLogs.find(s => s.step === 'finished').outcome, 'connected');
+  const all = JSON.stringify(stepLogs);
+  assert.ok(!all.includes('CODE') && !all.includes('TOK') && !all.includes('secret'));
+});
+
+test('diagnostics: a failed token exchange is logged with the Meta code, subcode and fbtrace_id', async () => {
+  const axios = require('axios');
+  const realGet = axios.get;
+  axios.get = async () => {
+    const e = new Error('400'); e.response = { status: 400, data: { error: { message: 'bad code', code: 100, error_subcode: 36007, fbtrace_id: 'TRACE1' } } }; throw e;
+  };
+  try {
+    const res = await call(NUMERIC);
+    assert.equal(res.code, 400);
+  } finally { axios.get = realGet; }
+  const fail = stepLogs.find(s => s.step === 'token_exchange');
+  assert.deepEqual([fail.ok, fail.method, fail.path, fail.httpStatus, fail.code, fail.errorSubcode, fail.fbtraceId], [false, 'GET', '/oauth/access_token', 400, 100, 36007, 'TRACE1']);
+  assert.equal(stepLogs.find(s => s.step === 'finished').outcome, 'token_exchange_failed');
 });

@@ -30,7 +30,17 @@ const translateLimiter = rateLimit({
   message: { success: false, message: 'Too many translate requests, please try again in a minute', data: null, errors: null }
 });
 
+// Client connect log (POST /api/business/whatsapp-connect-log) - on that route, on top of
+// globalLimiter. Keyed by business.
+const connectLogLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 20, // limit each business to 20 connect logs per windowMs
+  keyGenerator: (req) => (req.user && req.user.businessId) || ipKeyGenerator(req.ip),
+  message: { success: false, message: 'Too many connect logs, please try again later', data: null, errors: null }
+});
+
 module.exports = {
+  connectLogLimiter,
   globalLimiter,
   webhookLimiter,
   helpFeedbackLimiter,

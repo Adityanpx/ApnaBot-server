@@ -498,6 +498,30 @@ const handleAccountUpdate = async (entry, value) => {
   return { action: target ? 'connected' : 'disconnected' };
 };
 
+const primitive = (v) => (['string', 'number', 'boolean'].includes(typeof v) ? v : undefined);
+
+/**
+ * One log line per coexistence event: the event type, WABA id, phone number id and,
+ * when present, the disconnection reason and who initiated it. IDs and field names
+ * only - never message bodies or contact names. (The disconnection_info shape is
+ * read defensively: only primitive `reason` / `initiated_by` values are logged, and
+ * its key names, so an unexpected shape is visible without leaking content.)
+ */
+const logEvent = (entry, field, value) => {
+  const info = value && value.disconnection_info && typeof value.disconnection_info === 'object' ? value.disconnection_info : null;
+  const line = {
+    event: field,
+    accountEvent: field === 'account_update' ? primitive(value && value.event) : undefined,
+    wabaId: entry && entry.id ? String(entry.id) : undefined,
+    phoneNumberId: value && value.metadata ? primitive(value.metadata.phone_number_id) : undefined,
+    disconnectionReason: info ? primitive(info.reason) : undefined,
+    initiatedBy: primitive(info && info.initiated_by) ?? primitive(value && value.initiated_by),
+    disconnectionInfoKeys: info ? Object.keys(info) : undefined
+  };
+  Object.keys(line).forEach((k) => line[k] === undefined && delete line[k]);
+  logger.info(`coexistence webhook: ${field}`, line);
+};
+
 /**
  * Entry point for the four fields. Resolves the business (it must be active and
  * connected) and dispatches. Throws only on unexpected failures; the webhook
@@ -506,6 +530,8 @@ const handleAccountUpdate = async (entry, value) => {
 const handleChange = async (entry, changes) => {
   const field = changes && changes.field;
   const value = (changes && changes.value) || {};
+
+  try { logEvent(entry, field, value); } catch (e) { /* a log line never breaks event handling */ }
 
   if (field === 'account_update') return handleAccountUpdate(entry, value);
 

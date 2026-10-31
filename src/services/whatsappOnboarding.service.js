@@ -214,9 +214,10 @@ const decideSyncs = ({ flagOn, type, existing, phoneNumberId, nowMs }) => {
  * Request the contacts and history syncs. A failure of either is logged and
  * never fails the onboarding.
  * @param {{contacts:boolean, history:boolean}} which
+ * @param {Object} [trace] - connect diagnostics trace (whatsappDiagnostics.service.js)
  * @returns {Promise<{contacts:boolean, history:boolean}>} which requests Meta accepted
  */
-const requestCoexistenceSyncs = async (phoneNumberId, accessToken, which) => {
+const requestCoexistenceSyncs = async (phoneNumberId, accessToken, which, trace) => {
   const accepted = { contacts: false, history: false };
   const post = async (syncType) => {
     const response = await axios.post(
@@ -233,7 +234,9 @@ const requestCoexistenceSyncs = async (phoneNumberId, accessToken, which) => {
       const data = await post(syncType);
       accepted[key] = true;
       logger.info(`coexistence ${syncType} sync requested`, { phoneNumberId, requestId: data && data.request_id });
+      if (trace) trace.step('smb_app_data', { ok: true, syncType, method: 'POST', path: `/${phoneNumberId}/smb_app_data`, requestId: data && data.request_id });
     } catch (error) {
+      if (trace) trace.fail('smb_app_data', 'POST', `/${phoneNumberId}/smb_app_data`, error);
       logger.error(`coexistence ${syncType} sync request failed (onboarding continues)`, {
         phoneNumberId,
         error: error.response ? error.response.data : error.message
