@@ -759,9 +759,16 @@ for what is actually deployed before assuming.
   changed 2026-10-30): **Embedded Signup v5** launch, `extras: { setup: {}, version: 'v5' }`
   (Meta retired v2/v3 on 2026-10-15; in v5 coexistence is on by default, so no
   `featureType` / `sessionInfoVersion`). One launch for every card; the three
-  guidance cards are advice only. Sends once, when both the
-  auth code and both IDs are in (30s timeout); strict `facebook.com` origin check;
-  auth `code` redacted from debug payloads.
+  guidance cards are advice only (labels, hints and the five-item coexistence
+  checklist mirror apnabot-web `WhatsAppConnectPanel.tsx`; known failures are
+  mapped to plain text as in `wa-connect-errors.ts`). Sends once, when the auth
+  code and the IDs are in (30s timeout): Cloud API (plain `FINISH`) needs `waba_id`
+  + `phone_number_id`; a coexistence finish (`FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING`,
+  no `waba_id`) needs only `phone_number_id` and sends `wabaId: null` (the server
+  resolves the WABA). `metaBusinessId` / `primaryWaacIds` / `isOnBizApp` are added
+  only when Meta sent them. **Flutter gap:** the app (`whatsapp_connect_screen.dart`)
+  still rejects a null `wabaId`, so coexistence from the app needs an app update.
+  Strict `facebook.com` origin check; auth `code` redacted from debug payloads.
 - **Webhook dispatch** (`webhook.controller.js`): every entry, change and message of
   a POST is processed on its own (`splitMessages` fans out batched messages;
   one failure never drops the rest). History / contact-sync bodies are not

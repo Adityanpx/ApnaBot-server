@@ -10,7 +10,7 @@ const vm = require('vm');
 const HTML = fs.readFileSync(path.join(__dirname, '..', '..', 'public', 'whatsapp-connect.html'), 'utf8');
 const SCRIPT = HTML.match(/<script>([\s\S]*?)<\/script>/)[1];
 
-const IDS = ['connectBtn', 'retryBtn', 'status', 'info', 'choiceYes', 'choiceNo', 'choicePersonal'];
+const IDS = ['connectBtn', 'retryBtn', 'status', 'info', 'choiceYes', 'choiceNo', 'choicePersonal', 'checklist', 'checklistItems'];
 
 // Loads the page; resolves once the config fetch + fake SDK load have run.
 const loadPage = async () => {
@@ -18,8 +18,9 @@ const loadPage = async () => {
   IDS.forEach((id) => {
     const handlers = {};
     els[id] = {
-      id, textContent: '', disabled: false, hidden: id === 'connectBtn' || id === 'retryBtn' || id === 'info',
-      attrs: {},
+      id, textContent: '', disabled: false, hidden: id === 'connectBtn' || id === 'retryBtn' || id === 'info' || id === 'checklist',
+      attrs: {}, innerHTML: '', children: [],
+      appendChild(c) { this.children.push(c); },
       setAttribute(k, v) { this.attrs[k] = v; },
       addEventListener(ev, fn) { handlers[ev] = fn; },
       click() { handlers.click(); }
@@ -43,7 +44,7 @@ const loadPage = async () => {
     document: {
       getElementById: (id) => els[id] || null,
       getElementsByTagName: () => [{ parentNode: { insertBefore: () => { win.fbAsyncInit(); } } }],
-      createElement: () => ({})
+      createElement: () => ({ textContent: '' })
     },
     fetch: async () => ({ json: async () => ({ success: true, data: { appId: 'app1', configId: 'cfg1' } }) }),
     URL,
@@ -85,8 +86,14 @@ test('guidance first: nothing connects until a valid choice is made; SDK is init
   page.click('choiceYes');
   assert.equal(page.els.connectBtn.hidden, false);
   assert.equal(page.els.connectBtn.disabled, false);
-  assert.match(page.els.info.textContent, /2\.24\.17/);
-  assert.match(page.els.info.textContent, /phone nearby/);
+  assert.equal(page.els.checklist.hidden, false);
+  const items = page.els.checklistItems.children.map((c) => c.textContent);
+  assert.equal(items.length, 5);
+  assert.match(items[0], /2\.24\.17/);
+  assert.match(items[4], /phone nearby/);
+  assert.match(page.els.info.textContent, /Test Number/);
+  page.click('choiceNo');
+  assert.equal(page.els.checklist.hidden, true);
 });
 
 test('personal WhatsApp: instructions, no Connect button, no FB.login', async () => {
@@ -145,7 +152,7 @@ test('both IDs are required: FINISH without a phone_number_id waits, then times 
   const timeout = page.timers.find((t) => !t.cleared);
   assert.equal(timeout.ms, 30000);
   page.runTimers(30000);
-  assert.match(page.results()[0].error, /didn't finish sending/);
+  assert.match(page.results()[0].error, /took too long to finish/);
   assert.equal(page.els.retryBtn.hidden, false);
 });
 
@@ -216,4 +223,55 @@ test('debug payloads never carry the auth code', async () => {
   assert.ok(!everything.includes('SECRET-CODE'));
   assert.match(everything, /\[redacted\]/);
   assert.match(everything, /"userID":"u"/); // the rest of the debug payload is intact
+});
+
+test('coexistence finish without waba_id completes at once; extras sent only when present', async () => {
+  const page = await connectFlow('choiceYes');
+  page.loginResult({ authResponse: { code: 'CX' } });
+  page.fbMsg('FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING', {
+    phone_number_id: '111', business_id: '222', primary_waac_ids: [{ waba_id: '333' }, '444', 555, 'x', '444'], is_on_biz_app: true
+  });
+  assert.deepEqual(page.results(), [{
+    code: 'CX', wabaId: null, phoneNumberId: '111', onboardingType: 'coexistence',
+    metaBusinessId: '222', primaryWaacIds: ['333', '444', '555'], isOnBizApp: true
+  }]);
+  assert.equal(page.timers.filter((t) => !t.cleared).length, 0);
+});
+
+test('coexistence finish with only phone_number_id: no extra keys at all', async () => {
+  const page = await connectFlow('choiceYes');
+  page.fbMsg('FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING', { phone_number_id: '111', primary_waac_ids: 'junk' });
+  page.loginResult({ authResponse: { code: 'CX' } });
+  assert.deepEqual(page.results(), [{ code: 'CX', wabaId: null, phoneNumberId: '111', onboardingType: 'coexistence' }]);
+});
+
+test('coexistence finish without phone_number_id still times out', async () => {
+  const page = await connectFlow('choiceYes');
+  page.loginResult({ authResponse: { code: 'C' } });
+  page.fbMsg('FINISH_WHATSAPP_BUSINESS_APP_ONBOARDING', { business_id: '222' });
+  assert.deepEqual(page.results(), []);
+  page.runTimers(30000);
+  assert.match(page.results()[0].error, /took too long/);
+});
+
+test('cloud_api (plain FINISH) without waba_id never completes, even with phone_number_id', async () => {
+  const page = await connectFlow('choiceNo');
+  page.loginResult({ authResponse: { code: 'C' } });
+  page.fbMsg('FINISH', { phone_number_id: '111' });
+  assert.deepEqual(page.results(), []);
+  page.runTimers(30000);
+  assert.match(page.results()[0].error, /took too long/);
+});
+
+test('friendly errors: Meta error codes are mapped; unknown text unchanged', async () => {
+  let page = await connectFlow();
+  page.fbMsg('CANCEL', { error_message: 'Error #3441038: something' });
+  assert.match(page.results()[0].error, /already linked to another provider/);
+  assert.match(page.status(), /already linked to another provider/);
+  page = await connectFlow();
+  page.fbMsg('ERROR', { error_message: 'code 3441045' });
+  assert.match(page.results()[0].error, /can't be connected right now/);
+  page = await connectFlow();
+  page.fbMsg('ERROR', { error_message: 'Something broke' });
+  assert.equal(page.results()[0].error, 'Something broke');
 });

@@ -20,20 +20,24 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    padding: 24px;
+    justify-content: flex-start;
+    padding: 20px 16px 32px;
     box-sizing: border-box;
-    text-align: center;
+    text-align: left;
+  }
+  #chooser {
+    width: 100%;
+    max-width: 480px;
   }
   .question {
     font-size: 17px;
     font-weight: 600;
     color: #222;
     margin: 0 0 14px;
+    line-height: 1.35;
   }
   .choices {
     width: 100%;
-    max-width: 420px;
     display: flex;
     flex-direction: column;
     gap: 10px;
@@ -48,14 +52,47 @@
     color: #222;
     text-align: left;
     cursor: pointer;
+    min-height: 48px;
+  }
+  .choice .label {
+    display: block;
+    font-weight: 600;
+  }
+  .choice .hint {
+    display: block;
+    margin-top: 2px;
+    font-size: 13px;
+    color: #667;
   }
   .choice[aria-pressed="true"] {
     border-color: #25D366;
     background: #f1fbf5;
   }
+  .checklist {
+    width: 100%;
+    box-sizing: border-box;
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border: 1px solid #d5d9dd;
+    border-radius: 10px;
+    background: #fff;
+    color: #444;
+    font-size: 14px;
+  }
+  .checklist p {
+    margin: 0 0 6px;
+    font-weight: 600;
+    color: #222;
+  }
+  .checklist ul {
+    margin: 0;
+    padding-left: 20px;
+  }
+  .checklist li {
+    margin-bottom: 4px;
+  }
   .info {
     width: 100%;
-    max-width: 420px;
     box-sizing: border-box;
     margin-bottom: 16px;
     padding: 12px 14px;
@@ -75,6 +112,9 @@
     font-size: 16px;
     font-weight: 600;
     cursor: pointer;
+    width: 100%;
+    max-width: 480px;
+    min-height: 48px;
   }
   .btn:disabled {
     opacity: 0.6;
@@ -82,10 +122,15 @@
   .btn.secondary {
     background: #555;
   }
+  .btn + .btn {
+    margin-top: 10px;
+  }
   .status {
     margin-top: 16px;
     color: #555;
     font-size: 14px;
+    width: 100%;
+    max-width: 480px;
   }
 </style>
 </head>
@@ -95,9 +140,13 @@
   <div id="chooser">
     <p class="question">Which WhatsApp number do you want customers to message?</p>
     <div class="choices">
-      <button type="button" id="choiceYes" class="choice" aria-pressed="false">Yes, I use WhatsApp Business app on this number</button>
-      <button type="button" id="choiceNo" class="choice" aria-pressed="false">No, it's a new number / not on WhatsApp</button>
-      <button type="button" id="choicePersonal" class="choice" aria-pressed="false">It's on normal (personal) WhatsApp</button>
+      <button type="button" id="choiceYes" class="choice" aria-pressed="false"><span class="label">It's on the WhatsApp Business app</span><span class="hint">You use this number in the WhatsApp Business app today.</span></button>
+      <button type="button" id="choiceNo" class="choice" aria-pressed="false"><span class="label">It's a new number / not on WhatsApp</span><span class="hint">A fresh number you'll verify by SMS or call.</span></button>
+      <button type="button" id="choicePersonal" class="choice" aria-pressed="false"><span class="label">It's on normal (personal) WhatsApp</span><span class="hint">The green WhatsApp app. It needs a change first.</span></button>
+    </div>
+    <div id="checklist" class="checklist" hidden>
+      <p>Before you connect, check:</p>
+      <ul id="checklistItems"></ul>
     </div>
     <div id="info" class="info" hidden></div>
   </div>
@@ -114,17 +163,17 @@
   var retryBtn = document.getElementById('retryBtn');
   var statusEl = document.getElementById('status');
   var infoEl = document.getElementById('info');
+  var checklistEl = document.getElementById('checklist');
+  var checklistItemsEl = document.getElementById('checklistItems');
   var cards = {
     coexistence: document.getElementById('choiceYes'),
     cloud_api: document.getElementById('choiceNo'),
     personal: document.getElementById('choicePersonal')
   };
 
+  // Wording mirrors apnabot-web WhatsAppConnectPanel.tsx.
   var INFO_TEXT = {
     coexistence:
-      'Before you start:\n' +
-      '• Update the WhatsApp Business app to the latest version (at least 2.24.17).\n' +
-      '• Keep your phone nearby and the app open while your chats sync.\n\n' +
       'In the Meta window, choose the option to connect your existing WhatsApp Business app and type that number. ' +
       'You\'ll get a code and a message inside the WhatsApp Business app to confirm — no SMS or call.\n\n' +
       'If Meta asks for an SMS or call code while connecting a Business-app number, stop and contact us.\n\n' +
@@ -135,9 +184,41 @@
       'Don\'t choose \'Test Number\' or \'virtual number\'.',
     personal:
       'Coexistence only works with the WhatsApp Business app. Either switch this number to the ' +
-      'WhatsApp Business app first (then choose "Yes"), or delete the WhatsApp account on that ' +
-      'number and choose "No".'
+      'WhatsApp Business app first (then choose "It\'s on the WhatsApp Business app"), or delete the WhatsApp account on that ' +
+      'number and choose "It\'s a new number / not on WhatsApp".'
   };
+
+  var COEXISTENCE_CHECKLIST = [
+    'WhatsApp Business app version 2.24.17 or newer.',
+    'You\'ve used this number in the Business app for at least 7 days.',
+    'The number was never connected to another provider or an old ApnaBot link (remove that first).',
+    'You\'re an admin of your Meta business and it has a Facebook Page.',
+    'Keep your phone nearby with the Business app open.'
+  ];
+
+  // Plain-language versions of known failures (mirrors apnabot-web wa-connect-errors.ts).
+  // Matched on message text; an unmatched message is shown unchanged. The raw Meta
+  // text stays in the debug stream.
+  var FRIENDLY_RULES = [
+    {
+      test: /344103[8]|344104[1]|already connected to another business/i,
+      message: 'This number is already linked to another provider, another business or an old ApnaBot link. ' +
+        'Remove it there first (in the WhatsApp Business app: Settings → Account → Business Platform → Disconnect Account), then tap Retry.'
+    },
+    {
+      test: /3441045/,
+      message: 'WhatsApp says this number can\'t be connected right now. Check that the Business app is updated (2.24.17 or newer) ' +
+        'and that you\'ve used this number in the Business app for at least 7 days, then try again.'
+    },
+    {
+      test: /couldn't find your WhatsApp account yet/i,
+      message: 'We couldn\'t find your WhatsApp account yet. Wait a minute, keep the Business app open, then tap Retry.'
+    },
+    {
+      test: /didn't finish sending your account details/i,
+      message: 'WhatsApp took too long to finish. Keep the Business app open on your phone and tap Retry.'
+    }
+  ];
 
   var META_CONFIG_ID = null;
   var sdkReady = false;
@@ -146,12 +227,41 @@
   // One signup attempt. Meta gives us the auth code (FB.login callback) and the
   // account IDs (postMessage event) separately, in no guaranteed order.
   function newSession() {
-    return { active: false, code: null, wabaId: null, phoneNumberId: null, hint: null, done: false, failed: false, timer: null };
+    return {
+      active: false, code: null, wabaId: null, phoneNumberId: null,
+      metaBusinessId: null, primaryWaacIds: [], isOnBizApp: null,
+      hint: null, done: false, failed: false, timer: null
+    };
   }
   var session = newSession();
 
   function setStatus(text) {
     statusEl.textContent = text;
+  }
+
+  function friendlyError(message) {
+    for (var i = 0; i < FRIENDLY_RULES.length; i++) {
+      if (FRIENDLY_RULES[i].test.test(message)) return FRIENDLY_RULES[i].message;
+    }
+    return message;
+  }
+
+  // Meta's primary_waac_ids shape is undocumented: strings/numbers are ids, objects
+  // are read by waba_id / id. Numeric only, deduped, capped at 10 (as the web does).
+  function wabaCandidates(raw) {
+    var list = Array.isArray(raw) ? raw : (raw === undefined || raw === null ? [] : [raw]);
+    var ids = [];
+    for (var i = 0; i < list.length; i++) {
+      var item = list[i];
+      var v = item && typeof item === 'object' ? (item.waba_id !== undefined && item.waba_id !== null ? item.waba_id : item.id) : item;
+      var id = typeof v === 'number' ? String(v) : v;
+      if (typeof id === 'string' && /^[0-9]+$/.test(id) && ids.indexOf(id) === -1) ids.push(id);
+    }
+    return ids.slice(0, 10);
+  }
+
+  function nonEmptyString(v) {
+    return typeof v === 'string' && v ? v : null;
   }
 
   // The auth code is single-use and secret: never forward it in debug payloads.
@@ -174,8 +284,9 @@
   }
 
   function sendError(message) {
-    setStatus(message);
-    sendToApp({ error: message });
+    var friendly = friendlyError(message);
+    setStatus(friendly);
+    sendToApp({ error: friendly });
   }
 
   function isFacebookOrigin(origin) {
@@ -205,6 +316,7 @@
     });
     infoEl.textContent = INFO_TEXT[kind];
     infoEl.hidden = false;
+    checklistEl.hidden = kind !== 'coexistence';
     retryBtn.hidden = true;
     if (kind === 'personal') {
       setStatus('');
@@ -213,6 +325,13 @@
     }
     refreshControls();
   }
+
+  checklistItemsEl.innerHTML = '';
+  COEXISTENCE_CHECKLIST.forEach(function (text) {
+    var li = document.createElement('li');
+    li.textContent = text;
+    checklistItemsEl.appendChild(li);
+  });
 
   function clearTimer() {
     if (session.timer) {
@@ -232,10 +351,19 @@
     retryBtn.hidden = false;
   }
 
+  // Cloud API (plain FINISH) needs waba_id and phone_number_id. A coexistence
+  // finish carries no waba_id, so phone_number_id is enough: the server resolves
+  // the WABA.
+  function idsReady() {
+    if (!session.hint) return false;
+    if (session.hint === 'coexistence') return !!session.phoneNumberId;
+    return !!(session.wabaId && session.phoneNumberId);
+  }
+
   // Sends to the app once, when BOTH the auth code and the account IDs are in.
   function maybeComplete() {
     if (!session.active || session.done || session.failed) return;
-    var haveIds = !!(session.wabaId && session.phoneNumberId);
+    var haveIds = idsReady();
 
     if (session.code && haveIds) {
       session.done = true;
@@ -244,17 +372,22 @@
         console.warn('[whatsapp-connect] user chose ' + chosen + ' but Meta reported ' + session.hint + '; sending ' + session.hint);
       }
       setStatus('Connecting...');
-      sendToApp({
+      var payload = {
         code: session.code,
         wabaId: session.wabaId,
         phoneNumberId: session.phoneNumberId,
         onboardingType: session.hint
-      });
+      };
+      // Extras only when Meta sent them (the server drops non-numeric / non-boolean values).
+      if (session.metaBusinessId) payload.metaBusinessId = session.metaBusinessId;
+      if (session.primaryWaacIds.length) payload.primaryWaacIds = session.primaryWaacIds;
+      if (session.isOnBizApp !== null) payload.isOnBizApp = session.isOnBizApp;
+      sendToApp(payload);
       return;
     }
 
     // One half has arrived; don't wait forever for the other.
-    if ((session.code || haveIds) && !session.timer) {
+    if ((session.code || session.wabaId || session.phoneNumberId) && !session.timer) {
       setStatus('Finishing...');
       session.timer = setTimeout(function () {
         session.timer = null;
@@ -289,8 +422,11 @@
       // Plain FINISH = Cloud API signup; the WhatsApp Business app onboarding
       // event = coexistence. Meta's event, not the guidance choice, is the truth.
       session.hint = data.event === 'FINISH' ? 'cloud_api' : 'coexistence';
-      session.wabaId = info.waba_id || null;
-      session.phoneNumberId = info.phone_number_id || null;
+      session.wabaId = nonEmptyString(info.waba_id);
+      session.phoneNumberId = nonEmptyString(info.phone_number_id);
+      session.metaBusinessId = nonEmptyString(info.business_id);
+      session.primaryWaacIds = wabaCandidates(info.primary_waac_ids);
+      session.isOnBizApp = typeof info.is_on_biz_app === 'boolean' ? info.is_on_biz_app : null;
       maybeComplete();
     } else if (data.event === 'FINISH_ONLY_WABA') {
       fail('WhatsApp Business Account created, but no phone number was added. Please retry and add a number.');
