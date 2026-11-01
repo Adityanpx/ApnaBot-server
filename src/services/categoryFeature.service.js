@@ -55,6 +55,11 @@ const FEATURES = {
     description: 'The Catalogue page (collections and photos shown to customers on WhatsApp). On by default; switch off to hide the page and make the catalogue reply with its "empty" text.',
     categories: ALL_CATEGORIES,
     defaultEnabled: true
+  },
+  travel_quotes: {
+    label: 'Travel quotes',
+    description: 'Lets these businesses set a route rate card (routes, prices, night / driver / minimum charges) and have the WhatsApp bot send a fare quote with an advance-payment request. Off by default.',
+    categories: ['travels', 'cab']
   }
 };
 

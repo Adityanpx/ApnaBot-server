@@ -75,7 +75,7 @@ test('followups: off for every category until switched on; per-business pilot wo
   assert.equal(await svc.isEnabled('travels', 'followups', 'searchcab'), false);
   // bot_builder stays coaching-only
   assert.equal(svc.appliesTo('travels', 'bot_builder'), false);
-  assert.deepEqual((await svc.listForBusiness('sg', 'travels')).map(f => [f.feature, f.isEnabled]), [['followups', true], ['opt_in_links', false], ['contact_import', false], ['owner_phone_media', false], ['staff', false], ['broadcasts', false], ['catalogue', true]]);
+  assert.deepEqual((await svc.listForBusiness('sg', 'travels')).map(f => [f.feature, f.isEnabled]), [['followups', true], ['opt_in_links', false], ['contact_import', false], ['owner_phone_media', false], ['staff', false], ['broadcasts', false], ['catalogue', true], ['travel_quotes', false]]);
 });
 
 test('opt_in_links: off for every category until switched on; per-business pilot works', async () => {

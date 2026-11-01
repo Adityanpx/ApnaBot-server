@@ -57,7 +57,7 @@ test.beforeEach(() => {
 
 const get = (headers = {}) => fetch(base, { headers });
 // catalogue is the one feature that is ON by default (categoryFeature.service.js defaultEnabled).
-const ALL_OFF = { followups: false, opt_in_links: false, contact_import: false, owner_phone_media: false, staff: false, broadcasts: false, catalogue: true };
+const ALL_OFF = { followups: false, opt_in_links: false, contact_import: false, owner_phone_media: false, staff: false, broadcasts: false, catalogue: true, travel_quotes: false };
 
 test('a new business with no override and no category row: every feature is Off except the default-on catalogue, in the usual wrapper', async () => {
   const res = await get({ 'x-business': 'newbiz' });
@@ -95,7 +95,11 @@ test('only features that apply to the category appear (bot_builder is coaching-o
   const travels = (await (await get({ 'x-business': 'sg' })).json()).data.features;
   const coaching = (await (await get({ 'x-business': 'daring' })).json()).data.features;
   assert.equal('bot_builder' in travels, false);
-  assert.deepEqual(coaching, { bot_builder: false, ...ALL_OFF });
+  // travel_quotes applies to travels / cab only.
+  assert.equal(travels.travel_quotes, false);
+  const ALL_OFF_EVERYWHERE = { ...ALL_OFF };
+  delete ALL_OFF_EVERYWHERE.travel_quotes;
+  assert.deepEqual(coaching, { bot_builder: false, ...ALL_OFF_EVERYWHERE });
 });
 
 test('401 without a token, 403 without a business, 404 when the business row is gone', async () => {

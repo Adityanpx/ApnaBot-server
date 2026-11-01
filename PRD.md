@@ -1852,6 +1852,69 @@ shows an informational entry; uploads are not simulated.
   unaffected (account-level only; no WhatsApp/booking path touched).
 - Tests: `utils/ownerPhone.test.js`, `controllers/auth.ownerPhone.test.js`, `controllers/admin.ownerPhone.test.js`.
 
+## Travel quotes - route rate card, quote settings, quotes, report (part A built 2026-11-04, migration `20261104120000_travel_quotes.sql`)
+
+Phase 1 of travel automation: an instant fare quote from an owner-defined route rate card, with an advance to confirm. **Part A is the
+data + owner API + report only; the WhatsApp side (part C: `route_picker` / `quote` nodes, Confirm / Change / Talk to us taps, "I've paid"
+alert, quote sweep) is NOT built.** Nothing in the bot reads these tables yet. Parts: A server (this), B web Rates screen, C bot + sweep,
+D Flutter Rates screen, E Travel default template (only after a separate OK).
+
+- **Feature switch `travel_quotes`** (`categoryFeature.service.js#FEATURES`): applies to `travels` and `cab`, **off for every business**
+  until Super Admin switches it on (category switch or per-business override). All routes below 404 `FEATURE_DISABLED` while off, and always
+  for other categories. `GET /api/features` now shows `travel_quotes: false` for travels / cab businesses.
+- **Tables** (all RLS on, no policies - server/service-role only):
+  - `travel_routes` (business_id, from_city, to_city lowercased keys, from_label / to_label / region <= 24 chars (WhatsApp list row),
+    toll_included null = use settings, sort_order, is_active; unique on business + from + to). Names / grouping only - **prices stay in
+    `route_fares`** (one row per route + trip type + vehicle), still read by the booking engine.
+  - `route_fares.route_id` (nullable FK, `on delete set null`), backfilled by the migration (idempotent: `on conflict do nothing`,
+    `where route_id is null`). Live backfill: only SG Travels had `route_fares` (Pune -> Mumbai one-way + round-trip) -> 1 route, both fares
+    linked. A fare saved through the old `/api/route-fares` has `route_id` null; readers match on (business, from, to) and list an
+    unmatched pair as `unlisted: true` (id null) until saved once through `/api/travel/routes`. The old endpoint is unchanged.
+  - `travel_quote_settings` (one row per business, created on first save; defaults when none): night_charge, night_start_minute (1320 =
+    22:00 IST), night_end_minute (360), driver_allowance_per_day, toll_included, minimum_charge, valid_hours (24, 1-168),
+    reminder_after_hours (3, 0 = none, must be < valid_hours). **No advance columns.**
+  - `travel_quotes` (business, customer, booking_id, route_id, route_fare_id, vehicle_id, from/to/trip_type, collected jsonb, base_fare,
+    extras jsonb, total_amount, advance_amount null = none, sent_at, expires_at, reminder_sent_at, accepted_at, customer_paid_claim_at,
+    overdue_notified_at, paid_at). `status` CHECK: `sent | accepted | paid | expired | cancelled | handoff`.
+  - `bookings.quote_id` (nullable FK) + unique partial index `uq_bookings_quote` (one booking per quote - a second Confirm tap cannot
+    duplicate).
+  - RPC `report_travel_quote_stats(business, start, end)` (service_role only). `sent` excludes `handoff` leads.
+- **Advance = the existing business-wide setting (decision 2026-11-04).** `businesses.require_advance_payment` / `advance_payment_type`
+  (`fixed | percentage`) / `advance_payment_value`, edited through `PUT /api/business` (needs a payment QR first). Existing default: off,
+  type / value null. The Rates screen shows it read-only from `GET /api/travel/quote-settings` -> `advance` (with `hasPaymentQr`). It
+  therefore also drives the web form and the chat booking - one place to edit. `utils/travelQuote.js#computeAdvance` applies it to a quote
+  total (percentage keeps paise like `createBookingAndConfirmation`; a fixed advance is capped at the total - the booking code does not cap).
+- **Payment (decided, built in part C):** QR image + owner marks paid (`PUT /api/bookings/:id/payment`, unchanged) + an "I've paid" button
+  that only alerts the owner (`customer_paid_claim_at`; it never marks paid). Razorpay payment links are a later phase (they were removed
+  2026-09-27; the platform Razorpay account is subscriptions / wallet only).
+- **Expiry (decided, part C):** expiry only closes quotes never accepted. An accepted-unpaid quote is never cancelled or expired by the
+  sweep - the owner gets one "advance overdue" alert (`overdue_notified_at`). The 3-hour reminder is plain text inside the 24 h window via
+  `windowAwareSend`, in the existing 15-minute sweeper loop (`server.js`).
+- **API** (`/api/travel`, `routes/travelQuote.routes.js`; reads any member, writes `requireRole('owner')`):
+  `GET /routes`, `POST /routes` (create, or update when the pair exists), `PUT /routes/:id` (cities immutable; `fares[]` upserts,
+  `{tripType, vehicleId, remove:true}` deletes; `isActive` carries to its fares), `DELETE /routes/:id` (route + its fares),
+  `GET /quote-settings` -> `{settings, advance}`, `PUT /quote-settings` (partial), `GET /quotes?status=&page=&limit=` (limit <= 50),
+  `PUT /quotes/:id/cancel` (only `sent`; 409 otherwise, one guarded UPDATE). Report: `GET /api/reports/quotes?period=week|month`
+  (sent, accepted, paid, expired, cancelled, handoff, quotedAmount, advanceCollected, conversionRate; current vs previous + growth;
+  `reports.service.js#getPeriodRanges` is now exported for it). Validation in `utils/travelQuote.js`: fares > 0, trip type oneway /
+  round_trip, vehicle must belong to the business (404), <= 60 fares per request.
+- **Pricing helper** (`utils/travelQuote.js#computeQuote`, used by part C): base fare + night charge (pickup minute inside the window, which
+  may wrap midnight) + driver allowance x days (round trips only) -> rounded to the nearest 10, raised to the minimum charge; toll is
+  reported (route override, else settings), never added.
+- **WhatsApp limits to honour in part C:** list rows <= 10 and titles <= 24 chars (`flowSpec.js#LIMITS`), buttons <= 3 with titles <= 20
+  ("Confirm & pay" / "Confirm" when advance is off, "Change", "Talk to us"). More than 9 routes -> group by `region`; "Other route" -> handoff.
+  Session TTL is 5 minutes, so a quote lives in `travel_quotes`, never the Redis session.
+- **Deploy order:** apply the migration BEFORE the server (the code reads the new tables and the feature key; the migration widens both
+  feature CHECKs to the 9 values `bot_builder, followups, opt_in_links, contact_import, owner_phone_media, staff, broadcasts, catalogue,
+  travel_quotes`). Not a cutover: with the switch off nothing changes for any business, Search cab AI included. Part C will need its own
+  migration (`flow_nodes.node_type` + `reply_kind` CHECKs).
+- **Follow-ups / not done:** the web form's `getVehicleQuote` ignores `route_fares` (distance tier only) - left as is on purpose;
+  `/api/route-fares` doesn't set `route_id`; `plan.middleware.js#requireFeature` is unused (plan gating for quotes, if wanted later, would be
+  a `plans` boolean checked next to the switch); `broadcast.bodyLimit.test.js` "app.js mounts the broadcast parser..." fails on the
+  unmodified code (counts 3 `express.json({ limit: '1mb' })` where it expects 2).
+- Tests: `utils/travelQuote.test.js`, `routes/travelQuote.routes.test.js`; `features.routes.test.js` and `categoryFeature.service.test.js`
+  updated for the new key; `categoryFeature.migrationParity.test.js` covers the new constraint.
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism
@@ -2387,3 +2450,4 @@ shows an informational entry; uploads are not simulated.
 
 - 2026-10-31: unlisted business at signup (`requestedCategoryText` + `requestContactPhone`, `business_requests`, team email, Super Admin list/update, `PUT /api/admin/businesses/:id/category`) and `supportWhatsappNumber` / `supportMessage` on `GET /api/app/version` - see "Unlisted business at signup + support number". Migration `20261026140000_business_requests.sql` must be applied BEFORE the server.
 - 2026-11-03: owner phone (`users.phone`, `REQUIRE_OWNER_PHONE`, `GET/PATCH /api/auth/me`, Super Admin `ownerName/ownerEmail/ownerPhone` + phone search, sanitised list search) - see "Owner phone number". Working tree only; migration not applied.
+- 2026-11-04: travel quotes part A (route rate card API `/api/travel/*`, `travel_quote_settings`, `travel_quotes`, `GET /api/reports/quotes`, `travel_quotes` switch, off for all) - see "Travel quotes". Migration `20261104120000_travel_quotes.sql` must be applied BEFORE the server. Bot side (part C) not built.

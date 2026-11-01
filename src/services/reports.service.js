@@ -226,5 +226,7 @@ module.exports = {
   getReportsSummary,
   getRevenueByTag,
   getResponseTimeStats,
-  getPipelineFunnel
+  getPipelineFunnel,
+  // For travelQuote.service.js, so the quote report uses the same week / month windows.
+  getPeriodRanges
 };
