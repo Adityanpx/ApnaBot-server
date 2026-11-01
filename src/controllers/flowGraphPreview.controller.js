@@ -403,6 +403,11 @@ const handleActiveSession = async (business, session, messageText, buttonReplyId
     return handleNoActiveSession(business, messageText, buttonReplyId);
   }
 
+  if (result.quote) {
+    // The quote step prices and saves a real quote and may raise a handoff: never run from the simulator.
+    return { replyText: 'Quote step (not simulated)', buttons: [], listOptions: [], session: null };
+  }
+
   if (result.done) {
     // NEVER call finalizeGraphBooking/createBookingAndConfirmation here -
     // that would insert a real `bookings` row. Build the same

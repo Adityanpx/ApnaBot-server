@@ -453,4 +453,7 @@ const handleTap = async (ctx, tap) => {
   return { restart: { entryNodeId } };
 };
 
-module.exports = { buildQuoteText, quoteButtons, tripLines, handleResult, handleTap, languageOf };
+/** "This quote is no longer available": a tap whose id is malformed, unknown, or another customer's. */
+const handleStaleTap = (ctx) => sendUnavailable(ctx);
+
+module.exports = { buildQuoteText, quoteButtons, tripLines, handleResult, handleTap, handleStaleTap, languageOf };

@@ -23,6 +23,9 @@ const { cleanValue } = require('../utils/templateValue');
 const { isIndefinitePause } = require('../utils/botPause');
 const { isChoiceFieldType, withTapHint } = require('../utils/bookingTapGuard');
 const { parseJoinCode, isSystemTapId, parseOptInTapId, OPT_IN_YES_PREFIX, OPT_IN_NO_PREFIX } = require('../utils/optInLink');
+const { QUOTE_TAP_PREFIX, parseQuoteTapId } = require('../utils/quoteIds');
+// Loaded on first use (a quote tap / the quote step), so every other path loads exactly what it did before.
+const quoteFlowService = { get impl() { return require('../services/quoteFlow.service'); } };
 const optInLinkService = require('../services/optInLink.service');
 const bookingConsentService = require('../services/bookingConsent.service');
 const templateButtonTapService = require('../services/templateButtonTap.service');
@@ -947,6 +950,46 @@ const resendCurrentBookingPrompt = async (ctx, activeSession, { withHint = false
 };
 
 /**
+ * A tap on a travel quote's button ("quote:{id}:confirm|change|talk|paid", utils/quoteIds.js). Reads the
+ * quote from the database, so it works long after the 5-minute booking session is gone, and the quote
+ * must be this business's and this customer's (services/quoteFlow.service.js#loadQuote) - anything else,
+ * and a malformed id, gets "this quote is no longer available". "Change" starts the quote flow again
+ * here (the service cannot send a field prompt). Never throws: a failure is logged and the customer
+ * gets the generic "something went wrong, our team will reach out" message.
+ * @param {Object} ctx - { tenant, customer, customerNumber }
+ * @param {string} buttonReplyId
+ */
+const handleQuoteTap = async (ctx, buttonReplyId) => {
+  const { tenant, customer, customerNumber } = ctx;
+  const tap = parseQuoteTapId(buttonReplyId);
+  try {
+    if (!tap) {
+      await quoteFlowService.impl.handleStaleTap(ctx);
+      return;
+    }
+    const outcome = await quoteFlowService.impl.handleTap(ctx, tap);
+    if (outcome.restart) {
+      const ruleId = outcome.restart.entryNodeId;
+      const { session, field } = await bookingGraphService.startGraphSessionAtNode(
+        tenant.businessId, outcome.restart.entryNodeId, ruleId, customer.preferredLanguage
+      );
+      await bookingService.saveBookingSession(tenant.businessId, customerNumber, session, tenant.phoneNumberId, tenant.accessToken);
+      bookingService.recordBookingLead(tenant.businessId, customer.id).catch(err =>
+        logger.error('Error recording booking lead:', err)
+      );
+      await sendFieldPrompt({ tenant, customer, customerNumber, triggeredRuleId: ruleId }, field);
+    }
+  } catch (error) {
+    logger.error('Error handling a quote tap', { businessId: tenant.businessId, customerNumber, message: error.message, stack: error.stack });
+    try {
+      await sendFallbackTextMessage({ tenant, customer, customerNumber, triggeredRuleId: null }, getSystemMessage('bookingConfirmFailedFallback', customer.preferredLanguage));
+    } catch (sendError) {
+      logger.error('Error sending the quote-tap failure message', { message: sendError.message });
+    }
+  }
+};
+
+/**
  * sendFieldPrompt, optionally with the "type your answer / send menu" hint above the question
  * (the customer tapped something that is not an answer to it). A carousel's intro is its label,
  * so the hint goes through the intro override there.
@@ -1682,6 +1725,17 @@ const processWebhookChange = async (entry, changes) => {
       return;
     }
 
+    // Step 9.6 - Travel quote taps (utils/quoteIds.js). Deliberately ahead of the pause return below: the
+    // customer asked for this themselves with a button, so "Talk to us" and "I've paid" work while the bot is
+    // paused (a handoff pause, an owner pause, or after STOP). What still runs before it: tenant / active /
+    // subscription checks, the duplicate-delivery gate, blocked customers, STOP / START, and the usage-limit
+    // return above. Ahead of Step 11-12, so a quote tap is never a booking answer, whether or not a booking
+    // session is active (it is left as it is, except "Change", which starts a new one).
+    if (buttonReplyId && buttonReplyId.startsWith(QUOTE_TAP_PREFIX)) {
+      await handleQuoteTap({ tenant, customer, customerNumber }, buttonReplyId);
+      return;
+    }
+
     if (isBotPaused) {
       logger.info(`Bot paused for ${customerNumber} until ${customer.botPausedUntil}, skipping reply`);
       return;
@@ -2167,6 +2221,21 @@ const processWebhookChange = async (entry, changes) => {
         // log line, an old-shape session from before the graph-engine
         // cutover. Either way, fall through to rule matching below.
         logger.info(`Booking session expired for ${customerNumber}`);
+      } else if (result.quote) {
+        // The quote step (route_picker / quote nodes): price + save + send the quote, or hand the customer
+        // to the team (services/quoteFlow.service.js). It drops the booking session itself.
+        try {
+          await quoteFlowService.impl.handleResult({ tenant, customer, customerNumber }, updatedSession, result.quote);
+        } catch (quoteError) {
+          logger.error('Error handling the quote step', {
+            businessId: tenant.businessId, customerNumber, action: result.quote.action, message: quoteError.message, stack: quoteError.stack
+          });
+          await sendFallbackTextMessage(
+            { tenant, customer, customerNumber, triggeredRuleId: activeSession.ruleId },
+            getSystemMessage('bookingConfirmFailedFallback', customer.preferredLanguage)
+          );
+        }
+        return; // Do not run rule matching
       } else if (result.done) {
         let confirmation;
         try {

@@ -417,6 +417,25 @@ const buildPaymentQrCaption = ({ amount, bookingCode, upiId, intro, languageCode
  * @param {string} [actorUserId] who marked it; they are not sent the payment_received push
  * @returns {Promise<Object|null>} the updated camelCase booking, or null if not found
  */
+/**
+ * A booking that came from a travel quote (bookings.quote_id): its quote follows the payment. Marked paid
+ * -> quote 'paid' (paid_at); marked pending again -> back to 'accepted'. One guarded UPDATE per direction,
+ * scoped to the booking's business; a failure is logged and never fails the payment itself. Every other
+ * booking has no quote_id and never gets here.
+ */
+const syncQuoteWithPayment = async (booking, status) => {
+  try {
+    const update = status === 'paid'
+      ? { values: { status: 'paid', paid_at: new Date().toISOString() }, from: 'accepted' }
+      : { values: { status: 'accepted', paid_at: null }, from: 'paid' };
+    const { error } = await supabase.from('travel_quotes').update(update.values)
+      .eq('id', booking.quote_id).eq('business_id', booking.business_id).eq('status', update.from);
+    if (error) throw error;
+  } catch (quoteError) {
+    logger.error('Error syncing the travel quote with the booking payment:', { bookingId: booking.id, quoteId: booking.quote_id, message: quoteError.message });
+  }
+};
+
 const setBookingPaymentStatus = async (businessId, bookingId, status, actorUserId) => {
   const { data: booking, error } = await supabase
     .from('bookings').select('*').eq('id', bookingId).eq('business_id', businessId).maybeSingle();
@@ -441,6 +460,8 @@ const setBookingPaymentStatus = async (businessId, bookingId, status, actorUserI
     .from('bookings').update(update).eq('id', booking.id).select().single();
   if (updateErr) throw updateErr;
   const updated = toCamelCase(updatedRow);
+
+  if (booking.quote_id) await syncQuoteWithPayment(booking, status);
 
   try {
     socketService.emitToBusiness(businessId.toString(), 'booking_updated', {

@@ -390,3 +390,17 @@ test('no vehicle fits: a lead plus a message with Talk to us and Change on that 
   const again = await tap(tapBtn(job, 1));
   assert.deepEqual(again, { restart: { entryNodeId: 'trip' } });
 });
+
+test('a tap from a chat of another business never finds the quote: nothing changes, "no longer available"', async () => {
+  await send();
+  state.jobs.length = 0;
+  const otherTenant = { ...tenant, businessId: 'b2b2b2b2-0000-4000-8000-000000000002' };
+  for (const action of ['confirm', 'paid', 'talk', 'change']) {
+    await quoteFlow.handleTap({ tenant: otherTenant, customer: CUSTOMER, customerNumber: '919000000001' }, parseQuoteTapId(`quote:${quotes()[0].id}:${action}`));
+  }
+  assert.equal(quotes()[0].status, 'sent');
+  assert.equal(bookings().length, 0);
+  assert.equal(state.raised, 0);
+  assert.equal(state.jobs.length, 4);
+  assert.ok(state.jobs.every(j => j.message.startsWith('Sorry, this quote is no longer available')));
+});
