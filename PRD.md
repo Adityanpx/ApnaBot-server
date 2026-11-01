@@ -1852,12 +1852,12 @@ shows an informational entry; uploads are not simulated.
   unaffected (account-level only; no WhatsApp/booking path touched).
 - Tests: `utils/ownerPhone.test.js`, `controllers/auth.ownerPhone.test.js`, `controllers/admin.ownerPhone.test.js`.
 
-## Travel quotes - route rate card, quote settings, quotes, report (part A built 2026-11-04, migration `20261104120000_travel_quotes.sql`)
+## Travel quotes - route rate card, quote settings, quotes, report, chat quote (part A 2026-11-04, migration `20261104120000_travel_quotes.sql`; part C 2026-11-05, migration `20261105120000_flow_quote_node_types.sql`)
 
-Phase 1 of travel automation: an instant fare quote from an owner-defined route rate card, with an advance to confirm. **Part A is the
-data + owner API + report only; the WhatsApp side (part C: `route_picker` / `quote` nodes, Confirm / Change / Talk to us taps, "I've paid"
-alert, quote sweep) is NOT built.** Nothing in the bot reads these tables yet. Parts: A server (this), B web Rates screen, C bot + sweep,
-D Flutter Rates screen, E Travel default template (only after a separate OK).
+Phase 1 of travel automation: an instant fare quote from an owner-defined route rate card, with an advance to confirm. Parts: A server
+(data + owner API + report), B web Rates screen, **C bot + sweep (built; see "Part C" below)**, D Flutter Rates screen, E Travel default
+template (only after a separate OK). **Part C is live only for a business whose flow has the quote nodes AND whose `travel_quotes` switch
+is on: today that is SG Travels, after `scripts/seedTravelQuoteFlow.js --confirm` is run. Deploying the code changes nothing for any other business.**
 
 - **Feature switch `travel_quotes`** (`categoryFeature.service.js#FEATURES`): applies to `travels` and `cab`, **off for every business**
   until Super Admin switches it on (category switch or per-business override). All routes below 404 `FEATURE_DISABLED` while off, and always
@@ -1884,10 +1884,10 @@ D Flutter Rates screen, E Travel default template (only after a separate OK).
   type / value null. The Rates screen shows it read-only from `GET /api/travel/quote-settings` -> `advance` (with `hasPaymentQr`). It
   therefore also drives the web form and the chat booking - one place to edit. `utils/travelQuote.js#computeAdvance` applies it to a quote
   total (percentage keeps paise like `createBookingAndConfirmation`; a fixed advance is capped at the total - the booking code does not cap).
-- **Payment (decided, built in part C):** QR image + owner marks paid (`PUT /api/bookings/:id/payment`, unchanged) + an "I've paid" button
+- **Payment (decided, built in part C - see "Part C"):** QR image + owner marks paid (`PUT /api/bookings/:id/payment`, unchanged) + an "I've paid" button
   that only alerts the owner (`customer_paid_claim_at`; it never marks paid). Razorpay payment links are a later phase (they were removed
   2026-09-27; the platform Razorpay account is subscriptions / wallet only).
-- **Expiry (decided, part C):** expiry only closes quotes never accepted. An accepted-unpaid quote is never cancelled or expired by the
+- **Expiry (decided, built in part C):** expiry only closes quotes never accepted. An accepted-unpaid quote is never cancelled or expired by the
   sweep - the owner gets one "advance overdue" alert (`overdue_notified_at`). The 3-hour reminder is plain text inside the 24 h window via
   `windowAwareSend`, in the existing 15-minute sweeper loop (`server.js`).
 - **API** (`/api/travel`, `routes/travelQuote.routes.js`; reads any member, writes `requireRole('owner')`):
@@ -1906,14 +1906,77 @@ D Flutter Rates screen, E Travel default template (only after a separate OK).
   Session TTL is 5 minutes, so a quote lives in `travel_quotes`, never the Redis session.
 - **Deploy order:** apply the migration BEFORE the server (the code reads the new tables and the feature key; the migration widens both
   feature CHECKs to the 9 values `bot_builder, followups, opt_in_links, contact_import, owner_phone_media, staff, broadcasts, catalogue,
-  travel_quotes`). Not a cutover: with the switch off nothing changes for any business, Search cab AI included. Part C will need its own
-  migration (`flow_nodes.node_type` + `reply_kind` CHECKs).
+  travel_quotes`). Not a cutover: with the switch off nothing changes for any business, Search cab AI included. Part C's migration is `20261105120000_flow_quote_node_types.sql` (`flow_nodes.node_type` + the is_computed guard; `reply_kind` was not needed).
 - **Follow-ups / not done:** the web form's `getVehicleQuote` ignores `route_fares` (distance tier only) - left as is on purpose;
   `/api/route-fares` doesn't set `route_id`; `plan.middleware.js#requireFeature` is unused (plan gating for quotes, if wanted later, would be
   a `plans` boolean checked next to the switch); `broadcast.bodyLimit.test.js` "app.js mounts the broadcast parser..." fails on the
   unmodified code (counts 3 `express.json({ limit: '1mb' })` where it expects 2).
 - Tests: `utils/travelQuote.test.js`, `routes/travelQuote.routes.test.js`; `features.routes.test.js` and `categoryFeature.service.test.js`
   updated for the new key; `categoryFeature.migrationParity.test.js` covers the new constraint.
+
+### Part C - the chat quote (route_picker / quote nodes, taps, sweep)
+
+- **Flow (SG Travels, seeded):** entry = a "Get a quote" button on the "Our Rates" reply (first button) or the keyword `quote`
+  (`booking_trigger` reply, exact; aliases get a quote / quotation / कोटेशन). Questions: `tripType` (One Way / Round Trip) ->
+  `routePicker` -> `passengers` (1-4 / 5-6 / 7+) -> vehicle carousel (rate-card fares only, filtered by seats) -> `travelDate` (+ typed
+  "Other date") -> `pickupTime` (9 slots + typed "Other time", re-asked when unreadable - the night charge depends on it) ->
+  `numberOfDays` (round trip only, 1-9) -> `quote`. All copy en / hi / mr in `label_translations`.
+- **Node types** (migration `20261105120000`: `flow_nodes_node_type_check` + `flow_nodes_is_computed_only_for_computed_types` now allow
+  `route_picker`, `quote`): both `is_computed`, created only by the seed script (`VALID_QUESTION_NODE_TYPES` unchanged - no editor
+  creates them). `utils/flowGraphValidation.js#QUESTION_SUBGRAPH_TYPES` is the one list of question-subgraph types (GET /api/flow-graph/full,
+  the node endpoints, the template import, validation); a node type missing from it is hidden from the canvas and then deleted / refused
+  on its next save.
+- **Engine** (`bookingGraph.service.js`): `route_picker` is a multi-step list (From skipped when only one; To grouped by region when more
+  than 9; pages of 8 + "More..." + "Other route" because a list holds 10 rows; `utils/routePicker.js`, rows live from
+  `travelQuote.service#listQuotableRoutes`). It sets `quoteRouteId` + city keys; the carousel's quote branches key on
+  `collected.quoteRouteId` (rate card only, `utils/travelQuote.js#filterOptionsBySeats`, no static-list fallback), so every other flow is
+  untouched. New result `{quote:{action:'send'|'no_vehicle'|'handoff', reason}}` (reasons other_route, other_vehicle, no_routes,
+  switch_off); the switch is checked when a route_picker / quote node is entered.
+- **Quote step** (`services/quoteFlow.service.js`, called from the webhook's Step 12 `result.quote` branch): prices with
+  `computeQuote` + `computeAdvance`, saves a `sent` quote (`expires_at` = valid_hours), sends the message (trip, fare lines only for what
+  was computed, total, toll included / extra - shown, never added, advance, valid until) with buttons Confirm & pay (Confirm when the advance
+  is off) / Change / Talk to us. No claim about fuel or driver. "Other route" and "no vehicle fits" save a `handoff` lead (one per open
+  escalation); the switch off hands over with no row.
+- **Tap ids** `quote:{quoteId}:confirm|change|talk|paid` (`utils/quoteIds.js`; a system tap prefix in `optInLink.js`). Handled at
+  webhook **Step 9.6, before the bot-pause return** (so "I've paid" / "Talk to us" work during a pause; after tenant / subscription checks,
+  the duplicate-delivery gate, blocked customers, STOP/START and the usage-limit return), read from the DB (work after the 5-minute session),
+  scoped to the business AND the customer. Confirm = one guarded UPDATE sent -> accepted (only before `expires_at`), one booking per quote
+  (`travelQuote.service#createQuoteBooking`: pending + advance pending + `requestedVia:'advance'`, or confirmed when no advance; fare_amount
+  = total), the QR, then an "I've paid" button; repeat taps re-send the same QR. "I've paid" stamps `customer_paid_claim_at` and alerts the
+  owner once - it never marks anything paid. Change restarts the flow at its entry question. An expired tap gets "expired" + a "New quote"
+  button. The owner's mark-paid (`payment.service#setBookingPaymentStatus`) moves the quote accepted <-> paid via `bookings.quote_id`.
+- **Sweep** (`services/quoteSweep.service.js`, run by `runSweepSafely` right after the follow-up sweep in `server.js`, same 15-minute
+  loop, **so it needs `ENABLE_FOLLOWUP_SWEEPER=true`** - on in production): reminder (status `sent`, reminder_after_hours after sent, plain
+  text via windowAwareSend, only inside the customer's 24 h window, never for handoff leads / reminder 0 / a reminder at or after expiry),
+  expiry (only `sent` -> `expired`, nothing sent), overdue advance (accepted, booking still payment-pending and not cancelled, at
+  accepted_at + valid_hours: the owner is notified once, nothing cancelled). Each send is claimed first with a guarded UPDATE
+  (`reminder_sent_at` / `overdue_notified_at` is null returning), so two instances or overlapping runs never send twice. Uses the
+  business's own settings (defaults 24 h / 3 h without a row) and keeps working after the switch is turned off.
+- **Owner alerts** `quote_paid_claim`, `quote_advance_overdue` (`notification.service`, plain channel, en / hi / mr): kept out of the alert
+  settings (`switchable:false`), so the owner cannot mute them until the app lists them.
+- **Canvas**: the quote nodes show as read-only computed question nodes. The batch save used to refuse any edge leaving a
+  `vehicle_carousel` - which would have failed every save of a seeded flow - so a *stored* carousel edge is now kept (a *new* one is still
+  refused). The simulator answers "Quote step (not simulated)" for the quote step.
+- **Seed script** `src/scripts/seedTravelQuoteFlow.js`: SG Travels only (hard-coded id; refuses any other id, Search cab AI, a business
+  without the `travel_quotes` switch on or without an active route with an active fare). Dry run by default; `--confirm` writes 11 nodes + 13
+  edges through `save_flow_graph_full` (one transaction, only the new rows, nothing existing touched - verified byte-for-byte afterwards) and
+  flushes the flow cache; every row carries a fixed id from `5eed7a01-0000-4000-8000-…` (the tag), so a second run is refused and
+  `--rollback --confirm` removes exactly those rows. `--expect-nodes/--expect-edges` pin the plan. The main menu ("hi", 3 buttons) is left
+  alone because WhatsApp shows at most 3 reply buttons (a 4th would hide Contact Us); `--menu-button` adds a first menu button once the menu
+  is a list. Apply the migration first, then deploy, then run the script.
+- **Deploy order:** migration `20261105120000` -> server (commits 2-6) -> `seedTravelQuoteFlow.js` dry run -> `--confirm` (the cutover for SG
+  Travels: its customers get the new entry immediately, no flag). Search cab AI, Pradip, Jyotirling, every template and the Travel default
+  snapshot are untouched.
+- **Follow-ups / not done:** (1) the exact pickup address / location pin step after Confirm; (2) owner-editable "what is included" text;
+  (3) `webhook.controller.js` `sendFieldPrompt` hardcodes English "Book this" / "Other options" on the vehicle carousel (also used here);
+  (4) the owner cannot mute the two new alerts; (5) machine-translated languages other than en / hi / mr fall back to English for the new
+  system messages until the machine files are regenerated; (6) `findUnreachableNodes` takes its entry points from `booking_trigger` replies
+  only, so a flow entered from a menu button alone counts every question as unreachable (the check is differential, so saves are not
+  blocked - the quote keyword trigger gives SG Travels a proper entry); (7) the booking code (first two letters + 4 digits) is generated
+  separately in `createQuoteBooking` and `createBookingAndConfirmation`.
+- Tests: `utils/{routePicker,pickupTime,quoteIds,quoteText}.test.js`, `utils/travelQuote.test.js` (seats), `services/bookingGraph.quoteFlow.test.js`,
+  `services/quoteFlow.service.test.js`, `services/quoteSweep.service.test.js`, `services/payment.service.quote.test.js`,
+  `controllers/{webhook.quoteTap,flowGraphPreview.quote,flowGraph.quoteNodes}.test.js`, `scripts/seedTravelQuoteFlow{,.canvas,.engine}.test.js`.
 
 ## Known gaps / deferred work
 
@@ -2451,3 +2514,4 @@ D Flutter Rates screen, E Travel default template (only after a separate OK).
 - 2026-10-31: unlisted business at signup (`requestedCategoryText` + `requestContactPhone`, `business_requests`, team email, Super Admin list/update, `PUT /api/admin/businesses/:id/category`) and `supportWhatsappNumber` / `supportMessage` on `GET /api/app/version` - see "Unlisted business at signup + support number". Migration `20261026140000_business_requests.sql` must be applied BEFORE the server.
 - 2026-11-03: owner phone (`users.phone`, `REQUIRE_OWNER_PHONE`, `GET/PATCH /api/auth/me`, Super Admin `ownerName/ownerEmail/ownerPhone` + phone search, sanitised list search) - see "Owner phone number". Working tree only; migration not applied.
 - 2026-11-04: travel quotes part A (route rate card API `/api/travel/*`, `travel_quote_settings`, `travel_quotes`, `GET /api/reports/quotes`, `travel_quotes` switch, off for all) - see "Travel quotes". Migration `20261104120000_travel_quotes.sql` must be applied BEFORE the server. Bot side (part C) not built.
+- 2026-11-05: travel quotes part C (chat quote: `route_picker` / `quote` nodes, `quote:` taps, quote sweep, quote bookings, `scripts/seedTravelQuoteFlow.js`) - see "Travel quotes" > "Part C". Migration `20261105120000_flow_quote_node_types.sql` must be applied BEFORE the server; nothing changes for any business until the seed script is run for SG Travels.

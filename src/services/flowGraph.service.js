@@ -632,7 +632,11 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
       return { error: `edges[${i}]: The Catalogue reply cannot have outgoing buttons.` };
     }
     const fromNode = proposedNodeById.get(fromNodeId);
-    if (fromNode && fromNode.nodeType === 'vehicle_carousel') {
+    // A NEW edge out of a vehicle_carousel is refused (the editors never offer one). An edge that is already
+    // stored is kept as it is, like any value kept from the stored row: the travel-quote flow
+    // (scripts/seedTravelQuoteFlow.js) continues from the carousel to the date question, and the canvas
+    // echoes every stored edge on each save. No other business has such an edge, so nothing else changes.
+    if (fromNode && fromNode.nodeType === 'vehicle_carousel' && !existingEdge) {
       return { error:
         `edges[${i}]: vehicle_carousel nodes cannot have outgoing edges — the post-selection flow is handled entirely in bookingGraph.service.js, not by edges.` };
     }
