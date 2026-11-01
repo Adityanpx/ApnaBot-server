@@ -155,4 +155,84 @@ const listQuotableRoutes = async (businessId, tripType) => {
   }));
 };
 
-module.exports = { STATUSES, getSettings, updateSettings, listQuotes, cancelQuote, getQuoteReport, listQuotableRoutes };
+const BOOKING_FIELD_LABELS = {
+  tripType: 'Trip type', pickupLocation: 'Pickup', dropLocation: 'Drop', travelDate: 'Date', pickupTime: 'Pickup time',
+  passengers: 'Passengers', numberOfDays: 'Days', vehicleName: 'Vehicle', quoteTotal: 'Quote total'
+};
+
+/**
+ * The booking a customer's Confirm creates from a quote (never createBookingAndConfirmation: that one
+ * prices from the session, this one from the saved quote). One booking per quote: bookings.quote_id is
+ * unique, so a second call for the same quote returns the booking that already exists.
+ *   advance asked (quote.advance_amount)  status pending, payment_status pending, payment_details
+ *                                         requestedVia 'advance' - the owner marks it paid, which confirms it
+ *   no advance                            status confirmed, payment_status not_required
+ * fare_amount = the quote total.
+ * @param {{ quote: Object, business: Object, customer: Object, customerNumber: string }} args
+ *   quote = the snake_case travel_quotes row; business = camelCase (displayName / name); customer = camelCase
+ * @returns {Promise<{ booking: Object, created: boolean }>} booking is the camelCase row
+ */
+const createQuoteBooking = async ({ quote, business, customer, customerNumber }) => {
+  const existing = async () => {
+    const { data, error } = await supabase.from('bookings').select('*').eq('quote_id', quote.id).maybeSingle();
+    if (error) throw error;
+    return data;
+  };
+  const found = await existing();
+  if (found) return { booking: toCamelCase(found), created: false };
+
+  const c = quote.collected || {};
+  const advance = quote.advance_amount === null || quote.advance_amount === undefined ? null : Number(quote.advance_amount);
+  const letters = ((business?.displayName || business?.name || '').toUpperCase().match(/[A-Z]/g) || []);
+  const bookingCode = (letters.length >= 2 ? letters.slice(0, 2).join('') : 'BK') + Math.floor(1000 + Math.random() * 9000);
+  const fields = {
+    tripType: c.tripLabel, pickupLocation: c.fromLabel, dropLocation: c.toLabel, travelDate: c.date, pickupTime: c.pickupTime,
+    passengers: c.passengers, ...(c.days ? { numberOfDays: c.days } : {}), vehicleName: c.vehicleName, vehicleId: quote.vehicle_id,
+    vehicleFare: quote.base_fare, fareSource: 'route_fare', routeFareId: quote.route_fare_id, quoteId: quote.id, quoteTotal: quote.total_amount
+  };
+  const insert = {
+    business_id: quote.business_id,
+    customer_id: quote.customer_id,
+    customer_number: customerNumber,
+    status: advance !== null ? 'pending' : 'confirmed',
+    fields,
+    field_labels: BOOKING_FIELD_LABELS,
+    payment_status: advance !== null ? 'pending' : 'not_required',
+    booking_code: bookingCode,
+    fare_amount: quote.total_amount,
+    quote_id: quote.id,
+    ...(advance !== null ? { payment_amount: advance, payment_details: { requestedVia: 'advance', quoteId: quote.id } } : {})
+  };
+  const { data, error } = await supabase.from('bookings').insert(insert).select().single();
+  if (error) {
+    if (error.code === '23505') {
+      // A second Confirm won the insert: that booking is the quote's booking.
+      const winner = await existing();
+      if (winner) return { booking: toCamelCase(winner), created: false };
+    }
+    throw error;
+  }
+  const booking = toCamelCase(data);
+
+  const notificationService = require('./notification.service');
+  notificationService.notify(quote.business_id, 'booking_new', {
+    bookingId: booking.id, customerId: quote.customer_id, customerName: customer?.name, customerNumber,
+    summary: c.vehicleName || c.tripLabel || null, date: c.date || null
+  });
+  try {
+    require('./socket.service').emitToBusiness(String(quote.business_id), 'new_booking', { booking, customerNumber });
+  } catch (socketError) {
+    require('../utils/logger').error('Error emitting socket event:', socketError);
+  }
+  if (advance === null) {
+    // Confirmed without waiting for a payment: the same Contacted -> Converted step as any confirmation.
+    try {
+      await require('./customerPipeline.service').advancePipelineStage(quote.customer_id, 'converted');
+    } catch (pipelineError) {
+      require('../utils/logger').error('Error advancing the customer pipeline for a confirmed quote booking:', pipelineError);
+    }
+  }
+  return { booking, created: true };
+};
+
+module.exports = { STATUSES, getSettings, updateSettings, listQuotes, cancelQuote, getQuoteReport, listQuotableRoutes, createQuoteBooking };

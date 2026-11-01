@@ -44,6 +44,10 @@ const TYPES = {
   booking_cancelled: { kind: 'voice', permission: 'bookings' },
   new_message:       { kind: 'voice', permission: 'messages' },
   customer_waiting:  { kind: 'voice', permission: 'messages' },
+  // Travel quotes: plain sound (no bundled voice clip says these). switchable:false keeps them out of the
+  // alert settings (GET/PUT /api/notifications/preferences are unchanged until the app lists them).
+  quote_paid_claim:      { kind: 'normal', permission: 'payments', switchable: false },
+  quote_advance_overdue: { kind: 'normal', permission: 'payments', switchable: false },
   whatsapp_disconnected: { kind: 'critical', voice: true, route: '/business/whatsapp' },
   payment_issue:         { kind: 'critical', voice: true, route: '/business/whatsapp' },
   usage_90:              { kind: 'critical', route: '/subscription/status' },
@@ -102,6 +106,22 @@ const TEXT = {
       en: '{who} has had no reply for 10 minutes',
       hi: '{who} को 10 मिनट से जवाब नहीं मिला',
       mr: '{who} ला 10 मिनिटांपासून उत्तर मिळालेले नाही'
+    }
+  },
+  quote_paid_claim: {
+    title: { en: 'Customer says they paid', hi: 'ग्राहक कहता है भुगतान किया', mr: 'ग्राहक म्हणतो पैसे भरले' },
+    body: {
+      en: '{who} says they paid ₹{amount}. Please check and mark it paid',
+      hi: '{who} का कहना है कि उन्होंने ₹{amount} दिए। कृपया जाँचकर पेड मार्क करें',
+      mr: '{who} म्हणतात की त्यांनी ₹{amount} भरले. कृपया तपासून पेड मार्क करा'
+    }
+  },
+  quote_advance_overdue: {
+    title: { en: 'Advance overdue', hi: 'एडवांस बाकी है', mr: 'अ‍ॅडव्हान्स बाकी आहे' },
+    body: {
+      en: "{who} hasn't paid the ₹{amount} advance yet",
+      hi: '{who} ने अभी तक ₹{amount} एडवांस नहीं दिया',
+      mr: '{who} यांनी अजून ₹{amount} अ‍ॅडव्हान्स भरलेला नाही'
     }
   },
   whatsapp_disconnected: {
@@ -191,6 +211,7 @@ const routeFor = (type, payload) => {
   if (def.route) return def.route;
   if (type === 'booking_new' || type === 'booking_cancelled') return payload.bookingId ? `/bookings/${payload.bookingId}` : '/bookings';
   if (type === 'payment_received') return payload.bookingId ? `/bookings/${payload.bookingId}` : '/payments';
+  if (type === 'quote_paid_claim' || type === 'quote_advance_overdue') return payload.bookingId ? `/bookings/${payload.bookingId}` : '/payments';
   return payload.customerId ? `/messages/${payload.customerId}` : '/messages';
 };
 
@@ -200,7 +221,7 @@ const routeFor = (type, payload) => {
 //     quietHours: { enabled: bool, start: 'HH:mm', end: 'HH:mm' } }
 // Critical types are not user-switchable, so they are not in `types`.
 const HHMM = /^([01]\d|2[0-3]):[0-5]\d$/;
-const PREF_TYPES = TYPE_NAMES.filter((name) => TYPES[name].kind !== 'critical');
+const PREF_TYPES = TYPE_NAMES.filter((name) => TYPES[name].kind !== 'critical' && TYPES[name].switchable !== false);
 const DEFAULT_QUIET = { enabled: false, start: '22:00', end: '07:00' };
 
 const isPlainObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);

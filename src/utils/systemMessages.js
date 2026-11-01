@@ -493,6 +493,87 @@ const SYSTEM_MESSAGES = {
     hi: 'अन्य जगहें',
     mr: 'इतर ठिकाणे'
   },
+  // Travel quote message (services/quoteFlow.service.js). Button titles: max 20 characters in every
+  // language (WhatsApp cuts at 20).
+  quoteHeader: { en: '🚕 *Your trip quote*', hi: '🚕 *आपकी यात्रा का किराया*', mr: '🚕 *तुमच्या प्रवासाचे भाडे*' },
+  quoteTripLine: { en: 'Trip: *{{trip}}*', hi: 'यात्रा: *{{trip}}*', mr: 'प्रवास: *{{trip}}*' },
+  quoteTripOneWay: { en: 'One Way', hi: 'वन वे', mr: 'वन वे' },
+  quoteTripRoundTrip: { en: 'Round Trip', hi: 'राउंड ट्रिप', mr: 'राउंड ट्रिप' },
+  quoteDateLine: { en: 'Date: *{{date}}*', hi: 'तारीख: *{{date}}*', mr: 'तारीख: *{{date}}*' },
+  quoteTimeLine: { en: 'Pickup time: *{{time}}*', hi: 'पिकअप समय: *{{time}}*', mr: 'पिकअप वेळ: *{{time}}*' },
+  quotePassengersLine: { en: 'Passengers: *{{passengers}}*', hi: 'यात्री: *{{passengers}}*', mr: 'प्रवासी: *{{passengers}}*' },
+  quoteVehicleLine: { en: 'Vehicle: *{{vehicle}}*', hi: 'वाहन: *{{vehicle}}*', mr: 'वाहन: *{{vehicle}}*' },
+  quoteBaseFareLine: { en: 'Fare: ₹{{amount}}', hi: 'किराया: ₹{{amount}}', mr: 'भाडे: ₹{{amount}}' },
+  quoteExtraNight: { en: 'Night charge: ₹{{amount}}', hi: 'रात्रि शुल्क: ₹{{amount}}', mr: 'रात्र शुल्क: ₹{{amount}}' },
+  quoteExtraDriver: {
+    en: 'Driver allowance ({{days}} day(s)): ₹{{amount}}',
+    hi: 'ड्राइवर भत्ता ({{days}} दिन): ₹{{amount}}',
+    mr: 'ड्रायव्हर भत्ता ({{days}} दिवस): ₹{{amount}}'
+  },
+  quoteExtraMinimum: {
+    en: 'Minimum charge adjustment: ₹{{amount}}',
+    hi: 'न्यूनतम शुल्क समायोजन: ₹{{amount}}',
+    mr: 'किमान शुल्क समायोजन: ₹{{amount}}'
+  },
+  quoteTotalLine: { en: 'Total: *₹{{amount}}*', hi: 'कुल: *₹{{amount}}*', mr: 'एकूण: *₹{{amount}}*' },
+  quoteTollIncluded: { en: 'Toll is included in this fare.', hi: 'इस किराये में टोल शामिल है।', mr: 'या भाड्यात टोल समाविष्ट आहे.' },
+  quoteTollExtra: {
+    en: 'Toll is extra and not included in this fare.',
+    hi: 'टोल अलग से लगेगा, इस किराये में शामिल नहीं है।',
+    mr: 'टोल वेगळा लागेल, या भाड्यात समाविष्ट नाही.'
+  },
+  quoteAdvanceLine: {
+    en: 'Advance to confirm: *₹{{amount}}*',
+    hi: 'पुष्टि के लिए एडवांस: *₹{{amount}}*',
+    mr: 'पुष्टीसाठी अ‍ॅडव्हान्स: *₹{{amount}}*'
+  },
+  quoteValidUntil: {
+    en: 'This quote is valid until {{until}}.',
+    hi: 'यह किराया {{until}} तक मान्य है।',
+    mr: 'हे भाडे {{until}} पर्यंत वैध आहे.'
+  },
+  quoteBtnConfirmPay: { en: 'Confirm & pay', hi: 'पुष्टि व भुगतान', mr: 'पुष्टी व पेमेंट' },
+  quoteBtnConfirm: { en: 'Confirm', hi: 'पुष्टि करें', mr: 'पुष्टी करा' },
+  quoteBtnChange: { en: 'Change', hi: 'बदलें', mr: 'बदला' },
+  quoteBtnTalk: { en: 'Talk to us', hi: 'हमसे बात करें', mr: 'आमच्याशी बोला' },
+  quoteBtnPaid: { en: "I've paid", hi: 'मैंने भुगतान किया', mr: 'मी पैसे भरले' },
+  quoteBtnNew: { en: 'New quote', hi: 'नया किराया', mr: 'नवीन भाडे' },
+  quoteNoVehicle: {
+    en: "Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.",
+    hi: 'माफ़ कीजिए, इस रूट पर आपके ग्रुप के लिए हमारे पास वाहन उपलब्ध नहीं है। *हमसे बात करें* दबाएँ, हमारी टीम आपकी मदद करेगी।',
+    mr: 'माफ करा, या मार्गावर तुमच्या गटासाठी आमच्याकडे वाहन उपलब्ध नाही. *आमच्याशी बोला* दाबा, आमची टीम तुम्हाला मदत करेल.'
+  },
+  quoteExpired: {
+    en: 'This quote has expired. Tap below to get a new one.',
+    hi: 'यह किराया समाप्त हो गया है। नया किराया पाने के लिए नीचे दबाएँ।',
+    mr: 'हे भाडे संपले आहे. नवीन भाडे मिळवण्यासाठी खाली दाबा.'
+  },
+  quoteUnavailable: {
+    en: 'Sorry, this quote is no longer available. Send *hi* to start again.',
+    hi: 'माफ़ कीजिए, यह किराया अब उपलब्ध नहीं है। फिर से शुरू करने के लिए *hi* भेजें।',
+    mr: 'माफ करा, हे भाडे आता उपलब्ध नाही. पुन्हा सुरू करण्यासाठी *hi* पाठवा.'
+  },
+  quoteConfirmedTitle: { en: '✅ *Booking confirmed!*', hi: '✅ *बुकिंग कन्फर्म हो गई!*', mr: '✅ *बुकिंग कन्फर्म झाली!*' },
+  quoteConfirmedNext: {
+    en: 'Our team will contact you with the pickup details.',
+    hi: 'हमारी टीम पिकअप की जानकारी के लिए आपसे संपर्क करेगी।',
+    mr: 'पिकअपच्या माहितीसाठी आमची टीम तुमच्याशी संपर्क साधेल.'
+  },
+  quotePaidPrompt: {
+    en: 'Paid already? Tap below once you have paid and we will check it.',
+    hi: 'भुगतान कर दिया? भुगतान के बाद नीचे दबाएँ, हम जाँच लेंगे।',
+    mr: 'पैसे भरले? भरल्यानंतर खाली दाबा, आम्ही तपासू.'
+  },
+  quotePaidThanks: {
+    en: 'Thanks! We will check your payment and confirm your booking shortly.',
+    hi: 'धन्यवाद! हम आपका भुगतान जाँचकर जल्द ही बुकिंग कन्फर्म करेंगे।',
+    mr: 'धन्यवाद! आम्ही तुमचे पेमेंट तपासून लवकरच बुकिंग कन्फर्म करू.'
+  },
+  quotePaidAlready: {
+    en: 'We have already received your payment ✅',
+    hi: 'हमें आपका भुगतान पहले ही मिल चुका है ✅',
+    mr: 'आम्हाला तुमचे पेमेंट आधीच मिळाले आहे ✅'
+  },
   // A pickup time the quote can't read (the night charge depends on it).
   pickupTimeInvalid: {
     en: "Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.",

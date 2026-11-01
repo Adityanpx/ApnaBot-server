@@ -101,3 +101,14 @@ test('route picker prompts and the pickup-time hint exist in every language', ()
     }
   }
 });
+
+test('every travel-quote message exists in every language; button titles fit 20 characters', () => {
+  const keys = Object.keys(SYSTEM_MESSAGES).filter(k => k.startsWith('quote'));
+  assert.ok(keys.length >= 30);
+  for (const key of keys) {
+    for (const lang of LANGUAGES) assert.ok(SYSTEM_MESSAGES[key][lang] && SYSTEM_MESSAGES[key][lang].trim(), `${key}.${lang} missing`);
+  }
+  for (const key of keys.filter(k => k.startsWith('quoteBtn'))) {
+    for (const lang of LANGUAGES) assert.ok(SYSTEM_MESSAGES[key][lang].length <= 20, `${key}.${lang} is ${SYSTEM_MESSAGES[key][lang].length} characters`);
+  }
+});

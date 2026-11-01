@@ -233,6 +233,34 @@ const canEnterBookingQuestions = (nodes, edges) => {
 };
 
 /**
+ * The question a customer enters the flow at, for a node deep in it: among the node's ancestors (walking
+ * edges backwards), the first question-subgraph node that a reply node's button / trigger points to.
+ * The manual-sibling nodes ("Other time" text question) have no incoming edge at all, so they are
+ * never mistaken for an entry. Used to restart a quote flow ("Change", an expired quote).
+ * @returns {string|null}
+ */
+const findFlowEntryNodeId = (nodes, edges, nodeId) => {
+  const replyIds = new Set(nodes.filter(n => n.nodeType === 'reply').map(n => n.id));
+  const questionIds = new Set(nodes.filter(n => QUESTION_SUBGRAPH_TYPES.includes(n.nodeType)).map(n => n.id));
+  const seen = new Set([nodeId]);
+  const queue = [nodeId];
+  const entries = [];
+  while (queue.length > 0) {
+    const current = queue.shift();
+    for (const edge of edges) {
+      if (edge.toNodeId !== current) continue;
+      if (replyIds.has(edge.fromNodeId)) {
+        if (questionIds.has(current) && !entries.includes(current)) entries.push(current);
+      } else if (!seen.has(edge.fromNodeId)) {
+        seen.add(edge.fromNodeId);
+        queue.push(edge.fromNodeId);
+      }
+    }
+  }
+  return entries[0] || null;
+};
+
+/**
  * Existence-only check: condition.field must name a real field_key among
  * this business's question-subgraph nodes. Does NOT verify the field is
  * collected earlier than this edge on every path (see file header).
@@ -256,5 +284,6 @@ module.exports = {
   findFallbackSiblingNodeIds,
   resolveBookingTriggerEntryNodeIds,
   canEnterBookingQuestions,
+  findFlowEntryNodeId,
   validateConditionField
 };

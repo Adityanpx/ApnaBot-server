@@ -364,3 +364,16 @@ test('new_message with skipWaitingCheck: still pushes (throttled) but plans no c
   assert.equal(sent.filter((s) => s.message.data.type === 'new_message').length, 3);
   assert.equal(scheduled.length, 0);
 });
+
+test('travel quote alerts: worded in every language, kept out of the alert settings, open the booking', () => {
+  for (const type of ['quote_paid_claim', 'quote_advance_overdue']) {
+    for (const lang of ['en', 'hi', 'mr']) {
+      const { title, body } = svc.buildText(type, { customerName: 'Ravi', amount: 700 }, lang);
+      assert.ok(title && body.includes('Ravi') && body.includes('700'), `${type} ${lang}`);
+      assert.ok(!body.includes('{'), `${type} ${lang}: unfilled placeholder`);
+    }
+    assert.equal(Object.keys(svc.resolvePrefs({}).types).includes(type), false);
+    assert.equal(svc.validatePrefs({ types: { [type]: false } }).ok, false);
+  }
+  assert.equal(svc.buildText('quote_paid_claim', { customerName: 'Ravi', amount: 700 }, 'en').body, 'Ravi says they paid ₹700. Please check and mark it paid');
+});
