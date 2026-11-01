@@ -84,6 +84,7 @@ logger.info('Subscription expiry cron scheduled (runs every 24h)');
 // sweep still running is skipped.
 if (config.ENABLE_FOLLOWUP_SWEEPER) {
   const followupSweepService = require('./src/services/followupSweep.service');
+  const quoteSweepService = require('./src/services/quoteSweep.service');
   const FOLLOWUP_SWEEP_FIRST_DELAY_MS = 60 * 1000;
   const FOLLOWUP_SWEEP_INTERVAL_MS = 15 * 60 * 1000;
   let followupSweepRunning = false;
@@ -98,6 +99,11 @@ if (config.ENABLE_FOLLOWUP_SWEEPER) {
       await followupSweepService.runSweep();
     } catch (err) {
       logger.error('Follow-up sweep failed:', err);
+    }
+    // Travel quotes (reminder, expiry, overdue-advance alert): after the follow-ups, in its own try/catch -
+    // runSweepSafely never throws, so it can never affect them. Same loop, same ENABLE_FOLLOWUP_SWEEPER.
+    try {
+      await quoteSweepService.runSweepSafely();
     } finally {
       followupSweepRunning = false;
     }

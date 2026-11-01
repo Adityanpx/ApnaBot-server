@@ -74,6 +74,7 @@ test('isSystemTapId: lang_ and optin_ only — never flow ids', () => {
   assert.equal(isSystemTapId('0b3f6c1e-1111-4222-8333-944455556666'), false); // flow_edges id
   assert.equal(isSystemTapId('0b3f6c1e-1111-4222-8333-944455556666:2'), false); // {node_id}:{index}
   assert.equal(isSystemTapId('0b3f6c1e-1111-4222-8333-944455556666:other'), false);
+  assert.equal(isSystemTapId('quote:0b3f6c1e-1111-4222-8333-944455556666:confirm'), true); // a travel quote button
   assert.equal(isSystemTapId(null), false);
   assert.equal(isSystemTapId(''), false);
 });

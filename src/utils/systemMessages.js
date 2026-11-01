@@ -532,6 +532,12 @@ const SYSTEM_MESSAGES = {
     hi: 'यह किराया {{until}} तक मान्य है।',
     mr: 'हे भाडे {{until}} पर्यंत वैध आहे.'
   },
+  // Sent as plain text a few hours after a quote that nobody has answered (services/quoteSweep.service.js).
+  quoteReminder: {
+    en: 'Your trip quote for *{{route}}* (*₹{{total}}*) is still open until {{until}}. Tap *{{button}}* on the quote above to book, or reply here if you have any questions.',
+    hi: 'आपका *{{route}}* का यात्रा किराया (*₹{{total}}*) {{until}} तक मान्य है। बुक करने के लिए ऊपर दिए किराये पर *{{button}}* दबाएँ, या कोई सवाल हो तो यहीं लिखें।',
+    mr: 'तुमचे *{{route}}* चे प्रवास भाडे (*₹{{total}}*) {{until}} पर्यंत वैध आहे. बुक करण्यासाठी वरील भाड्यावर *{{button}}* दाबा, किंवा काही प्रश्न असल्यास इथे लिहा.'
+  },
   quoteBtnConfirmPay: { en: 'Confirm & pay', hi: 'पुष्टि व भुगतान', mr: 'पुष्टी व पेमेंट' },
   quoteBtnConfirm: { en: 'Confirm', hi: 'पुष्टि करें', mr: 'पुष्टी करा' },
   quoteBtnChange: { en: 'Change', hi: 'बदलें', mr: 'बदला' },

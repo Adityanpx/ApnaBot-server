@@ -27,6 +27,7 @@ const { applyMessageTemplate } = require('../utils/messageTemplating');
 const { computeQuote, computeAdvance } = require('../utils/travelQuote');
 const { getSystemMessage } = require('../utils/systemMessages');
 const { quoteTapId } = require('../utils/quoteIds');
+const { money, formatUntil } = require('../utils/quoteText');
 const { findFlowEntryNodeId } = require('../utils/flowGraphValidation');
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -38,14 +39,7 @@ const languageOf = ({ tenant, customer }) => {
   return enabled ? enabled[0] : 'en';
 };
 
-const money = (amount) => Number(amount).toLocaleString('en-IN');
-
 // ---- text -----------------------------------------------------------------------------------------
-
-/** "2 Nov, 7:30 pm" in India time. */
-const formatUntil = (date) => new Date(date).toLocaleString('en-IN', {
-  timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
-});
 
 const extraLine = (extra, lang, quote) => {
   const amount = money(extra.amount);
