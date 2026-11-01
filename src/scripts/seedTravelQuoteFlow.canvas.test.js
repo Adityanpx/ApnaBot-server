@@ -52,7 +52,7 @@ test('GET /full shows every seeded node: computed ones as read-only question nod
   assert.equal(q[seed.N.quote].nodeType, 'quote');
   assert.equal(q[seed.N.tripType].isComputed, false);
   assert.ok(body.data.replyNodes.some((n) => n.id === seed.N.trigger && n.replyKind === 'booking_trigger'));
-  assert.equal(body.data.edges.length, 5 + 13);
+  assert.equal(body.data.edges.length, fixture.edges().length + 13);
   assert.ok(body.data.edges.some((e) => e.fromNodeId === seed.N.vehicle && e.toNodeId === seed.N.travelDate), 'the carousel -> date edge is returned');
 });
 

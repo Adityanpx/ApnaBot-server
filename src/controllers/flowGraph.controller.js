@@ -43,6 +43,23 @@ const {
   validateLatLng
 } = flowGraphService;
 
+const ACTIVATE_CLASH_MESSAGE = 'Another active reply already uses this keyword. Rename one of them first.';
+
+/**
+ * The id of an ACTIVE reply node of the business that already uses `keyword` (other than `exceptId`), or null.
+ * Only active replies compete for a keyword: the bot's rules cache loads active nodes only
+ * (chatbot.service.js#getRulesFromCache), and the Catalogue's "Replace" leaves a paused reply with the same keyword.
+ * limit(1), not maybeSingle: a business that already has two active replies must not turn into a 500.
+ */
+const activeKeywordHolder = async (businessId, keyword, exceptId = null) => {
+  let query = supabase
+    .from('flow_nodes').select('id').eq('business_id', businessId).eq('node_type', 'reply')
+    .eq('keyword', keyword).eq('is_active', true);
+  if (exceptId) query = query.neq('id', exceptId);
+  const { data, error } = await query.limit(1);
+  if (error) throw error;
+  return data && data.length > 0 ? data[0].id : null;
+};
 
 /**
  * Resolves a business_media library asset id to its current R2 url, for the
@@ -243,11 +260,9 @@ const createReplyNode = async (req, res, next) => {
 
     const normalizedKeyword = keyword.toLowerCase().trim();
 
-    const { data: existingNode, error: existingErr } = await supabase
-      .from('flow_nodes').select('id').eq('business_id', businessId).eq('node_type', 'reply')
-      .eq('keyword', normalizedKeyword).maybeSingle();
-    if (existingErr) throw existingErr;
-    if (existingNode) {
+    // The new node is active, so only an ACTIVE reply with the same keyword is in its way (a paused one is
+    // not matched by the bot).
+    if (await activeKeywordHolder(businessId, normalizedKeyword)) {
       return errorResponse(res, 409, 'A reply node with this keyword already exists.');
     }
 
@@ -391,16 +406,17 @@ const updateReplyNode = async (req, res, next) => {
 
     const updateData = {};
 
+    // Whether this reply is active once the edit is applied: only an active reply competes for a keyword.
+    const activeAfter = isActive !== undefined ? isActive !== false : node.is_active !== false;
     if (keyword) {
       const normalizedKeyword = keyword.toLowerCase().trim();
-      const { data: existingNode, error: existingErr } = await supabase
-        .from('flow_nodes').select('id').eq('business_id', businessId).eq('node_type', 'reply')
-        .eq('keyword', normalizedKeyword).neq('id', id).maybeSingle();
-      if (existingErr) throw existingErr;
-      if (existingNode) {
+      if (activeAfter && await activeKeywordHolder(businessId, normalizedKeyword, id)) {
         return errorResponse(res, 409, 'A reply node with this keyword already exists.');
       }
       updateData.keyword = normalizedKeyword;
+    } else if (activeAfter && node.is_active === false && await activeKeywordHolder(businessId, node.keyword, id)) {
+      // Switching a paused reply back on while another active reply already uses its keyword.
+      return errorResponse(res, 409, ACTIVATE_CLASH_MESSAGE);
     }
 
     if (matchType) updateData.match_type = matchType;
@@ -580,13 +596,18 @@ const toggleReplyNode = async (req, res, next) => {
     const businessId = req.user.businessId;
 
     const { data: node, error: findErr } = await supabase
-      .from('flow_nodes').select('is_active, content_type').eq('id', id).eq('business_id', businessId).eq('node_type', 'reply').maybeSingle();
+      .from('flow_nodes').select('is_active, content_type, keyword').eq('id', id).eq('business_id', businessId).eq('node_type', 'reply').maybeSingle();
     if (findErr) throw findErr;
     if (!node) {
       return errorResponse(res, 404, 'Reply node not found');
     }
     if (node.content_type === 'catalog') {
       return errorResponse(res, 400, 'Switch the Catalogue on or off on the Catalogue page.', { code: 'CATALOG_NODE_MANAGED' });
+    }
+    // Switching a paused reply on while another active reply uses its keyword would leave two for the bot to
+    // choose between: refused (switching off is always fine).
+    if (node.is_active === false && await activeKeywordHolder(businessId, node.keyword, id)) {
+      return errorResponse(res, 409, ACTIVATE_CLASH_MESSAGE);
     }
 
     const { data: updatedNode, error } = await supabase

@@ -357,7 +357,7 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
     if (existing && existing.content_type === 'catalog') {
       const { positionX = existing.position_x ?? null, positionY = existing.position_y ?? null } = item;
       keepNodeIds.add(existing.id);
-      seenKeywords.add(String(existing.keyword || '').toLowerCase().trim());
+      if (existing.is_active !== false) seenKeywords.add(String(existing.keyword || '').toLowerCase().trim());
       replyContentTypeById.set(existing.id, 'catalog');
       nodeUpserts.push({ ...existing, position_x: positionX, position_y: positionY });
       proposedNodes.push({ id: existing.id, nodeType: 'reply', replyKind: existing.reply_kind || 'text', fieldKey: null });
@@ -452,11 +452,16 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
       if (bodyError) return { error: `replyNodes[${i}]: ${bodyError}` };
     }
 
+    // Only ACTIVE replies compete for a keyword - the bot's rules cache loads active nodes only
+    // (chatbot.service.js#getRulesFromCache). A paused reply may share a keyword with an active one; the
+    // Catalogue's "Replace" leaves exactly that behind (it deactivates the older reply, never deletes it).
     const normalizedKeyword = keyword.toLowerCase().trim();
-    if (seenKeywords.has(normalizedKeyword)) {
-      return { error: `replyNodes[${i}]: duplicate keyword "${normalizedKeyword}" among replyNodes in this save.` };
+    if (isActive !== false) {
+      if (seenKeywords.has(normalizedKeyword)) {
+        return { error: `replyNodes[${i}]: duplicate keyword "${normalizedKeyword}" among active replyNodes in this save. Rename one of them, or switch one off.` };
+      }
+      seenKeywords.add(normalizedKeyword);
     }
-    seenKeywords.add(normalizedKeyword);
 
     const id = existing ? existing.id : crypto.randomUUID();
     if (providedId && providedId !== id) idMap.set(providedId, id);
