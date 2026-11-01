@@ -129,4 +129,30 @@ const getQuoteReport = async (businessId, period) => {
   };
 };
 
-module.exports = { STATUSES, getSettings, updateSettings, listQuotes, cancelQuote, getQuoteReport };
+/**
+ * The routes a customer can be quoted for a trip type: active travel_routes that have at least one
+ * active fare of that trip type on an active vehicle (the route_picker node's source; live, per turn).
+ * @param {string} tripType  'oneway' | 'round_trip'
+ * @returns {Promise<{id, fromCity, toCity, fromLabel, toLabel, region, sortOrder}[]>}
+ */
+const listQuotableRoutes = async (businessId, tripType) => {
+  const [routesRes, faresRes, vehiclesRes] = await Promise.all([
+    supabase.from('travel_routes').select('*').eq('business_id', businessId).eq('is_active', true),
+    supabase.from('route_fares').select('route_id, vehicle_id').eq('business_id', businessId).eq('trip_type', tripType).eq('is_active', true),
+    supabase.from('vehicles').select('id').eq('business_id', businessId).eq('is_active', true)
+  ]);
+  for (const res of [routesRes, faresRes, vehiclesRes]) if (res.error) throw res.error;
+  const activeVehicles = new Set((vehiclesRes.data || []).map(v => v.id));
+  const routesWithFare = new Set((faresRes.data || []).filter(f => f.route_id && activeVehicles.has(f.vehicle_id)).map(f => f.route_id));
+  return (routesRes.data || []).filter(r => routesWithFare.has(r.id)).map(r => ({
+    id: r.id,
+    fromCity: r.from_city,
+    toCity: r.to_city,
+    fromLabel: r.from_label,
+    toLabel: r.to_label,
+    region: r.region,
+    sortOrder: r.sort_order ?? 0
+  }));
+};
+
+module.exports = { STATUSES, getSettings, updateSettings, listQuotes, cancelQuote, getQuoteReport, listQuotableRoutes };

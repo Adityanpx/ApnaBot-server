@@ -924,6 +924,8 @@ module.exports = {
   deleteBookingSession,
   recordBookingLead,
   findMatchingVehicleOptions,
+  // Exported for bookingGraph.service.js's quote flow (route-fare options only, no distance tier).
+  buildVehicleCarouselOptions,
   // Exported for publicServiceForm.controller.js's vehicle-quote endpoint —
   // the only caller that needs the distance-estimate tier in isolation
   // rather than via the route-fare-first findBestVehicleCarouselOptions.

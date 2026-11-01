@@ -177,7 +177,34 @@ const computeAdvance = (business, total) => {
   return null;
 };
 
+/**
+ * Seats a vehicle needs for a passenger answer: the band's upper end ("1-4" -> 4, "5-6" -> 6,
+ * "7+" -> 7) or a plain number. null = unknown answer, no filtering.
+ */
+const minSeatsFor = (passengers) => {
+  const text = String(passengers ?? '').trim();
+  const band = text.match(/^(\d{1,2})\s*-\s*(\d{1,2})$/);
+  if (band) return Math.max(Number(band[1]), Number(band[2]));
+  const open = text.match(/^(\d{1,2})\s*\+$/);
+  if (open) return Number(open[1]);
+  const plain = text.match(/^\d{1,2}$/);
+  return plain ? Number(plain[0]) : null;
+};
+
+/**
+ * Keeps the vehicle options that seat the party and numbers them again (the index is part of the
+ * tap id). A vehicle whose seat count is unknown is kept: it can't be shown to misfit.
+ */
+const filterOptionsBySeats = (options, passengers) => {
+  const needed = minSeatsFor(passengers);
+  if (needed === null) return options;
+  return options
+    .filter((opt) => opt.seats === null || opt.seats === undefined || opt.seats >= needed)
+    .map((opt, index) => ({ ...opt, index }));
+};
+
 module.exports = {
+  minSeatsFor, filterOptionsBySeats,
   TRIP_TYPES, DEFAULT_SETTINGS, normalizeCity, validateRouteInput, validateSettingsInput,
   isNightMinute, computeQuote, computeAdvance
 };

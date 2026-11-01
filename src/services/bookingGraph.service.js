@@ -65,6 +65,10 @@ const bookingService = require('./booking.service');
 const { sanitizePrefill, prefillLabel } = require('../utils/catalogOrder');
 const { isNameField, isDateField, isCheckOutField, validateName, validateDateAnswer } = require('../utils/answerValidation');
 const { isInternalId, withTapHint } = require('../utils/bookingTapGuard');
+const routePicker = require('../utils/routePicker');
+const { parsePickupMinute } = require('../utils/pickupTime');
+const { filterOptionsBySeats } = require('../utils/travelQuote');
+const { LANGUAGE_CATALOG } = require('../utils/languageCatalog');
 
 const MAX_HOPS = 25; // cycle guard for pickNextNodeId's skip-forward walk
 
@@ -232,7 +236,80 @@ const pickNextNodeId = (nodes, edges, fromNodeId, collected, disabledFieldKeys, 
  * booking.service.js's normalizeOption/localizeField/output contract
  * already expects ('text'/'buttons'/'list'/'vehicle_carousel').
  */
-const effectiveFieldType = (node) => (node.nodeType === 'vehicle_carousel' ? 'vehicle_carousel' : node.contentType);
+const effectiveFieldType = (node) => {
+  if (node.nodeType === 'vehicle_carousel') return 'vehicle_carousel';
+  if (node.nodeType === 'route_picker') return 'list';
+  return node.contentType;
+};
+
+// ---- Travel quote (route_picker / quote nodes; see PRD "Travel quotes") -------------------------
+// Everything below only runs for a flow that contains those nodes, and the quote-flow branches in the
+// vehicle carousel are keyed on collected.quoteRouteId, which only the route_picker sets.
+
+/** A system message in every language, for list rows and prompts built at run time. */
+const messageTranslations = (key) => {
+  const translations = {};
+  for (const code of Object.keys(LANGUAGE_CATALOG)) {
+    if (code !== 'en') translations[code] = getSystemMessage(key, code);
+  }
+  return { en: getSystemMessage(key, 'en'), translations };
+};
+
+const routePickerText = () => ({
+  more: messageTranslations('routePickerMore'),
+  other: messageTranslations('routePickerOtherRoute'),
+  otherPlaces: messageTranslations('routePickerOtherPlaces')
+});
+
+const isQuoteFlow = (session) => !!(session.collected && session.collected.quoteRouteId);
+
+/**
+ * The engine hands the caller {quote:{action}} instead of a field when the quote flow needs the
+ * webhook to act (services/quoteFlow.service.js): 'send' the priced quote, 'no_vehicle' (nothing
+ * seats the party), 'handoff' (Other route / Other options / feature off / no routes).
+ */
+const quoteResult = (session, action, reason = null, extra = {}) => {
+  session.currentNodeComputedOptions = null;
+  session.routePicker = null;
+  return { session, result: { quote: { action, reason, ...extra } } };
+};
+
+/** Whether the travel_quotes switch is on for the business; a lookup failure counts as off. */
+const quotesEnabled = async (business, businessId) => {
+  try {
+    return await require('./categoryFeature.service').isEnabled(business.businessCategory, 'travel_quotes', businessId);
+  } catch (error) {
+    logger.error('bookingGraph: travel_quotes switch lookup failed, treating it as off', { businessId, message: error.message });
+    return false;
+  }
+};
+
+/** The quotable routes for the trip type collected so far ([] for a local rental). */
+const loadQuotableRoutes = async (businessId, session) => {
+  const tripType = bookingService.normalizeTripType(session.collected.tripType);
+  if (tripType === 'local') return [];
+  return require('./travelQuote.service').listQuotableRoutes(businessId, tripType);
+};
+
+/** Stores the picker's state + current rows on the session; returns the rows. */
+const applyPickerView = (session, pickerView) => {
+  session.routePicker = { ...pickerView.state, promptKey: pickerView.promptKey || null };
+  session.currentNodeComputedOptions = pickerView.rows || [];
+  return session.currentNodeComputedOptions;
+};
+
+/** A typed or tapped reply -> one of the current picker rows (value, 1-based number or label). */
+const matchPickerRow = (rows, trimmedReply) => {
+  const options = rows.map(bookingService.normalizeOption);
+  const asNumber = Number(trimmedReply);
+  if (Number.isInteger(asNumber) && asNumber >= 1 && asNumber <= options.length) return options[asNumber - 1];
+  const wanted = trimmedReply.toLowerCase();
+  return options.find(opt =>
+    opt.value.toLowerCase() === wanted ||
+    opt.label.toLowerCase() === wanted ||
+    Object.values(opt.labelTranslations || {}).some(translated => (translated || '').toLowerCase() === wanted)
+  ) || null;
+};
 
 /**
  * Resolve a node's rendered options: live servedCities overlay for
@@ -252,19 +329,26 @@ const resolveOptionsForNode = (node, servedCities, computedOptions) => {
   return node.options || [];
 };
 
-const nodeToField = (node, servedCities, computedOptions) => ({
-  nodeId: node.id,
-  fieldKey: node.fieldKey,
-  fieldType: effectiveFieldType(node),
-  label: node.label,
-  labelTranslations: node.labelTranslations,
-  summaryLabel: node.summaryLabel,
-  required: node.required,
-  options: resolveOptionsForNode(node, servedCities, computedOptions)
-});
+const nodeToField = (node, servedCities, computedOptions, session = null) => {
+  // The route picker asks a different question at each step (From / area / To): the step's prompt
+  // replaces the node's own label. Every other node renders exactly as before.
+  const prompt = node.nodeType === 'route_picker' && session?.routePicker?.promptKey
+    ? messageTranslations(session.routePicker.promptKey)
+    : null;
+  return {
+    nodeId: node.id,
+    fieldKey: node.fieldKey,
+    fieldType: effectiveFieldType(node),
+    label: prompt ? prompt.en : node.label,
+    labelTranslations: prompt ? prompt.translations : node.labelTranslations,
+    summaryLabel: node.summaryLabel,
+    required: node.required,
+    options: resolveOptionsForNode(node, servedCities, computedOptions)
+  };
+};
 
-const nodeToFieldLocalized = (node, servedCities, computedOptions, languageCode) =>
-  bookingService.localizeField(nodeToField(node, servedCities, computedOptions), languageCode);
+const nodeToFieldLocalized = (node, servedCities, computedOptions, languageCode, session = null) =>
+  bookingService.localizeField(nodeToField(node, servedCities, computedOptions, session), languageCode);
 
 /** (business_id, field_key, content_type='text', is_computed=false) sibling lookup. */
 const resolveManualSibling = (nodes, fieldKey) =>
@@ -297,7 +381,19 @@ const resolvePrimarySibling = (nodes, fieldKey) => {
  * no fare math is duplicated here.
  */
 const computeLiveOptionsForNode = async (businessId, node, session) => {
+  if (node.nodeType === 'route_picker') {
+    const routes = await loadQuotableRoutes(businessId, session);
+    return applyPickerView(session, routePicker.view(routes, session.routePicker, routePickerText()));
+  }
   if (node.nodeType === 'vehicle_carousel') {
+    if (isQuoteFlow(session)) {
+      // A quote is priced from the rate card only (never the distance estimate) and only for vehicles
+      // that seat the party.
+      const fares = await bookingService.findMatchingVehicleOptions(
+        businessId, session.collected.pickupLocation, session.collected.dropLocation, session.collected.tripType
+      );
+      return filterOptionsBySeats(bookingService.buildVehicleCarouselOptions(fares), session.collected.passengers);
+    }
     if (bookingService.isLocalRentalTrip(session.collected.tripType) || session.collected.rentalPackage != null) {
       if (session.localRentalUnconfigured) return [];
       const packageKey = session.rentalPackageKeyByLabel && session.rentalPackageKeyByLabel[session.collected.rentalPackage];
@@ -351,6 +447,8 @@ const rebuildOrFallback = async (businessId, nodes, currentNode, session, served
     session.currentNodeComputedOptions = fresh;
     return { session, result: getSystemMessage('vehicleNoLongerAvailable', languageCode) };
   }
+  // The static vehicle list has no fares: a quote flow with nothing left to offer goes to the team.
+  if (isQuoteFlow(session)) return quoteResult(session, 'no_vehicle');
   return fallbackToStaticSibling(nodes, currentNode.fieldKey, session, servedCities, languageCode);
 };
 
@@ -569,6 +667,13 @@ const startGraphSessionAtNode = async (businessId, entryNodeId, ruleId, language
  */
 const validateTypedAnswer = async ({ businessId, node, session, trimmedReply, languageCode }) => {
   const key = node.fieldKey;
+  // A quote is priced from the pickup time (night charge): a time that can't be read is asked again,
+  // blank included. Only in a quote flow; every other pickupTime question is unchanged.
+  if (key === 'pickupTime' && isQuoteFlow(session) && parsePickupMinute(trimmedReply) === null) {
+    const question = getLocalizedText(node, 'label', languageCode);
+    const message = getSystemMessage('pickupTimeInvalid', languageCode);
+    return question ? `${message}\n\n${question}` : message;
+  }
   if (trimmedReply === '') return null; // an optional question left blank
   let check = null;
   if (isNameField(key)) {
@@ -631,10 +736,44 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
   // where it passes { fileUrl } — guard against calling .trim() on those objects.
   const trimmedReply = typeof reply === 'string' ? reply.trim() : '';
 
-  if (fieldType === 'vehicle_carousel') {
+  if (currentNode.nodeType === 'route_picker') {
+    // Multi-step: the node stays current until a route is chosen. Rows are live (recomputed each turn),
+    // so a route switched off since the list was shown is re-asked, not accepted.
+    const routes = await loadQuotableRoutes(businessId, session);
+    const text = routePickerText();
+    const reshow = (pickerView) => {
+      if (pickerView.empty) return quoteResult(session, 'handoff', 'no_routes');
+      const rows = applyPickerView(session, pickerView);
+      return { session, result: nodeToFieldLocalized(currentNode, servedCities, rows, languageCode, session) };
+    };
+
+    const row = matchPickerRow(session.currentNodeComputedOptions || [], trimmedReply);
+    if (!row) {
+      const labels = (session.currentNodeComputedOptions || []).map(bookingService.normalizeOption).map(opt => getLocalizedText(opt, 'label', languageCode));
+      return { session, result: 'Please choose one of: ' + labels.join(', ') };
+    }
+    const outcome = routePicker.choose(routes, session.routePicker, row.value, text);
+    if (outcome.other) return quoteResult(session, 'handoff', 'other_route');
+    if (outcome.invalid) return reshow(routePicker.view(routes, session.routePicker, text));
+    if (outcome.state) return reshow(routePicker.view(routes, outcome.state, text));
+
+    const { route } = outcome;
+    const fromLabel = route.fromLabel || route.fromCity;
+    const toLabel = route.toLabel || route.toCity;
+    session.collected.quoteRouteId = route.id;
+    session.collected.pickupLocation = route.fromCity; // city keys: the vehicle lookup matches route_fares on them
+    session.collected.dropLocation = route.toCity;
+    session.collected.quoteFromLabel = fromLabel;
+    session.collected.quoteToLabel = toLabel;
+    session.collected[currentNode.fieldKey] = `${fromLabel} → ${toLabel}`;
+    session.routePicker = null;
+    session.currentNodeComputedOptions = null;
+  } else if (fieldType === 'vehicle_carousel') {
     const options = session.currentNodeComputedOptions || [];
 
     if (trimmedReply.toLowerCase() === 'other') {
+      // The static vehicle list has no fares to quote from: a quote flow goes to the team instead.
+      if (isQuoteFlow(session)) return quoteResult(session, 'handoff', 'other_vehicle');
       return fallbackToStaticSibling(nodes, currentNode.fieldKey, session, servedCities, languageCode);
     }
 
@@ -812,6 +951,11 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
       : trimmedReply;
   }
 
+  if (currentNode.fieldKey === 'pickupTime' && isQuoteFlow(session)) {
+    // Minute of the day the night charge is priced from (null when a list slot isn't a readable time).
+    session.collected.pickupMinute = parsePickupMinute(session.collected.pickupTime);
+  }
+
   // Every branch above that falls through to here (rather than returning
   // early — the OTHER_SENTINELS redirect and the various stale-tap
   // fallbacks all return before this point) just collected a real answer
@@ -843,9 +987,22 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
   let nextNode = nodeById.get(nextNodeId);
 
   if (nextNode.isComputed) {
+    if (nextNode.nodeType === 'route_picker' || nextNode.nodeType === 'quote') {
+      // Switch off (or unreadable) for this business: the customer goes to the team instead of a quote.
+      if (!(await quotesEnabled(business, businessId))) return quoteResult(session, 'handoff', 'switch_off');
+      if (nextNode.nodeType === 'quote') {
+        // Terminal: the caller prices, saves and sends the quote (services/quoteFlow.service.js).
+        session.currentNodeId = nextNode.id;
+        return quoteResult(session, 'send', null, { nodeId: nextNode.id });
+      }
+      session.routePicker = null; // a fresh picker
+    }
+
     let computed = await computeLiveOptionsForNode(businessId, nextNode, session);
 
     if (computed.length === 0) {
+      if (nextNode.nodeType === 'route_picker') return quoteResult(session, 'handoff', 'no_routes');
+      if (nextNode.nodeType === 'vehicle_carousel' && isQuoteFlow(session)) return quoteResult(session, 'no_vehicle');
       if (nextNode.nodeType === 'vehicle_carousel') {
         return fallbackToStaticSibling(nodes, nextNode.fieldKey, session, servedCities, languageCode);
       }
@@ -872,7 +1029,7 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
     if (nextNode.nodeType === 'rentalPackage') {
       session.rentalPackageKeyByLabel = await buildRentalPackageKeyByLabel(businessId);
     }
-    return { session, result: nodeToFieldLocalized(nextNode, servedCities, computed, languageCode) };
+    return { session, result: nodeToFieldLocalized(nextNode, servedCities, computed, languageCode, session) };
   }
 
   session.currentNodeId = nextNode.id;
@@ -905,7 +1062,7 @@ const getCurrentNodeField = async (businessId, session, languageCode) => {
     return null;
   }
 
-  return nodeToFieldLocalized(currentNode, business.travelSettings?.servedCities || [], session.currentNodeComputedOptions, languageCode);
+  return nodeToFieldLocalized(currentNode, business.travelSettings?.servedCities || [], session.currentNodeComputedOptions, languageCode, session);
 };
 
 module.exports = {

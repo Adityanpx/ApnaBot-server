@@ -79,3 +79,25 @@ test('catalogue button titles fit WhatsApp\'s 20 characters in every language; t
     for (const lang of LANGUAGES) assert.ok(SYSTEM_MESSAGES[key][lang], `${key}.${lang} missing`);
   }
 });
+
+// Travel quote route picker (list rows <= 24 characters, in every language) and its prompts / hint.
+test('route picker rows fit a list row (24 characters) in every language', () => {
+  for (const key of ['routePickerMore', 'routePickerOtherRoute', 'routePickerOtherPlaces']) {
+    for (const lang of LANGUAGES) {
+      const title = SYSTEM_MESSAGES[key][lang];
+      assert.ok(title, `${key}.${lang} missing`);
+      assert.ok(title.length <= 24, `${key}.${lang} "${title}" is ${title.length} characters`);
+    }
+  }
+});
+
+test('route picker prompts and the pickup-time hint exist in every language', () => {
+  for (const key of ['routePickerFromPrompt', 'routePickerRegionPrompt', 'routePickerToPrompt', 'pickupTimeInvalid']) {
+    for (const lang of LANGUAGES) {
+      const text = getSystemMessage(key, lang);
+      assert.ok(text && text.trim(), `${key}.${lang} missing`);
+      assert.ok(!text.includes('{{'), `${key}.${lang}: unfilled placeholder`);
+      assert.ok(text.length <= 1024, `${key}.${lang}: too long for a message body`);
+    }
+  }
+});

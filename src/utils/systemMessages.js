@@ -459,6 +459,45 @@ const SYSTEM_MESSAGES = {
     en: 'Choose',
     hi: 'चुनें',
     mr: 'निवडा'
+  },
+
+  // Travel quote (route_picker node, utils/routePicker.js). The three prompts are the question text of
+  // each step; the next four are list rows (max 24 characters each in every language).
+  routePickerFromPrompt: {
+    en: 'Where will your trip start from? 📍',
+    hi: 'आपकी यात्रा कहाँ से शुरू होगी? 📍',
+    mr: 'तुमचा प्रवास कुठून सुरू होणार? 📍'
+  },
+  routePickerRegionPrompt: {
+    en: 'Which area do you want to go to?',
+    hi: 'आप किस क्षेत्र में जाना चाहते हैं?',
+    mr: 'तुम्हाला कोणत्या भागात जायचे आहे?'
+  },
+  routePickerToPrompt: {
+    en: 'Where do you want to go? 🚕',
+    hi: 'आप कहाँ जाना चाहते हैं? 🚕',
+    mr: 'तुम्हाला कुठे जायचे आहे? 🚕'
+  },
+  routePickerMore: {
+    en: 'More...',
+    hi: 'और देखें...',
+    mr: 'आणखी...'
+  },
+  routePickerOtherRoute: {
+    en: 'Other route',
+    hi: 'अन्य रूट',
+    mr: 'इतर मार्ग'
+  },
+  routePickerOtherPlaces: {
+    en: 'Other places',
+    hi: 'अन्य जगहें',
+    mr: 'इतर ठिकाणे'
+  },
+  // A pickup time the quote can't read (the night charge depends on it).
+  pickupTimeInvalid: {
+    en: "Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.",
+    hi: 'माफ़ कीजिए, मैं यह समय समझ नहीं पाया। कृपया इस तरह लिखें: 6:30 AM या 18:30।',
+    mr: 'माफ करा, मला ही वेळ समजली नाही. कृपया असे लिहा: 6:30 AM किंवा 18:30.'
   }
 };
 

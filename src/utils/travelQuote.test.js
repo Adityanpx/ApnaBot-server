@@ -100,3 +100,24 @@ test('computeAdvance uses the business-wide advance settings', () => {
   assert.equal(computeAdvance({ requireAdvancePayment: true, advancePaymentType: 'fixed', advancePaymentValue: 5000 }, 2500), 2500);
   assert.equal(computeAdvance({ requireAdvancePayment: true, advancePaymentType: 'fixed', advancePaymentValue: 0 }, 2500), null);
 });
+
+// ── Seats for a passenger answer (quote flow vehicle filter) ──
+test('minSeatsFor: bands use the upper end, plain numbers themselves, anything else no filter', () => {
+  const { minSeatsFor } = require('./travelQuote');
+  assert.equal(minSeatsFor('1-4'), 4);
+  assert.equal(minSeatsFor('5-6'), 6);
+  assert.equal(minSeatsFor('7+'), 7);
+  assert.equal(minSeatsFor('5'), 5);
+  assert.equal(minSeatsFor('lots'), null);
+  assert.equal(minSeatsFor(undefined), null);
+});
+
+test('filterOptionsBySeats: keeps what seats the party, unknown seats stay, indexes restart at 0', () => {
+  const { filterOptionsBySeats } = require('./travelQuote');
+  const options = [{ index: 0, name: 'Dzire', seats: 4 }, { index: 1, name: 'Mystery', seats: null }, { index: 2, name: 'Crysta', seats: 7 }];
+  assert.deepEqual(filterOptionsBySeats(options, '5-6').map(o => [o.name, o.index]), [['Mystery', 0], ['Crysta', 1]]);
+  assert.deepEqual(filterOptionsBySeats(options, '1-4').map(o => o.name), ['Dzire', 'Mystery', 'Crysta']);
+  assert.equal(filterOptionsBySeats(options, '7+').length, 2);
+  assert.equal(filterOptionsBySeats(options, 'unknown'), options);
+  assert.deepEqual(filterOptionsBySeats([{ index: 0, seats: 4 }], '7+'), []);
+});
