@@ -3,6 +3,7 @@ const { invalidateRulesCache } = require('../services/chatbot.service');
 const bookingGraphService = require('../services/bookingGraph.service');
 const flowGraphService = require('../services/flowGraph.service');
 const {
+  QUESTION_SUBGRAPH_TYPES,
   findFallbackSiblingNodeIds,
   resolveBookingTriggerEntryNodeIds,
   canEnterBookingQuestions,
@@ -90,7 +91,7 @@ const logForcedStranding = (req, endpoint, newlyUnreachableNodeIds) => {
 const resolveKnownQuestionFieldKeys = async (businessId) => {
   const { data, error } = await supabase
     .from('flow_nodes').select('field_key').eq('business_id', businessId)
-    .in('node_type', ['question', 'vehicle_carousel', 'rentalPackage']);
+    .in('node_type', QUESTION_SUBGRAPH_TYPES);
   if (error) throw error;
   return new Set((data || []).map(n => n.field_key).filter(Boolean));
 };
@@ -617,7 +618,7 @@ const getQuestionNodes = async (req, res, next) => {
     const limitNum = parseInt(limit);
 
     let query = supabase.from('flow_nodes').select('*', { count: 'exact' })
-      .eq('business_id', businessId).in('node_type', ['question', 'vehicle_carousel', 'rentalPackage']);
+      .eq('business_id', businessId).in('node_type', QUESTION_SUBGRAPH_TYPES);
     if (isActive !== undefined) {
       query = query.eq('is_active', isActive === 'true');
     }
@@ -955,7 +956,7 @@ const deleteQuestionNode = async (req, res, next) => {
 
     const { data: node, error: findErr } = await supabase
       .from('flow_nodes').select('*').eq('id', id).eq('business_id', businessId)
-      .in('node_type', ['question', 'vehicle_carousel', 'rentalPackage']).maybeSingle();
+      .in('node_type', QUESTION_SUBGRAPH_TYPES).maybeSingle();
     if (findErr) throw findErr;
     if (!node) {
       return errorResponse(res, 404, 'Question node not found');
@@ -1029,7 +1030,7 @@ const getFullGraph = async (req, res, next) => {
 
     const [replyNodesRes, questionNodesRes, edgesRes, languageRes] = await Promise.all([
       supabase.from('flow_nodes').select('*').eq('business_id', businessId).eq('node_type', 'reply'),
-      supabase.from('flow_nodes').select('*').eq('business_id', businessId).in('node_type', ['question', 'vehicle_carousel', 'rentalPackage']),
+      supabase.from('flow_nodes').select('*').eq('business_id', businessId).in('node_type', QUESTION_SUBGRAPH_TYPES),
       supabase.from('flow_edges').select('*').eq('business_id', businessId).order('display_order', { ascending: true }),
       supabase.from('businesses').select('enabled_languages, language_picker, translation_status').eq('id', businessId).maybeSingle()
     ]);

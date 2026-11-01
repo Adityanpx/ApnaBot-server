@@ -9,6 +9,7 @@ const { transformNodesForCopy } = require('../utils/copySetup');
 const { isValidLanguageCode } = require('../utils/languageCatalog');
 const flowTranslate = require('../services/flowTranslate.service');
 const azure = require('../services/azureTranslate.service');
+const { QUESTION_SUBGRAPH_TYPES } = require('../utils/flowGraphValidation');
 
 /**
  * GET /api/admin/category-templates
@@ -191,7 +192,7 @@ const exportTemplateJson = async (req, res, next) => {
   }
 };
 
-const KNOWN_NODE_TYPES = ['reply', 'question', 'vehicle_carousel', 'rentalPackage'];
+const KNOWN_NODE_TYPES = ['reply', ...QUESTION_SUBGRAPH_TYPES];
 
 /**
  * POST /api/admin/category-templates/import-json

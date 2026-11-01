@@ -31,7 +31,8 @@
 //     bug the owner would catch by testing their flow, not a silent
 //     corruption the way a cycle or an orphaned node is).
 
-const QUESTION_SUBGRAPH_TYPES = ['question', 'vehicle_carousel', 'rentalPackage'];
+// route_picker / quote are the travel-quote nodes (both is_computed, created only by a script).
+const QUESTION_SUBGRAPH_TYPES = ['question', 'vehicle_carousel', 'rentalPackage', 'route_picker', 'quote'];
 
 /**
  * Directed-graph cycle detection restricted to the question-node subgraph.
@@ -249,6 +250,7 @@ const validateConditionField = (condition, knownFieldKeys) => {
 };
 
 module.exports = {
+  QUESTION_SUBGRAPH_TYPES,
   findCycles,
   findUnreachableNodes,
   findFallbackSiblingNodeIds,

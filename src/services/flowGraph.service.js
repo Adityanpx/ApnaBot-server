@@ -11,6 +11,7 @@ const supabase = require('../config/supabase');
 const { invalidateRulesCache } = require('./chatbot.service');
 const bookingGraphService = require('./bookingGraph.service');
 const {
+  QUESTION_SUBGRAPH_TYPES,
   findCycles,
   findUnreachableNodes,
   findFallbackSiblingNodeIds,
@@ -584,7 +585,7 @@ const saveFullGraph = async ({ businessId, graphBusiness, replyNodes, questionNo
   const proposedNodeById = new Map(proposedNodes.map(n => [n.id, n]));
   const knownFieldKeys = new Set(
     proposedNodes
-      .filter(n => ['question', 'vehicle_carousel', 'rentalPackage'].includes(n.nodeType) && n.fieldKey)
+      .filter(n => QUESTION_SUBGRAPH_TYPES.includes(n.nodeType) && n.fieldKey)
       .map(n => n.fieldKey)
   );
 

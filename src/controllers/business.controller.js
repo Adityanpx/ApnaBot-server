@@ -27,6 +27,7 @@ const templateSyncService = require('../services/templateSync.service');
 const onboardingService = require('../services/whatsappOnboarding.service');
 const diagnostics = require('../services/whatsappDiagnostics.service');
 const { withPaymentIssue, dismissPaymentIssue } = require('../services/accountHealth.service');
+const { QUESTION_SUBGRAPH_TYPES } = require('../utils/flowGraphValidation');
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -346,7 +347,7 @@ const updateBusiness = async (req, res, next) => {
         .from('flow_nodes')
         .select('field_key, required')
         .eq('business_id', businessId)
-        .in('node_type', ['question', 'vehicle_carousel', 'rentalPackage']);
+        .in('node_type', QUESTION_SUBGRAPH_TYPES);
       const flowFieldsByKey = new Map();
       for (const node of nodes || []) {
         if (!flowFieldsByKey.has(node.field_key)) {
