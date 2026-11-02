@@ -11,19 +11,19 @@ const script = require('./deactivateSgRoundTripFares');
 const { SG_TRAVELS_ID: SG, N, E } = seed;
 const OTHER = 'b2b2b2b2-0000-4000-8000-000000000002';
 const MANIFEST = 'logs/test-manifest.json';
-let fake; let db; let lines; let migration; let manifests; let writes;
+let fake; let db; let lines; let migration; let marker; let manifests; let writes;
 
 const vehicle = (n, name, over = {}) => ({ id: `v${n}`, custom_name: name, is_active: true, per_km_rate: 20, min_km_per_day: 250, driver_allowance_per_day: 300, ...over });
 const VEHICLES = [vehicle(1, 'Dzire', { per_km_rate: 13 }), vehicle(2, 'Etios', { per_km_rate: 16 }), vehicle(3, 'Innova', { per_km_rate: 23 })];
 let fareCounter;
 const fare = (business, from, to, tripType, v, amount, over = {}) => ({
-  id: `fare-${String(++fareCounter).padStart(3, "0")}`, business_id: business, from_city: from, to_city: to, trip_type: tripType, vehicle_id: v.id, fare: amount, is_active: true, route_id: null, vehicle: v, ...over
+  id: `fare-${String(++fareCounter).padStart(3, "0")}`, business_id: business, from_city: from, to_city: to, trip_type: tripType, vehicle_id: v.id, fare: amount, is_active: true, off_reason: null, route_id: null, vehicle: v, ...over
 });
 
 test.beforeEach(() => {
   fake = createFakeSupabase();
   db = fake.db;
-  lines = []; migration = true; manifests = {}; writes = []; fareCounter = 0;
+  lines = []; migration = true; marker = true; manifests = {}; writes = []; fareCounter = 0;
   db.businesses = [{ id: SG, name: 'SG Travels', business_category: 'travels' }, { id: OTHER, name: 'Search cab AI', business_category: 'travels' }];
   // the flow is cut over: the days come before the vehicles, and the quote flow's carousel is the only one
   db.flow_nodes = [{ id: N.vehicle, business_id: SG, node_type: 'vehicle_carousel', is_active: true }];
@@ -48,6 +48,7 @@ test.beforeEach(() => {
 const deps = () => ({
   supabase: fake,
   migrationApplied: async () => migration,
+  offReasonApplied: async () => marker,
   writeManifest: async (file, content) => { writes.push('manifest'); manifests[file] = JSON.parse(JSON.stringify(content)); },
   readManifest: async (file) => (manifests[file] ? JSON.parse(JSON.stringify(manifests[file])) : null),
   now: () => '2026-11-10T10:00:00.000Z',
@@ -76,14 +77,14 @@ test('dry run: writes nothing (no row, no manifest) and lists exactly the 9 acti
   assert.match(text, /✓ the quote flow asks the days BEFORE the vehicles/);
   assert.match(text, /✓ no other active vehicle carousel/);
   assert.match(text, /✓ every route keeps an active One Way fare/);
-  assert.match(text, /Plan: switch OFF 9 Round Trip fare\(s\) on 3 route\(s\)\. Rows inserted: 0\. Rows deleted: 0\. Columns written: is_active only\. One Way fares touched: 0\./);
+  assert.match(text, /Plan: switch OFF 9 Round Trip fare\(s\) on 3 route\(s\)\. Rows inserted: 0\. Rows deleted: 0\. Columns written: is_active and off_reason \('manual'\)\. One Way fares touched: 0\./);
   for (const r of rtSg()) assert.ok(text.includes(`- ${r.from_city} > ${r.to_city} | ${r.vehicle.custom_name} | ₹${r.fare} | ${r.id}`), r.id);
   assert.ok(!text.includes(db.route_fares.find((r) => r.business_id === OTHER).id), 'the other business is not listed');
   assert.ok(!db.route_fares.filter((r) => r.trip_type === 'oneway').some((r) => text.includes(r.id)), 'no One Way fare is listed');
   assert.match(text, /3 of 3 still offered/);
   assert.match(text, /✓ pune>shirdi: 3 of 3 vehicle\(s\) priced by formula/);
   assert.match(text, /1 saved quote\(s\) reference these fares by id \(accepted\)/);
-  assert.match(text, /re-activates the fare/);
+  assert.match(text, /marked off_reason = 'manual'/);
   assert.match(text, /Dry run only\. Re-run with --confirm/);
 });
 
@@ -93,7 +94,7 @@ test('--confirm: the manifest is written first, then only is_active flips on the
   const ids = rtSg().map((r) => r.id);
   const others = (rows) => JSON.stringify(rows.filter((r) => !ids.includes(r.id)));
   const beforeOthers = others(db.route_fares);
-  const beforeColumns = rtSg().map((r) => JSON.stringify({ ...r, is_active: undefined }));
+  const beforeColumns = rtSg().map((r) => JSON.stringify({ ...r, is_active: undefined, off_reason: undefined }));
 
   const code = await go({ confirm: true, expectRows: 9 });
   assert.equal(code, 0, out());
@@ -106,7 +107,10 @@ test('--confirm: the manifest is written first, then only is_active flips on the
 
   assert.equal(active(rtSg()).length, 0);
   assert.equal(others(db.route_fares), beforeOthers);
-  assert.deepEqual(rtSg().map((r) => JSON.stringify({ ...r, is_active: undefined })), beforeColumns);
+  assert.deepEqual(rtSg().map((r) => JSON.stringify({ ...r, is_active: undefined, off_reason: undefined })), beforeColumns);
+  // the deactivation is marked as on purpose; One Way rows and the other business carry no marker
+  assert.ok(rtSg().every((r) => r.off_reason === 'manual'));
+  assert.ok(db.route_fares.filter((r) => !ids.includes(r.id)).every((r) => r.off_reason === null));
   assert.equal(db.route_fares.filter((r) => r.trip_type === 'oneway' && r.is_active).length, 9);
   assert.equal(db.route_fares.find((r) => r.business_id === OTHER).is_active, true);
   assert.equal(db.travel_quotes.length, 1);
@@ -160,7 +164,7 @@ test('--rollback --confirm switches back on exactly the manifest rows still off;
   handOff.is_active = false;
   // one manifest row the owner already switched back on
   const alreadyOn = rtSg()[0];
-  alreadyOn.is_active = true;
+  alreadyOn.is_active = true; alreadyOn.off_reason = null; // the owner switched it on through the API (clears the marker)
   lines = [];
   assert.equal(await go({ mode: 'rollback', confirm: true }), 0, out());
   assert.equal(active(rtSg()).length, 9);
@@ -266,4 +270,44 @@ test('a manifest of another script is never overwritten', async () => {
   assert.equal(await go({ confirm: true }), 1);
   assert.match(out(), /is not this script's manifest/);
   assert.equal(snapshot(), before);
+});
+
+// ── The off_reason marker ───────────────────────────────────────────────────────────────────────
+
+test('the dry run says the fares will be marked manual and that unmarked off fares are still revived by a route toggle', async () => {
+  assert.equal(await go(), 0, out());
+  assert.match(out(), /✓ migration 20261107120000 is applied \(route_fares\.off_reason exists\)/);
+  assert.match(out(), /marked off_reason = 'manual': switching a route off and on again, or saving a price on one of these Round Trip cells, leaves them off/);
+  assert.match(out(), /already off WITHOUT that marker .* is still brought back by a route off \/ on/);
+  assert.ok(!/re-activates the fare/.test(out()));
+});
+
+test('--rollback clears the marker together with switching the fare on', async () => {
+  await go({ confirm: true });
+  assert.ok(rtSg().every((r) => r.off_reason === 'manual' && r.is_active === false));
+  lines = [];
+  assert.equal(await go({ mode: 'rollback', confirm: true }), 0, out());
+  assert.ok(rtSg().every((r) => r.off_reason === null && r.is_active === true));
+  assert.match(out(), /Exactly the planned rows: yes/);
+});
+
+test('refuses (deactivate and rollback) when migration 20261107120000 is not applied: nothing is written, no manifest', async () => {
+  marker = false;
+  await refuses({ confirm: true }, /apply supabase\/migrations\/20261107120000_route_fares_off_reason\.sql first/);
+  lines = [];
+  manifests[MANIFEST] = { script: 'deactivateSgRoundTripFares', businessId: SG, rows: [{ id: 'fare-002' }] };
+  const before = snapshot();
+  assert.equal(await go({ mode: 'rollback', confirm: true }), 1);
+  assert.match(out(), /apply supabase\/migrations\/20261107120000_route_fares_off_reason\.sql first/);
+  assert.equal(snapshot(), before);
+});
+
+test('what the route API does afterwards: a deactivated fare survives a route off / on and a price save (the cascade skips off_reason manual)', async () => {
+  await go({ confirm: true });
+  // the same two statements travelRoute.service.js runs when a route is switched on and when a price is saved
+  const pair = (r) => r.business_id === SG && r.to_city === 'shirdi';
+  await fake.from('route_fares').update({ is_active: false }).eq('business_id', SG).eq('from_city', 'pune').eq('to_city', 'shirdi');
+  await fake.from('route_fares').update({ is_active: true }).eq('business_id', SG).eq('from_city', 'pune').eq('to_city', 'shirdi').is('off_reason', null);
+  assert.ok(db.route_fares.filter((r) => pair(r) && r.trip_type === 'round_trip').every((r) => r.is_active === false));
+  assert.ok(db.route_fares.filter((r) => pair(r) && r.trip_type === 'oneway').every((r) => r.is_active === true));
 });

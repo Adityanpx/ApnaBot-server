@@ -227,3 +227,32 @@ test('without the days yet (the old question order) a formula vehicle shows "tea
   const options = await require('./travelQuote.service').listRoundTripVehicleOptions(BIZ, 'r1', null);
   assert.deepEqual(options.map(o => [o.name, o.fare, o.priceDisplay.kind]), [['Innova Crysta', null, 'on_request'], ['Dzire', 5200, 'package'], ['Etios', null, 'on_request']]);
 });
+
+// ── Fares of a switched-off route, and fares switched off on purpose ─────────────────────────────────
+
+test('the quote readers hide a switched-off route and its fares: not offered for One Way or Round Trip, no cards, a tap is stale', async () => {
+  const quoteService = require('./travelQuote.service');
+  assert.deepEqual((await quoteService.listQuotableRoutes(BIZ, 'round_trip')).map(r => r.id), ['r1']);
+  assert.deepEqual((await quoteService.listQuotableRoutes(BIZ, 'oneway')).map(r => r.id), ['r1', 'r2']);
+  db.travel_routes[0].is_active = false; // the fares keep their own flags: whatever the route does to them, the route flag alone hides them
+  assert.deepEqual((await quoteService.listQuotableRoutes(BIZ, 'round_trip')).map(r => r.id), []);
+  assert.deepEqual((await quoteService.listQuotableRoutes(BIZ, 'oneway')).map(r => r.id), ['r2']);
+  assert.deepEqual(await quoteService.listRoundTripVehicleOptions(BIZ, 'r1', 3), []);
+  assert.deepEqual(await quoteService.priceRoundTripVehicle(BIZ, 'r1', 'v1', 3), { stale: true });
+});
+
+test('a Round Trip fare switched off on purpose is never used as a package price: the vehicle falls back to the formula or "team will confirm"', async () => {
+  const dzireRoundTrip = db.route_fares.find(f => f.id === 'rf3');
+  assert.equal(dzireRoundTrip.trip_type, 'round_trip');
+  dzireRoundTrip.is_active = false;
+  dzireRoundTrip.off_reason = 'manual';
+  DZIRE.per_km_rate = 13; DZIRE.min_km_per_day = 250; // Dzire can now be priced by formula: 750 km x 13 = 9,750 for 3 days
+  const quoteService = require('./travelQuote.service');
+  const cards = await quoteService.listRoundTripVehicleOptions(BIZ, 'r1', 3);
+  assert.deepEqual(cards.map(o => [o.name, o.fare, o.priceDisplay.kind]), [['Innova Crysta', 18150, 'formula'], ['Dzire', 9750, 'formula'], ['Etios', null, 'on_request']]);
+  // and with nothing to price it by, the route is not offered through that fare either
+  DZIRE.per_km_rate = null; DZIRE.min_km_per_day = null;
+  db.travel_routes[0].one_way_distance_km = null;
+  INNOVA.min_km_per_day = null;
+  assert.deepEqual((await quoteService.listQuotableRoutes(BIZ, 'round_trip')).map(r => r.id), []);
+});

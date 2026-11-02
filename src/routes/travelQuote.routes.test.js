@@ -46,6 +46,7 @@ const from = (table) => {
     delete: () => { op = 'delete'; return q; },
     eq: (c, v) => { filters.push(r => r[c] === v); return q; },
     in: (c, vs) => { filters.push(r => vs.includes(r[c])); return q; },
+    is: (c, v) => { filters.push(r => (r[c] === undefined ? null : r[c]) === v); return q; },
     order: (col, { ascending = true } = {}) => { order = order || { col, asc: ascending }; return q; },
     range: (a, b) => { range = [a, b]; return q; },
     maybeSingle: async () => { const r = exec(); return { data: r[0] || null, error: null }; },
@@ -348,4 +349,106 @@ test('GET /reports/quotes: period check and the numbers', async () => {
   assert.equal(body.data.current.advanceCollected, 500);
   assert.equal(body.data.current.conversionRate, 0.25);
   assert.equal(body.data.growth.sent, 0);
+});
+
+// ── Fares switched off on purpose (route_fares.off_reason = 'manual') ────────────────────────────────
+
+const routeWithFares = async (isActive = true) => {
+  const { body } = await call('POST', '/travel/routes', { body: { fromCity: 'pune', toCity: 'shirdi', fares: [
+    { tripType: 'oneway', vehicleId: 'v1', fare: 4200 }, { tripType: 'round_trip', vehicleId: 'v1', fare: 7300 }
+  ] } });
+  if (!isActive) await call('PUT', `/travel/routes/${body.data.id}`, { body: { isActive: false } });
+  return body.data.id;
+};
+const fareOf = (tripType) => db.route_fares.find(f => f.trip_type === tripType);
+
+test('a new fare starts in the route state with no marker; an existing fare keeps its state when its price is saved', async () => {
+  const id = await routeWithFares();
+  assert.deepEqual(db.route_fares.map(f => [f.is_active, f.off_reason ?? null]), [[true, null], [true, null]]);
+  // an existing fare that is off with no marker: saving its price does not touch is_active
+  fareOf('round_trip').is_active = false;
+  const saved = await call('PUT', `/travel/routes/${id}`, { body: { fares: [{ tripType: 'round_trip', vehicleId: 'v1', fare: 7500 }] } });
+  assert.equal(saved.status, 200);
+  assert.deepEqual([fareOf('round_trip').fare, fareOf('round_trip').is_active], [7500, false]);
+  assert.equal(fareOf('oneway').is_active, true);
+  // on an inactive route a NEW fare is created inactive (the route state); an existing active one is left as it is
+  db.vehicles.push({ id: 'v1b', business_id: 'sg' });
+  await call('PUT', `/travel/routes/${id}`, { body: { isActive: false } });
+  fareOf('oneway').is_active = true;
+  await call('PUT', `/travel/routes/${id}`, { body: { fares: [{ tripType: 'oneway', vehicleId: 'v1', fare: 4300 }, { tripType: 'oneway', vehicleId: 'v1b', fare: 100 }] } });
+  assert.equal(fareOf('oneway').is_active, true);
+  assert.equal(db.route_fares.find(f => f.vehicle_id === 'v1b').is_active, false);
+});
+
+test('a fare switched off on purpose (fares[].isActive false) is marked manual, stays off when its price is saved, and survives the route being switched off and on', async () => {
+  const id = await routeWithFares();
+  const off = await call('PUT', `/travel/routes/${id}`, { body: { fares: [{ tripType: 'round_trip', vehicleId: 'v1', fare: 7300, isActive: false }] } });
+  assert.equal(off.status, 200);
+  assert.deepEqual([fareOf('round_trip').is_active, fareOf('round_trip').off_reason], [false, 'manual']);
+  const apiFare = off.body.data.fares.find(f => f.tripType === 'round_trip');
+  assert.deepEqual([apiFare.isActive, apiFare.offReason], [false, 'manual']);
+  assert.equal(off.body.data.fares.find(f => f.tripType === 'oneway').offReason, null);
+
+  // saving the price again (no isActive) leaves it off and marked
+  await call('PUT', `/travel/routes/${id}`, { body: { fares: [{ tripType: 'round_trip', vehicleId: 'v1', fare: 7400 }] } });
+  assert.deepEqual([fareOf('round_trip').fare, fareOf('round_trip').is_active, fareOf('round_trip').off_reason], [7400, false, 'manual']);
+
+  // route off: every fare off (the manual one keeps its marker); route on: the unmarked fare returns, the manual one stays off
+  await call('PUT', `/travel/routes/${id}`, { body: { isActive: false } });
+  assert.deepEqual(db.route_fares.map(f => f.is_active), [false, false]);
+  assert.equal(fareOf('round_trip').off_reason, 'manual');
+  await call('PUT', `/travel/routes/${id}`, { body: { isActive: true } });
+  assert.equal(fareOf('oneway').is_active, true);
+  assert.deepEqual([fareOf('round_trip').is_active, fareOf('round_trip').off_reason], [false, 'manual']);
+
+  // only an explicit isActive true switches it back on, and clears the marker
+  const on = await call('PUT', `/travel/routes/${id}`, { body: { fares: [{ tripType: 'round_trip', vehicleId: 'v1', fare: 7400, isActive: true }] } });
+  assert.deepEqual([fareOf('round_trip').is_active, fareOf('round_trip').off_reason ?? null], [true, null]);
+  assert.equal(on.body.data.fares.find(f => f.tripType === 'round_trip').offReason, null);
+});
+
+test('without markers a route switched off and on behaves exactly as before: every fare follows the route', async () => {
+  const id = await routeWithFares();
+  await call('PUT', `/travel/routes/${id}`, { body: { isActive: false } });
+  assert.deepEqual(db.route_fares.map(f => f.is_active), [false, false]);
+  await call('PUT', `/travel/routes/${id}`, { body: { isActive: true } });
+  assert.deepEqual(db.route_fares.map(f => f.is_active), [true, true]);
+  // a fare that is off WITHOUT a marker (switched off before the marker existed) is still brought back by the route
+  fareOf('round_trip').is_active = false;
+  await call('PUT', `/travel/routes/${id}`, { body: { isActive: false } });
+  await call('PUT', `/travel/routes/${id}`, { body: { isActive: true } });
+  assert.equal(fareOf('round_trip').is_active, true);
+  // the cascade only touches this route's own fares and this business
+  db.route_fares.push({ id: 'other', business_id: 'shop', from_city: 'pune', to_city: 'shirdi', trip_type: 'round_trip', vehicle_id: 'v1', fare: 1, is_active: false, off_reason: null });
+  await call('PUT', `/travel/routes/${id}`, { body: { isActive: false } });
+  await call('PUT', `/travel/routes/${id}`, { body: { isActive: true } });
+  assert.equal(db.route_fares.find(f => f.id === 'other').is_active, false);
+});
+
+test('fares[].isActive must be true or false; a removal ignores it; the other validation is unchanged', async () => {
+  const id = await routeWithFares();
+  const bad = await call('PUT', `/travel/routes/${id}`, { body: { fares: [{ tripType: 'round_trip', vehicleId: 'v1', fare: 7300, isActive: 'no' }] } });
+  assert.equal(bad.status, 400);
+  assert.match(bad.body.message, /isActive must be true or false/);
+  assert.equal((await call('PUT', `/travel/routes/${id}`, { body: { fares: [{ tripType: 'round_trip', vehicleId: 'v1', fare: 0 }] } })).status, 400);
+  const removed = await call('PUT', `/travel/routes/${id}`, { body: { fares: [{ tripType: 'round_trip', vehicleId: 'v1', remove: true, isActive: true }] } });
+  assert.equal(removed.status, 200);
+  assert.equal(db.route_fares.filter(f => f.trip_type === 'round_trip').length, 0);
+});
+
+test('creating a route through POST with fares marks switched-off fares and leaves the rest in the route state', async () => {
+  const { body } = await call('POST', '/travel/routes', { body: { fromCity: 'a', toCity: 'b', fares: [
+    { tripType: 'oneway', vehicleId: 'v1', fare: 100 }, { tripType: 'round_trip', vehicleId: 'v1', fare: 200, isActive: false }
+  ] } });
+  assert.equal(body.data.fares.find(f => f.tripType === 'oneway').isActive, true);
+  assert.deepEqual([fareOf('round_trip').is_active, fareOf('round_trip').off_reason], [false, 'manual']);
+});
+
+test('the route list shows a manual-off fare as off with its reason, and Round Trip readiness ignores it', async () => {
+  db.travel_routes = [{ id: 'r1', business_id: 'sg', from_city: 'pune', to_city: 'shirdi', is_active: true, sort_order: 0, one_way_distance_km: null }];
+  db.route_fares = [fareRow({ trip_type: 'round_trip', fare: 7300, is_active: false, off_reason: 'manual' }), fareRow()];
+  const route = (await call('GET', '/travel/routes')).body.data.routes[0];
+  const rt = route.fares.find(f => f.tripType === 'round_trip');
+  assert.deepEqual([rt.isActive, rt.offReason], [false, 'manual']);
+  assert.deepEqual(route.roundTrip, { ready: false, reason: 'add_distance' });
 });

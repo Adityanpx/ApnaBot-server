@@ -2042,24 +2042,28 @@ like a 1-day one), because the days were asked after the vehicle and nothing mul
   **never run yet**): `scripts/cutoverRoundTripDaysFirst.js` deletes the 3 tagged edges `timeToDays`, `timeManualToDays`, `daysToQuote` and
   creates `paxToDays` (`5eed7a01-...115`, Round Trip only, order -1) and `daysToVehicle` (`...116`) - no node, no non-tagged row touched;
   verifies every path still reaches the quote and One Way is unchanged; a customer mid-flow (5-minute sessions) at the time question goes
-  straight to the quote, so apply when quiet. `scripts/deactivateSgRoundTripFares.js` sets `route_fares.is_active = false` (never deletes) on the
-  listed active round_trip rows only, after writing a manifest `logs/sg-round-trip-fares-deactivated.json` (the tag; `--rollback` re-activates
+  straight to the quote, so apply when quiet. `scripts/deactivateSgRoundTripFares.js` sets `route_fares.is_active = false` and `off_reason = 'manual'` (never deletes) on the
+  listed active round_trip rows only, after writing a manifest `logs/sg-round-trip-fares-deactivated.json` (the tag; `--rollback` re-activates and clears the marker on
   exactly the manifest rows still off); refuses unless the flow is cut over, SG has no other active vehicle carousel, every route keeps an
   active One Way fare, and every route would still be offered for Round Trip afterwards (`--allow-routes-off` overrides); `--routes=pune>shirdi`,
   `--expect-rows=N`. `seedTravelQuoteFlow.js` now reserves the two cutover edge ids (its `--rollback` removes them too).
-- **Deploy order / cutovers** (SG Travels, no feature flag): 1) apply the migration, 2) deploy the server - with the 36 fixed Round Trip fares
+- **Deploy order / cutovers** (SG Travels, no feature flag): 1) apply BOTH migrations (`20261106120000` and `20261107120000_route_fares_off_reason.sql`), 2) deploy the server - with the 36 fixed Round Trip fares
   still active SG customers see `package fare` captions, the Days line, and Round Trip totals exact instead of rounded to 10, 3) the owner sets
   min km / allowance per vehicle, distance per route and the allowance basis (**no web or Flutter screen for these yet - API only**), 4)
   `cutoverRoundTripDaysFirst.js` dry run, `--confirm`, 5) `deactivateSgRoundTripFares.js` dry run, `--confirm`. Today the fare script
-  refuses: no SG route has a distance and no vehicle a min km. `verifyBookingGraph.js` was not run (it reads live data and needs the migration).
+  refuses: no SG route has a distance and no vehicle a min km. `verifyBookingGraph.js --business=<SG>` was run after the first migration: it inserts and deletes a temporary customer `VERIFY_BOOKING_GRAPH_TEST` (net zero rows, nothing sent), Round Trip PASS, One Way FAIL "missing: numberOfDays" - the same on the code from before this work: the script treats every required field as required in every branch, and the days question is Round Trip only.
 - **Search cab AI**: no quote flow, no `route_fares`; the migration and API additions are nullable and change nothing for it; only the shared
   carousel text above reaches its Hindi / Marathi customers.
 - **Follow-ups / not done**:
-  (1) **the route API revives switched-off fares**: `travelRoute.service.js#updateRoute` copies a route's `isActive` change to every fare of
-  its from / to pair, and `applyFares` upserts every fare it is sent with `is_active = route.is_active`. So switching a route off and on
-  again, or saving a price on a Round Trip cell, re-activates a fare `deactivateSgRoundTripFares.js` switched off. No fix yet;
-  (2) **the web Rates grid shows an inactive fare as a normal price** (it fills a cell from every `fares[]` row, active or not), so a switched-off
-  Round Trip fare looks live;
+  (1) **fares switched off on purpose stay off** (migration `20261107120000_route_fares_off_reason.sql`: `route_fares.off_reason`, null or
+  `'manual'`, no backfill). `travelRoute.service.js`: the route's `isActive` still copies to its fares, **except that turning it ON skips fares
+  with `off_reason = 'manual'`**; `applyFares` no longer writes `is_active` on a fare that exists (it updates `fare` and `route_id` only - one
+  statement per fare, a new fare is inserted in the route's state); the new optional `fares[].isActive` is the only way to switch one: `false` =
+  off + `'manual'`, `true` = on + marker cleared. `deactivateSgRoundTripFares.js` sets the marker (its `--rollback` clears it). A fare that
+  is off with **no** marker (switched off before the marker existed) is still brought back by a route off / on, as before; and a price save on any
+  existing fare no longer forces the route's state onto it (it used to). `GET /api/travel/routes` returns `offReason` on each fare;
+  (2) **the web Rates grid shows an inactive fare as a normal price** (it fills a cell from every `fares[]` row, active or not): the API now sends
+  `isActive` / `offReason`, the grid must show an "off" state and a per-fare switch that sends `fares[].isActive`;
   (3) **Flutter has no Rates, route or quote screens** (only the Fleet vehicle form, `lib/features/fleet`); neither web nor Flutter Fleet has the
   min km / allowance fields (nor the "Round Trip: set min km" hint), and the web Rates screen has no distance field, "Fill from Google" button,
   allowance-basis toggle or "Round Trip not ready" state - the old allowance field still shows on Rates -> Settings;
@@ -2233,8 +2237,8 @@ like a 1-day one), because the days were asked after the vehicle and nothing mul
     `botSettingsPreview.service.js` (Bot Builder draft preview) does not render a handoff node (presets never produce one);
     `GET /api/customers` / chat payloads now carry the raw `needsHumanAt` / `needsHumanReason` / `handoffClearedAt` /
     `handoffPauseSetTo` fields because they select `*`.
-35. **Round Trip pricing is built on the server only**: no web / Flutter screens for the new fields, the route API can revive switched-off fares,
-    the web grid shows inactive fares as live, and the two SG Travels scripts have not been run - see "Round Trip pricing" > Follow-ups.
+35. **Round Trip pricing is built on the server only**: no web / Flutter screens for the new fields, the web grid shows inactive fares as live (the API now sends
+    `isActive` / `offReason`), and the two SG Travels scripts have not been run - see "Round Trip pricing" > Follow-ups.
 
 ## Session log (append here as major milestones land)
 - 2026-10-28: Human-needed alert ("handoff"): migration `20261028120000_handoff.sql` (apply BEFORE the server), `business_handoff_settings`,

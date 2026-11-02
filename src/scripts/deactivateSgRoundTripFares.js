@@ -4,16 +4,19 @@
 // SG Travels - so Round Trip is priced by the new formula (billed km x the vehicle's rate + driver allowance) instead
 // of one flat fare for any number of days. One Way fares are never touched.
 //
-// WHAT IT WRITES: exactly one column, is_active true -> false, on exactly the rows it lists (active, trip_type
-// round_trip, this business), through one guarded UPDATE (… where id in (listed) and business_id = SG and trip_type =
-// 'round_trip' and is_active = true). No row is inserted or deleted; no other column, row, table or business is written.
+// WHAT IT WRITES: two columns, is_active true -> false and off_reason = 'manual' (migration 20261107120000: "switched
+// off on purpose" - the Rates screen's route switch and a saved price then leave the fare off), on exactly the rows it
+// lists (active, trip_type round_trip, this business), through one guarded UPDATE (… where id in (listed) and
+// business_id = SG and trip_type = 'round_trip' and is_active = true). No row is inserted or deleted; no other column,
+// row, table or business is written. --rollback sets is_active = true and clears off_reason on the manifest rows.
 // Because a deactivation cannot carry a tag in the database, the TAG is a manifest file written BEFORE the update:
 // logs/sg-round-trip-fares-deactivated.json (ids + the fare each row held). --rollback re-activates exactly the rows
 // in that manifest that are still switched off, and nothing else (a row the owner switched off by hand is not in the
 // manifest and stays off).
 //
 // REFUSES (and says why) when
-//   - the business is not SG Travels (hard-coded id), is named like Search cab AI, or migration 20261106120000 is missing;
+//   - the business is not SG Travels (hard-coded id), is named like Search cab AI, or migration 20261106120000 or
+//     20261107120000 (route_fares.off_reason) is missing;
 //   - the flow is not cut over (cutoverRoundTripDaysFirst.js): the formula needs the days asked before the vehicles;
 //   - ANOTHER PATH READS THESE ROWS: SG has an active vehicle carousel other than the quote flow's (it would lose the
 //     vehicles priced by these rows), or a route that has a Round Trip fare would be left with no active One Way fare
@@ -26,8 +29,9 @@
 //   other vehicle carousels in the flow engine         refused above if SG has one
 //   web booking form (publicServiceForm.controller)    distance estimates only - does not read route_fares
 //   served-city suggestions (business.service)         pair level: refused above if a pair would lose its One Way fare
-//   Rates screen / route-fares API (owner)             lists both states; saving a price cell on a Round Trip fare, or
-//                                                      switching a route off and on again, re-activates its rows
+//   Rates screen / route-fares API (owner)             lists both states; the fares carry off_reason 'manual', so saving a
+//                                                      price or switching the route off and on again leaves them off; only an
+//                                                      explicit fares[].isActive: true switches one back on
 //   conversation preview (flowGraphPreview)            owner simulator, reads active rows
 //   travel_quotes.route_fare_id, bookings.fields       by id; rows are not deleted, old quotes keep their price
 //
@@ -48,6 +52,7 @@ const { roundTripCandidates, roundTripReadiness, priceVehicleTrip } = require('.
 const { SG_TRAVELS_ID, N } = seed;
 const REFUSED_NAME = /search\s*cab/i;
 const DEFAULT_MANIFEST = 'logs/sg-round-trip-fares-deactivated.json';
+const MANUAL = 'manual';
 const FARE_SELECT = '*, vehicle:vehicles(id, custom_name, is_active, per_km_rate, min_km_per_day, driver_allowance_per_day)';
 
 const pairKey = (row) => `${row.from_city}>${row.to_city}`;
@@ -59,19 +64,19 @@ const fingerprint = (rows) => JSON.stringify([...rows].sort((a, b) => (a.id < b.
 /**
  * @param {{ mode: 'deactivate'|'rollback', confirm: boolean, businessArg: string|null, routes: string[]|null,
  *           allowRoutesOff: boolean, expectRows: number|null, manifestPath: string }} options
- * @param {{ supabase: Object, migrationApplied: Function, writeManifest: Function, readManifest: Function,
- *           now: Function, log: Function }} deps
+ * @param {{ supabase: Object, migrationApplied: Function, offReasonApplied: Function, writeManifest: Function,
+ *           readManifest: Function, now: Function, log: Function }} deps
  * @returns {Promise<number>} process exit code
  */
 const run = async (options, deps) => {
-  const { supabase, migrationApplied, writeManifest, readManifest, now, log } = deps;
+  const { supabase, migrationApplied, offReasonApplied, writeManifest, readManifest, now, log } = deps;
   const { mode, confirm, businessArg, routes, allowRoutesOff, expectRows, manifestPath } = options;
   const businessId = SG_TRAVELS_ID;
   const rollback = mode === 'rollback';
   const fail = (message) => { log(`\nREFUSED: ${message}`); return 1; };
 
   log(`MODE: ${rollback ? 'ROLLBACK (switch the listed fares back on)' : 'DEACTIVATE the Round Trip fares'} ${confirm ? '--confirm (writes)' : '(dry run - nothing is written)'}`);
-  log(`Scope: business ${businessId} (SG Travels) only. Writes: route_fares.is_active on the rows listed below, nothing else.`);
+  log(`Scope: business ${businessId} (SG Travels) only. Writes: route_fares.is_active (+ off_reason) on the rows listed below, nothing else.`);
   if (businessArg && businessArg !== businessId) return fail(`--business=${businessArg} is not SG Travels' id; this script works on ${businessId} only.`);
 
   const read = async (table, columns = '*') => {
@@ -91,6 +96,7 @@ const run = async (options, deps) => {
 
   // ---------------------------------------------------------------- rollback
   if (rollback) {
+    if (!record(await offReasonApplied(), 'migration 20261107120000 is applied (route_fares.off_reason exists)')) return fail('apply supabase/migrations/20261107120000_route_fares_off_reason.sql first.');
     const manifest = await readManifest(manifestPath);
     if (!record(!!manifest && manifest.script === 'deactivateSgRoundTripFares' && Array.isArray(manifest.rows), `the manifest ${manifestPath} exists and was written by this script`)) {
       return fail(`no usable manifest at ${manifestPath}: without it the script cannot know which rows it switched off.`);
@@ -109,12 +115,12 @@ const run = async (options, deps) => {
 
     const before = await read('route_fares');
     const restoreIds = restore.map((r) => r.id);
-    const { data, error } = await supabase.from('route_fares').update({ is_active: true })
+    const { data, error } = await supabase.from('route_fares').update({ is_active: true, off_reason: null })
       .in('id', restoreIds).eq('business_id', businessId).eq('trip_type', 'round_trip').eq('is_active', false).select('id');
     if (error) throw error;
     const after = await read('route_fares');
     const others = (rows) => fingerprint(rows.filter((r) => !restoreIds.includes(r.id)));
-    const exact = (data || []).length === restoreIds.length && after.filter((r) => restoreIds.includes(r.id)).every((r) => r.is_active === true);
+    const exact = (data || []).length === restoreIds.length && after.filter((r) => restoreIds.includes(r.id)).every((r) => r.is_active === true && (r.off_reason ?? null) === null);
     const untouched = others(after) === others(before);
     log(`\nSwitched back on: ${(data || []).length} row(s). Exactly the planned rows: ${exact ? 'yes' : 'NO'}. Every other route_fares row unchanged: ${untouched ? 'yes' : 'NO'}.`);
     return exact && untouched ? 0 : 2;
@@ -122,6 +128,7 @@ const run = async (options, deps) => {
 
   // ---------------------------------------------------------------- deactivate
   if (!record(await migrationApplied(), 'migration 20261106120000 is applied')) return fail('apply supabase/migrations/20261106120000_round_trip_pricing.sql first.');
+  if (!record(await offReasonApplied(), 'migration 20261107120000 is applied (route_fares.off_reason exists)')) return fail('apply supabase/migrations/20261107120000_route_fares_off_reason.sql first.');
 
   const nodes = await read('flow_nodes');
   const edges = await read('flow_edges');
@@ -180,9 +187,10 @@ const run = async (options, deps) => {
   if (quoteErr) throw quoteErr;
   const referencing = (openQuotes || []).filter((q) => targetIds.has(q.route_fare_id));
   log(`\n  i ${referencing.length} saved quote(s) reference these fares by id (${referencing.map((q) => q.status).join(', ') || 'none'}): they keep the price they were sent at; no row is deleted.`);
-  log('  i switching a route off and on again on the Rates screen, or saving a price on one of these Round Trip cells, re-activates the fare.');
+  log(`  i the fares are marked off_reason = '${MANUAL}': switching a route off and on again, or saving a price on one of these Round Trip cells, leaves them off; only an explicit fares[].isActive: true (or --rollback) switches one back on.`);
+  log('  i a fare that is already off WITHOUT that marker (switched off before the marker existed) is still brought back by a route off / on.');
 
-  log(`\nPlan: switch OFF ${targets.length} Round Trip fare(s) on ${pairs.length} route(s). Rows inserted: 0. Rows deleted: 0. Columns written: is_active only. One Way fares touched: 0.`);
+  log(`\nPlan: switch OFF ${targets.length} Round Trip fare(s) on ${pairs.length} route(s). Rows inserted: 0. Rows deleted: 0. Columns written: is_active and off_reason ('${MANUAL}'). One Way fares touched: 0.`);
   log('\nRows (route | vehicle | fare | id):');
   for (const r of [...targets].sort((a, b) => pairKey(a).localeCompare(pairKey(b)) || vehicleName(a).localeCompare(vehicleName(b)))) {
     log(`  - ${r.from_city} > ${r.to_city} | ${vehicleName(r)} | ₹${r.fare} | ${r.id}`);
@@ -203,11 +211,11 @@ const run = async (options, deps) => {
 
   const before = await read('route_fares');
   const ids = [...targetIds];
-  const { data, error } = await supabase.from('route_fares').update({ is_active: false })
+  const { data, error } = await supabase.from('route_fares').update({ is_active: false, off_reason: MANUAL })
     .in('id', ids).eq('business_id', businessId).eq('trip_type', 'round_trip').eq('is_active', true).select('id');
   if (error) throw error;
   const after = await read('route_fares');
-  const exact = (data || []).length === ids.length && after.filter((r) => targetIds.has(r.id)).every((r) => r.is_active === false);
+  const exact = (data || []).length === ids.length && after.filter((r) => targetIds.has(r.id)).every((r) => r.is_active === false && r.off_reason === MANUAL);
   const others = (rows) => fingerprint(rows.filter((r) => !targetIds.has(r.id)));
   const untouched = others(after) === others(before);
   // the listed rows changed in is_active only
@@ -239,6 +247,7 @@ if (require.main === module) {
     }
     return true;
   };
+  const offReasonApplied = async () => !(await supabase.from('route_fares').select('off_reason').limit(1)).error;
   const writeManifest = async (file, content) => {
     const full = pathModule.resolve(file);
     fs.mkdirSync(pathModule.dirname(full), { recursive: true });
@@ -259,7 +268,7 @@ if (require.main === module) {
     expectRows: argValue('expect-rows') === null ? null : Number(argValue('expect-rows')),
     manifestPath: argValue('manifest') || DEFAULT_MANIFEST
   }, {
-    supabase, migrationApplied, writeManifest, readManifest, now: () => new Date().toISOString(), log: (line) => console.log(line)
+    supabase, migrationApplied, offReasonApplied, writeManifest, readManifest, now: () => new Date().toISOString(), log: (line) => console.log(line)
   }).then((code) => process.exit(code)).catch((err) => {
     console.error('\nFAILED:', err.message || err);
     process.exit(1);

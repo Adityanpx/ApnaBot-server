@@ -79,10 +79,11 @@ const validateRouteInput = (body, { isEdit = false } = {}) => {
         if (typeof f.vehicleId !== 'string' || !f.vehicleId) errors.push(`${where}.vehicleId is required`);
         const remove = f.remove === true;
         if (!remove && !(isNumber(f.fare) && f.fare > 0)) errors.push(`${where}.fare must be a number above 0`);
+        if (f.isActive !== undefined && typeof f.isActive !== 'boolean') errors.push(`${where}.isActive must be true or false`);
         const key = `${f.tripType}|${f.vehicleId}`;
         if (seen.has(key)) errors.push(`${where} repeats a trip type + vehicle`);
         seen.add(key);
-        value.fares.push({ tripType: f.tripType, vehicleId: f.vehicleId, fare: f.fare, remove });
+        value.fares.push({ tripType: f.tripType, vehicleId: f.vehicleId, fare: f.fare, remove, ...(f.isActive === undefined || remove ? {} : { isActive: f.isActive }) });
       });
     }
   }

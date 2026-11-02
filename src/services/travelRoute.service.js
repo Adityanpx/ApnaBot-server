@@ -16,7 +16,7 @@ const fail = (statusCode, message, errors = null) => Object.assign(new Error(mes
 const pairKey = (from, to) => `${from}>${to}`;
 const titleCase = (key) => key.replace(/\b\w/g, c => c.toUpperCase());
 
-const FARE_SELECT = 'id, from_city, to_city, trip_type, vehicle_id, fare, is_active, route_id, vehicle:vehicles(id, custom_name, is_active, per_km_rate, min_km_per_day, driver_allowance_per_day, catalog:vehicle_type_catalog(name, seats))';
+const FARE_SELECT = 'id, from_city, to_city, trip_type, vehicle_id, fare, is_active, off_reason, route_id, vehicle:vehicles(id, custom_name, is_active, per_km_rate, min_km_per_day, driver_allowance_per_day, catalog:vehicle_type_catalog(name, seats))';
 
 const fareToApi = (row) => ({
   id: row.id,
@@ -25,7 +25,9 @@ const fareToApi = (row) => ({
   vehicleName: row.vehicle ? (row.vehicle.custom_name || row.vehicle.catalog?.name || null) : null,
   seats: row.vehicle?.catalog?.seats ?? null,
   fare: Number(row.fare),
-  isActive: row.is_active
+  isActive: row.is_active,
+  // 'manual' = switched off on purpose: a route switched off and on again, or a price saved on it, leaves it off
+  offReason: row.off_reason ?? null
 });
 
 const numberOrNull = (v) => (v === null || v === undefined ? null : Number(v));
@@ -110,22 +112,53 @@ const assertVehiclesBelong = async (businessId, fares) => {
   if (missing.length > 0) throw fail(404, 'Vehicle not found', { vehicleIds: missing });
 };
 
-/** Upserts the listed fares (or deletes the ones marked remove) for a route. */
+/**
+ * The columns an explicit fares[].isActive writes: false = switched off on purpose (off_reason 'manual'),
+ * true = switched back on (marker cleared). Nothing when the entry does not say.
+ */
+const switchColumns = (f) => {
+  if (f.isActive === undefined) return {};
+  return f.isActive ? { is_active: true, off_reason: null } : { is_active: false, off_reason: 'manual' };
+};
+
+/**
+ * Saves the listed fares (or deletes the ones marked remove) for a route. A fare that already exists only gets
+ * its price and route link updated - saving a price never switches a fare on or off; only an explicit
+ * isActive does. A new fare starts in the route's state.
+ */
 const applyFares = async (route, fares) => {
-  const toSave = fares.filter(f => !f.remove).map(f => ({
-    business_id: route.business_id,
-    from_city: route.from_city,
-    to_city: route.to_city,
-    trip_type: f.tripType,
-    vehicle_id: f.vehicleId,
-    fare: f.fare,
-    route_id: route.id,
-    is_active: route.is_active
-  }));
+  const toSave = fares.filter(f => !f.remove);
   if (toSave.length > 0) {
-    const { error } = await supabase.from('route_fares')
-      .upsert(toSave, { onConflict: 'business_id,from_city,to_city,trip_type,vehicle_id' });
-    if (error) throw error;
+    const { data: existing, error: findErr } = await supabase.from('route_fares').select('id, trip_type, vehicle_id')
+      .eq('business_id', route.business_id).eq('from_city', route.from_city).eq('to_city', route.to_city);
+    if (findErr) throw findErr;
+    const idOf = new Map((existing || []).map(r => [`${r.trip_type}|${r.vehicle_id}`, r.id]));
+    const created = [];
+    for (const f of toSave) {
+      const id = idOf.get(`${f.tripType}|${f.vehicleId}`);
+      if (id) {
+        const { error } = await supabase.from('route_fares')
+          .update({ fare: f.fare, route_id: route.id, ...switchColumns(f) }).eq('id', id).eq('business_id', route.business_id);
+        if (error) throw error;
+      } else {
+        created.push({
+          business_id: route.business_id,
+          from_city: route.from_city,
+          to_city: route.to_city,
+          trip_type: f.tripType,
+          vehicle_id: f.vehicleId,
+          fare: f.fare,
+          route_id: route.id,
+          is_active: route.is_active,
+          off_reason: null,
+          ...switchColumns(f)
+        });
+      }
+    }
+    if (created.length > 0) {
+      const { error } = await supabase.from('route_fares').insert(created);
+      if (error) throw error;
+    }
   }
   for (const f of fares.filter(x => x.remove)) {
     const { error } = await supabase.from('route_fares').delete()
@@ -179,8 +212,12 @@ const updateRoute = async (businessId, id, body) => {
     route = data;
   }
   if (columns.is_active !== undefined && columns.is_active !== wasActive) {
-    const { error } = await supabase.from('route_fares').update({ is_active: columns.is_active })
+    // The route's switch carries to its fares - except that turning it ON leaves alone a fare switched off on
+    // purpose (off_reason 'manual'); only an explicit fares[].isActive brings that one back.
+    let cascade = supabase.from('route_fares').update({ is_active: columns.is_active })
       .eq('business_id', businessId).eq('from_city', route.from_city).eq('to_city', route.to_city);
+    if (columns.is_active) cascade = cascade.is('off_reason', null);
+    const { error } = await cascade;
     if (error) throw error;
   }
   await applyFares(route, fares);
