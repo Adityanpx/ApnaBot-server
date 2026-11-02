@@ -1,6 +1,6 @@
 // Run: node --test src/services/bookingGraph.defaultPlusQuote.test.js
 // The quote flow inside the flow a real travels business has: the "Travels default" graph (17 nodes, the legacy booking
-// questions included - test-support/travelsDefaultFlowFixture.js) plus the quote nodes the seed script builds. SG Travels
+// questions included - test-support/travelsDefaultFlowFixture.js) plus the quote nodes the installer builds. SG Travels
 // was the only business that ever got the quote flow, and it had none of the legacy questions; Search cab AI, Pradip and
 // Jyotirling have all of them, with the same field keys (tripType, travelDate, pickupTime, numberOfDays, vehicleType).
 // The engine finds a question's "Other ..." sibling by field key over the WHOLE business (bookingGraph.service.js
@@ -14,11 +14,12 @@ const stub = (relativePath, exports) => {
 };
 
 const fixture = require('../test-support/travelsDefaultFlowFixture');
-const seed = require('../scripts/seedTravelQuoteFlow');
+const installer = require('./quoteFlowInstaller.service');
+const ids = require('../utils/quoteFlowIds').derive(fixture.BIZ);
 const BIZ = fixture.BIZ;
 const legacyNodes = fixture.nodes();
 const legacyEdges = fixture.edges();
-const plan = seed.buildPlan({ businessId: BIZ, anchors: seed.findAnchors(legacyNodes, legacyEdges) });
+const plan = installer.buildPlan({ businessId: BIZ, anchors: installer.findAnchors(legacyNodes, legacyEdges) });
 const quoteNodes = plan.nodes.map((n) => ({ ...n, business_id: BIZ }));
 const quoteEdges = plan.edges.map((e) => ({ ...e, business_id: BIZ }));
 
@@ -82,7 +83,7 @@ const say = (session, reply) => bookingGraph.advanceGraphSession({ businessId: B
 
 /** The customer taps "Get a quote" on the Rates reply and answers up to the date question (One Way, route, 1-4 people, first vehicle). */
 const toDateQuestion = async () => {
-  const started = await bookingGraph.startGraphSessionAtNode(BIZ, seed.N.tripType, fixture.RATES, 'en');
+  const started = await bookingGraph.startGraphSessionAtNode(BIZ, ids.N.tripType, fixture.RATES, 'en');
   let r = await say(started.session, 'One Way');
   r = await say(r.session, 'to:r1');
   r = await say(r.session, '1-4');
@@ -95,14 +96,14 @@ for (const [order, build] of Object.entries(ORDERS)) {
   test(`${order}: the quote flow reaches the date question and the quote path is intact (tripType also exists as a legacy question)`, async () => {
     Object.assign(graph, build());
     const session = await toDateQuestion();
-    assert.equal(session.currentNodeId, seed.N.travelDate);
+    assert.equal(session.currentNodeId, ids.N.travelDate);
     assert.equal(session.collected.quoteRouteId, 'r1');
   });
 
   test(`${order}: "Other date" leads to the QUOTE flow's own typed-date question`, async () => {
     Object.assign(graph, build());
     const r = await say(await toDateQuestion(), 'Other date');
-    assert.equal(r.session.currentNodeId, seed.N.travelDateManual);
+    assert.equal(r.session.currentNodeId, ids.N.travelDateManual);
   });
 
   test(`${order}: "Other time" leads to the QUOTE flow's own typed-time question`, async () => {
@@ -110,7 +111,7 @@ for (const [order, build] of Object.entries(ORDERS)) {
     let r = await say(await toDateQuestion(), 'Today');
     assert.equal(r.result.fieldKey, 'pickupTime');
     r = await say(r.session, 'Other time');
-    assert.equal(r.session.currentNodeId, seed.N.pickupTimeManual);
+    assert.equal(r.session.currentNodeId, ids.N.pickupTimeManual);
   });
 
   test(`${order}: a typed date and time carry on through the quote nodes to the quote`, async () => {
@@ -122,7 +123,7 @@ for (const [order, build] of Object.entries(ORDERS)) {
     assert.equal(r.result.fieldKey, 'pickupTime');
     r = await say(r.session, 'Other time');
     r = await say(r.session, '6:30 AM');
-    assert.deepEqual(r.result, { quote: { action: 'send', reason: null, nodeId: seed.N.quote } });
+    assert.deepEqual(r.result, { quote: { action: 'send', reason: null, nodeId: ids.N.quote } });
   });
 }
 
@@ -131,7 +132,7 @@ for (const [order, build] of Object.entries(ORDERS)) {
 // question with that key in the order the rows come back, whichever flow it belongs to.
 const legacyTripType = legacyNodes.find((n) => n.field_key === 'tripType').id;
 const legacyTravelDateText = legacyNodes.find((n) => n.field_key === 'travelDate' && n.content_type === 'text').id;
-const EXPECTED_PLAIN_LOOKUP = { 'legacy nodes first': legacyTravelDateText, 'quote nodes first': seed.N.travelDateManual };
+const EXPECTED_PLAIN_LOOKUP = { 'legacy nodes first': legacyTravelDateText, 'quote nodes first': ids.N.travelDateManual };
 
 for (const [order, build] of Object.entries(ORDERS)) {
   test(`${order}: a NON-quote session still uses the plain field-key lookup for "Other date" (unchanged)`, async () => {

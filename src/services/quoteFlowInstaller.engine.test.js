@@ -1,22 +1,25 @@
-// Run: node --test src/scripts/seedTravelQuoteFlow.engine.test.js
-// The seeded flow, walked by the real booking graph engine: every answer a customer can give, both entries (the
-// Rates button and the "quote" keyword), One Way and Round Trip, the "Other date" / "Other time" manual siblings,
-// and the languages. The graph is SG Travels' flow + the seed plan, served from memory; the route list, fares and
-// the feature switch are stubbed.
+// Run: node --test src/services/quoteFlowInstaller.engine.test.js
+// The installed quote flow, walked by the real booking graph engine inside the real "Travels default" flow (legacy booking
+// questions included): every answer a customer can give, both entries (the Rates button and the "quote" keyword), One Way
+// and Round Trip (days first, so the carousel is priced for the days), the "Other date" / "Other time" typed siblings, and
+// the languages. The graph is served from memory; the route list, fares and the feature switch are stubbed.
 const path = require('path');
 const stub = (relativePath, exports) => {
   const resolved = require.resolve(path.join(__dirname, relativePath));
   require.cache[resolved] = { id: resolved, filename: resolved, loaded: true, exports };
 };
 
-const fixture = require('../test-support/sgTravelsFlowFixture');
-const seed = require('./seedTravelQuoteFlow');
-const BIZ = fixture.SG;
-const plan = seed.buildPlan({ businessId: BIZ, anchors: seed.findAnchors(fixture.nodes(), fixture.edges()) });
+const fixture = require('../test-support/travelsDefaultFlowFixture');
+const installer = require('./quoteFlowInstaller.service');
+const { derive } = require('../utils/quoteFlowIds');
+const BIZ = fixture.BIZ;
+const ids = derive(BIZ);
+const plan = installer.buildPlan({ businessId: BIZ, anchors: installer.findAnchors(fixture.nodes(), fixture.edges()) });
 const NODES = [...fixture.nodes(), ...plan.nodes].map((n) => ({ ...n, business_id: BIZ }));
 const EDGES = [...fixture.edges(), ...plan.edges].map((e) => ({ ...e, business_id: BIZ }));
+const LEGACY_VEHICLE_QUESTION = fixture.nodes().find((n) => n.node_type === 'question' && n.field_key === 'vehicleType').id;
 
-const state = { routes: [], fares: [] };
+const state = { routes: [], fares: [], daysSeen: [] };
 const from = (table) => {
   if (table === 'route_fares') {
     let wanted = null;
@@ -40,18 +43,21 @@ stub('../services/payment.service', {});
 stub('../services/distanceMatrix.service', {});
 stub('../services/business.service', { getBusinessById: async () => ({ id: BIZ, businessCategory: 'travels', travelSettings: {}, disabledBookingFields: [] }) });
 stub('../services/categoryFeature.service', { isEnabled: async () => true });
-// Round Trip vehicles are priced by travelQuote.service (bookingGraph.roundTripQuote.test.js covers the real
-// pricing); here every fare row is a fixed package price, which is what the seeded SG Travels rows are today.
+// Round Trip cards: price = fare x days, so the test sees the carousel was built for the days the customer gave (the real
+// pricing is covered by bookingGraph.roundTripQuote.test.js)
 stub('../services/travelQuote.service', {
   listQuotableRoutes: async () => state.routes,
-  listRoundTripVehicleOptions: async () => state.fares.map((f, index) => ({
-    index, routeFareId: f.id, vehicleId: f.vehicle.id, name: f.vehicle.custom_name, photoUrl: null, seats: f.vehicle.catalog.seats,
-    fare: f.fare, source: 'quote_vehicle', priceDisplay: { kind: 'package', total: f.fare, days: null, billedKm: null }
-  })),
-  priceRoundTripVehicle: async (businessId, routeId, vehicleId) => {
+  listRoundTripVehicleOptions: async (businessId, routeId, days) => {
+    state.daysSeen.push(days);
+    return state.fares.map((f, index) => ({
+      index, routeFareId: f.id, vehicleId: f.vehicle.id, name: f.vehicle.custom_name, photoUrl: null, seats: f.vehicle.catalog.seats,
+      fare: f.fare * days, source: 'quote_vehicle', priceDisplay: { kind: 'formula', total: f.fare * days, days, billedKm: 250 * days }
+    }));
+  },
+  priceRoundTripVehicle: async (businessId, routeId, vehicleId, days) => {
     const f = state.fares.find((x) => x.vehicle.id === vehicleId);
     return f
-      ? { stale: false, priced: { ok: true, method: 'package', baseFare: f.fare, total: f.fare }, vehicleName: f.vehicle.custom_name, packageRowId: f.id }
+      ? { stale: false, priced: { ok: true, method: 'formula', baseFare: f.fare * days, total: f.fare * days, days }, vehicleName: f.vehicle.custom_name, packageRowId: null }
       : { stale: true };
   }
 });
@@ -60,8 +66,8 @@ stub('../utils/logger', { info: () => {}, warn: () => {}, error: () => {}, debug
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const bookingService = require('../services/booking.service');
-const bookingGraph = require('../services/bookingGraph.service');
+const bookingService = require('./booking.service');
+const bookingGraph = require('./bookingGraph.service');
 
 const fare = (n, name, seats, amount) => ({
   id: `rf${n}`, fare: amount, vehicle: { id: `v${n}`, custom_name: name, custom_photo_url: null, is_active: true, catalog: { name, photo_url: null, seats } }
@@ -72,6 +78,7 @@ const route = (n, extra) => ({ id: `r${n}`, fromCity: 'pune', toCity: `city${n}`
 test.beforeEach(() => {
   state.routes = [route(1), route(2)];
   state.fares = [fare(1, 'Dzire', 4, 2500), fare(2, 'Crysta', 7, 3500)];
+  state.daysSeen = [];
 });
 
 const say = (session, reply, lang = 'en') => bookingGraph.advanceGraphSession({ businessId: BIZ, session, reply, languageCode: lang });
@@ -82,19 +89,20 @@ const tomorrow = () => {
 const labels = (field) => field.options.map((o) => o.label);
 
 // Rates button -> trip type
-const startFromButton = (lang = 'en') => bookingGraph.startGraphSessionAtNode(BIZ, seed.N.tripType, fixture.RATES, lang);
+const startFromButton = (lang = 'en') => bookingGraph.startGraphSessionAtNode(BIZ, ids.N.tripType, fixture.RATES, lang);
 
 test('the Rates button and the "quote" keyword both land on the trip type question', async () => {
   const viaButton = await startFromButton();
   assert.equal(viaButton.field.fieldKey, 'tripType');
+  assert.equal(viaButton.session.currentNodeId, ids.N.tripType, 'the quote flow\'s own question, not the legacy tripType question');
   assert.deepEqual(labels(viaButton.field), ['One Way', 'Round Trip']);
-  const viaKeyword = await bookingGraph.startGraphSession(BIZ, seed.N.trigger, 'en');
+  const viaKeyword = await bookingGraph.startGraphSession(BIZ, ids.N.trigger, 'en');
   assert.equal(viaKeyword.result.fieldKey, 'tripType');
-  assert.equal(viaKeyword.session.currentNodeId, seed.N.tripType);
+  assert.equal(viaKeyword.session.currentNodeId, ids.N.tripType);
 });
 
 test('One Way end to end: route -> passengers -> vehicles -> date -> time -> quote (no days question)', async () => {
-  let { session, field } = await startFromButton();
+  const { session } = await startFromButton();
   let r = await say(session, 'One Way');
   assert.equal(r.result.fieldKey, 'routePicker');
   assert.deepEqual(r.result.options.map((o) => o.value), ['to:r1', 'to:r2', 'other']);
@@ -103,6 +111,7 @@ test('One Way end to end: route -> passengers -> vehicles -> date -> time -> quo
   assert.deepEqual(labels(r.result), ['1-4 people', '5-6 people', '7 or more']);
   r = await say(r.session, '5-6');
   assert.equal(r.result.fieldType, 'vehicle_carousel');
+  assert.deepEqual(state.daysSeen, [], 'the Round Trip pricing was not involved');
   assert.deepEqual(r.result.options.map((o) => o.name), ['Crysta'], 'seat filter: 5-6 people need 6+ seats');
   r = await say(r.session, '0');
   assert.equal(r.result.fieldKey, 'travelDate');
@@ -112,37 +121,43 @@ test('One Way end to end: route -> passengers -> vehicles -> date -> time -> quo
   assert.equal(r.result.options.length, 9);
   assert.ok(r.result.options.every((o) => o.label.length <= 24));
   r = await say(r.session, '11:00 PM');
-  assert.deepEqual(r.result, { quote: { action: 'send', reason: null, nodeId: seed.N.quote } });
+  assert.deepEqual(r.result, { quote: { action: 'send', reason: null, nodeId: ids.N.quote } });
   assert.equal(r.session.collected.pickupMinute, 23 * 60);
   assert.equal(r.session.collected.numberOfDays, undefined);
   assert.equal(r.session.collected.quoteRouteId, 'r1');
 });
 
-test('Round Trip end to end: the days question comes after the time, then the quote', async () => {
-  let { session } = await startFromButton();
+test('Round Trip end to end: the days come right after the passengers, the carousel is built for those days, then date -> time -> quote', async () => {
+  const { session } = await startFromButton();
   let r = await say(session, 'Round Trip');
   r = await say(r.session, 'to:r2');
   r = await say(r.session, '1-4');
-  assert.deepEqual(r.result.options.map((o) => o.name), ['Dzire', 'Crysta']);
-  r = await say(r.session, '1');
-  r = await say(r.session, 'Tomorrow');
-  r = await say(r.session, '6:00 AM');
-  assert.equal(r.result.fieldKey, 'numberOfDays');
+  assert.equal(r.result.fieldKey, 'numberOfDays', 'the days are asked before the vehicles');
   assert.equal(r.result.options.length, 9);
   assert.deepEqual(r.result.options.slice(0, 2).map((o) => o.label), ['1 day', '2 days']);
   r = await say(r.session, '3');
-  assert.equal(r.result.quote.action, 'send');
+  assert.equal(r.result.fieldType, 'vehicle_carousel');
+  assert.deepEqual(state.daysSeen, [3], 'the carousel was built for 3 days');
+  assert.deepEqual(r.result.options.map((o) => [o.name, o.fare]), [['Dzire', 7500], ['Crysta', 10500]]);
+  r = await say(r.session, '1');
+  assert.equal(r.result.fieldKey, 'travelDate');
+  assert.equal(r.session.collected.vehicleFare, 10500);
+  r = await say(r.session, 'Tomorrow');
+  assert.equal(r.result.fieldKey, 'pickupTime');
+  r = await say(r.session, '6:00 AM');
+  assert.deepEqual(r.result, { quote: { action: 'send', reason: null, nodeId: ids.N.quote } }, 'no second days question');
   assert.deepEqual([r.session.collected.numberOfDays, r.session.collected.tripType], ['3', 'Round Trip']);
 });
 
-test('"Other date" and "Other time" take typed answers, and each sibling continues to the right next step', async () => {
-  let { session } = await startFromButton();
+test('"Other date" and "Other time" take typed answers inside the quote flow, and each sibling continues to the right next step', async () => {
+  const { session } = await startFromButton();
   let r = await say(session, 'Round Trip');
   r = await say(r.session, 'to:r1');
   r = await say(r.session, '1-4');
+  r = await say(r.session, '2');
   r = await say(r.session, '0');
   r = await say(r.session, 'Other date');
-  assert.equal(r.result.fieldKey, 'travelDate');
+  assert.equal(r.session.currentNodeId, ids.N.travelDateManual);
   assert.equal(r.result.fieldType, 'text');
   r = await say(r.session, tomorrow());
   assert.equal(r.result.fieldKey, 'pickupTime');
@@ -151,16 +166,15 @@ test('"Other date" and "Other time" take typed answers, and each sibling continu
   assert.equal(r.result.fieldType, 'text');
   const bad = await say(r.session, 'in the morning');
   assert.match(bad.result, /couldn't read that time/);
-  assert.equal(bad.session.currentNodeId, seed.N.pickupTimeManual);
+  assert.equal(bad.session.currentNodeId, ids.N.pickupTimeManual);
   r = await say(r.session, '19.30');
-  assert.equal(r.result.fieldKey, 'numberOfDays', 'the manual time sibling also continues to days for a round trip');
+  assert.deepEqual(r.result, { quote: { action: 'send', reason: null, nodeId: ids.N.quote } }, 'straight to the quote');
   assert.equal(r.session.collected.pickupMinute, 19 * 60 + 30);
-  r = await say(r.session, '2');
-  assert.equal(r.result.quote.action, 'send');
+  assert.equal(r.session.collected.numberOfDays, '2');
 });
 
 test('"Other time" on a one-way trip goes straight to the quote', async () => {
-  let { session } = await startFromButton();
+  const { session } = await startFromButton();
   let r = await say(session, 'One Way');
   r = await say(r.session, 'to:r1');
   r = await say(r.session, '1-4');
@@ -179,7 +193,7 @@ test('Hindi and Marathi customers get every question, option and the route promp
   ]) {
     const { session, field } = await startFromButton(lang);
     assert.equal(field.label, expectTrip, lang);
-    assert.deepEqual(labels(field), lang === 'hi' ? ['वन वे', 'राउंड ट्रिप'] : ['वन वे', 'राउंड ट्रिप']);
+    assert.deepEqual(labels(field), ['वन वे', 'राउंड ट्रिप']);
     let r = await say(session, 'One Way', lang);
     assert.equal(r.result.label, expectTo, lang);
     r = await say(r.session, 'to:r1', lang);
@@ -205,14 +219,17 @@ test('Other route, no fitting vehicle and the carousel\'s Other options all leav
   assert.equal((await say(carousel.session, 'other')).result.quote.reason, 'other_vehicle');
 });
 
-test('the old fare-less vehicleType question is never shown in the quote flow', async () => {
-  let { session } = await startFromButton();
-  const seen = new Set();
+test('the legacy booking questions (fare-less vehicleType, tripType, dates, time) are never shown in the quote flow', async () => {
+  const legacyIds = new Set(fixture.nodes().filter((n) => n.node_type !== 'reply').map((n) => n.id));
+  const { session, field } = await startFromButton();
+  const seen = new Set([field.nodeId]);
   let r = { session };
-  for (const reply of ['One Way', 'to:r1', '1-4', '0', 'Today', '10:00 AM']) {
+  for (const reply of ['Round Trip', 'to:r1', '1-4', '2', '0', 'Other date', tomorrow(), 'Other time', '6:30 AM']) {
     r = await say(r.session, reply);
     if (r.result && r.result.nodeId) seen.add(r.result.nodeId);
+    assert.ok(!legacyIds.has(r.session.currentNodeId), `after "${reply}" the customer is still in the quote flow`);
   }
-  assert.ok(!seen.has(fixture.VEHICLE_TYPE));
+  assert.ok(![...seen].some((id) => legacyIds.has(id)));
+  assert.ok(!seen.has(LEGACY_VEHICLE_QUESTION));
   assert.equal(r.result.quote.action, 'send');
 });
