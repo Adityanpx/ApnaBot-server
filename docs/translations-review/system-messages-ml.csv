@@ -23,6 +23,8 @@ summaryFare,Fare: *₹{{fare}}*,നിരക്കൂലി: ₹ *{{fare}}*,,Kee
 summaryFareEstimated,"Fare: *₹{{fare}} (estimated, based on distance)*",നിരക്ക്: ₹ *{{fare}} (ദൂരം അടിസ്ഥാനമാക്കി)*,,Keep unchanged: {{fare}}; *bold* markers must stay around the same words
 summaryDistance,Distance: *{{km}} km*,ദൂരം: *{{km}} കി.മീ.*,,Keep unchanged: {{km}}; *bold* markers must stay around the same words
 summaryDriverDa,Driver DA: *₹{{total}} ({{days}} days × ₹{{perDay}})*,ഡ്രൈവർ ഡിഎ: ₹ *{{total}} ({{days}} ദിവസം × ₹{{perDay}})*,,Keep unchanged: {{total}} {{days}} {{perDay}}; *bold* markers must stay around the same words
+summaryDriverDaNights,Driver DA: *₹{{total}} ({{unitsText}} × ₹{{perDay}})*,,,Keep unchanged: {{total}} {{unitsText}} {{perDay}}; *bold* markers must stay around the same words; Machine translation unavailable: not translated
+summaryDriverDaNightsPlain,Driver DA: *₹{{total}} ({{units}} night(s) × ₹{{perDay}})*,ഡ്രൈവർ ഡിഎ: ₹ *{{total}} ({{units}} രാത്രി (കൾ) × ₹{{perDay}})*,,Keep unchanged: {{total}} {{units}} {{perDay}}; *bold* markers must stay around the same words
 summaryTollNote,_Note: Toll & parking charges are not included in this fare and will be collected separately._,"_കുറിപ്പ്: ടോൾ, പാർക്കിംഗ് ചാർജുകൾ ഈ നിരക്കിൽ ഉൾപ്പെടുത്തിയിട്ടില്ല, പ്രത്യേകം ഈടാക്കും._",,
 summaryExtraRate,"_Extra km: ₹{{km}}/km, Extra hour: ₹{{hr}}/hr beyond package limits._","_അധിക കിലോമീറ്റർ: ₹{{km}}/ കിലോമീറ്റർ, അധിക മണിക്കൂർ: പാക്കേജ് പരിധിക്കപ്പുറം ₹{{hr}}/ മണിക്കൂർ._",,Keep unchanged: {{km}} {{hr}}
 summaryRentalUnconfigured,_Note: this business hasn't set up rental packages yet — our team will call you to confirm pricing for this rental._,_കുറിപ്പ്: ഈ ബിസിനസ്സ് ഇതുവരെ വാടക പാക്കേജുകൾ സജ്ജീകരിച്ചിട്ടില്ല - ഈ വാടകയ്ക്കുള്ള വിലനിർണ്ണയം സ്ഥിരീകരിക്കാൻ ഞങ്ങളുടെ ടീം നിങ്ങളെ വിളിക്കും._,,
@@ -48,6 +50,7 @@ qrScreenshot,Please share a screenshot here after paying.,പണമടച്ച�
 advancePaid,✅ Advance received! Your booking {{code}} is confirmed. Our team will contact you shortly.,✅ അഡ്വാൻസ് ലഭിച്ചു! നിങ്ങളുടെ ബുക്കിംഗ് {{code}} സ്ഥിരീകരിച്ചു. ഞങ്ങളുടെ ടീം ഉടൻ നിങ്ങളെ ബന്ധപ്പെടും.,,Keep unchanged: {{code}}
 admissionFeePaid,✅ Fees received! Admission {{code}} is confirmed. Welcome to {{business}}!,✅ ഫീസ് ലഭിച്ചു! പ്രവേശന {{code}} സ്ഥിരീകരിച്ചു. {{business}} സ്വാഗതം!,,Keep unchanged: {{code}} {{business}}
 sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,നിങ്ങൾ മാറിയതായി തോന്നുന്നു - നിഷ്ക്രിയത്വം കാരണം ഞാൻ ഈ സെഷൻ അവസാനിപ്പിച്ചു. വീണ്ടും ആരംഭിക്കാൻ എപ്പോൾ വേണമെങ്കിലും 'book' അയയ്ക്കുക.,,
+sessionTimeoutQuote,Looks like you've stepped away — I've ended this quote chat due to inactivity. Send '{{keyword}}' anytime to start again.,,,Keep unchanged: {{keyword}}; Machine translation unavailable: not translated
 stopOptOutDefault,Done — you won't receive offers or reminders from us. Reply START anytime to turn them back on.,ശരി — ഇനി ഞങ്ങളിൽ നിന്ന് ഓഫറുകളോ ഓർമ്മപ്പെടുത്തലുകളോ നിങ്ങൾക്ക് ലഭിക്കില്ല. വീണ്ടും ഓണാക്കാൻ എപ്പോൾ വേണമെങ്കിലും START എന്ന് അയയ്ക്കുക.,,Hand-corrected wording (still machine-marked): needs native review
 startOptInDefault,You're all set — messages have resumed.,എല്ലാം തയ്യാർ — സന്ദേശങ്ങൾ വീണ്ടും തുടങ്ങിയിരിക്കുന്നു.,,Machine translation unavailable: not translated; Hand-corrected wording (still machine-marked): needs native review
 optInConsentQuestion,"{{business}} would like to send you offers and updates on WhatsApp. Would you like to receive them?
@@ -117,6 +120,10 @@ quoteBilledByMin,Billed distance: {{km}} km ({{days}} day(s) × {{min}} km minim
 quoteBilledByDistance,"Billed distance: {{km}} km (there and back, 2 × {{one}} km)","ബിൽ ചെയ്ത ദൂരം: {{km}} കിലോമീറ്റർ (അവിടെയും പിന്നിലേക്കും, 2 × {{one}} കിലോമീറ്റർ)",,Keep unchanged: {{km}} {{one}}
 quoteExtraDriverDays,Driver allowance ({{units}} day(s) × ₹{{perUnit}}): ₹{{amount}},ഡ്രൈവർ അലവൻസ് ({{units}} ദിവസം (കൾ) × ₹{{perUnit}}: ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
 quoteExtraDriverNights,Driver allowance ({{units}} night(s) × ₹{{perUnit}}): ₹{{amount}},ഡ്രൈവർ അലവൻസ് ({{units}} രാത്രി (കൾ) × ₹{{perUnit}}: ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quoteDayOne,{{n}} day,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
+quoteDayMany,{{n}} days,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
+quoteNightOne,{{n}} night,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
+quoteNightMany,{{n}} nights,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
 quotePackageFareLine,Package fare: ₹{{amount}},പാക്കേജ് നിരക്ക്: ₹{{amount}},,Keep unchanged: {{amount}}
 quoteActualKmNote,The final fare is by actual km if the trip runs more than the billed km.,യാത്ര ബിൽ ചെയ്ത കിലോമീറ്ററിനേക്കാൾ കൂടുതൽ ഓടുകയാണെങ്കിൽ അന്തിമ നിരക്ക് യഥാർത്ഥ കിലോമീറ്ററാണ്.,,
 quoteCardDays,{{days}} day(s),{{days}} ദിവസം (കൾ),,Keep unchanged: {{days}}
@@ -136,6 +143,8 @@ quoteBtnConfirm,Confirm,സ്ഥിരീകരിക്കുക,,
 quoteBtnChange,Change,മാറ്റം,,
 quoteBtnTalk,Talk to us,ഞങ്ങളോട് സംസാരിക്കൂ,,
 quoteBtnPaid,I've paid,ഞാൻ കാശ് കൊടുത്തു,,
+quoteChatExpired,That quote chat expired. Tap *Get a quote* to start again.,,,*bold* markers must stay around the same words; Machine translation unavailable: not translated
+quoteBtnStart,Get a quote,,,Machine translation unavailable: not translated
 quoteBtnNew,New quote,പുതിയ ഉദ്ധരണി,,
 quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","ക്ഷമിക്കണം, ഈ റൂട്ടിൽ നിങ്ങളുടെ ഗ്രൂപ്പ് വലുപ്പത്തിനായി ഞങ്ങൾക്ക് ഒരു വാഹനം ഇല്ല. *ഞങ്ങളോട് സംസാരിക്കുക ടാപ്പുചെയ്യുക* , ഞങ്ങളുടെ ടീം നിങ്ങളെ സഹായിക്കും.",,*bold* markers must stay around the same words
 quoteExpired,This quote has expired. Tap below to get a new one.,ഈ ഉദ്ധരണി കാലഹരണപ്പെട്ടു. പുതിയൊരെണ്ണം ലഭിക്കുന്നതിന് താഴെ ടാപ്പുചെയ്യുക.,,

@@ -15,6 +15,7 @@ const distanceMatrixService = require('./distanceMatrix.service');
 const logger = require('../utils/logger');
 const { isTravelFeaturedCategory } = require('../config/categoryFeatures');
 const { computeRoundTripFare } = require('../utils/travelQuote');
+const { countText } = require('../utils/quoteText');
 
 /**
  * Map a trip-type answer to 'oneway' | 'round_trip' | 'local'. Tolerant of
@@ -268,7 +269,8 @@ const findDistanceBasedVehicleOptions = async (businessId, pickupLocation, dropL
       .select('*, catalog:vehicle_type_catalog(name, photo_url, seats)')
       .eq('business_id', businessId).eq('is_active', true).not('per_km_rate', 'is', null);
     if (error) throw error;
-    vehicles = data || [];
+    // A per-km rate that is not above 0 is "not set" (the quote reads it the same way), never a Rs 0 fare.
+    vehicles = (data || []).filter(v => Number(v.per_km_rate) > 0);
     if (useDayBasedEstimate) allowanceBasis = await loadAllowanceBasis(businessId);
   } catch (error) {
     logger.error('Error finding distance-based vehicle options:', error);
@@ -311,6 +313,7 @@ const findDistanceBasedVehicleOptions = async (businessId, pickupLocation, dropL
       option.driverDaTotal = priced.allowance.amount;
       option.driverDaPerDay = priced.allowance.perUnit;
       option.driverDaDays = priced.allowance.units;
+      option.driverDaBasis = priced.allowance.basis; // 'day' | 'night': what driverDaDays counts
     }
     options.push(option);
   });
@@ -595,6 +598,17 @@ const recordBookingLead = async (businessId, customerId) => {
  */
 // languageCode: the customer's preferred_language — the fixed lines (fare,
 // distance, notes) come from systemMessages.js; field labels are as given.
+// "Driver DA: ₹600 (2 nights × ₹300)" on a night basis, "(3 days × ₹300)" otherwise. A booking saved before
+// driverDaBasis existed has none, and was always counted in days.
+const driverDaText = (collected, languageCode, msg) => {
+  const vars = { total: collected.driverDaTotal, days: collected.driverDaDays, perDay: collected.driverDaPerDay };
+  if (collected.driverDaBasis !== 'night') return msg('summaryDriverDa', vars);
+  const units = collected.driverDaDays;
+  return ['en', 'hi', 'mr'].includes(languageCode) || !languageCode
+    ? msg('summaryDriverDaNights', { ...vars, unitsText: countText('night', units, languageCode) })
+    : msg('summaryDriverDaNightsPlain', { ...vars, units });
+};
+
 const buildBookingSummaryBody = (collected, orderedFields, localRentalUnconfigured, languageCode = null) => {
   const msg = (key, vars) => getSystemMessage(key, languageCode, vars);
   const fieldLines = orderedFields
@@ -633,7 +647,7 @@ const buildBookingSummaryBody = (collected, orderedFields, localRentalUnconfigur
       : '\n' + msg('summaryFare', { fare: collected.vehicleFare });
 
   const driverDaLine = collected.driverDaTotal
-    ? '\n' + msg('summaryDriverDa', { total: collected.driverDaTotal, days: collected.driverDaDays, perDay: collected.driverDaPerDay })
+    ? '\n' + driverDaText(collected, languageCode, msg)
     : '';
 
   const tollNoteLine = hasFare

@@ -23,6 +23,8 @@ summaryFare,Fare: *₹{{fare}}*,ভাড়া: ₹ *{{fare}}*,,Keep unchanged:
 summaryFareEstimated,"Fare: *₹{{fare}} (estimated, based on distance)*","ভাড়া: ₹ *{{fare}} (অনুমান, দূরত্বের উপর ভিত্তি করে)*",,Keep unchanged: {{fare}}; *bold* markers must stay around the same words
 summaryDistance,Distance: *{{km}} km*,দূরত্ব: *{{km}} কিমি*,,Keep unchanged: {{km}}; *bold* markers must stay around the same words
 summaryDriverDa,Driver DA: *₹{{total}} ({{days}} days × ₹{{perDay}})*,ড্রাইভার ডিএ: ₹ *{{total}} ({{days}} দিন × ₹{{perDay}})*,,Keep unchanged: {{total}} {{days}} {{perDay}}; *bold* markers must stay around the same words
+summaryDriverDaNights,Driver DA: *₹{{total}} ({{unitsText}} × ₹{{perDay}})*,,,Keep unchanged: {{total}} {{unitsText}} {{perDay}}; *bold* markers must stay around the same words; Machine translation unavailable: not translated
+summaryDriverDaNightsPlain,Driver DA: *₹{{total}} ({{units}} night(s) × ₹{{perDay}})*,ড্রাইভার ডিএ: ₹ *{{total}} ({{units}} রাত(গুলি) × ₹{{perDay}})*,,Keep unchanged: {{total}} {{units}} {{perDay}}; *bold* markers must stay around the same words
 summaryTollNote,_Note: Toll & parking charges are not included in this fare and will be collected separately._,_দ্রষ্টব্য: টোল এবং পার্কিং মাশুল এই ভাড়ার মধ্যে অন্তর্ভুক্ত নয় এবং পৃথকভাবে আদায় করা হবে।_,,
 summaryExtraRate,"_Extra km: ₹{{km}}/km, Extra hour: ₹{{hr}}/hr beyond package limits._","_অতিরিক্ত কিমি: ₹{{km}}/ কিমি, অতিরিক্ত ঘন্টা: প্যাকেজ সীমার বাইরে ₹{{hr}}/ ঘন্টা।_",,Keep unchanged: {{km}} {{hr}}
 summaryRentalUnconfigured,_Note: this business hasn't set up rental packages yet — our team will call you to confirm pricing for this rental._,_দ্রষ্টব্য: এই ব্যবসাটি এখনও ভাড়া প্যাকেজ সেট আপ করেনি - আমাদের টিম এই ভাড়ার জন্য মূল্য নিশ্চিত করার জন্য আপনাকে কল করবে।_,,
@@ -48,6 +50,7 @@ qrScreenshot,Please share a screenshot here after paying.,অর্থ প্র
 advancePaid,✅ Advance received! Your booking {{code}} is confirmed. Our team will contact you shortly.,✅ অগ্রিম প্রাপ্তি! আপনার বুকিং {{code}} নিশ্চিত করা হয়েছে। আমাদের টিম শীঘ্রই আপনার সাথে যোগাযোগ করবে।,,Keep unchanged: {{code}}
 admissionFeePaid,✅ Fees received! Admission {{code}} is confirmed. Welcome to {{business}}!,✅ ফি প্রাপ্তি! ভর্তি {{code}} নিশ্চিত করা হয়েছে। {{business}} স্বাগতম!,,Keep unchanged: {{code}} {{business}}
 sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,দেখে মনে হচ্ছে আপনি সরে গেছেন - নিষ্ক্রিয়তার কারণে আমি এই সেশনটি শেষ করেছি। আবার শুরু করার জন্য যে কোনও সময় 'book' প্রেরণ করুন।,,
+sessionTimeoutQuote,Looks like you've stepped away — I've ended this quote chat due to inactivity. Send '{{keyword}}' anytime to start again.,,,Keep unchanged: {{keyword}}; Machine translation unavailable: not translated
 stopOptOutDefault,Done — you won't receive offers or reminders from us. Reply START anytime to turn them back on.,ঠিক আছে — আপনি আর আমাদের কাছ থেকে অফার বা রিমাইন্ডার পাবেন না। আবার চালু করতে যে কোনও সময় START লিখে পাঠান।,,Hand-corrected wording (still machine-marked): needs native review
 startOptInDefault,You're all set — messages have resumed.,সব ঠিক আছে — বার্তা আবার শুরু হয়েছে।,,Machine translation unavailable: not translated; Hand-corrected wording (still machine-marked): needs native review
 optInConsentQuestion,"{{business}} would like to send you offers and updates on WhatsApp. Would you like to receive them?
@@ -117,6 +120,10 @@ quoteBilledByMin,Billed distance: {{km}} km ({{days}} day(s) × {{min}} km minim
 quoteBilledByDistance,"Billed distance: {{km}} km (there and back, 2 × {{one}} km)","বিলযুক্ত দূরত্ব: {{km}} কিমি (সেখানে এবং পিছনে, 2 × {{one}} কিমি)",,Keep unchanged: {{km}} {{one}}
 quoteExtraDriverDays,Driver allowance ({{units}} day(s) × ₹{{perUnit}}): ₹{{amount}},ড্রাইভার ভাতা ({{units}} দিন (গুলি) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
 quoteExtraDriverNights,Driver allowance ({{units}} night(s) × ₹{{perUnit}}): ₹{{amount}},ড্রাইভার ভাতা ({{units}} রাতের (গুলি) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quoteDayOne,{{n}} day,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
+quoteDayMany,{{n}} days,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
+quoteNightOne,{{n}} night,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
+quoteNightMany,{{n}} nights,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
 quotePackageFareLine,Package fare: ₹{{amount}},প্যাকেজ ভাড়া: ₹{{amount}},,Keep unchanged: {{amount}}
 quoteActualKmNote,The final fare is by actual km if the trip runs more than the billed km.,"যদি ভ্রমণটি বিলযুক্ত কিলোমিটারের চেয়ে বেশি চলে, তবে চূড়ান্ত ভাড়া প্রকৃত কিলোমিটারের দ্বারা হয়।",,
 quoteCardDays,{{days}} day(s),{{days}} দিন(গুলি),,Keep unchanged: {{days}}
@@ -136,6 +143,8 @@ quoteBtnConfirm,Confirm,নিশ্চিত করুন,,
 quoteBtnChange,Change,পরিবর্তন,,
 quoteBtnTalk,Talk to us,আমাদের সাথে কথা বলুন,,
 quoteBtnPaid,I've paid,আমি টাকা দিয়েছি,,
+quoteChatExpired,That quote chat expired. Tap *Get a quote* to start again.,,,*bold* markers must stay around the same words; Machine translation unavailable: not translated
+quoteBtnStart,Get a quote,,,Machine translation unavailable: not translated
 quoteBtnNew,New quote,নতুন উদ্ধৃতি,,
 quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","দুঃখিত, এই রুটে আপনার গ্রুপ আকারের জন্য আমাদের কোনও গাড়ি নেই। আমাদের *সাথে কথা বলুন আলতো* চাপুন এবং আমাদের দল আপনাকে সহায়তা করবে।",,*bold* markers must stay around the same words
 quoteExpired,This quote has expired. Tap below to get a new one.,এই উদ্ধৃতিটির মেয়াদ শেষ হয়েছে। একটি নতুন পেতে নীচে আলতো চাপুন।,,

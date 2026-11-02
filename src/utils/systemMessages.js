@@ -124,6 +124,19 @@ const SYSTEM_MESSAGES = {
     hi: 'ड्राइवर भत्ता (DA): *₹{{total}} ({{days}} दिन × ₹{{perDay}})*',
     mr: 'ड्रायव्हर भत्ता (DA): *₹{{total}} ({{days}} दिवस × ₹{{perDay}})*'
   },
+  // Driver DA on a 'night' allowance basis: nights, not days. en / hi / mr put the count with its unit in
+  // {{unitsText}} ("1 night" / "2 nights"); the machine-translated languages use the Plain key, whose text keeps the
+  // unit inside it (like the quote messages), so the pipeline can translate it.
+  summaryDriverDaNights: {
+    en: 'Driver DA: *₹{{total}} ({{unitsText}} × ₹{{perDay}})*',
+    hi: 'ड्राइवर भत्ता (DA): *₹{{total}} ({{unitsText}} × ₹{{perDay}})*',
+    mr: 'ड्रायव्हर भत्ता (DA): *₹{{total}} ({{unitsText}} × ₹{{perDay}})*'
+  },
+  summaryDriverDaNightsPlain: {
+    en: 'Driver DA: *₹{{total}} ({{units}} night(s) × ₹{{perDay}})*',
+    hi: 'ड्राइवर भत्ता (DA): *₹{{total}} ({{units}} रात × ₹{{perDay}})*',
+    mr: 'ड्रायव्हर भत्ता (DA): *₹{{total}} ({{units}} रात्र × ₹{{perDay}})*'
+  },
   summaryTollNote: {
     en: '_Note: Toll & parking charges are not included in this fare and will be collected separately._',
     hi: '_नोट: टोल और पार्किंग शुल्क इस किराये में शामिल नहीं हैं और अलग से लिए जाएंगे।_',

@@ -870,6 +870,7 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
         session.collected.driverDaTotal = daTotal;
         session.collected.driverDaPerDay = tappedOption.driverDaPerDay;
         session.collected.driverDaDays = tappedOption.driverDaDays;
+        session.collected.driverDaBasis = tappedOption.driverDaBasis;
       }
       session.collected[currentNode.fieldKey] = session.collected.vehicleName;
     } else if (tappedOption.source === 'rental_package') {

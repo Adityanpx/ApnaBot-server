@@ -27,6 +27,7 @@ module.exports = {
   "summaryFareEstimated": "ભાડું: ₹ *{{fare}} (અંદાજિત, અંતરના આધારે)*",
   "summaryDistance": "અંતર: *{{km}} કિમી*",
   "summaryDriverDa": "ડ્રાઈવર ડીએ: ₹ *{{total}} ({{days}} દિવસ × ₹{{perDay}})*",
+  "summaryDriverDaNightsPlain": "ડ્રાઈવર ડીએ: ₹ *{{total}} ({{units}} રાત(ઓ) × ₹{{perDay}})*",
   "summaryTollNote": "_નોંધ: આ ભાડામાં ટોલ અને પાર્કિંગ ચાર્જનો સમાવેશ કરવામાં આવ્યો નથી અને અલગથી વસૂલવામાં આવશે._",
   "summaryExtraRate": "_વધારાનો કિમી: ₹{{km}}/ કિમી, વધારાનો કલાક: પેકેજ મર્યાદાથી આગળ ₹{{hr}}/ કલાક._",
   "summaryRentalUnconfigured": "_નોંધ: આ વ્યવસાયે હજી સુધી ભાડાના પેકેજો સેટ કર્યા નથી - અમારી ટીમ આ ભાડાની કિંમતની પુષ્ટિ કરવા માટે તમને કૉલ કરશે._",

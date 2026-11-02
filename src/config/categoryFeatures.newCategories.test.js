@@ -43,12 +43,12 @@ test('categoryFeatures.js: both categories exist with no features and are not tr
   for (const c of NEW) {
     assert.deepEqual(CATEGORY_DEFAULT_FEATURES[c], []);
     assert.deepEqual(computeFeatureFlags({ businessCategory: c }), {
-      enable_fleet: false, enable_distance_fares: false, round_trip_driver_da_enabled: false
+      enable_fleet: false, enable_distance_fares: false
     });
     assert.equal(isTravelFeaturedCategory(c), false);
   }
   assert.deepEqual(CATEGORY_DEFAULT_FEATURES.boutique, [], 'boutique unchanged');
-  assert.deepEqual(CATEGORY_DEFAULT_FEATURES.travels, ['fleet', 'distanceFares', 'driverDA'], 'travels unchanged');
+  assert.deepEqual(CATEGORY_DEFAULT_FEATURES.travels, ['fleet', 'distanceFares'], 'travels unchanged');
 });
 
 test('every category in the latest constraint has a categoryFeatures entry', () => {

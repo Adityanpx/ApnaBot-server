@@ -23,6 +23,8 @@ summaryFare,Fare: *₹{{fare}}*,ఛార్జీలు: ₹ *{{fare}}*,,Keep u
 summaryFareEstimated,"Fare: *₹{{fare}} (estimated, based on distance)*",ఛార్జీలు: ₹ *{{fare}} (దూరం ఆధారంగా అంచనా వేయబడింది)*,,Keep unchanged: {{fare}}; *bold* markers must stay around the same words
 summaryDistance,Distance: *{{km}} km*,దూరం: *{{km}} కి.మీ.*,,Keep unchanged: {{km}}; *bold* markers must stay around the same words
 summaryDriverDa,Driver DA: *₹{{total}} ({{days}} days × ₹{{perDay}})*,డ్రైవర్ డిఎ: ₹ *{{total}} ({{days}} రోజులు × ₹{{perDay}})*,,Keep unchanged: {{total}} {{days}} {{perDay}}; *bold* markers must stay around the same words
+summaryDriverDaNights,Driver DA: *₹{{total}} ({{unitsText}} × ₹{{perDay}})*,,,Keep unchanged: {{total}} {{unitsText}} {{perDay}}; *bold* markers must stay around the same words; Machine translation unavailable: not translated
+summaryDriverDaNightsPlain,Driver DA: *₹{{total}} ({{units}} night(s) × ₹{{perDay}})*,డ్రైవర్ డిఎ: ₹ *{{total}} ({{units}} రాత్రి(లు) × ₹{{perDay}})*,,Keep unchanged: {{total}} {{units}} {{perDay}}; *bold* markers must stay around the same words
 summaryTollNote,_Note: Toll & parking charges are not included in this fare and will be collected separately._,_గమనిక: టోల్ & పార్కింగ్ ఛార్జీలు ఈ ఛార్జీలో చేర్చబడవు మరియు విడిగా వసూలు చేయబడతాయి._,,
 summaryExtraRate,"_Extra km: ₹{{km}}/km, Extra hour: ₹{{hr}}/hr beyond package limits._","_అదనపు కిమీ: ₹{{km}}/కిమీ, అదనపు గంట: ప్యాకేజీ పరిమితులకు మించి గంటకు ₹{{hr}}._",,Keep unchanged: {{km}} {{hr}}
 summaryRentalUnconfigured,_Note: this business hasn't set up rental packages yet — our team will call you to confirm pricing for this rental._,_గమనిక: ఈ వ్యాపారం ఇంకా అద్దె ప్యాకేజీలను ఏర్పాటు చేయలేదు - ఈ అద్దె కోసం ధరను నిర్ధారించడానికి మా బృందం మీకు కాల్ చేస్తుంది._,,
@@ -48,6 +50,7 @@ qrScreenshot,Please share a screenshot here after paying.,చెల్లిం�
 advancePaid,✅ Advance received! Your booking {{code}} is confirmed. Our team will contact you shortly.,✅ అడ్వాన్స్ అందుకుంది! మీ బుకింగ్ {{code}} ధృవీకరించబడింది. మా బృందం త్వరలో మిమ్మల్ని సంప్రదిస్తుంది.,,Keep unchanged: {{code}}
 admissionFeePaid,✅ Fees received! Admission {{code}} is confirmed. Welcome to {{business}}!,✅ ఫీజు వచ్చింది! ప్రవేశం {{code}} ధృవీకరించబడింది. {{business}} కు స్వాగతం!,,Keep unchanged: {{code}} {{business}}
 sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,మీరు దూరంగా ఉన్నట్లు కనిపిస్తోంది - నిష్క్రియాత్మకత కారణంగా నేను ఈ సెషన్ ను ముగించాను. మళ్లీ ప్రారంభించడానికి ఎప్పుడైనా 'book' పంపండి.,,
+sessionTimeoutQuote,Looks like you've stepped away — I've ended this quote chat due to inactivity. Send '{{keyword}}' anytime to start again.,,,Keep unchanged: {{keyword}}; Machine translation unavailable: not translated
 stopOptOutDefault,Done — you won't receive offers or reminders from us. Reply START anytime to turn them back on.,సరే — ఇకపై మీకు మా నుండి ఆఫర్లు లేదా రిమైండర్లు రావు. మళ్లీ ఆన్ చేయడానికి ఎప్పుడైనా START అని పంపండి.,,Hand-corrected wording (still machine-marked): needs native review
 startOptInDefault,You're all set — messages have resumed.,అంతా సిద్ధం — సందేశాలు మళ్లీ మొదలయ్యాయి.,,Machine translation unavailable: not translated; Hand-corrected wording (still machine-marked): needs native review
 optInConsentQuestion,"{{business}} would like to send you offers and updates on WhatsApp. Would you like to receive them?
@@ -117,6 +120,10 @@ quoteBilledByMin,Billed distance: {{km}} km ({{days}} day(s) × {{min}} km minim
 quoteBilledByDistance,"Billed distance: {{km}} km (there and back, 2 × {{one}} km)","బిల్లింగ్ దూరం: {{km}} కి.మీ (అక్కడి మరియు వెనక్కి, 2 × {{one}} కి.మీ)",,Keep unchanged: {{km}} {{one}}
 quoteExtraDriverDays,Driver allowance ({{units}} day(s) × ₹{{perUnit}}): ₹{{amount}},డ్రైవర్ అలవెన్స్ ({{units}} రోజు(లు) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
 quoteExtraDriverNights,Driver allowance ({{units}} night(s) × ₹{{perUnit}}): ₹{{amount}},డ్రైవర్ అలవెన్స్ ({{units}} రాత్రి(లు) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quoteDayOne,{{n}} day,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
+quoteDayMany,{{n}} days,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
+quoteNightOne,{{n}} night,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
+quoteNightMany,{{n}} nights,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
 quotePackageFareLine,Package fare: ₹{{amount}},ప్యాకేజీ ఛార్జీలు: ₹{{amount}},,Keep unchanged: {{amount}}
 quoteActualKmNote,The final fare is by actual km if the trip runs more than the billed km.,ఒకవేళ ట్రిప్పు బిల్లు చేయబడ్డ కిలోమీటర్ల కంటే ఎక్కువగా నడిచినట్లయితే తుది ఛార్జీలు వాస్తవ కిలోమీటర్లు ఉంటాయి.,,
 quoteCardDays,{{days}} day(s),{{days}} రోజు(లు),,Keep unchanged: {{days}}
@@ -136,6 +143,8 @@ quoteBtnConfirm,Confirm,ధృవీకరించండి,,
 quoteBtnChange,Change,మార్చు,,
 quoteBtnTalk,Talk to us,మాతో మాట్లాడండి,,
 quoteBtnPaid,I've paid,నేను చెల్లించాను,,
+quoteChatExpired,That quote chat expired. Tap *Get a quote* to start again.,,,*bold* markers must stay around the same words; Machine translation unavailable: not translated
+quoteBtnStart,Get a quote,,,Machine translation unavailable: not translated
 quoteBtnNew,New quote,కొత్త కోట్,,
 quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","క్షమించండి, ఈ మార్గంలో మీ సమూహ పరిమాణం కోసం మాకు వాహనం లేదు. *మాతో మాట్లాడు నొక్కండి* మరియు మా బృందం మీకు సహాయం చేస్తుంది.",,*bold* markers must stay around the same words
 quoteExpired,This quote has expired. Tap below to get a new one.,ఈ కోట్ గడువు ముగిసింది. క్రొత్తదాన్ని పొందడానికి క్రింద నొక్కండి.,,

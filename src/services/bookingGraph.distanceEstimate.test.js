@@ -97,7 +97,7 @@ test('a Round Trip estimate card is priced by the quote formula, and the tap giv
   assert.equal(innova.result.label, 'When?');
   const c = innova.session.collected;
   assert.deepEqual([c.vehicleId, c.vehicleFare, c.fareSource, c.distanceKm], ['v1', 17850, 'distance_estimate', 750]);
-  assert.deepEqual([c.driverDaTotal, c.driverDaPerDay, c.driverDaDays], [600, 300, 2]);
+  assert.deepEqual([c.driverDaTotal, c.driverDaPerDay, c.driverDaDays, c.driverDaBasis], [600, 300, 2, 'night']);
 
   const dzire = await say((await toCarousel('3')).session, '1');
   const d = dzire.session.collected;

@@ -23,6 +23,8 @@ summaryFare,Fare: *₹{{fare}}*,கட்டணம்: *₹{{fare}}*,,Keep uncha
 summaryFareEstimated,"Fare: *₹{{fare}} (estimated, based on distance)*","கட்டணம்: *₹{{fare}} (மதிப்பிடப்பட்டது, தூரத்தின் அடிப்படையில்)*",,Keep unchanged: {{fare}}; *bold* markers must stay around the same words
 summaryDistance,Distance: *{{km}} km*,தூரம்: *{{km}} கி.மீ*,,Keep unchanged: {{km}}; *bold* markers must stay around the same words
 summaryDriverDa,Driver DA: *₹{{total}} ({{days}} days × ₹{{perDay}})*,டிரைவர் டிஏ: *₹{{total}} ({{days}} நாட்கள் × ₹{{perDay}})*,,Keep unchanged: {{total}} {{days}} {{perDay}}; *bold* markers must stay around the same words
+summaryDriverDaNights,Driver DA: *₹{{total}} ({{unitsText}} × ₹{{perDay}})*,,,Keep unchanged: {{total}} {{unitsText}} {{perDay}}; *bold* markers must stay around the same words; Machine translation unavailable: not translated
+summaryDriverDaNightsPlain,Driver DA: *₹{{total}} ({{units}} night(s) × ₹{{perDay}})*,டிரைவர் டிஏ: *₹{{total}} ({{units}} இரவு(கள்) × ₹{{perDay}})*,,Keep unchanged: {{total}} {{units}} {{perDay}}; *bold* markers must stay around the same words
 summaryTollNote,_Note: Toll & parking charges are not included in this fare and will be collected separately._,"_குறிப்பு: கட்டணம் மற்றும் பார்க்கிங் கட்டணங்கள் இந்த கட்டணத்தில் சேர்க்கப்படவில்லை, தனித்தனியாக வசூலிக்கப்படும்._",,
 summaryExtraRate,"_Extra km: ₹{{km}}/km, Extra hour: ₹{{hr}}/hr beyond package limits._","_கூடுதல் கிமீ: ₹{{km}}/km, கூடுதல் மணிநேரம்: பேக்கேஜ் வரம்புகளுக்கு அப்பால் ₹{{hr}}/hr._",,Keep unchanged: {{km}} {{hr}}
 summaryRentalUnconfigured,_Note: this business hasn't set up rental packages yet — our team will call you to confirm pricing for this rental._,_குறிப்பு: இந்த வணிகம் இன்னும் வாடகை தொகுப்புகளை அமைக்கவில்லை — இந்த வாடகைக்கான விலையை உறுதிப்படுத்த எங்கள் குழு உங்களை அழைக்கும்._,,
@@ -48,6 +50,7 @@ qrScreenshot,Please share a screenshot here after paying.,பணம் செல
 advancePaid,✅ Advance received! Your booking {{code}} is confirmed. Our team will contact you shortly.,✅ முன்பணம் பெறப்பட்டது! உங்கள் முன்பதிவு {{code}} உறுதிப்படுத்தப்பட்டது. எங்கள் குழு விரைவில் உங்களைத் தொடர்பு கொள்ளும்.,,Keep unchanged: {{code}}
 admissionFeePaid,✅ Fees received! Admission {{code}} is confirmed. Welcome to {{business}}!,✅ கட்டணம் பெறப்பட்டது! சேர்க்கை {{code}} உறுதிப்படுத்தப்பட்டது. {{business}} வரவேற்கிறோம்!,,Keep unchanged: {{code}} {{business}}
 sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,நீங்கள் விலகிச் சென்றுவிட்டீர்கள் போல் தெரிகிறது - செயலற்ற தன்மை காரணமாக இந்த அமர்வை முடித்துவிட்டேன். மீண்டும் தொடங்க எப்போது வேண்டுமானாலும் 'book' அனுப்பவும்.,,
+sessionTimeoutQuote,Looks like you've stepped away — I've ended this quote chat due to inactivity. Send '{{keyword}}' anytime to start again.,,,Keep unchanged: {{keyword}}; Machine translation unavailable: not translated
 stopOptOutDefault,Done — you won't receive offers or reminders from us. Reply START anytime to turn them back on.,சரி — இனி எங்களிடமிருந்து சலுகைகள் அல்லது நினைவூட்டல்கள் உங்களுக்கு வராது. மீண்டும் தொடங்க எப்போது வேண்டுமானாலும் START என்று அனுப்பவும்.,,Hand-corrected wording (still machine-marked): needs native review
 startOptInDefault,You're all set — messages have resumed.,எல்லாம் தயார் — செய்திகள் மீண்டும் தொடங்கிவிட்டன.,,Machine translation unavailable: not translated; Hand-corrected wording (still machine-marked): needs native review
 optInConsentQuestion,"{{business}} would like to send you offers and updates on WhatsApp. Would you like to receive them?
@@ -117,6 +120,10 @@ quoteBilledByMin,Billed distance: {{km}} km ({{days}} day(s) × {{min}} km minim
 quoteBilledByDistance,"Billed distance: {{km}} km (there and back, 2 × {{one}} km)","பில் தூரம்: {{km}} கிமீ (அங்கும் பின்னும், 2 × {{one}} கிமீ)",,Keep unchanged: {{km}} {{one}}
 quoteExtraDriverDays,Driver allowance ({{units}} day(s) × ₹{{perUnit}}): ₹{{amount}},ஓட்டுநர் கொடுப்பனவு ({{units}} நாள்(கள்) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
 quoteExtraDriverNights,Driver allowance ({{units}} night(s) × ₹{{perUnit}}): ₹{{amount}},ஓட்டுநர் கொடுப்பனவு ({{units}} இரவு (கள்) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quoteDayOne,{{n}} day,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
+quoteDayMany,{{n}} days,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
+quoteNightOne,{{n}} night,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
+quoteNightMany,{{n}} nights,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
 quotePackageFareLine,Package fare: ₹{{amount}},பேக்கேஜ் கட்டணம்: ₹{{amount}},,Keep unchanged: {{amount}}
 quoteActualKmNote,The final fare is by actual km if the trip runs more than the billed km.,பயணம் பில் செய்யப்பட்ட கி.மீ.க்கு மேல் ஓடினால் இறுதி கட்டணம் உண்மையான கி.மீ.,,
 quoteCardDays,{{days}} day(s),{{days}} நாள்(கள்),,Keep unchanged: {{days}}
@@ -136,6 +143,8 @@ quoteBtnConfirm,Confirm,உறுதிப்படுத்தவும்,,
 quoteBtnChange,Change,மாற்றம்,,
 quoteBtnTalk,Talk to us,எங்களுடன் பேசுங்கள்,,
 quoteBtnPaid,I've paid,செலுத்தி விட்டேன்,,Claude-written short wording (not Azure output): the machine translation was over the 20-character button limit. Needs a native-speaker check.
+quoteChatExpired,That quote chat expired. Tap *Get a quote* to start again.,,,*bold* markers must stay around the same words; Machine translation unavailable: not translated
+quoteBtnStart,Get a quote,,,Machine translation unavailable: not translated
 quoteBtnNew,New quote,புதிய மேற்கோள்,,
 quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","மன்னிக்கவும், இந்த பாதையில் உங்கள் குழு அளவிற்கான வாகனம் எங்களிடம் இல்லை. *எங்களுடன் பேசுங்கள் என்பதைத்* தட்டவும், எங்கள் குழு உங்களுக்கு உதவும்.",,*bold* markers must stay around the same words
 quoteExpired,This quote has expired. Tap below to get a new one.,இந்த மேற்கோள் காலாவதியாகிவிட்டது. புதியதைப் பெற கீழே தட்டவும்.,,

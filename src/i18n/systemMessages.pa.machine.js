@@ -27,6 +27,7 @@ module.exports = {
   "summaryFareEstimated": "ਕਿਰਾਇਆ: ₹ *{{fare}} (ਅਨੁਮਾਨਿਤ ਦੂਰੀ ਦੇ ਅਧਾਰ ਤੇ)*",
   "summaryDistance": "ਦੂਰੀ: *{{km}} ਕਿਲੋਮੀਟਰ*",
   "summaryDriverDa": "ਡਰਾਈਵਰ ਡੀ.ਏ: ₹ *{{total}} ({{days}} ਦਿਨ × ₹{{perDay}})*",
+  "summaryDriverDaNightsPlain": "ਡਰਾਈਵਰ ਡੀਏ: ₹ *{{total}} ({{units}} ਰਾਤ(ਲਾਂ) × ₹{{perDay}})*",
   "summaryTollNote": "_ਨੋਟ: ਟੋਲ ਅਤੇ ਪਾਰਕਿੰਗ ਖਰਚੇ ਇਸ ਕਿਰਾਏ ਵਿੱਚ ਸ਼ਾਮਲ ਨਹੀਂ ਕੀਤੇ ਗਏ ਹਨ ਅਤੇ ਵੱਖਰੇ ਤੌਰ 'ਤੇ ਇਕੱਠੇ ਕੀਤੇ ਜਾਣਗੇ।_",
   "summaryExtraRate": "_ਵਾਧੂ ਕਿਲੋਮੀਟਰ: ₹{{km}}/ ਕਿਮੀ, ਵਾਧੂ ਘੰਟਾ: ਪੈਕੇਜ ਸੀਮਾਵਾਂ ਤੋਂ ਵੱਧ ₹{{hr}}/ ਘੰਟਾ।_",
   "summaryRentalUnconfigured": "_ਨੋਟ: ਇਸ ਕਾਰੋਬਾਰ ਨੇ ਅਜੇ ਕਿਰਾਏ ਦੇ ਪੈਕੇਜ ਸਥਾਪਤ ਨਹੀਂ ਕੀਤੇ ਹਨ - ਸਾਡੀ ਟੀਮ ਇਸ ਕਿਰਾਏ ਦੀ ਕੀਮਤ ਦੀ ਪੁਸ਼ਟੀ ਕਰਨ ਲਈ ਤੁਹਾਨੂੰ ਕਾਲ ਕਰੇਗੀ._",

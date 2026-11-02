@@ -129,8 +129,8 @@ const getBusinesses = async (req, res, next) => {
  * PUT /api/admin/businesses/:id/category
  * Body: { businessCategory } - any known category (enabled or not), except 'multi_brand' (it needs
  * sub-categories this endpoint does not set). Changes ONLY the category and the
- * business_travel_settings flags that derive from it (enable_fleet / enable_distance_fares /
- * round_trip_driver_da_enabled, via computeFeatureFlags - the same values signup would have set);
+ * business_travel_settings flags that derive from it (enable_fleet / enable_distance_fares,
+ * via computeFeatureFlags - the same values signup would have set; the old round_trip_* values are left alone);
  * the flow and form are not re-seeded (use copy-setup). Meant for a freshly requested business that
  * signed up as 'general' (see business_requests): an existing owner's fare toggles are overwritten.
  */

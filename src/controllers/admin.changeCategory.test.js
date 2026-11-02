@@ -67,21 +67,21 @@ test('general -> travels: category changes and the travel flags are recomputed l
   const flags = tables.business_travel_settings[0];
   assert.equal(flags.enable_fleet, true);
   assert.equal(flags.enable_distance_fares, true);
-  assert.equal(flags.round_trip_driver_da_enabled, true);
+  assert.equal(flags.round_trip_driver_da_enabled, false, 'the old driver-DA switch is not turned on by a category any more');
   assert.equal(flags.round_trip_per_day_km, 250, 'fare values the flags do not cover are left alone');
   assert.equal(out.body.data.previousCategory, 'general');
   assert.equal(out.body.data.businessCategory, 'travels');
-  assert.deepEqual(out.body.data.travelSettings, { enableFleet: true, enableDistanceFares: true, roundTripDriverDaEnabled: true });
+  assert.deepEqual(out.body.data.travelSettings, { enableFleet: true, enableDistanceFares: true });
   assert.equal(out.body.data.cacheInvalidated, true);
 });
 
-test('travels -> salon: the travel flags go back to off', async () => {
+test('travels -> salon: fleet and distance fares go back to off; an existing old driver-DA switch is left alone', async () => {
   tables.businesses[0].business_category = 'travels';
   Object.assign(tables.business_travel_settings[0], { enable_fleet: true, enable_distance_fares: true, round_trip_driver_da_enabled: true });
   assert.equal((await call('b1', { businessCategory: 'salon' })).status, 200);
   assert.deepEqual(
     [tables.business_travel_settings[0].enable_fleet, tables.business_travel_settings[0].enable_distance_fares, tables.business_travel_settings[0].round_trip_driver_da_enabled],
-    [false, false, false]
+    [false, false, true]
   );
 });
 

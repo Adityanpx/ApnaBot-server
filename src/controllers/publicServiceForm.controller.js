@@ -643,6 +643,7 @@ const processServiceFormSubmit = async (req, res, next, idempotency = null) => {
         if (matchedOption.driverDaTotal) {
           collected.driverDaTotal = matchedOption.driverDaTotal;
           collected.driverDaDays = matchedOption.driverDaDays;
+          collected.driverDaBasis = matchedOption.driverDaBasis;
           collected.driverDaPerDay = matchedOption.driverDaPerDay;
         }
         // Decorate the vehicle field's own display value with its per-km rate

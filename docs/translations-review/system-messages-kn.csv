@@ -23,6 +23,8 @@ summaryFare,Fare: *₹{{fare}}*,ದರ: ₹ *{{fare}}*,,Keep unchanged: {{fare}}
 summaryFareEstimated,"Fare: *₹{{fare}} (estimated, based on distance)*","ದರ: ₹ *{{fare}} (ಅಂದಾಜು, ದೂರದ ಆಧಾರದ ಮೇಲೆ)*",,Keep unchanged: {{fare}}; *bold* markers must stay around the same words
 summaryDistance,Distance: *{{km}} km*,ದೂರ: *{{km}} ಕಿ.ಮೀ.*,,Keep unchanged: {{km}}; *bold* markers must stay around the same words
 summaryDriverDa,Driver DA: *₹{{total}} ({{days}} days × ₹{{perDay}})*,ಡ್ರೈವರ್ ಡಿಎ: ₹ *{{total}} ({{days}} ದಿನಗಳು × ₹{{perDay}})*,,Keep unchanged: {{total}} {{days}} {{perDay}}; *bold* markers must stay around the same words
+summaryDriverDaNights,Driver DA: *₹{{total}} ({{unitsText}} × ₹{{perDay}})*,,,Keep unchanged: {{total}} {{unitsText}} {{perDay}}; *bold* markers must stay around the same words; Machine translation unavailable: not translated
+summaryDriverDaNightsPlain,Driver DA: *₹{{total}} ({{units}} night(s) × ₹{{perDay}})*,ಡ್ರೈವರ್ ಡಿಎ: ₹ *{{total}} ({{units}} ರಾತ್ರಿ(ಗಳು) × ₹{{perDay}})*,,Keep unchanged: {{total}} {{units}} {{perDay}}; *bold* markers must stay around the same words
 summaryTollNote,_Note: Toll & parking charges are not included in this fare and will be collected separately._,_ಸೂಚನೆ: ಟೋಲ್ ಮತ್ತು ಪಾರ್ಕಿಂಗ್ ಶುಲ್ಕಗಳನ್ನು ಈ ದರದಲ್ಲಿ ಸೇರಿಸಲಾಗಿಲ್ಲ ಮತ್ತು ಪ್ರತ್ಯೇಕವಾಗಿ ಸಂಗ್ರಹಿಸಲಾಗುತ್ತದೆ._,,
 summaryExtraRate,"_Extra km: ₹{{km}}/km, Extra hour: ₹{{hr}}/hr beyond package limits._","_ಹೆಚ್ಚುವರಿ ಕಿಮೀ: ₹{{km}}/ ಕಿಮೀ, ಹೆಚ್ಚುವರಿ ಗಂಟೆ: ಪ್ಯಾಕೇಜ್ ಮಿತಿಗಳನ್ನು ಮೀರಿ ₹{{hr}}/ ಗಂಟೆ._",,Keep unchanged: {{km}} {{hr}}
 summaryRentalUnconfigured,_Note: this business hasn't set up rental packages yet — our team will call you to confirm pricing for this rental._,_ಗಮನಿಸಿ: ಈ ವ್ಯವಹಾರವು ಇನ್ನೂ ಬಾಡಿಗೆ ಪ್ಯಾಕೇಜ್ ಗಳನ್ನು ಹೊಂದಿಸಿಲ್ಲ - ಈ ಬಾಡಿಗೆಯ ಬೆಲೆಯನ್ನು ದೃಢೀಕರಿಸಲು ನಮ್ಮ ತಂಡವು ನಿಮಗೆ ಕರೆ ಮಾಡುತ್ತದೆ._,,
@@ -48,6 +50,7 @@ qrScreenshot,Please share a screenshot here after paying.,ಪಾವತಿಸಿ�
 advancePaid,✅ Advance received! Your booking {{code}} is confirmed. Our team will contact you shortly.,✅ ಮುಂಗಡ ಸ್ವೀಕರಿಸಲಾಗಿದೆ! ನಿಮ್ಮ ಬುಕಿಂಗ್ {{code}} ದೃಢೀಕರಿಸಲಾಗಿದೆ. ನಮ್ಮ ತಂಡವು ಶೀಘ್ರದಲ್ಲೇ ನಿಮ್ಮನ್ನು ಸಂಪರ್ಕಿಸುತ್ತದೆ.,,Keep unchanged: {{code}}
 admissionFeePaid,✅ Fees received! Admission {{code}} is confirmed. Welcome to {{business}}!,✅ ಶುಲ್ಕ ಸ್ವೀಕರಿಸಲಾಗಿದೆ! ಪ್ರವೇಶ {{code}} ದೃಢೀಕರಿಸಲಾಗಿದೆ. {{business}} ಗೆ ಸ್ವಾಗತ!,,Keep unchanged: {{code}} {{business}}
 sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,ನೀವು ದೂರ ಸರಿದಿದ್ದೀರಿ ಎಂದು ತೋರುತ್ತಿದೆ - ನಿಷ್ಕ್ರಿಯತೆಯಿಂದಾಗಿ ನಾನು ಈ ಅಧಿವೇಶನವನ್ನು ಕೊನೆಗೊಳಿಸಿದ್ದೇನೆ. ಮತ್ತೆ ಪ್ರಾರಂಭಿಸಲು ಯಾವುದೇ ಸಮಯದಲ್ಲಿ 'book' ಕಳುಹಿಸಿ.,,
+sessionTimeoutQuote,Looks like you've stepped away — I've ended this quote chat due to inactivity. Send '{{keyword}}' anytime to start again.,,,Keep unchanged: {{keyword}}; Machine translation unavailable: not translated
 stopOptOutDefault,Done — you won't receive offers or reminders from us. Reply START anytime to turn them back on.,ಆಯಿತು — ಇನ್ನು ಮುಂದೆ ನಿಮಗೆ ನಮ್ಮಿಂದ ಕೊಡುಗೆಗಳು ಅಥವಾ ಜ್ಞಾಪನೆಗಳು ಬರುವುದಿಲ್ಲ. ಮತ್ತೆ ಆರಂಭಿಸಲು ಯಾವಾಗ ಬೇಕಾದರೂ START ಎಂದು ಕಳುಹಿಸಿ.,,Hand-corrected wording (still machine-marked): needs native review
 startOptInDefault,You're all set — messages have resumed.,ಎಲ್ಲವೂ ಸಿದ್ಧ — ಸಂದೇಶಗಳು ಮತ್ತೆ ಪ್ರಾರಂಭವಾಗಿವೆ.,,Machine translation unavailable: not translated; Hand-corrected wording (still machine-marked): needs native review
 optInConsentQuestion,"{{business}} would like to send you offers and updates on WhatsApp. Would you like to receive them?
@@ -117,6 +120,10 @@ quoteBilledByMin,Billed distance: {{km}} km ({{days}} day(s) × {{min}} km minim
 quoteBilledByDistance,"Billed distance: {{km}} km (there and back, 2 × {{one}} km)","ಬಿಲ್ ಮಾಡಿದ ದೂರ: {{km}} ಕಿ.ಮೀ (ಅಲ್ಲಿ ಮತ್ತು ಹಿಂದಕ್ಕೆ, 2 × {{one}} ಕಿ.ಮೀ)",,Keep unchanged: {{km}} {{one}}
 quoteExtraDriverDays,Driver allowance ({{units}} day(s) × ₹{{perUnit}}): ₹{{amount}},ಡ್ರೈವರ್ ಅಲೌನ್ಸ್ ({{units}} ದಿನ (ಗಳು) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
 quoteExtraDriverNights,Driver allowance ({{units}} night(s) × ₹{{perUnit}}): ₹{{amount}},ಡ್ರೈವರ್ ಭತ್ಯೆ ({{units}} ರಾತ್ರಿ (ಗಳು) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quoteDayOne,{{n}} day,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
+quoteDayMany,{{n}} days,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
+quoteNightOne,{{n}} night,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
+quoteNightMany,{{n}} nights,,,Keep unchanged: {{n}}; Machine translation unavailable: not translated
 quotePackageFareLine,Package fare: ₹{{amount}},ಪ್ಯಾಕೇಜ್ ಶುಲ್ಕ: ₹{{amount}},,Keep unchanged: {{amount}}
 quoteActualKmNote,The final fare is by actual km if the trip runs more than the billed km.,ಬಿಲ್ ಮಾಡಿದ ಕಿ.ಮೀ.ಗಿಂತ ಹೆಚ್ಚು ಪ್ರವಾಸವು ಚಲಿಸಿದರೆ ಅಂತಿಮ ಶುಲ್ಕವು ನಿಜವಾದ ಕಿ.ಮೀ.,,
 quoteCardDays,{{days}} day(s),{{days}} ದಿನ(ಗಳು),,Keep unchanged: {{days}}
@@ -136,6 +143,8 @@ quoteBtnConfirm,Confirm,ದೃಢೀಕರಿಸಿ,,
 quoteBtnChange,Change,ಬದಲಿಸಿ,,
 quoteBtnTalk,Talk to us,ನಮ್ಮೊಂದಿಗೆ ಮಾತನಾಡಿ,,
 quoteBtnPaid,I've paid,ನಾನು ಪಾವತಿಸಿದ್ದೇನೆ,,
+quoteChatExpired,That quote chat expired. Tap *Get a quote* to start again.,,,*bold* markers must stay around the same words; Machine translation unavailable: not translated
+quoteBtnStart,Get a quote,,,Machine translation unavailable: not translated
 quoteBtnNew,New quote,ಹೊಸ ಉಲ್ಲೇಖ,,
 quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","ಕ್ಷಮಿಸಿ, ಈ ಮಾರ್ಗದಲ್ಲಿ ನಿಮ್ಮ ಗುಂಪಿನ ಗಾತ್ರಕ್ಕೆ ನಮ್ಮಲ್ಲಿ ವಾಹನವಿಲ್ಲ. *ನಮ್ಮೊಂದಿಗೆ ಮಾತನಾಡಿ ಟ್ಯಾಪ್* ಮಾಡಿ ಮತ್ತು ನಮ್ಮ ತಂಡವು ನಿಮಗೆ ಸಹಾಯ ಮಾಡುತ್ತದೆ.",,*bold* markers must stay around the same words
 quoteExpired,This quote has expired. Tap below to get a new one.,ಈ ಉಲ್ಲೇಖದ ಅವಧಿ ಮುಗಿದಿದೆ. ಹೊಸದನ್ನು ಪಡೆಯಲು ಕೆಳಗೆ ಟ್ಯಾಪ್ ಮಾಡಿ.,,

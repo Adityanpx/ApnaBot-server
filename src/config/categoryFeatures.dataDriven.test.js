@@ -14,7 +14,7 @@ const raw = read('20261024140000_data_driven_categories.sql');
 const code = raw.split('\n').filter((line) => !line.trim().startsWith('--')).join('\n');
 const statements = code.split(';').map((s) => s.replace(/\s+/g, ' ').trim()).filter(Boolean);
 
-const NO_FEATURES = { enable_fleet: false, enable_distance_fares: false, round_trip_driver_da_enabled: false };
+const NO_FEATURES = { enable_fleet: false, enable_distance_fares: false };
 
 test('the four category CHECK constraints are dropped by name', () => {
   const dropped = statements
@@ -105,11 +105,14 @@ test('categoryFeatures.js: multi_brand with unknown sub-categories only collects
   assert.deepEqual(computeFeatureFlags({ businessCategory: 'multi_brand' }), NO_FEATURES);
   assert.deepEqual(
     computeFeatureFlags({ businessCategory: 'multi_brand', subCategories: ['brand_new_category', 'cab'] }),
-    { enable_fleet: true, enable_distance_fares: true, round_trip_driver_da_enabled: true }
+    { enable_fleet: true, enable_distance_fares: true }
   );
 });
 
-test('categoryFeatures.js: travels / cab defaults are unchanged', () => {
-  assert.deepEqual(CATEGORY_DEFAULT_FEATURES.travels, ['fleet', 'distanceFares', 'driverDA']);
-  assert.deepEqual(CATEGORY_DEFAULT_FEATURES.cab, ['fleet', 'distanceFares', 'driverDA']);
+test('categoryFeatures.js: travels / cab turn on fleet and distance fares; no category sets the old driver-DA switch any more', () => {
+  assert.deepEqual(CATEGORY_DEFAULT_FEATURES.travels, ['fleet', 'distanceFares']);
+  assert.deepEqual(CATEGORY_DEFAULT_FEATURES.cab, ['fleet', 'distanceFares']);
+  for (const category of ['travels', 'cab', 'general']) {
+    assert.equal('round_trip_driver_da_enabled' in computeFeatureFlags({ businessCategory: category }), false, category);
+  }
 });

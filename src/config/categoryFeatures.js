@@ -2,8 +2,12 @@
 // keyed by business_categories.value (a business's category, and
 // multi_brand's sub_categories). Each entry maps to a boolean column
 // on business_travel_settings (migration 20260921130000) that already
-// exists (enable_fleet, enable_distance_fares, round_trip_driver_da_enabled).
-// enable_distance_fares and round_trip_driver_da_enabled are read by
+// exists (enable_fleet, enable_distance_fares). round_trip_driver_da_enabled
+// is no longer set from a category: the driver allowance is a per-vehicle
+// field now (vehicles.driver_allowance_per_day), and the old column is only
+// the estimate's fallback for a vehicle without one, so a new or re-categorised
+// business keeps the column's default (false) and an existing value is left alone.
+// enable_distance_fares is read by
 // booking.service.js's fare estimate; enable_fleet is stored UI state only —
 // nothing server-side (vehicle routes, booking engine, webhook) reads it, and
 // it's only returned by the API for travel-featured categories (see
@@ -23,7 +27,7 @@ const CATEGORY_DEFAULT_FEATURES = {
   tailor: [],
   salon: [],
   garage: [],
-  cab: ['fleet', 'distanceFares', 'driverDA'],
+  cab: ['fleet', 'distanceFares'],
   coaching: [],
   gym: [],
   medical: [],
@@ -38,7 +42,7 @@ const CATEGORY_DEFAULT_FEATURES = {
   electronics_repair: [],
   real_estate: [],
   driving_school: [],
-  travels: ['fleet', 'distanceFares', 'driverDA'],
+  travels: ['fleet', 'distanceFares'],
   software_it: [],
   maha_eseva_kendra: [],
   tax_consultant: [],
@@ -56,7 +60,7 @@ const featuresFor = (category) =>
 
 /**
  * @param {{ businessCategory: string, subCategories?: string[] }} business
- * @returns {{ enable_fleet: boolean, enable_distance_fares: boolean, round_trip_driver_da_enabled: boolean }}
+ * @returns {{ enable_fleet: boolean, enable_distance_fares: boolean }}
  */
 const computeFeatureFlags = ({ businessCategory, subCategories }) => {
   const categories = businessCategory === 'multi_brand'
@@ -70,8 +74,7 @@ const computeFeatureFlags = ({ businessCategory, subCategories }) => {
 
   return {
     enable_fleet: features.has('fleet'),
-    enable_distance_fares: features.has('distanceFares'),
-    round_trip_driver_da_enabled: features.has('driverDA')
+    enable_distance_fares: features.has('distanceFares')
   };
 };
 

@@ -49,7 +49,7 @@ const RESERVED_TRAVEL_FIELD_KEYS = ['tripType', 'pickupLocation', 'dropLocation'
 const ENGINE_COLLECTED_KEYS = [
   'vehicleType', 'vehicleId', 'vehicleName', 'vehicleFare', 'fareSource', 'extraKmRate', 'extraHrRate',
   'distanceKm', 'routeFareId', 'rentalPackage', 'rentalPackageId', 'numberOfDays',
-  'driverDaTotal', 'driverDaPerDay', 'driverDaDays'
+  'driverDaTotal', 'driverDaPerDay', 'driverDaDays', 'driverDaBasis'
 ];
 const RESERVED_FIELD_KEYS = [...RESERVED_TRAVEL_FIELD_KEYS, ...ENGINE_COLLECTED_KEYS];
 
