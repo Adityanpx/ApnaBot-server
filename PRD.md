@@ -134,6 +134,13 @@ cutover and the menu picker had always resolved empty in practice.
   (`quoteBtnConfirm`), so that button no longer says "& pay"; Tamil `quoteBtnPaid` ("செலுத்தி விட்டேன்") and `vehicleBookThis`
   ("இதை பதிவு செய்") are **Claude-written wording, not Azure output** - they need a native-speaker check like everything else here. The CSV note
   on each says so. A reviewed text goes in the language's CSV `reviewed_translation` and is imported without `--source=machine`.
+  **Typed keywords (fixed 2026-11-02):** Azure had translated words the customer must type - `'book'` in `sessionTimeout` (into the word for a
+  physical book), `*hi*` in `quoteUnavailable` (into a greeting) and the `6:30 AM` example of `pickupTimeInvalid` - in all 8 languages. Those
+  three words are put back as typed (nothing else in the texts changed) and `systemMessagesReview.test.js` now fails if any machine text
+  changes a quoted, single-bold or ALL-CAPS word of its English or the time example (`*Scan*` of the UPI-app steps is a label of another app and is
+  translated on purpose). A native reviewer must keep these words as typed. `importReviewedSystemMessages.js` currently REJECTS the four
+  `{{daysText}}` / `{{unitsText}}` keys (their English differs from the machine text's `{{days}}` / `{{units}}`), so do not re-import machine rows with it
+  until its placeholder check treats them as equal.
 - Verified via `src/scripts/verifyBookingGraph.js`. Rewritten 2026-09-07 to
   be fully generic — no hardcoded business id, vehicle id, route-fare id,
   or expected fare/value anywhere in the script, and no default business

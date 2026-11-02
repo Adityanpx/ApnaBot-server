@@ -47,7 +47,7 @@ qrUpiId,Or pay to UPI ID: {{upiId}},அல்லது UPI ஐடிக்கு
 qrScreenshot,Please share a screenshot here after paying.,பணம் செலுத்திய பிறகு ஸ்கிரீன்ஷாட்டை இங்கே பகிரவும்.,,
 advancePaid,✅ Advance received! Your booking {{code}} is confirmed. Our team will contact you shortly.,✅ முன்பணம் பெறப்பட்டது! உங்கள் முன்பதிவு {{code}} உறுதிப்படுத்தப்பட்டது. எங்கள் குழு விரைவில் உங்களைத் தொடர்பு கொள்ளும்.,,Keep unchanged: {{code}}
 admissionFeePaid,✅ Fees received! Admission {{code}} is confirmed. Welcome to {{business}}!,✅ கட்டணம் பெறப்பட்டது! சேர்க்கை {{code}} உறுதிப்படுத்தப்பட்டது. {{business}} வரவேற்கிறோம்!,,Keep unchanged: {{code}} {{business}}
-sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,நீங்கள் விலகிச் சென்றுவிட்டீர்கள் போல் தெரிகிறது - செயலற்ற தன்மை காரணமாக இந்த அமர்வை முடித்துவிட்டேன். மீண்டும் தொடங்க எப்போது வேண்டுமானாலும் 'புத்தகம்' அனுப்பவும்.,,
+sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,நீங்கள் விலகிச் சென்றுவிட்டீர்கள் போல் தெரிகிறது - செயலற்ற தன்மை காரணமாக இந்த அமர்வை முடித்துவிட்டேன். மீண்டும் தொடங்க எப்போது வேண்டுமானாலும் 'book' அனுப்பவும்.,,
 stopOptOutDefault,Done — you won't receive offers or reminders from us. Reply START anytime to turn them back on.,சரி — இனி எங்களிடமிருந்து சலுகைகள் அல்லது நினைவூட்டல்கள் உங்களுக்கு வராது. மீண்டும் தொடங்க எப்போது வேண்டுமானாலும் START என்று அனுப்பவும்.,,Hand-corrected wording (still machine-marked): needs native review
 startOptInDefault,You're all set — messages have resumed.,எல்லாம் தயார் — செய்திகள் மீண்டும் தொடங்கிவிட்டன.,,Machine translation unavailable: not translated; Hand-corrected wording (still machine-marked): needs native review
 optInConsentQuestion,"{{business}} would like to send you offers and updates on WhatsApp. Would you like to receive them?
@@ -139,11 +139,11 @@ quoteBtnPaid,I've paid,செலுத்தி விட்டேன்,,Claude
 quoteBtnNew,New quote,புதிய மேற்கோள்,,
 quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","மன்னிக்கவும், இந்த பாதையில் உங்கள் குழு அளவிற்கான வாகனம் எங்களிடம் இல்லை. *எங்களுடன் பேசுங்கள் என்பதைத்* தட்டவும், எங்கள் குழு உங்களுக்கு உதவும்.",,*bold* markers must stay around the same words
 quoteExpired,This quote has expired. Tap below to get a new one.,இந்த மேற்கோள் காலாவதியாகிவிட்டது. புதியதைப் பெற கீழே தட்டவும்.,,
-quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","மன்னிக்கவும், இந்த மேற்கோள் இனி கிடைக்காது. மீண்டும் தொடங்க *வணக்கம் அனுப்பவும்* .",,*bold* markers must stay around the same words
+quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","மன்னிக்கவும், இந்த மேற்கோள் இனி கிடைக்காது. மீண்டும் தொடங்க *hi அனுப்பவும்* .",,*bold* markers must stay around the same words
 quoteConfirmedTitle,✅ *Booking confirmed!*,✅ *முன்பதிவு உறுதிப்படுத்தப்பட்டது!*,,*bold* markers must stay around the same words
 quoteConfirmedNext,Our team will contact you with the pickup details.,பிக்-அப் விவரங்களுடன் எங்கள் குழு உங்களைத் தொடர்பு கொள்ளும்.,,
 quotePaidPrompt,Paid already? Tap below once you have paid and we will check it.,"ஏற்கனவே பணம் செலுத்தியுள்ளீர்களா? நீங்கள் பணம் செலுத்தியவுடன் கீழே தட்டவும், நாங்கள் அதைச் சரிபார்ப்போம்.",,
 quotePaidThanks,Thanks! We will check your payment and confirm your booking shortly.,நன்றி! நாங்கள் உங்கள் கட்டணத்தை சரிபார்த்து விரைவில் உங்கள் முன்பதிவை உறுதி செய்வோம்.,,
 quotePaidAlready,We have already received your payment ✅,உங்கள் பேமெண்ட்டை ✅ நாங்கள் ஏற்கனவே பெற்றுள்ளோம்,,
-pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","மன்னிக்கவும், அந்த நேரத்தில் என்னால் படிக்க முடியவில்லை. தயவு செய்து காலை 6:30 அல்லது 18:30 என தட்டச்சு செய்யவும்.",,
+pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","மன்னிக்கவும், அந்த நேரத்தில் என்னால் படிக்க முடியவில்லை. தயவு செய்து 6:30 AM அல்லது 18:30 என தட்டச்சு செய்யவும்.",,
 chooseLanguageLine,Choose your language,உங்கள் மொழியைத் தேர்வுசெய்க,,

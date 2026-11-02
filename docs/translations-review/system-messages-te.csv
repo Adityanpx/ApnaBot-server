@@ -47,7 +47,7 @@ qrUpiId,Or pay to UPI ID: {{upiId}},లేదా UPI ఐడికి చెల�
 qrScreenshot,Please share a screenshot here after paying.,చెల్లించిన తరువాత దయచేసి స్క్రీన్ షాట్ ని ఇక్కడ పంచుకోండి.,,
 advancePaid,✅ Advance received! Your booking {{code}} is confirmed. Our team will contact you shortly.,✅ అడ్వాన్స్ అందుకుంది! మీ బుకింగ్ {{code}} ధృవీకరించబడింది. మా బృందం త్వరలో మిమ్మల్ని సంప్రదిస్తుంది.,,Keep unchanged: {{code}}
 admissionFeePaid,✅ Fees received! Admission {{code}} is confirmed. Welcome to {{business}}!,✅ ఫీజు వచ్చింది! ప్రవేశం {{code}} ధృవీకరించబడింది. {{business}} కు స్వాగతం!,,Keep unchanged: {{code}} {{business}}
-sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,మీరు దూరంగా ఉన్నట్లు కనిపిస్తోంది - నిష్క్రియాత్మకత కారణంగా నేను ఈ సెషన్ ను ముగించాను. మళ్లీ ప్రారంభించడానికి ఎప్పుడైనా 'పుస్తకం' పంపండి.,,
+sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,మీరు దూరంగా ఉన్నట్లు కనిపిస్తోంది - నిష్క్రియాత్మకత కారణంగా నేను ఈ సెషన్ ను ముగించాను. మళ్లీ ప్రారంభించడానికి ఎప్పుడైనా 'book' పంపండి.,,
 stopOptOutDefault,Done — you won't receive offers or reminders from us. Reply START anytime to turn them back on.,సరే — ఇకపై మీకు మా నుండి ఆఫర్లు లేదా రిమైండర్లు రావు. మళ్లీ ఆన్ చేయడానికి ఎప్పుడైనా START అని పంపండి.,,Hand-corrected wording (still machine-marked): needs native review
 startOptInDefault,You're all set — messages have resumed.,అంతా సిద్ధం — సందేశాలు మళ్లీ మొదలయ్యాయి.,,Machine translation unavailable: not translated; Hand-corrected wording (still machine-marked): needs native review
 optInConsentQuestion,"{{business}} would like to send you offers and updates on WhatsApp. Would you like to receive them?
@@ -139,11 +139,11 @@ quoteBtnPaid,I've paid,నేను చెల్లించాను,,
 quoteBtnNew,New quote,కొత్త కోట్,,
 quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","క్షమించండి, ఈ మార్గంలో మీ సమూహ పరిమాణం కోసం మాకు వాహనం లేదు. *మాతో మాట్లాడు నొక్కండి* మరియు మా బృందం మీకు సహాయం చేస్తుంది.",,*bold* markers must stay around the same words
 quoteExpired,This quote has expired. Tap below to get a new one.,ఈ కోట్ గడువు ముగిసింది. క్రొత్తదాన్ని పొందడానికి క్రింద నొక్కండి.,,
-quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","క్షమించండి, ఈ కోట్ ఇకపై అందుబాటులో లేదు. మళ్లీ ప్రారంభించడానికి *హాయ్ పంపండి* .",,*bold* markers must stay around the same words
+quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","క్షమించండి, ఈ కోట్ ఇకపై అందుబాటులో లేదు. మళ్లీ ప్రారంభించడానికి *hi పంపండి* .",,*bold* markers must stay around the same words
 quoteConfirmedTitle,✅ *Booking confirmed!*,✅ *బుకింగ్ ధృవీకరించబడింది!*,,*bold* markers must stay around the same words
 quoteConfirmedNext,Our team will contact you with the pickup details.,పికప్ వివరాలతో మా టీమ్ మిమ్మల్ని సంప్రదిస్తుంది.,,
 quotePaidPrompt,Paid already? Tap below once you have paid and we will check it.,ఇప్పటికే చెల్లించారా? మీరు చెల్లించిన తర్వాత క్రింద నొక్కండి మరియు మేము దానిని తనిఖీ చేస్తాము.,,
 quotePaidThanks,Thanks! We will check your payment and confirm your booking shortly.,ధన్యవాదాలు! మేము మీ చెల్లింపును తనిఖీ చేస్తాము మరియు త్వరలో మీ బుకింగ్ ను నిర్ధారిస్తాము.,,
 quotePaidAlready,We have already received your payment ✅,మేం ఇప్పటికే మీ పేమెంట్ ని ✅ అందుకున్నాం,,
-pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","క్షమించండి, నేను ఆ సమయంలో చదవలేకపోయాను. దయచేసి ఉదయం 6:30 లేదా 18:30 లాగా టైప్ చేయండి.",,
+pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","క్షమించండి, నేను ఆ సమయంలో చదవలేకపోయాను. దయచేసి 6:30 AM లేదా 18:30 లాగా టైప్ చేయండి.",,
 chooseLanguageLine,Choose your language,మీ భాషను ఎంచుకోండి,,

@@ -47,7 +47,7 @@ qrUpiId,Or pay to UPI ID: {{upiId}},କିମ୍ବା UPI ID କୁ ଦେୟ �
 qrScreenshot,Please share a screenshot here after paying.,ଦୟାକରି ଦେୟ କରିବା ପରେ ଏଠାରେ ଏକ ସ୍କ୍ରିନସଟ୍ ଅଂଶୀଦାର କରନ୍ତୁ।,,
 advancePaid,✅ Advance received! Your booking {{code}} is confirmed. Our team will contact you shortly.,✅ ଅଗ୍ରୀମ ପ୍ରାପ୍ତ ହୋଇଛି! ଆପଣଙ୍କର ବୁକିଂ {{code}} ନିଶ୍ଚିତ ହୋଇଛି । ଆମର ଟିମ୍ ଶୀଘ୍ର ଆପଣଙ୍କ ସହ ଯୋଗାଯୋଗ କରିବ ।,,Keep unchanged: {{code}}
 admissionFeePaid,✅ Fees received! Admission {{code}} is confirmed. Welcome to {{business}}!,✅ ଫି ଗ୍ରହଣ କରାଯାଇଛି! ଆଡମିଶନ {{code}} ନିଶ୍ଚିତ ହୋଇଛି । {{business}} କୁ ସ୍ୱାଗତ !,,Keep unchanged: {{code}} {{business}}
-sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,ଦେଖାଯାଉଛି ଯେ ଆପଣ ଦୂରେଇ ଯାଇଛନ୍ତି - ନିଷ୍କ୍ରିୟତା ହେତୁ ମୁଁ ଏହି ଅଧିବେଶନ ଶେଷ କରିଛି । ପୁନର୍ବାର ଆରମ୍ଭ କରିବାକୁ ଯେକୌଣସି ସମୟରେ 'ପୁସ୍ତକ' ପଠାନ୍ତୁ ।,,
+sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,ଦେଖାଯାଉଛି ଯେ ଆପଣ ଦୂରେଇ ଯାଇଛନ୍ତି - ନିଷ୍କ୍ରିୟତା ହେତୁ ମୁଁ ଏହି ଅଧିବେଶନ ଶେଷ କରିଛି । ପୁନର୍ବାର ଆରମ୍ଭ କରିବାକୁ ଯେକୌଣସି ସମୟରେ 'book' ପଠାନ୍ତୁ ।,,
 stopOptOutDefault,Done — you won't receive offers or reminders from us. Reply START anytime to turn them back on.,ଠିକ୍ ଅଛି — ଆପଣ ଆଉ ଆମଠାରୁ ଅଫର କିମ୍ବା ରିମାଇଣ୍ଡର ପାଇବେ ନାହିଁ । ପୁଣି ଚାଲୁ କରିବାକୁ ଯେକୌଣସି ସମୟରେ START ଲେଖି ପଠାନ୍ତୁ ।,,Hand-corrected wording (still machine-marked): needs native review
 startOptInDefault,You're all set — messages have resumed.,ସବୁ ଠିକ୍ ଅଛି — ବାର୍ତ୍ତା ପୁଣି ଆରମ୍ଭ ହୋଇଛି ।,,Machine translation unavailable: not translated; Hand-corrected wording (still machine-marked): needs native review
 optInConsentQuestion,"{{business}} would like to send you offers and updates on WhatsApp. Would you like to receive them?
@@ -139,11 +139,11 @@ quoteBtnPaid,I've paid,ମୁଁ ଦେୟ ଦେଇଛି,,
 quoteBtnNew,New quote,ନୂତନ ଉଦ୍ଧୃତି,,
 quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","ଦୁଃଖିତ, ଏହି ମାର୍ଗରେ ଆପଣଙ୍କ ଗୋଷ୍ଠୀ ଆକାର ପାଇଁ ଆମର କୌଣସି ଗାଡି ନାହିଁ। ଆମ *ସହିତ କଥାବାର୍ତ୍ତା ଟ୍ୟାପ୍* କରନ୍ତୁ ଏବଂ ଆମର ଦଳ ଆପଣଙ୍କୁ ସାହାଯ୍ୟ କରିବ।",,*bold* markers must stay around the same words
 quoteExpired,This quote has expired. Tap below to get a new one.,ଏହି କୋଟ୍ ସମୟ ସମାପ୍ତ ହୋଇଛି। ଏକ ନୂତନ ପାଇବାକୁ ନିମ୍ନରେ ଟ୍ୟାପ୍ କରନ୍ତୁ।,,
-quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","ଦୁଃଖିତ, ଏହି ଉଦ୍ଧୃତି ଆଉ ଉପଲବ୍ଧ ନାହିଁ। ପୁନଃ ଆରମ୍ଭ କରିବାକୁ *ହାଏ ପଠାନ୍ତୁ* ।",,*bold* markers must stay around the same words
+quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","ଦୁଃଖିତ, ଏହି ଉଦ୍ଧୃତି ଆଉ ଉପଲବ୍ଧ ନାହିଁ। ପୁନଃ ଆରମ୍ଭ କରିବାକୁ *hi ପଠାନ୍ତୁ* ।",,*bold* markers must stay around the same words
 quoteConfirmedTitle,✅ *Booking confirmed!*,✅ *ବୁକିଂ ନିଶ୍ଚିତ ହୋଇଛି!*,,*bold* markers must stay around the same words
 quoteConfirmedNext,Our team will contact you with the pickup details.,ଆମର ଟିମ୍ ପିକଅପ୍ ବିବରଣୀ ସହିତ ଆପଣଙ୍କୁ ଯୋଗାଯୋଗ କରିବ।,,
 quotePaidPrompt,Paid already? Tap below once you have paid and we will check it.,ପୂର୍ବରୁ ଦେୟ ପ୍ରଦାନ କରିସାରିଛନ୍ତି କି? ଥରେ ଆପଣ ଦେୟ ଦେବା ପରେ ନିମ୍ନରେ ଟ୍ୟାପ୍ କରନ୍ତୁ ଏବଂ ଆମେ ଏହାକୁ ଯାଞ୍ଚ କରିବୁ।,,
 quotePaidThanks,Thanks! We will check your payment and confirm your booking shortly.,ଧନ୍ୟବାଦ! ଆମେ ଆପଣଙ୍କର ଦେୟ ଯାଞ୍ଚ କରିବୁ ଏବଂ ଶୀଘ୍ର ଆପଣଙ୍କର ବୁକିଂ ନିଶ୍ଚିତ କରିବୁ ।,,
 quotePaidAlready,We have already received your payment ✅,ଆମେ ପୂର୍ବରୁ ଆପଣଙ୍କ ଦେୟ ପ୍ରାପ୍ତ ✅ କରିସାରିଛୁ,,
-pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","କ୍ଷମା କରିବେ, ମୁଁ ସେହି ସମୟରେ ପଢିପାରିଲି ନାହିଁ । ଦୟାକରି ଏହାକୁ ସକାଳ 6:30 କିମ୍ବା 18:30 ପରି ଟାଇପ୍ କରନ୍ତୁ ।",,
+pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","କ୍ଷମା କରିବେ, ମୁଁ ସେହି ସମୟରେ ପଢିପାରିଲି ନାହିଁ । ଦୟାକରି ଏହାକୁ 6:30 AM କିମ୍ବା 18:30 ପରି ଟାଇପ୍ କରନ୍ତୁ ।",,
 chooseLanguageLine,Choose your language,ଆପଣଙ୍କ ଭାଷା ବାଛନ୍ତୁ,,

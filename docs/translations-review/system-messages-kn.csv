@@ -47,7 +47,7 @@ qrUpiId,Or pay to UPI ID: {{upiId}},ಅಥವಾ UPI ಐಡಿಗೆ ಪಾವ�
 qrScreenshot,Please share a screenshot here after paying.,ಪಾವತಿಸಿದ ನಂತರ ದಯವಿಟ್ಟು ಸ್ಕ್ರೀನ್ ಶಾಟ್ ಅನ್ನು ಇಲ್ಲಿ ಹಂಚಿಕೊಳ್ಳಿ.,,
 advancePaid,✅ Advance received! Your booking {{code}} is confirmed. Our team will contact you shortly.,✅ ಮುಂಗಡ ಸ್ವೀಕರಿಸಲಾಗಿದೆ! ನಿಮ್ಮ ಬುಕಿಂಗ್ {{code}} ದೃಢೀಕರಿಸಲಾಗಿದೆ. ನಮ್ಮ ತಂಡವು ಶೀಘ್ರದಲ್ಲೇ ನಿಮ್ಮನ್ನು ಸಂಪರ್ಕಿಸುತ್ತದೆ.,,Keep unchanged: {{code}}
 admissionFeePaid,✅ Fees received! Admission {{code}} is confirmed. Welcome to {{business}}!,✅ ಶುಲ್ಕ ಸ್ವೀಕರಿಸಲಾಗಿದೆ! ಪ್ರವೇಶ {{code}} ದೃಢೀಕರಿಸಲಾಗಿದೆ. {{business}} ಗೆ ಸ್ವಾಗತ!,,Keep unchanged: {{code}} {{business}}
-sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,ನೀವು ದೂರ ಸರಿದಿದ್ದೀರಿ ಎಂದು ತೋರುತ್ತಿದೆ - ನಿಷ್ಕ್ರಿಯತೆಯಿಂದಾಗಿ ನಾನು ಈ ಅಧಿವೇಶನವನ್ನು ಕೊನೆಗೊಳಿಸಿದ್ದೇನೆ. ಮತ್ತೆ ಪ್ರಾರಂಭಿಸಲು ಯಾವುದೇ ಸಮಯದಲ್ಲಿ 'ಪುಸ್ತಕ' ಕಳುಹಿಸಿ.,,
+sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,ನೀವು ದೂರ ಸರಿದಿದ್ದೀರಿ ಎಂದು ತೋರುತ್ತಿದೆ - ನಿಷ್ಕ್ರಿಯತೆಯಿಂದಾಗಿ ನಾನು ಈ ಅಧಿವೇಶನವನ್ನು ಕೊನೆಗೊಳಿಸಿದ್ದೇನೆ. ಮತ್ತೆ ಪ್ರಾರಂಭಿಸಲು ಯಾವುದೇ ಸಮಯದಲ್ಲಿ 'book' ಕಳುಹಿಸಿ.,,
 stopOptOutDefault,Done — you won't receive offers or reminders from us. Reply START anytime to turn them back on.,ಆಯಿತು — ಇನ್ನು ಮುಂದೆ ನಿಮಗೆ ನಮ್ಮಿಂದ ಕೊಡುಗೆಗಳು ಅಥವಾ ಜ್ಞಾಪನೆಗಳು ಬರುವುದಿಲ್ಲ. ಮತ್ತೆ ಆರಂಭಿಸಲು ಯಾವಾಗ ಬೇಕಾದರೂ START ಎಂದು ಕಳುಹಿಸಿ.,,Hand-corrected wording (still machine-marked): needs native review
 startOptInDefault,You're all set — messages have resumed.,ಎಲ್ಲವೂ ಸಿದ್ಧ — ಸಂದೇಶಗಳು ಮತ್ತೆ ಪ್ರಾರಂಭವಾಗಿವೆ.,,Machine translation unavailable: not translated; Hand-corrected wording (still machine-marked): needs native review
 optInConsentQuestion,"{{business}} would like to send you offers and updates on WhatsApp. Would you like to receive them?
@@ -139,11 +139,11 @@ quoteBtnPaid,I've paid,ನಾನು ಪಾವತಿಸಿದ್ದೇನೆ,,
 quoteBtnNew,New quote,ಹೊಸ ಉಲ್ಲೇಖ,,
 quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","ಕ್ಷಮಿಸಿ, ಈ ಮಾರ್ಗದಲ್ಲಿ ನಿಮ್ಮ ಗುಂಪಿನ ಗಾತ್ರಕ್ಕೆ ನಮ್ಮಲ್ಲಿ ವಾಹನವಿಲ್ಲ. *ನಮ್ಮೊಂದಿಗೆ ಮಾತನಾಡಿ ಟ್ಯಾಪ್* ಮಾಡಿ ಮತ್ತು ನಮ್ಮ ತಂಡವು ನಿಮಗೆ ಸಹಾಯ ಮಾಡುತ್ತದೆ.",,*bold* markers must stay around the same words
 quoteExpired,This quote has expired. Tap below to get a new one.,ಈ ಉಲ್ಲೇಖದ ಅವಧಿ ಮುಗಿದಿದೆ. ಹೊಸದನ್ನು ಪಡೆಯಲು ಕೆಳಗೆ ಟ್ಯಾಪ್ ಮಾಡಿ.,,
-quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","ಕ್ಷಮಿಸಿ, ಈ ಉಲ್ಲೇಖವು ಇನ್ನು ಮುಂದೆ ಲಭ್ಯವಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಾರಂಭಿಸಲು *ಹಾಯ್ ಕಳುಹಿಸಿ* .",,*bold* markers must stay around the same words
+quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","ಕ್ಷಮಿಸಿ, ಈ ಉಲ್ಲೇಖವು ಇನ್ನು ಮುಂದೆ ಲಭ್ಯವಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಾರಂಭಿಸಲು *hi ಕಳುಹಿಸಿ* .",,*bold* markers must stay around the same words
 quoteConfirmedTitle,✅ *Booking confirmed!*,✅ *ಬುಕಿಂಗ್ ದೃಢಪಟ್ಟಿದೆ!*,,*bold* markers must stay around the same words
 quoteConfirmedNext,Our team will contact you with the pickup details.,ನಮ್ಮ ತಂಡವು ಪಿಕಪ್ ವಿವರಗಳೊಂದಿಗೆ ನಿಮ್ಮನ್ನು ಸಂಪರ್ಕಿಸುತ್ತದೆ.,,
 quotePaidPrompt,Paid already? Tap below once you have paid and we will check it.,ಈಗಾಗಲೇ ಪಾವತಿಸಲಾಗಿದೆಯೇ? ನೀವು ಪಾವತಿಸಿದ ನಂತರ ಕೆಳಗೆ ಟ್ಯಾಪ್ ಮಾಡಿ ಮತ್ತು ನಾವು ಅದನ್ನು ಪರಿಶೀಲಿಸುತ್ತೇವೆ.,,
 quotePaidThanks,Thanks! We will check your payment and confirm your booking shortly.,ಧನ್ಯವಾದಗಳು! ನಾವು ನಿಮ್ಮ ಪಾವತಿಯನ್ನು ಪರಿಶೀಲಿಸುತ್ತೇವೆ ಮತ್ತು ಶೀಘ್ರದಲ್ಲೇ ನಿಮ್ಮ ಬುಕಿಂಗ್ ಅನ್ನು ದೃಢೀಕರಿಸುತ್ತೇವೆ.,,
 quotePaidAlready,We have already received your payment ✅,ನಾವು ಈಗಾಗಲೇ ನಿಮ್ಮ ಪಾವತಿಯನ್ನು ✅ ಸ್ವೀಕರಿಸಿದ್ದೇವೆ,,
-pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","ಕ್ಷಮಿಸಿ, ನನಗೆ ಆ ಸಮಯದಲ್ಲಿ ಓದಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಅದನ್ನು ಬೆಳಿಗ್ಗೆ 6:30 ಅಥವಾ 18:30 ಎಂದು ಟೈಪ್ ಮಾಡಿ.",,
+pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","ಕ್ಷಮಿಸಿ, ನನಗೆ ಆ ಸಮಯದಲ್ಲಿ ಓದಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಅದನ್ನು 6:30 AM ಅಥವಾ 18:30 ಎಂದು ಟೈಪ್ ಮಾಡಿ.",,
 chooseLanguageLine,Choose your language,ನಿಮ್ಮ ಭಾಷೆಯನ್ನು ಆಯ್ಕೆಮಾಡಿ,,

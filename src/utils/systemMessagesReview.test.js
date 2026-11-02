@@ -234,3 +234,44 @@ test('consent texts keep what English says: the business, WhatsApp, offers and u
     assert.ok(table.optInConsentQuestion.includes('\n\n'), `${lang}.optInConsentQuestion keeps the two paragraphs`);
   }
 });
+
+// A word the customer is told to type must reach them exactly as the bot will match it. Azure translated 'book' into the
+// word for a physical book and "Send *hi*" into a greeting; the time example "6:30 AM" lost its AM. Found by reading
+// every English text for quoted words ( 'book' ), single bold words ( *hi*, *menu* ) and ALL-CAPS words ( STOP ).
+// UI_LABELS are names of buttons in other apps (UPI apps) that are translated on purpose.
+test('machine files: every typed keyword of a text (quoted, bold or ALL-CAPS word, the time example) is kept exactly as typed', () => {
+  const { MACHINE_MESSAGES } = require('./systemMessages');
+  const UI_LABELS = ['Scan'];
+  const typedWords = (english) => {
+    const text = english.replace(/\{\{\w+\}\}/g, ' ');
+    const found = new Set();
+    for (const m of text.matchAll(/(?:^|[\s(])'([A-Za-z][A-Za-z -]{0,18})'(?=[\s.,;:!?)]|$)/g)) found.add(m[1]);
+    for (const m of text.matchAll(/\*([A-Za-z]{2,15})\*/g)) found.add(m[1]);
+    for (const m of text.matchAll(/\b([A-Z]{3,})\b/g)) found.add(m[1]);
+    return [...found].filter((word) => !UI_LABELS.includes(word));
+  };
+  const asWord = (word) => new RegExp(`(^|[^A-Za-z])${word}([^A-Za-z]|$)`);
+  const english = englishByKey();
+
+  // the scan itself must find the known ones, or this test could pass by checking nothing
+  assert.ok(typedWords(english.sessionTimeout).includes('book'));
+  assert.ok(typedWords(english.quoteUnavailable).includes('hi'));
+  assert.ok(typedWords(english.bookingTapHintText).includes('menu'));
+  assert.ok(typedWords(english.stopOptOutDefault).includes('START'));
+  assert.ok(typedWords(english.optInConfirmed).includes('STOP'));
+
+  let checked = 0;
+  for (const [lang, table] of Object.entries(MACHINE_MESSAGES)) {
+    for (const [key, text] of Object.entries(table)) {
+      if (english[key] === undefined) continue;
+      for (const word of typedWords(english[key])) {
+        assert.ok(asWord(word).test(text), `${lang}.${key}: the typed word "${word}" was changed: ${text}`);
+        checked += 1;
+      }
+      if (key === 'pickupTimeInvalid') {
+        for (const example of ['6:30 AM', '18:30']) assert.ok(text.includes(example), `${lang}.${key}: the example "${example}" was changed: ${text}`);
+      }
+    }
+  }
+  assert.ok(checked > 100, `only ${checked} typed words checked`);
+});

@@ -47,7 +47,7 @@ qrUpiId,Or pay to UPI ID: {{upiId}},അല്ലെങ്കിൽ UPI ഐഡി
 qrScreenshot,Please share a screenshot here after paying.,പണമടച്ചതിന് ശേഷം ഇവിടെ ഒരു സ്ക്രീൻഷോട്ട് പങ്കിടുക.,,
 advancePaid,✅ Advance received! Your booking {{code}} is confirmed. Our team will contact you shortly.,✅ അഡ്വാൻസ് ലഭിച്ചു! നിങ്ങളുടെ ബുക്കിംഗ് {{code}} സ്ഥിരീകരിച്ചു. ഞങ്ങളുടെ ടീം ഉടൻ നിങ്ങളെ ബന്ധപ്പെടും.,,Keep unchanged: {{code}}
 admissionFeePaid,✅ Fees received! Admission {{code}} is confirmed. Welcome to {{business}}!,✅ ഫീസ് ലഭിച്ചു! പ്രവേശന {{code}} സ്ഥിരീകരിച്ചു. {{business}} സ്വാഗതം!,,Keep unchanged: {{code}} {{business}}
-sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,നിങ്ങൾ മാറിയതായി തോന്നുന്നു - നിഷ്ക്രിയത്വം കാരണം ഞാൻ ഈ സെഷൻ അവസാനിപ്പിച്ചു. വീണ്ടും ആരംഭിക്കാൻ എപ്പോൾ വേണമെങ്കിലും 'പുസ്തകം' അയയ്ക്കുക.,,
+sessionTimeout,Looks like you've stepped away — I've ended this session due to inactivity. Send 'book' anytime to start again.,നിങ്ങൾ മാറിയതായി തോന്നുന്നു - നിഷ്ക്രിയത്വം കാരണം ഞാൻ ഈ സെഷൻ അവസാനിപ്പിച്ചു. വീണ്ടും ആരംഭിക്കാൻ എപ്പോൾ വേണമെങ്കിലും 'book' അയയ്ക്കുക.,,
 stopOptOutDefault,Done — you won't receive offers or reminders from us. Reply START anytime to turn them back on.,ശരി — ഇനി ഞങ്ങളിൽ നിന്ന് ഓഫറുകളോ ഓർമ്മപ്പെടുത്തലുകളോ നിങ്ങൾക്ക് ലഭിക്കില്ല. വീണ്ടും ഓണാക്കാൻ എപ്പോൾ വേണമെങ്കിലും START എന്ന് അയയ്ക്കുക.,,Hand-corrected wording (still machine-marked): needs native review
 startOptInDefault,You're all set — messages have resumed.,എല്ലാം തയ്യാർ — സന്ദേശങ്ങൾ വീണ്ടും തുടങ്ങിയിരിക്കുന്നു.,,Machine translation unavailable: not translated; Hand-corrected wording (still machine-marked): needs native review
 optInConsentQuestion,"{{business}} would like to send you offers and updates on WhatsApp. Would you like to receive them?
@@ -139,11 +139,11 @@ quoteBtnPaid,I've paid,ഞാൻ കാശ് കൊടുത്തു,,
 quoteBtnNew,New quote,പുതിയ ഉദ്ധരണി,,
 quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","ക്ഷമിക്കണം, ഈ റൂട്ടിൽ നിങ്ങളുടെ ഗ്രൂപ്പ് വലുപ്പത്തിനായി ഞങ്ങൾക്ക് ഒരു വാഹനം ഇല്ല. *ഞങ്ങളോട് സംസാരിക്കുക ടാപ്പുചെയ്യുക* , ഞങ്ങളുടെ ടീം നിങ്ങളെ സഹായിക്കും.",,*bold* markers must stay around the same words
 quoteExpired,This quote has expired. Tap below to get a new one.,ഈ ഉദ്ധരണി കാലഹരണപ്പെട്ടു. പുതിയൊരെണ്ണം ലഭിക്കുന്നതിന് താഴെ ടാപ്പുചെയ്യുക.,,
-quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","ക്ഷമിക്കണം, ഈ ഉദ്ധരണി ഇനി ലഭ്യമല്ല. വീണ്ടും ആരംഭിക്കാൻ *ഹായ് അയയ്ക്കുക* .",,*bold* markers must stay around the same words
+quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","ക്ഷമിക്കണം, ഈ ഉദ്ധരണി ഇനി ലഭ്യമല്ല. വീണ്ടും ആരംഭിക്കാൻ *hi അയയ്ക്കുക* .",,*bold* markers must stay around the same words
 quoteConfirmedTitle,✅ *Booking confirmed!*,✅ *ബുക്കിംഗ് സ്ഥിരീകരിച്ചു!*,,*bold* markers must stay around the same words
 quoteConfirmedNext,Our team will contact you with the pickup details.,ഞങ്ങളുടെ ടീം പിക്കപ്പ് വിശദാംശങ്ങളുമായി നിങ്ങളെ ബന്ധപ്പെടും.,,
 quotePaidPrompt,Paid already? Tap below once you have paid and we will check it.,"ഇതിനകം പണമടച്ചോ? നിങ്ങൾ പണമടച്ചുകഴിഞ്ഞാൽ താഴെ ടാപ്പുചെയ്യുക, ഞങ്ങൾ അത് പരിശോധിക്കും.",,
 quotePaidThanks,Thanks! We will check your payment and confirm your booking shortly.,നന്ദി! ഞങ്ങൾ നിങ്ങളുടെ പേയ് മെന്റ് പരിശോധിക്കുകയും ഉടൻ തന്നെ നിങ്ങളുടെ ബുക്കിംഗ് സ്ഥിരീകരിക്കുകയും ചെയ്യും.,,
 quotePaidAlready,We have already received your payment ✅,നിങ്ങളുടെ പേയ് മെന്റ് ഞങ്ങൾക്ക് ✅ ഇതിനകം ലഭിച്ചിട്ടുണ്ട്,,
-pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","ക്ഷമിക്കണം, എനിക്ക് ആ സമയം വായിക്കാൻ കഴിഞ്ഞില്ല. ദയവായി രാവിലെ 6:30 അല്ലെങ്കിൽ 18:30 ആയി ടൈപ്പ് ചെയ്യുക.",,
+pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","ക്ഷമിക്കണം, എനിക്ക് ആ സമയം വായിക്കാൻ കഴിഞ്ഞില്ല. ദയവായി 6:30 AM അല്ലെങ്കിൽ 18:30 ആയി ടൈപ്പ് ചെയ്യുക.",,
 chooseLanguageLine,Choose your language,നിങ്ങളുടെ ഭാഷ തിരഞ്ഞെടുക്കുക,,
