@@ -2235,6 +2235,10 @@ client's bot. **Search cab AI is excluded by id (looked up fresh from `businesse
   `blockers[]`) while any readiness item other than `feature` blocks, and (409 `ACKNOWLEDGEMENT_REQUIRED`) for a Round Trip with no priceable route until
   `acknowledgeRoundTripTeam: true` is sent. Owner API: `POST /api/travel/quote-flow/enable` (body only `{keyword?, aliases?, acknowledgeRoundTripTeam?}`) and
   `/disable` - `requireRole('owner')` (staff 403), business from the login, registered before the `travel_quotes` feature gate so they work while it is off.
+  **Open Rates** (`POST /api/travel/quote-flow/open-rates`, owner, same rules; `quoteFlowSwitch.service#openRates`): the override ON and nothing else - no flow,
+  no restore point. It exists because the Rates page and `/api/travel/routes` are behind the switch while Enable needs a route, so a business with no routes
+  could never start; idempotent, Search cab AI refused by id (403), non-travel categories 409 `NOT_TRAVEL`. A later Enable keeps the override on even if its install
+  fails (it was already on); Disable still sets the explicit off.
   Super Admin API: `GET /api/admin/businesses/:id/quote-readiness`, `POST /api/admin/businesses/:id/quote-flow/enable|disable` (same service, chosen business).
   Errors carry `errors: {code, readiness, blockers}`. Tests: `services/quoteFlowSwitch.service.test.js` (real installer + real override code on an in-memory
   database), `routes/travelQuote.readiness.routes.test.js`. **Enabling is a one-time cutover for that business** (its customers get the entry immediately, no flag).

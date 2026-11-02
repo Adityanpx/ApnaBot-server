@@ -35,6 +35,7 @@ let switchResult = null;
 const okResult = (enabled) => ({ ok: true, status: 200, message: 'done', readiness: { ready: true, enabled, items: [], acknowledgements: [] } });
 stub('../services/quoteFlowSwitch.service', {
   enableQuoteFlow: async (businessId, body) => { switchCalls.push({ fn: 'enable', businessId, body }); return switchResult || okResult(true); },
+  openRates: async (businessId) => { switchCalls.push({ fn: 'open-rates', businessId }); return switchResult || okResult(false); },
   disableQuoteFlow: async (businessId) => { switchCalls.push({ fn: 'disable', businessId }); return switchResult || okResult(false); }
 });
 stub('../middleware/auth.middleware', {
@@ -138,5 +139,20 @@ test('a refusal carries its status, a code, the readiness and what blocks', asyn
   const protectedRun = await post('/travel/quote-flow/disable');
   assert.equal(protectedRun.status, 403);
   assert.equal(protectedRun.body.errors.code, 'PROTECTED_BUSINESS');
+  switchResult = null;
+});
+
+test("open-rates: owner only, the business is the login's, works while the switch is OFF, and a refusal carries its code", async () => {
+  switchCalls.length = 0;
+  assert.equal((await post('/travel/quote-flow/open-rates', {}, { role: 'staff' })).status, 403);
+  assert.equal((await post('/travel/quote-flow/open-rates', {}, { business: null })).status, 403);
+  assert.equal(switchCalls.length, 0);
+  const opened = await post('/travel/quote-flow/open-rates', { businessId: 'someone-else' });
+  assert.equal(opened.status, 200);
+  assert.deepEqual(switchCalls, [{ fn: 'open-rates', businessId: 'biz' }]);
+  switchResult = { ok: false, status: 403, code: 'PROTECTED_BUSINESS', message: 'Search cab AI is a live production bot', readiness: null, blockers: [] };
+  const refused = await post('/travel/quote-flow/open-rates');
+  assert.equal(refused.status, 403);
+  assert.equal(refused.body.errors.code, 'PROTECTED_BUSINESS');
   switchResult = null;
 });

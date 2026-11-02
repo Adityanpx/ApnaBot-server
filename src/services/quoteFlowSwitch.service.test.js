@@ -229,3 +229,56 @@ test('disable: if the flow cannot be removed the override is left ON, so the swi
   assert.equal(overrideRow().is_enabled, true);
   assert.equal(ownCount(), 11);
 });
+
+// ── openRates: the override ON without the flow ─────────────────────────────────────────────────
+
+const withFeature = (categoryBlocks = false) => async () => {
+  const on = !!overrideRow() && overrideRow().is_enabled === true;
+  return {
+    ...(await getReadiness()),
+    items: [
+      { key: 'category', status: categoryBlocks ? 'block' : 'ok', title: 'Travel business', detail: 'The quote flow is for travels and cab businesses only.' },
+      { key: 'feature', status: on ? 'ok' : 'warn', title: 'Quotes switched on', detail: '' }
+    ]
+  };
+};
+const openDeps = (categoryBlocks) => ({ getReadiness: withFeature(categoryBlocks), runInstaller });
+
+test('open rates: turns the override ON and installs nothing; a second press changes nothing', async () => {
+  const result = await switchService.openRates(BIZ, openDeps());
+  assert.equal(result.ok, true, JSON.stringify(result));
+  assert.equal(overrideRow().is_enabled, true);
+  assert.equal(ownCount(), 0, 'no flow rows');
+  assert.equal(rpcCalls.length, 0);
+  assert.equal(savedPoints().length, 0, 'no restore point: nothing of the flow is touched');
+  const again = await switchService.openRates(BIZ, openDeps());
+  assert.equal(again.ok, true);
+  assert.equal(again.alreadyOpen, true);
+  assert.equal(db.business_features.filter((r) => r.business_id === BIZ).length, 1);
+});
+
+test('open rates: Search cab AI is refused by id, a non-travel business is refused, nothing is written', async () => {
+  const protectedRun = await switchService.openRates(SEARCH_CAB, openDeps());
+  assert.equal(protectedRun.status, 403);
+  assert.equal(protectedRun.code, 'PROTECTED_BUSINESS');
+  assert.equal(overrideRow(SEARCH_CAB), undefined);
+  const salon = await switchService.openRates(BIZ, openDeps(true));
+  assert.equal(salon.ok, false);
+  assert.equal(salon.code, 'NOT_TRAVEL');
+  assert.equal(overrideRow(), undefined);
+});
+
+test('open rates, then enable: the flow is installed and the override stays on; disable then sets the explicit off', async () => {
+  await switchService.openRates(BIZ, openDeps());
+  assert.equal((await switchService.enableQuoteFlow(BIZ, {}, deps())).ok, true);
+  assert.equal(ownCount(), 11);
+  await switchService.disableQuoteFlow(BIZ, deps());
+  assert.equal(overrideRow().is_enabled, false);
+});
+
+test('open rates, then a failed install leaves the Rates page open (the override was already on)', async () => {
+  await switchService.openRates(BIZ, openDeps());
+  installerCodes = [1];
+  assert.equal((await switchService.enableQuoteFlow(BIZ, {}, deps())).ok, false);
+  assert.equal(overrideRow().is_enabled, true);
+});

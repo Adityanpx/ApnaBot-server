@@ -49,6 +49,14 @@ const enableQuoteFlow = handler('enableQuoteFlow', async (req, res) => {
   return sendSwitchResult(res, await quoteFlowSwitchService.enableQuoteFlow(req.user.businessId, parsed.value));
 });
 
+/** POST /api/travel/quote-flow/open-rates (owner) - switch travel_quotes on WITHOUT installing the flow, so routes can be added. Idempotent. */
+const openRates = handler('openRates', async (req, res) => {
+  const result = await quoteFlowSwitchService.openRates(req.user.businessId);
+  return result.ok
+    ? successResponse(res, result.status, { readiness: result.readiness, alreadyOpen: !!result.alreadyOpen }, result.message)
+    : sendSwitchResult(res, result);
+});
+
 /** POST /api/travel/quote-flow/disable (owner) - remove the quote flow and turn the switch off. Idempotent. */
 const disableQuoteFlow = handler('disableQuoteFlow', async (req, res) => sendSwitchResult(res, await quoteFlowSwitchService.disableQuoteFlow(req.user.businessId)));
 
@@ -129,6 +137,6 @@ const getQuoteReport = handler('getQuoteReport', async (req, res) => {
 });
 
 module.exports = {
-  getQuoteReadiness, enableQuoteFlow, disableQuoteFlow, adminGetQuoteReadiness, adminEnableQuoteFlow, adminDisableQuoteFlow, getRoutes, createRoute, updateRoute, fillRouteDistance, deleteRoute,
+  getQuoteReadiness, enableQuoteFlow, openRates, disableQuoteFlow, adminGetQuoteReadiness, adminEnableQuoteFlow, adminDisableQuoteFlow, getRoutes, createRoute, updateRoute, fillRouteDistance, deleteRoute,
   getSettings, updateSettings, getQuotes, cancelQuote, getQuoteReport
 };

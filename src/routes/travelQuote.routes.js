@@ -15,6 +15,8 @@ router.use(protect, requireBusiness);
 router.get('/quote-readiness', travelQuoteController.getQuoteReadiness);
 // Enable / Disable also work while the switch is OFF (Enable is what turns it on). Owner only; the business is the login's.
 router.post('/quote-flow/enable', requireRole('owner'), travelQuoteController.enableQuoteFlow);
+// Open-rates = the switch ON without the flow, so a business with no routes can reach the Rates page and add some.
+router.post('/quote-flow/open-rates', requireRole('owner'), travelQuoteController.openRates);
 router.post('/quote-flow/disable', requireRole('owner'), travelQuoteController.disableQuoteFlow);
 
 router.use(requireCategoryFeature('travel_quotes'));

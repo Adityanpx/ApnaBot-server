@@ -5,6 +5,7 @@
 //            with no priceable route until it is acknowledged. Then: override ON -> installer (restore point in
 //            flow_snapshots, additive write, byte-identical check) -> if the install fails, the override goes back to what
 //            it was. Already installed and on: nothing is written, the readiness comes back (idempotent).
+//   openRates  only the override ON, no flow: lets a business with no routes reach the Rates page (see openRates below)
 //   disable  installer rollback (removes exactly the business's own derived-id rows) -> override OFF. If the rollback
 //            fails the override is left as it is, so the switch and the flow never disagree. Nothing installed: only the
 //            override is set (idempotent).
@@ -118,6 +119,23 @@ const enableQuoteFlow = async (businessId, body = {}, overrides = {}) => {
   return { ok: true, status: 200, message: 'Quotes enabled.', readiness: await deps.getReadiness(businessId, entry), log: result.lines };
 };
 
+/**
+ * "Open Rates to add routes": the override ON and nothing else (no flow is installed). The Rates page and /api/travel/routes
+ * are behind this switch, and Enable needs a route, so a business with no routes yet could never get started without it.
+ * Idempotent; Search cab AI refused by id; travels / cab only.
+ */
+const openRates = async (businessId, overrides = {}) => {
+  const deps = { ...defaultDeps(), ...overrides };
+  if ((await deps.findProtectedBusinessIds()).includes(businessId)) return fail(403, 'PROTECTED_BUSINESS', PROTECTED_MESSAGE);
+  const readiness = await deps.getReadiness(businessId, {});
+  const category = readiness.items.find((i) => i.key === 'category');
+  if (category && category.status === 'block') return fail(409, 'NOT_TRAVEL', category.detail, { readiness, blockers: [category] });
+  const feature = readiness.items.find((i) => i.key === 'feature');
+  if (feature && feature.status === 'ok') return { ok: true, status: 200, message: 'The Rates page is already open.', alreadyOpen: true, readiness };
+  await deps.setOverride(businessId, true);
+  return { ok: true, status: 200, message: 'The Rates page is open. Add your routes and prices, then press Enable quotes.', readiness: await deps.getReadiness(businessId, {}) };
+};
+
 /** @param {string} businessId @param {Object} [overrides] dependencies, for tests */
 const disableQuoteFlow = async (businessId, overrides = {}) => {
   const deps = { ...defaultDeps(), ...overrides };
@@ -139,4 +157,4 @@ const disableQuoteFlow = async (businessId, overrides = {}) => {
   return { ok: true, status: 200, message: 'Quotes disabled.', readiness: await deps.getReadiness(businessId, {}), log: result.lines };
 };
 
-module.exports = { FEATURE, PROTECTED_MESSAGE, enableQuoteFlow, disableQuoteFlow };
+module.exports = { FEATURE, PROTECTED_MESSAGE, enableQuoteFlow, openRates, disableQuoteFlow };
