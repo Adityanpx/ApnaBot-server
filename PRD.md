@@ -1799,7 +1799,7 @@ The plan's `msg_limit` is now counted per **subscription period**, not per calen
   first, joined `businessName` / `businessCategory`, `{ requests, pagination }`) and `PUT /api/admin/business-requests/:id`
   `{ status?, notes? }`. **Changing the business's category:** `PUT /api/admin/businesses/:id/category { businessCategory }` - any known
   category except `multi_brand`; changes the category AND recomputes `business_travel_settings` enable_fleet / enable_distance_fares /
-  round_trip_driver_da_enabled with `computeFeatureFlags` (overwrites those three), drops the rules cache and the tenant cache (a Redis
+  with `computeFeatureFlags` (overwrites those two; the old round_trip_driver_da_enabled is no longer set from a category and an existing value is left alone), drops the rules cache and the tenant cache (a Redis
   failure there only sets `cacheInvalidated:false`). It does NOT re-seed the flow or form - use `copy-setup`. If the flags write fails
   after the category write, repeat the request (idempotent).
 - **Not built:** no Super Admin UI yet; no email to the owner; nothing links a `set_up` request to the copy-setup run.
@@ -2002,7 +2002,7 @@ is on: today that is SG Travels, after `scripts/seedTravelQuoteFlow.js --confirm
   `services/quoteFlow.service.test.js`, `services/quoteSweep.service.test.js`, `services/payment.service.quote.test.js`,
   `controllers/{webhook.quoteTap,flowGraphPreview.quote,flowGraph.quoteNodes}.test.js`, `scripts/seedTravelQuoteFlow{,.canvas,.engine}.test.js`.
 
-### Round Trip pricing (migration `20261106120000_round_trip_pricing.sql`; server code built, web / Flutter screens and the live cutover NOT done)
+### Round Trip pricing (migration `20261106120000_round_trip_pricing.sql`; server code built, web screens built (Fleet vehicle fields, Rates route editor / settings), Flutter screens and the live cutover NOT done)
 
 Why: a Round Trip used to quote the flat `route_fares` round_trip fare for any number of days (a 3-day Pune -> Shirdi Innova quoted 7,300
 like a 1-day one), because the days were asked after the vehicle and nothing multiplied them. Now:
@@ -2024,7 +2024,8 @@ like a 1-day one), because the days were asked after the vehicle and nothing mul
   `travel_quote_settings.driver_allowance_per_day` is **retired**: the column stays, `GET /api/travel/quote-settings` still returns it
   (`settings.driverAllowancePerDay`, read-only, because the live web Settings page builds its form from it and would otherwise fail its own
   validation), `PUT` ignores it, nothing prices from it. `business_travel_settings.round_trip_per_day_km` / `round_trip_driver_da_*` are
-  untouched and still feed only the distance-estimate engine and the web form.
+  untouched; since "One place per setting" (below) they are only the distance estimate's fallback for a vehicle with an empty field, and the web Settings
+  page no longer edits them (Flutter still does).
 - **Code**: `utils/travelQuote.js` - `computeRoundTripFare`, `priceVehicleTrip` (**the one function that prices a vehicle on a route**: card,
   tap and quote all call it, so they cannot disagree), `roundTripCandidates` / `roundTripReadiness`, `validateVehicleFareInput`,
   `computeQuote({ roundTrip })`. `services/travelQuote.service.js` - `listQuotableRoutes('round_trip')` (a route is offered only when at
@@ -2070,7 +2071,7 @@ like a 1-day one), because the days were asked after the vehicle and nothing mul
   `--expect-rows=N`. `seedTravelQuoteFlow.js` now reserves the two cutover edge ids (its `--rollback` removes them too).
 - **Deploy order / cutovers** (SG Travels, no feature flag): 1) apply BOTH migrations (`20261106120000` and `20261107120000_route_fares_off_reason.sql`), 2) deploy the server - with the 36 fixed Round Trip fares
   still active SG customers see `package fare` captions, the Days line, and Round Trip totals exact instead of rounded to 10, 3) the owner sets
-  min km / allowance per vehicle, distance per route and the allowance basis (**no web or Flutter screen for these yet - API only**), 4)
+  min km / allowance per vehicle, distance per route and the allowance basis (web: Fleet vehicle form, Rates -> Routes, Rates -> Settings; **Flutter has no screen for these**), 4)
   `cutoverRoundTripDaysFirst.js` dry run, `--confirm`, 5) `deactivateSgRoundTripFares.js` dry run, `--confirm`. Today the fare script
   refuses: no SG route has a distance and no vehicle a min km. `verifyBookingGraph.js --business=<SG>` was run after the first migration: it inserts and deletes a temporary customer `VERIFY_BOOKING_GRAPH_TEST` (net zero rows, nothing sent), Round Trip PASS, One Way FAIL "missing: numberOfDays" - the same on the code from before this work: the script treats every required field as required in every branch, and the days question is Round Trip only.
 - **Search cab AI**: no quote flow, no `route_fares`; the migration and API additions are nullable and change nothing for it; only the shared
@@ -2083,11 +2084,12 @@ like a 1-day one), because the days were asked after the vehicle and nothing mul
   off + `'manual'`, `true` = on + marker cleared. `deactivateSgRoundTripFares.js` sets the marker (its `--rollback` clears it). A fare that
   is off with **no** marker (switched off before the marker existed) is still brought back by a route off / on, as before; and a price save on any
   existing fare no longer forces the route's state onto it (it used to). `GET /api/travel/routes` returns `offReason` on each fare;
-  (2) **the web Rates grid shows an inactive fare as a normal price** (it fills a cell from every `fares[]` row, active or not): the API now sends
-  `isActive` / `offReason`, the grid must show an "off" state and a per-fare switch that sends `fares[].isActive`;
-  (3) **Flutter has no Rates, route or quote screens** (only the Fleet vehicle form, `lib/features/fleet`); neither web nor Flutter Fleet has the
-  min km / allowance fields (nor the "Round Trip: set min km" hint), and the web Rates screen has no distance field, "Fill from Google" button,
-  allowance-basis toggle or "Round Trip not ready" state - the old allowance field still shows on Rates -> Settings;
+  (2) ~~the web Rates grid shows an inactive fare as a normal price~~ - done: the route editor shows an "off" badge with Turn on / Turn off per fare
+  (`fares[].isActive`);
+  (3) **Flutter has no Rates, route or quote screens** (only the Fleet vehicle form, `lib/features/fleet`, without the min km / allowance fields or the
+  "Round Trip: set min km" hint, and Settings still edits the old round trip km / Driver DA fields). ~~web~~ done: the web Fleet vehicle form (min km /
+  allowance, hints), the Rates route editor (distance, "Fill from Google", "Round Trip not ready") and Rates -> Settings (allowance basis) exist, and the
+  old allowance field is gone from web Settings;
   (4) the **"Other options" label in the owner simulator** (`flowGraphPreview.controller.js`) is English-only;
   (5) the Quotes tab does not show days / billed km / method; (6) machine-translated languages other than en / hi / mr fall back to English for
   the new messages; (7) pre-existing failing tests unrelated to this work: `graphApiVersion`, `admin.chatMediaRetention`,
@@ -2095,6 +2097,58 @@ like a 1-day one), because the days were asked after the vehicle and nothing mul
 - Tests: `utils/travelQuote.test.js`, `routes/travelQuote.routes.test.js`, `controllers/travel/vehicle.controller.test.js`,
   `services/{quoteFlow.service,bookingGraph.roundTripQuote,notification.service}.test.js`, `utils/{quoteText,systemMessages}.test.js`,
   `controllers/webhook.interactiveSites.test.js`, `scripts/{cutoverRoundTripDaysFirst,cutoverRoundTripDaysFirst.engine,deactivateSgRoundTripFares}.test.js`.
+
+### One place per setting (distance estimate, route fares, new-business defaults; 2026-11-02)
+
+Why: the same travel setting could be edited in two places (web Settings "Round trip km allowance / Include Driver DA" vs the per-vehicle
+fields and Rates -> Settings; the Distance fares switch in Settings and in Fleet; route fares in Fleet -> Route Fares and Rates -> Routes). Now each
+has one editor. **Single sources of truth:** `vehicles.min_km_per_day`, `vehicles.driver_allowance_per_day`,
+`travel_quote_settings.allowance_basis` (day | night, edited only in Rates -> Settings; a business without Rates is charged per day). The old
+`business_travel_settings.round_trip_per_day_km` / `round_trip_driver_da_enabled` / `round_trip_driver_da_amount` stay in the database and in
+`GET / PUT /api/business` (old app builds must not break) but are **only a fallback** for a vehicle where a field is null. No migration, no copy of
+data, no column dropped.
+
+- **Distance estimate** (`booking.service.js#findDistanceBasedVehicleOptions`, unpriced routes): **One Way is unchanged** (one-way distance x rate,
+  to the nearest 10). A **Round Trip with a day count uses the quote's own formula** per vehicle (`utils/travelQuote.js#computeRoundTripFare`, no
+  second formula): billed km = max(2 x one-way km, days x min km), integer money, to the nearest rupee (not to 10). One-way km comes from the same
+  Google lookup / 7-day Redis cache (no longer skipped for round trips with days; a failed lookup means no estimate, as for One Way). Min km =
+  vehicle.min_km_per_day, else `roundTripPerDayKm`, else 250. Allowance = vehicle.driver_allowance_per_day (an explicit 0 counts), else the old
+  amount when its switch is on, else 0; counted in days or nights (days - 1) by `allowance_basis` (no row = 'day'). A Round Trip with no day count is
+  unchanged (twice the distance, no allowance). **Decision: the 2x one-way floor applies to every business**, so a 1-day Round Trip on a route longer
+  than 125 km one-way bills 2 x the distance instead of 250 km (a live change for Search cab AI too; 2+ days are unchanged where days x min km wins).
+  A vehicle whose per-km rate is not above 0 is never offered at Rs 0 (One Way too). Card fields kept: `distanceKm` (now the billed km for a Round
+  Trip), `driverDaTotal` / `driverDaPerDay` / `driverDaDays` (days, or nights) + new `driverDaBasis` and `estimate` (the inputs). The tap
+  (`bookingGraph.service.js`) re-prices through `booking.service.js#repriceEstimateOption`; the web form re-runs the same function at submit.
+- **Night wording**: on a night basis the confirmation / summary says "Driver DA: Rs600 (2 nights x Rs300)" (`summaryDriverDaNights` en / hi / mr with
+  "1 night / 2 nights"; `summaryDriverDaNightsPlain` is the source the 8 machine languages were generated from, via the existing
+  `exportSystemMessagesForReview.js --keys=` + `importReviewedSystemMessages.js --source=machine`; the Tamil prefix was hand-corrected). `driverDaBasis`
+  is a reserved booking field key (`flowSpec.js`). The day-basis line still says "1 days" for one day (not changed).
+- **Defaults for every travel business**: `computeFeatureFlags` no longer returns `round_trip_driver_da_enabled` and travels / cab no longer list
+  `driverDA`, so signup and change-category (`PUT /api/admin/businesses/:id/category`) set only `enable_fleet` / `enable_distance_fares`; existing
+  values of the old columns are left alone. A business with no `travel_quote_settings` row behaves as the defaults in the estimate and the quote
+  (basis 'day', toll off, no night charge or minimum, 24 h / 3 h); signup, default setup and copySetup create no vehicles and no quote settings, so null
+  vehicle fields are the normal state. **Estimate vs quote with an empty min km**: the estimate uses 250 km per day; the chat quote never guesses and
+  asks the owner to confirm. No pricing, estimate or message code names a business or an id (only the three one-off SG Travels scripts are scoped to SG).
+- **`/api/route-fares`** (Fleet -> Route Fares; `controllers/travel/routeFare.controller.js`) now follows the Rates rules: the same validation and city
+  keys (`validateRouteFareInput`: trim, inner spaces collapsed, from != to, fare a number above 0, trip type one of oneway / round_trip / outstation /
+  local, `isActive` a boolean; 400 with a message), and a switch-off sets `off_reason = 'manual'` / a switch-on clears it through the shared
+  `fareSwitchColumns` (also used by `travelRoute.service.js`), so a route switched off and on does not revive a fare switched off in Fleet. A POST
+  saves the fare on and clears the marker; a PUT with only a price never changes on / off. Neither screen rounds on save (rounding is at quote time).
+  A fare can still be switched on in Fleet while its route is off (Fleet does not know the route state).
+- **Web** (`apnabot-web`, commit 9813160): Settings -> Distance fares & round trip keeps only the Distance-based fares switch (hint: per-day km and
+  driver allowance are set on each vehicle in Fleet) and no longer sends the old three fields; the Fleet vehicle form always shows Minimum km per day and
+  Driver allowance per day (what empty means; "Charged per day. Businesses with Rates can switch to per night in Rates -> Settings."); the Fleet
+  "Auto-calculate fares by distance" panel shows On / Off + status + Preview and links to Settings (no switch); the Fleet Route Fares tab is hidden
+  when `travel_quotes` is on (a note links to Rates -> Routes). Help article "Travel rates and quotes" (en / hi) updated.
+- **Not done**: **Flutter still edits the old fields** (Settings: round trip km, Driver DA switch and amount; the Distance fares switch also in Fleet) and
+  its vehicle form has no min km / allowance and there is no allowance-basis setting, so Flutter-only owners cannot set the per-vehicle fields yet - add
+  them, then remove the old Flutter fields. The chat quote flow exists only for SG Travels (`seedTravelQuoteFlow.js` is SG-only, `travel_quotes` is off
+  for every business), so other travel businesses, new signups included, get route fares + the distance estimate only. **One-time cutover (no feature
+  flag): deploying this server changes live prices - the estimate now uses the quote formula (1-day Round Trips on routes over 125 km, per-vehicle min km,
+  allowance by `allowance_basis`: SG Travels' estimate gains its Rs300 per night) and Round Trip confirmations say nights on a night basis.**
+- Tests: `services/{booking.distanceEstimate,bookingGraph.distanceEstimate,travelDefaults.newBusiness}.test.js`,
+  `controllers/travel/routeFare.controller.test.js`, updated `config/categoryFeatures.{dataDriven,newCategories}.test.js`,
+  `controllers/admin.changeCategory.test.js`; web `src/lib/fleetSettings.test.ts`.
 
 ### Round Trip quote wording (plurals, thousands separators)
 
@@ -2299,8 +2353,8 @@ like a 1-day one), because the days were asked after the vehicle and nothing mul
     `botSettingsPreview.service.js` (Bot Builder draft preview) does not render a handoff node (presets never produce one);
     `GET /api/customers` / chat payloads now carry the raw `needsHumanAt` / `needsHumanReason` / `handoffClearedAt` /
     `handoffPauseSetTo` fields because they select `*`.
-35. **Round Trip pricing is built on the server only**: no web / Flutter screens for the new fields, the web grid shows inactive fares as live (the API now sends
-    `isActive` / `offReason`), and the two SG Travels scripts have not been run - see "Round Trip pricing" > Follow-ups.
+35. **Round Trip pricing: server and web are built, Flutter is not** (no min km / allowance / allowance basis in the app, and its Settings still edits the old
+    round trip km / Driver DA fields - see "One place per setting" > Not done), and the two SG Travels scripts have not been run - see "Round Trip pricing" > Follow-ups.
 
 ## Session log (append here as major milestones land)
 - 2026-10-28: Human-needed alert ("handoff"): migration `20261028120000_handoff.sql` (apply BEFORE the server), `business_handoff_settings`,
@@ -2677,3 +2731,4 @@ like a 1-day one), because the days were asked after the vehicle and nothing mul
 - 2026-11-04: travel quotes part A (route rate card API `/api/travel/*`, `travel_quote_settings`, `travel_quotes`, `GET /api/reports/quotes`, `travel_quotes` switch, off for all) - see "Travel quotes". Migration `20261104120000_travel_quotes.sql` must be applied BEFORE the server. Bot side (part C) not built.
 - 2026-11-05: travel quotes part C (chat quote: `route_picker` / `quote` nodes, `quote:` taps, quote sweep, quote bookings, `scripts/seedTravelQuoteFlow.js`) - see "Travel quotes" > "Part C". Migration `20261105120000_flow_quote_node_types.sql` must be applied BEFORE the server; nothing changes for any business until the seed script is run for SG Travels.
 - 2026-11-02: Round Trip pricing (formula, per-vehicle min km / allowance, route distance + Google fill, allowance basis, priced carousel cards, `price_on_request` hand-off, carousel strings and quote date in en / hi / mr, `cutoverRoundTripDaysFirst.js`, `deactivateSgRoundTripFares.js`) - see "Travel quotes" > "Round Trip pricing". Migration `20261106120000_round_trip_pricing.sql` must be applied BEFORE the server. Server only: no web / Flutter screens yet, both SG Travels scripts not run, so the as-seeded SG flow still asks the days after the vehicle and the 36 fixed Round Trip fares are still active.
+- 2026-11-02: one place per setting - distance estimate uses the quote's Round Trip formula (vehicle min km / allowance, allowance basis, 2x one-way floor; old settings only fallback), `/api/route-fares` follows the Rates rules (off_reason, validation), new travel businesses no longer get the old driver-DA switch, night-basis Driver DA says nights (en hi mr + 8 machine languages), web Settings / Fleet de-duplicated (apnabot-web 9813160) - see "One place per setting". Server only changes live prices on deploy (no feature flag); Flutter not done.
