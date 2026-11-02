@@ -120,6 +120,18 @@ cutover and the menu picker had always resolved empty in practice.
   re-translates only those keys where a language has no text, keeping the rest of the CSV. A later native review
   imports its CSV normally; reviewed keys override machine ones. The followup default texts pick up these
   machine translations too.
+- **Travel-quote / carousel / route-picker messages for gu kn ta te ml bn pa or (added 2026-11-02, interim).** 59 keys per language
+  (`vehicle*`, `chooseOneOf`, `routePicker*`, `quote*`, `pickupTimeInvalid`) were machine-translated (Azure, `exportSystemMessagesForReview.js
+  --keys=… --confirm` then `importReviewedSystemMessages.js --source=machine`; the existing rows, incl. the hand-corrected consent texts, were not
+  touched). **This is machine output with no native review: the fare wording must be reviewed by a native speaker before real customers in
+  these languages see it.** That covers every message that states or explains a price: `quoteBaseFareLine`, `quoteKmFareLine`,
+  `quotePackageFareLine`, `quoteBilledByMin`, `quoteBilledByDistance` (billed km), `quoteExtraNight`, `quoteExtraDriver`,
+  `quoteExtraDriverDays`, `quoteExtraDriverNights` (allowance), `quoteExtraMinimum`, `quoteTotalLine`, `quoteTollIncluded`, `quoteTollExtra`
+  (toll), `quoteAdvanceLine`, `quoteActualKmNote`, `quoteCardDays` / `quoteCardKm` / `quoteCardPackage` / `quoteCardOnRequest`,
+  `quotePriceOnRequestReply`, `quotePriceChanged` and `quoteValidUntil`; the rest (prompts, buttons, `routePicker*`) is lower risk but equally
+  unreviewed. Keys that stay **English** in the listed languages: `quoteBtnConfirmPay` (gu kn ta te ml bn pa or: the translation was over the
+  20-character button limit and was dropped), `quoteBtnPaid` and `vehicleBookThis` (ta: over 20), `qrHowTo` (ta bn: Azure lost the bold
+  marks). A short reviewed text fixes each: put it in the language's CSV `reviewed_translation` and import without `--source=machine`.
 - Verified via `src/scripts/verifyBookingGraph.js`. Rewritten 2026-09-07 to
   be fully generic — no hardcoded business id, vehicle id, route-fare id,
   or expected fare/value anywhere in the script, and no default business

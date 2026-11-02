@@ -9,6 +9,12 @@ handoffReply,Thank you! 🙏 Our team has been told and will reply to you here s
 handoffClosed,Thank you! 🙏 We are closed right now. Our team will reply to you here {{nextOpening}}.,நன்றி! நாங்கள் 🙏 இப்போது மூடப்பட்டுள்ளோம். எங்கள் குழு உங்களுக்கு இங்கே பதிலளிக்கும் {{nextOpening}}.,,Keep unchanged: {{nextOpening}}
 mediaReceived,Thanks! We've received your file. Our team will reply with details shortly.,நன்றி! உங்கள் கோப்பை நாங்கள் பெற்றுள்ளோம். எங்கள் குழு விரைவில் விவரங்களுடன் பதிலளிக்கும்.,,
 locationNotConfigured,"Sorry, our location is not set up yet.","மன்னிக்கவும், எங்கள் இருப்பிடம் இன்னும் அமைக்கப்படவில்லை.",,
+vehicleSeats,{{seats}} seats,{{seats}} இடங்கள்,,Keep unchanged: {{seats}}
+vehicleBookThis,Book this,,,Machine translation was over the 20-character limit and was dropped: English is used until a short reviewed text is given
+vehicleOtherPrompt,Don't see the vehicle you want?,நீங்கள் விரும்பும் வாகனத்தை பார்க்கவில்லையா?,,
+vehicleOtherBtn,Other options,பிற விருப்பங்கள்,,
+vehicleTapOne,Please tap one of the vehicle options above.,மேலே உள்ள வாகன விருப்பங்களில் ஒன்றைத் தட்டவும்.,,
+chooseOneOf,Please choose one of:,தயவுசெய்து ஒன்றைத் தேர்ந்தெடுக்கவும்:,,
 vehicleNoLongerAvailable,"Sorry, that vehicle is no longer available for this route. Here are the current options:","மன்னிக்கவும், அந்த வாகனம் இனி இந்த பாதைக்கு கிடைக்காது. தற்போதைய விருப்பங்கள் இங்கே:",,
 bookingReceived,✅ *Booking request received!*,✅ *முன்பதிவு கோரிக்கை கிடைத்தது!*,,*bold* markers must stay around the same words
 bookingIdLine,Booking ID: *{{code}}*,முன்பதிவு ஐடி: *{{code}}*,,Keep unchanged: {{code}}; *bold* markers must stay around the same words
@@ -87,4 +93,57 @@ bookingTapHintFile,Please send a photo or file as your answer. Send *menu* to le
 bookingFileRejected,"Sorry, we couldn't accept that file. Please send a JPG, PNG, WEBP, PDF, XLSX, XLS, CSV or DOCX file under 16 MB.","மன்னிக்கவும், அந்த கோப்பை எங்களால் ஏற்க முடியவில்லை. 16 MB க்கு கீழ் JPG, PNG, WEBP, PDF, XLSX, XLS, CSV அல்லது DOCX கோப்பை அனுப்பவும்.",,
 summaryFileReceived,received,பெறப்பட்டது,,
 listButtonChoose,Choose,தேர்வு செய்,,
+routePickerFromPrompt,Where will your trip start from? 📍,உங்கள் பயணம் எங்கிருந்து தொடங்கும்? 📍,,
+routePickerRegionPrompt,Which area do you want to go to?,நீங்கள் எந்த பகுதிக்கு செல்ல விரும்புகிறீர்கள்?,,
+routePickerToPrompt,Where do you want to go? 🚕,நீங்கள் எங்கு செல்ல விரும்புகிறீர்கள்? 🚕,,
+routePickerMore,More...,மேலும்...,,
+routePickerOtherRoute,Other route,பிற பாதை,,
+routePickerOtherPlaces,Other places,பிற இடங்கள்,,
+quoteHeader,🚕 *Your trip quote*,🚕 *உங்கள் பயண மேற்கோள்*,,*bold* markers must stay around the same words
+quoteTripLine,Trip: *{{trip}}*,பயணம்: *{{trip}}*,,Keep unchanged: {{trip}}; *bold* markers must stay around the same words
+quoteTripOneWay,One Way,ஒரு வழி,,
+quoteTripRoundTrip,Round Trip,சுற்று பயணம்,,
+quoteDateLine,Date: *{{date}}*,தேதி: *{{date}}*,,Keep unchanged: {{date}}; *bold* markers must stay around the same words
+quoteTimeLine,Pickup time: *{{time}}*,பிக்-அப் நேரம்: *{{time}}*,,Keep unchanged: {{time}}; *bold* markers must stay around the same words
+quotePassengersLine,Passengers: *{{passengers}}*,பயணிகள்: *{{passengers}}*,,Keep unchanged: {{passengers}}; *bold* markers must stay around the same words
+quoteVehicleLine,Vehicle: *{{vehicle}}*,வாகனம்: *{{vehicle}}*,,Keep unchanged: {{vehicle}}; *bold* markers must stay around the same words
+quoteBaseFareLine,Fare: ₹{{amount}},கட்டணம்: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteExtraNight,Night charge: ₹{{amount}},இரவு கட்டணம்: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteExtraDriver,Driver allowance ({{days}} day(s)): ₹{{amount}},ஓட்டுநர் கொடுப்பனவு ({{days}} நாள்(கள்)): ₹{{amount}},,Keep unchanged: {{days}} {{amount}}
+quoteExtraMinimum,Minimum charge adjustment: ₹{{amount}},குறைந்தபட்ச கட்டண சரிசெய்தல்: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteDaysLine,Days: *{{days}}*,நாட்கள்: *{{days}}*,,Keep unchanged: {{days}}; *bold* markers must stay around the same words
+quoteKmFareLine,Fare: {{km}} km × ₹{{rate}}/km = ₹{{amount}},கட்டணம்: {{km}} km × ₹{{rate}}/km = ₹{{amount}},,Keep unchanged: {{km}} {{rate}} {{amount}}
+quoteBilledByMin,Billed distance: {{km}} km ({{days}} day(s) × {{min}} km minimum per day),பில் தூரம்: {{km}} கிமீ ({{days}} நாள்(கள்) × {{min}} கிமீ குறைந்தபட்சம் ஒரு நாளைக்கு),,Keep unchanged: {{km}} {{days}} {{min}}
+quoteBilledByDistance,"Billed distance: {{km}} km (there and back, 2 × {{one}} km)","பில் தூரம்: {{km}} கிமீ (அங்கும் பின்னும், 2 × {{one}} கிமீ)",,Keep unchanged: {{km}} {{one}}
+quoteExtraDriverDays,Driver allowance ({{units}} day(s) × ₹{{perUnit}}): ₹{{amount}},ஓட்டுநர் கொடுப்பனவு ({{units}} நாள்(கள்) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quoteExtraDriverNights,Driver allowance ({{units}} night(s) × ₹{{perUnit}}): ₹{{amount}},ஓட்டுநர் கொடுப்பனவு ({{units}} இரவு (கள்) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quotePackageFareLine,Package fare: ₹{{amount}},பேக்கேஜ் கட்டணம்: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteActualKmNote,The final fare is by actual km if the trip runs more than the billed km.,பயணம் பில் செய்யப்பட்ட கி.மீ.க்கு மேல் ஓடினால் இறுதி கட்டணம் உண்மையான கி.மீ.,,
+quoteCardDays,{{days}} day(s),{{days}} நாள்(கள்),,Keep unchanged: {{days}}
+quoteCardKm,{{km}} km,{{km}} கி.மீ,,Keep unchanged: {{km}}
+quoteCardPackage,package fare,தொகுப்பு கட்டணம்,,
+quoteCardOnRequest,Price: our team will confirm,விலை: எங்கள் குழு உறுதிப்படுத்தும்,,
+quotePriceOnRequestReply,We will confirm the Round Trip price for your trip and get back to you shortly. Our team has been notified.,உங்கள் பயணத்திற்கான சுற்று பயண விலையை நாங்கள் உறுதிப்படுத்துவோம் மற்றும் விரைவில் உங்களைத் தொடர்புகொள்வோம். எங்கள் குழுவுக்கு அறிவிக்கப்பட்டுள்ளது.,,
+quotePriceChanged,The prices were just updated. Please choose again:,விலைகள் புதுப்பிக்கப்பட்டன. தயவுசெய்து மீண்டும் தேர்வு:,,
+quoteTotalLine,Total: *₹{{amount}}*,மொத்தம்: *₹{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
+quoteTollIncluded,Toll is included in this fare.,இந்த கட்டணத்தில் சுங்கச்சாவடி சேர்க்கப்பட்டுள்ளது.,,
+quoteTollExtra,Toll is extra and not included in this fare.,சுங்கச்சாவடி கூடுதல் மற்றும் இந்த கட்டணத்தில் சேர்க்கப்படவில்லை.,,
+quoteAdvanceLine,Advance to confirm: *₹{{amount}}*,உறுதிப்படுத்த முன்பணம்: *₹{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
+quoteValidUntil,This quote is valid until {{until}}.,இந்த மேற்கோள் {{until}} வரை செல்லுபடியாகும்.,,Keep unchanged: {{until}}
+quoteReminder,"Your trip quote for *{{route}}* (*₹{{total}}*) is still open until {{until}}. Tap *{{button}}* on the quote above to book, or reply here if you have any questions.",*{{route}}* (₹ *{{total}}*) க்கான உங்கள் பயண மேற்கோள் {{until}} வரை திறந்திருக்கும். முன்பதிவு செய்ய மேலே உள்ள மேற்கோளில் *{{button}} என்பதைத்* தட்டவும் அல்லது ஏதேனும் கேள்விகள் இருந்தால் இங்கே பதிலளிக்கவும்.,,Keep unchanged: {{route}} {{total}} {{until}} {{button}}; *bold* markers must stay around the same words
+quoteBtnConfirmPay,Confirm & pay,,,Machine translation was over the 20-character limit and was dropped: English is used until a short reviewed text is given
+quoteBtnConfirm,Confirm,உறுதிப்படுத்தவும்,,
+quoteBtnChange,Change,மாற்றம்,,
+quoteBtnTalk,Talk to us,எங்களுடன் பேசுங்கள்,,
+quoteBtnPaid,I've paid,,,Machine translation was over the 20-character limit and was dropped: English is used until a short reviewed text is given
+quoteBtnNew,New quote,புதிய மேற்கோள்,,
+quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","மன்னிக்கவும், இந்த பாதையில் உங்கள் குழு அளவிற்கான வாகனம் எங்களிடம் இல்லை. *எங்களுடன் பேசுங்கள் என்பதைத்* தட்டவும், எங்கள் குழு உங்களுக்கு உதவும்.",,*bold* markers must stay around the same words
+quoteExpired,This quote has expired. Tap below to get a new one.,இந்த மேற்கோள் காலாவதியாகிவிட்டது. புதியதைப் பெற கீழே தட்டவும்.,,
+quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","மன்னிக்கவும், இந்த மேற்கோள் இனி கிடைக்காது. மீண்டும் தொடங்க *வணக்கம் அனுப்பவும்* .",,*bold* markers must stay around the same words
+quoteConfirmedTitle,✅ *Booking confirmed!*,✅ *முன்பதிவு உறுதிப்படுத்தப்பட்டது!*,,*bold* markers must stay around the same words
+quoteConfirmedNext,Our team will contact you with the pickup details.,பிக்-அப் விவரங்களுடன் எங்கள் குழு உங்களைத் தொடர்பு கொள்ளும்.,,
+quotePaidPrompt,Paid already? Tap below once you have paid and we will check it.,"ஏற்கனவே பணம் செலுத்தியுள்ளீர்களா? நீங்கள் பணம் செலுத்தியவுடன் கீழே தட்டவும், நாங்கள் அதைச் சரிபார்ப்போம்.",,
+quotePaidThanks,Thanks! We will check your payment and confirm your booking shortly.,நன்றி! நாங்கள் உங்கள் கட்டணத்தை சரிபார்த்து விரைவில் உங்கள் முன்பதிவை உறுதி செய்வோம்.,,
+quotePaidAlready,We have already received your payment ✅,உங்கள் பேமெண்ட்டை ✅ நாங்கள் ஏற்கனவே பெற்றுள்ளோம்,,
+pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","மன்னிக்கவும், அந்த நேரத்தில் என்னால் படிக்க முடியவில்லை. தயவு செய்து காலை 6:30 அல்லது 18:30 என தட்டச்சு செய்யவும்.",,
 chooseLanguageLine,Choose your language,உங்கள் மொழியைத் தேர்வுசெய்க,,

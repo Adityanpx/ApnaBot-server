@@ -211,7 +211,9 @@ test('machine files: no placeholder glued to a word and no word that mixes Latin
 test('machine files: every message that went to a customer button fits WhatsApp\'s 20 characters', () => {
   const { MACHINE_MESSAGES } = require('./systemMessages');
   const graphemes = (s) => [...new Intl.Segmenter('en', { granularity: 'grapheme' }).segment(s)].length;
-  const buttonKeys = Object.keys(SYSTEM_MESSAGES).filter((k) => SYSTEM_MESSAGES[k].en.length <= 24 && !SYSTEM_MESSAGES[k].en.includes('{{'));
+  // Short English text with no placeholder is taken for a button. These two are short but are message text, not buttons.
+  const NOT_BUTTONS = ['chooseOneOf', 'quoteConfirmedTitle'];
+  const buttonKeys = Object.keys(SYSTEM_MESSAGES).filter((k) => !NOT_BUTTONS.includes(k) && SYSTEM_MESSAGES[k].en.length <= 24 && !SYSTEM_MESSAGES[k].en.includes('{{'));
   for (const [lang, table] of Object.entries(MACHINE_MESSAGES)) {
     for (const key of buttonKeys) if (table[key]) assert.ok(graphemes(table[key]) <= 20, `${lang}.${key} is ${graphemes(table[key])} characters`);
   }

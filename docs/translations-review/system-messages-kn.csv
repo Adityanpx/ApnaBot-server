@@ -9,6 +9,12 @@ handoffReply,Thank you! 🙏 Our team has been told and will reply to you here s
 handoffClosed,Thank you! 🙏 We are closed right now. Our team will reply to you here {{nextOpening}}.,ಧನ್ಯವಾದಗಳು! ನಾವು 🙏 ಇದೀಗ ಮುಚ್ಚಿದ್ದೇವೆ. ನಮ್ಮ ತಂಡವು ನಿಮಗೆ ಇಲ್ಲಿ ಉತ್ತರಿಸುತ್ತದೆ {{nextOpening}}.,,Keep unchanged: {{nextOpening}}
 mediaReceived,Thanks! We've received your file. Our team will reply with details shortly.,ಧನ್ಯವಾದಗಳು! ನಾವು ನಿಮ್ಮ ಫೈಲ್ ಅನ್ನು ಸ್ವೀಕರಿಸಿದ್ದೇವೆ. ನಮ್ಮ ತಂಡವು ಶೀಘ್ರದಲ್ಲೇ ವಿವರಗಳೊಂದಿಗೆ ಉತ್ತರಿಸುತ್ತದೆ.,,
 locationNotConfigured,"Sorry, our location is not set up yet.","ಕ್ಷಮಿಸಿ, ನಮ್ಮ ಸ್ಥಳವನ್ನು ಇನ್ನೂ ಸೆಟ್ ಅಪ್ ಮಾಡಲಾಗಿಲ್ಲ.",,
+vehicleSeats,{{seats}} seats,{{seats}} ಸ್ಥಾನಗಳು,,Keep unchanged: {{seats}}
+vehicleBookThis,Book this,ಇದನ್ನು ಬುಕ್ ಮಾಡಿ,,
+vehicleOtherPrompt,Don't see the vehicle you want?,ನಿಮಗೆ ಬೇಕಾದ ವಾಹನವನ್ನು ನೋಡುತ್ತಿಲ್ಲವೇ?,,
+vehicleOtherBtn,Other options,ಇತರ ಆಯ್ಕೆಗಳು,,
+vehicleTapOne,Please tap one of the vehicle options above.,ದಯವಿಟ್ಟು ಮೇಲಿನ ವಾಹನ ಆಯ್ಕೆಗಳಲ್ಲಿ ಒಂದನ್ನು ಟ್ಯಾಪ್ ಮಾಡಿ.,,
+chooseOneOf,Please choose one of:,ದಯವಿಟ್ಟು ಇವುಗಳಲ್ಲಿ ಒಂದನ್ನು ಆಯ್ಕೆಮಾಡಿ:,,
 vehicleNoLongerAvailable,"Sorry, that vehicle is no longer available for this route. Here are the current options:","ಕ್ಷಮಿಸಿ, ಆ ವಾಹನವು ಈ ಮಾರ್ಗಕ್ಕೆ ಇನ್ನು ಮುಂದೆ ಲಭ್ಯವಿಲ್ಲ. ಪ್ರಸ್ತುತ ಆಯ್ಕೆಗಳು ಇಲ್ಲಿವೆ:",,
 bookingReceived,✅ *Booking request received!*,✅ *ಬುಕಿಂಗ್ ವಿನಂತಿ ಸ್ವೀಕರಿಸಲಾಗಿದೆ!*,,*bold* markers must stay around the same words
 bookingIdLine,Booking ID: *{{code}}*,ಬುಕ್ಕಿಂಗ್ ಐಡಿ: *{{code}}*,,Keep unchanged: {{code}}; *bold* markers must stay around the same words
@@ -87,4 +93,57 @@ bookingTapHintFile,Please send a photo or file as your answer. Send *menu* to le
 bookingFileRejected,"Sorry, we couldn't accept that file. Please send a JPG, PNG, WEBP, PDF, XLSX, XLS, CSV or DOCX file under 16 MB.","ಕ್ಷಮಿಸಿ, ನಾವು ಆ ಫೈಲ್ ಅನ್ನು ಸ್ವೀಕರಿಸಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು 16 MB ಗಿಂತ ಕಡಿಮೆ JPG, PNG, WEBP, PDF, XLSX, XLS, CSV ಅಥವಾ DOCX ಫೈಲ್ ಅನ್ನು ಕಳುಹಿಸಿ.",,
 summaryFileReceived,received,ಸ್ವೀಕರಿಸಲಾಗಿದೆ,,
 listButtonChoose,Choose,ಆಯ್ಕೆಮಾಡಿ,,
+routePickerFromPrompt,Where will your trip start from? 📍,ನಿಮ್ಮ ಪ್ರವಾಸ ಎಲ್ಲಿಂದ ಪ್ರಾರಂಭವಾಗುತ್ತದೆ? 📍,,
+routePickerRegionPrompt,Which area do you want to go to?,ನೀವು ಯಾವ ಪ್ರದೇಶಕ್ಕೆ ಹೋಗಲು ಬಯಸುತ್ತೀರಿ?,,
+routePickerToPrompt,Where do you want to go? 🚕,ನೀನು ಎಲ್ಲಿಗೆ ಹೋಗಬೇಕು? 🚕,,
+routePickerMore,More...,ಇನ್ನಷ್ಟು...,,
+routePickerOtherRoute,Other route,ಇತರ ಮಾರ್ಗ,,
+routePickerOtherPlaces,Other places,ಇತರ ಸ್ಥಳಗಳು,,
+quoteHeader,🚕 *Your trip quote*,🚕 *ನಿಮ್ಮ ಪ್ರವಾಸದ ಉಲ್ಲೇಖ*,,*bold* markers must stay around the same words
+quoteTripLine,Trip: *{{trip}}*,ಪ್ರವಾಸ: *{{trip}}*,,Keep unchanged: {{trip}}; *bold* markers must stay around the same words
+quoteTripOneWay,One Way,ಒಂದು ಮಾರ್ಗ,,
+quoteTripRoundTrip,Round Trip,ರೌಂಡ್ ಟ್ರಿಪ್,,
+quoteDateLine,Date: *{{date}}*,ದಿನಾಂಕ: *{{date}}*,,Keep unchanged: {{date}}; *bold* markers must stay around the same words
+quoteTimeLine,Pickup time: *{{time}}*,ಪಿಕಪ್ ಸಮಯ: *{{time}}*,,Keep unchanged: {{time}}; *bold* markers must stay around the same words
+quotePassengersLine,Passengers: *{{passengers}}*,ಪ್ರಯಾಣಿಕರು: *{{passengers}}*,,Keep unchanged: {{passengers}}; *bold* markers must stay around the same words
+quoteVehicleLine,Vehicle: *{{vehicle}}*,ವಾಹನ: *{{vehicle}}*,,Keep unchanged: {{vehicle}}; *bold* markers must stay around the same words
+quoteBaseFareLine,Fare: ₹{{amount}},ದರ: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteExtraNight,Night charge: ₹{{amount}},ರಾತ್ರಿ ಶುಲ್ಕ: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteExtraDriver,Driver allowance ({{days}} day(s)): ₹{{amount}},ಚಾಲಕ ಭತ್ಯೆ ({{days}} ದಿನ (ಗಳು)): ₹{{amount}},,Keep unchanged: {{days}} {{amount}}
+quoteExtraMinimum,Minimum charge adjustment: ₹{{amount}},ಕನಿಷ್ಟ ಶುಲ್ಕ ಹೊಂದಾಣಿಕೆ: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteDaysLine,Days: *{{days}}*,ದಿನಗಳು: *{{days}}*,,Keep unchanged: {{days}}; *bold* markers must stay around the same words
+quoteKmFareLine,Fare: {{km}} km × ₹{{rate}}/km = ₹{{amount}},ಶುಲ್ಕ: {{km}} ಕಿ.ಮೀ × ₹{{rate}}/ ಕಿ.ಮೀ = ₹{{amount}},,Keep unchanged: {{km}} {{rate}} {{amount}}
+quoteBilledByMin,Billed distance: {{km}} km ({{days}} day(s) × {{min}} km minimum per day),ಬಿಲ್ ಮಾಡಿದ ದೂರ: {{km}} ಕಿಮೀ ({{days}} ದಿನ (ಗಳು) × {{min}} ಕಿಮೀ ಕನಿಷ್ಠ),,Keep unchanged: {{km}} {{days}} {{min}}
+quoteBilledByDistance,"Billed distance: {{km}} km (there and back, 2 × {{one}} km)","ಬಿಲ್ ಮಾಡಿದ ದೂರ: {{km}} ಕಿ.ಮೀ (ಅಲ್ಲಿ ಮತ್ತು ಹಿಂದಕ್ಕೆ, 2 × {{one}} ಕಿ.ಮೀ)",,Keep unchanged: {{km}} {{one}}
+quoteExtraDriverDays,Driver allowance ({{units}} day(s) × ₹{{perUnit}}): ₹{{amount}},ಡ್ರೈವರ್ ಅಲೌನ್ಸ್ ({{units}} ದಿನ (ಗಳು) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quoteExtraDriverNights,Driver allowance ({{units}} night(s) × ₹{{perUnit}}): ₹{{amount}},ಡ್ರೈವರ್ ಭತ್ಯೆ ({{units}} ರಾತ್ರಿ (ಗಳು) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quotePackageFareLine,Package fare: ₹{{amount}},ಪ್ಯಾಕೇಜ್ ಶುಲ್ಕ: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteActualKmNote,The final fare is by actual km if the trip runs more than the billed km.,ಬಿಲ್ ಮಾಡಿದ ಕಿ.ಮೀ.ಗಿಂತ ಹೆಚ್ಚು ಪ್ರವಾಸವು ಚಲಿಸಿದರೆ ಅಂತಿಮ ಶುಲ್ಕವು ನಿಜವಾದ ಕಿ.ಮೀ.,,
+quoteCardDays,{{days}} day(s),{{days}} ದಿನ(ಗಳು),,Keep unchanged: {{days}}
+quoteCardKm,{{km}} km,{{km}} ಕಿ.ಮೀ.,,Keep unchanged: {{km}}
+quoteCardPackage,package fare,ಪ್ಯಾಕೇಜ್ ಶುಲ್ಕ,,
+quoteCardOnRequest,Price: our team will confirm,ಬೆಲೆ: ನಮ್ಮ ತಂಡವು ದೃಢೀಕರಿಸುತ್ತದೆ,,
+quotePriceOnRequestReply,We will confirm the Round Trip price for your trip and get back to you shortly. Our team has been notified.,ನಿಮ್ಮ ಪ್ರವಾಸಕ್ಕಾಗಿ ರೌಂಡ್ ಟ್ರಿಪ್ ಬೆಲೆಯನ್ನು ನಾವು ದೃಢೀಕರಿಸುತ್ತೇವೆ ಮತ್ತು ಶೀಘ್ರದಲ್ಲೇ ನಿಮ್ಮನ್ನು ಸಂಪರ್ಕಿಸುತ್ತೇವೆ. ನಮ್ಮ ತಂಡಕ್ಕೆ ತಿಳಿಸಲಾಗಿದೆ.,,
+quotePriceChanged,The prices were just updated. Please choose again:,ಬೆಲೆಗಳನ್ನು ಈಗಷ್ಟೇ ನವೀಕರಿಸಲಾಗಿದೆ. ದಯವಿಟ್ಟು ಮತ್ತೆ ಆಯ್ಕೆ ಮಾಡಿ:,,
+quoteTotalLine,Total: *₹{{amount}}*,ಒಟ್ಟು: ₹ *{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
+quoteTollIncluded,Toll is included in this fare.,ಈ ದರದಲ್ಲಿ ಟೋಲ್ ಅನ್ನು ಸೇರಿಸಲಾಗಿದೆ.,,
+quoteTollExtra,Toll is extra and not included in this fare.,ಟೋಲ್ ಹೆಚ್ಚುವರಿ ಮತ್ತು ಈ ಶುಲ್ಕದಲ್ಲಿ ಸೇರಿಸಲಾಗಿಲ್ಲ.,,
+quoteAdvanceLine,Advance to confirm: *₹{{amount}}*,ದೃಢೀಕರಿಸಲು ಮುಂಗಡ: *₹{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
+quoteValidUntil,This quote is valid until {{until}}.,ಈ ಉಲ್ಲೇಖವು {{until}} ರವರೆಗೆ ಮಾನ್ಯವಾಗಿರುತ್ತದೆ.,,Keep unchanged: {{until}}
+quoteReminder,"Your trip quote for *{{route}}* (*₹{{total}}*) is still open until {{until}}. Tap *{{button}}* on the quote above to book, or reply here if you have any questions.",*{{route}}* (₹ *{{total}})*ಗಾಗಿ ನಿಮ್ಮ ಟ್ರಿಪ್ ಉಲ್ಲೇಖವು {{until}} ರವರೆಗೆ ಇನ್ನೂ ತೆರೆದಿರುತ್ತದೆ. ಬುಕ್ ಮಾಡಲು ಮೇಲಿನ ಉಲ್ಲೇಖದ ಮೇಲೆ *{{button}}* ಟ್ಯಾಪ್ ಮಾಡಿ ಅಥವಾ ನಿಮ್ಮಲ್ಲಿ ಯಾವುದೇ ಪ್ರಶ್ನೆಗಳಿದ್ದರೆ ಇಲ್ಲಿ ಉತ್ತರಿಸಿ.,,Keep unchanged: {{route}} {{total}} {{until}} {{button}}; *bold* markers must stay around the same words
+quoteBtnConfirmPay,Confirm & pay,,,Machine translation was over the 20-character limit and was dropped: English is used until a short reviewed text is given
+quoteBtnConfirm,Confirm,ದೃಢೀಕರಿಸಿ,,
+quoteBtnChange,Change,ಬದಲಿಸಿ,,
+quoteBtnTalk,Talk to us,ನಮ್ಮೊಂದಿಗೆ ಮಾತನಾಡಿ,,
+quoteBtnPaid,I've paid,ನಾನು ಪಾವತಿಸಿದ್ದೇನೆ,,
+quoteBtnNew,New quote,ಹೊಸ ಉಲ್ಲೇಖ,,
+quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","ಕ್ಷಮಿಸಿ, ಈ ಮಾರ್ಗದಲ್ಲಿ ನಿಮ್ಮ ಗುಂಪಿನ ಗಾತ್ರಕ್ಕೆ ನಮ್ಮಲ್ಲಿ ವಾಹನವಿಲ್ಲ. *ನಮ್ಮೊಂದಿಗೆ ಮಾತನಾಡಿ ಟ್ಯಾಪ್* ಮಾಡಿ ಮತ್ತು ನಮ್ಮ ತಂಡವು ನಿಮಗೆ ಸಹಾಯ ಮಾಡುತ್ತದೆ.",,*bold* markers must stay around the same words
+quoteExpired,This quote has expired. Tap below to get a new one.,ಈ ಉಲ್ಲೇಖದ ಅವಧಿ ಮುಗಿದಿದೆ. ಹೊಸದನ್ನು ಪಡೆಯಲು ಕೆಳಗೆ ಟ್ಯಾಪ್ ಮಾಡಿ.,,
+quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","ಕ್ಷಮಿಸಿ, ಈ ಉಲ್ಲೇಖವು ಇನ್ನು ಮುಂದೆ ಲಭ್ಯವಿಲ್ಲ. ಮತ್ತೆ ಪ್ರಾರಂಭಿಸಲು *ಹಾಯ್ ಕಳುಹಿಸಿ* .",,*bold* markers must stay around the same words
+quoteConfirmedTitle,✅ *Booking confirmed!*,✅ *ಬುಕಿಂಗ್ ದೃಢಪಟ್ಟಿದೆ!*,,*bold* markers must stay around the same words
+quoteConfirmedNext,Our team will contact you with the pickup details.,ನಮ್ಮ ತಂಡವು ಪಿಕಪ್ ವಿವರಗಳೊಂದಿಗೆ ನಿಮ್ಮನ್ನು ಸಂಪರ್ಕಿಸುತ್ತದೆ.,,
+quotePaidPrompt,Paid already? Tap below once you have paid and we will check it.,ಈಗಾಗಲೇ ಪಾವತಿಸಲಾಗಿದೆಯೇ? ನೀವು ಪಾವತಿಸಿದ ನಂತರ ಕೆಳಗೆ ಟ್ಯಾಪ್ ಮಾಡಿ ಮತ್ತು ನಾವು ಅದನ್ನು ಪರಿಶೀಲಿಸುತ್ತೇವೆ.,,
+quotePaidThanks,Thanks! We will check your payment and confirm your booking shortly.,ಧನ್ಯವಾದಗಳು! ನಾವು ನಿಮ್ಮ ಪಾವತಿಯನ್ನು ಪರಿಶೀಲಿಸುತ್ತೇವೆ ಮತ್ತು ಶೀಘ್ರದಲ್ಲೇ ನಿಮ್ಮ ಬುಕಿಂಗ್ ಅನ್ನು ದೃಢೀಕರಿಸುತ್ತೇವೆ.,,
+quotePaidAlready,We have already received your payment ✅,ನಾವು ಈಗಾಗಲೇ ನಿಮ್ಮ ಪಾವತಿಯನ್ನು ✅ ಸ್ವೀಕರಿಸಿದ್ದೇವೆ,,
+pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","ಕ್ಷಮಿಸಿ, ನನಗೆ ಆ ಸಮಯದಲ್ಲಿ ಓದಲು ಸಾಧ್ಯವಾಗಲಿಲ್ಲ. ದಯವಿಟ್ಟು ಅದನ್ನು ಬೆಳಿಗ್ಗೆ 6:30 ಅಥವಾ 18:30 ಎಂದು ಟೈಪ್ ಮಾಡಿ.",,
 chooseLanguageLine,Choose your language,ನಿಮ್ಮ ಭಾಷೆಯನ್ನು ಆಯ್ಕೆಮಾಡಿ,,

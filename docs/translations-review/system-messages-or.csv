@@ -9,6 +9,12 @@ handoffReply,Thank you! 🙏 Our team has been told and will reply to you here s
 handoffClosed,Thank you! 🙏 We are closed right now. Our team will reply to you here {{nextOpening}}.,ଧନ୍ୟବାଦ! 🙏 ଆମେ ବର୍ତ୍ତମାନ ବନ୍ଦ ହୋଇଛୁ । ଆମର ଟିମ୍ ଆପଣଙ୍କୁ ଏଠାରେ ଉତ୍ତର ଦେବ {{nextOpening}}।,,Keep unchanged: {{nextOpening}}
 mediaReceived,Thanks! We've received your file. Our team will reply with details shortly.,ଧନ୍ୟବାଦ! ଆମେ ଆପଣଙ୍କର ଫାଇଲ୍ ଗ୍ରହଣ କରିଛୁ । ଆମର ଟିମ୍ ଶୀଘ୍ର ସବିଶେଷ ତଥ୍ୟ ସହିତ ଉତ୍ତର ଦେବ ।,,
 locationNotConfigured,"Sorry, our location is not set up yet.","ଦୁଃଖିତ, ଆମର ଅବସ୍ଥାନ ଏପର୍ଯ୍ୟନ୍ତ ସେଟ୍ ଅପ୍ ହୋଇନାହିଁ।",,
+vehicleSeats,{{seats}} seats,{{seats}} ଆସନ,,Keep unchanged: {{seats}}
+vehicleBookThis,Book this,ଏହାକୁ ବୁକ୍ କରନ୍ତୁ,,
+vehicleOtherPrompt,Don't see the vehicle you want?,ଆପଣ ଚାହୁଁଥିବା ଗାଡି ଦେଖୁ ନାହାଁନ୍ତି କି?,,
+vehicleOtherBtn,Other options,ଅନ୍ୟାନ୍ୟ ବିକଳ୍ପ,,
+vehicleTapOne,Please tap one of the vehicle options above.,ଦୟାକରି ଉପରୋକ୍ତ ଗାଡି ବିକଳ୍ପଗୁଡିକରୁ ଗୋଟିଏ ଟ୍ୟାପ୍ କରନ୍ତୁ।,,
+chooseOneOf,Please choose one of:,ଦୟାକରି ଗୋଟିଏ ବାଛନ୍ତୁ:,,
 vehicleNoLongerAvailable,"Sorry, that vehicle is no longer available for this route. Here are the current options:","ଦୁଃଖିତ, ସେହି ଗାଡି ଏହି ମାର୍ଗ ପାଇଁ ଆଉ ଉପଲବ୍ଧ ନାହିଁ। ଏଠାରେ ସାମ୍ପ୍ରତିକ ବିକଳ୍ପଗୁଡ଼ିକ ଅଛି:",,
 bookingReceived,✅ *Booking request received!*,✅ *ବୁକିଂ ଅନୁରୋଧ ପ୍ରାପ୍ତ ହୋଇଛି!*,,*bold* markers must stay around the same words
 bookingIdLine,Booking ID: *{{code}}*,ବୁକିଂ ଆଇଡି: *{{code}}*,,Keep unchanged: {{code}}; *bold* markers must stay around the same words
@@ -87,4 +93,57 @@ bookingTapHintFile,Please send a photo or file as your answer. Send *menu* to le
 bookingFileRejected,"Sorry, we couldn't accept that file. Please send a JPG, PNG, WEBP, PDF, XLSX, XLS, CSV or DOCX file under 16 MB.","ଦୁଃଖିତ, ଆମେ ସେହି ଫାଇଲକୁ ଗ୍ରହଣ କରିପାରିଲୁ ନାହିଁ । ଦୟାକରି 16 MB ତଳେ ଏକ JPG, PNG, WEBP, PDF, XLSX, XLS, CSV କିମ୍ବା DOCX ଫାଇଲ୍ ପଠାନ୍ତୁ ।",,
 summaryFileReceived,received,ପ୍ରାପ୍ତ ହୋଇଛି,,
 listButtonChoose,Choose,ବାଛନ୍ତୁ,,
+routePickerFromPrompt,Where will your trip start from? 📍,ଆପଣଙ୍କ ଯାତ୍ରା କେଉଁଠାରୁ ଆରମ୍ଭ ହେବ? 📍,,
+routePickerRegionPrompt,Which area do you want to go to?,ଆପଣ କେଉଁ ଅଞ୍ଚଳକୁ ଯିବାକୁ ଚାହୁଁଛନ୍ତି?,,
+routePickerToPrompt,Where do you want to go? 🚕,ଆପଣ କେଉଁଠିକୁ ଯିବାକୁ ଚାହାଁନ୍ତି? 🚕,,
+routePickerMore,More...,ଅଧିକ...,,
+routePickerOtherRoute,Other route,ଅନ୍ୟ ମାର୍ଗ[ସମ୍ପାଦନା],,
+routePickerOtherPlaces,Other places,ଅନ୍ୟାନ୍ୟ ସ୍ଥାନ[ସମ୍ପାଦନା],,
+quoteHeader,🚕 *Your trip quote*,🚕 *ଆପଣଙ୍କ ଯାତ୍ରା ଉଦ୍ଧୃତି*,,*bold* markers must stay around the same words
+quoteTripLine,Trip: *{{trip}}*,ଯାତ୍ରା: *{{trip}}*,,Keep unchanged: {{trip}}; *bold* markers must stay around the same words
+quoteTripOneWay,One Way,ଗୋଟିଏ ଉପାୟ,,
+quoteTripRoundTrip,Round Trip,ରାଉଣ୍ଡ ଟ୍ରିପ୍,,
+quoteDateLine,Date: *{{date}}*,ତାରିଖ: *{{date}}*,,Keep unchanged: {{date}}; *bold* markers must stay around the same words
+quoteTimeLine,Pickup time: *{{time}}*,ପିକଅପ୍ ସମୟ: *{{time}}*,,Keep unchanged: {{time}}; *bold* markers must stay around the same words
+quotePassengersLine,Passengers: *{{passengers}}*,ଯାତ୍ରୀ: *{{passengers}}*,,Keep unchanged: {{passengers}}; *bold* markers must stay around the same words
+quoteVehicleLine,Vehicle: *{{vehicle}}*,ଗାଡ଼ି: *{{vehicle}}*,,Keep unchanged: {{vehicle}}; *bold* markers must stay around the same words
+quoteBaseFareLine,Fare: ₹{{amount}},ଭଡା: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteExtraNight,Night charge: ₹{{amount}},ରାତ୍ରି ଦେୟ: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteExtraDriver,Driver allowance ({{days}} day(s)): ₹{{amount}},ଡ୍ରାଇଭର୍ ଆଲାଉନ୍ସ ({{days}} ଦିନ(ଗୁଡିକ)): ₹{{amount}},,Keep unchanged: {{days}} {{amount}}
+quoteExtraMinimum,Minimum charge adjustment: ₹{{amount}},ସର୍ବନିମ୍ନ ଚାର୍ଜ ସମାଯୋଜନ: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteDaysLine,Days: *{{days}}*,ଦିନ: *{{days}}*,,Keep unchanged: {{days}}; *bold* markers must stay around the same words
+quoteKmFareLine,Fare: {{km}} km × ₹{{rate}}/km = ₹{{amount}},ଭଡ଼ା: {{km}} କିମି × ₹{{rate}}/km = ₹{{amount}},,Keep unchanged: {{km}} {{rate}} {{amount}}
+quoteBilledByMin,Billed distance: {{km}} km ({{days}} day(s) × {{min}} km minimum per day),ବିଲ୍ ହୋଇଥିବା ଦୂରତା: {{km}} km ({{days}} ଦିନ(ଗୁଡିକ) × {{min}} କିମି ସର୍ବନିମ୍ନ ପ୍ରତି ଦିନ),,Keep unchanged: {{km}} {{days}} {{min}}
+quoteBilledByDistance,"Billed distance: {{km}} km (there and back, 2 × {{one}} km)","ବିଲ୍ ହୋଇଥିବା ଦୂରତା: {{km}} km (ସେଠାରେ ଏବଂ ପଛରେ, 2 × {{one}} km)",,Keep unchanged: {{km}} {{one}}
+quoteExtraDriverDays,Driver allowance ({{units}} day(s) × ₹{{perUnit}}): ₹{{amount}},ଡ୍ରାଇଭିଂ ଭତ୍ତା ({{units}} ଦିନ(ଗୁଡିକ) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quoteExtraDriverNights,Driver allowance ({{units}} night(s) × ₹{{perUnit}}): ₹{{amount}},ଡ୍ରାଇଭିଂ ଭତ୍ତା ({{units}} ରାତି(ଗୁଡିକ) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quotePackageFareLine,Package fare: ₹{{amount}},ପ୍ୟାକେଜ୍ ଭଡା: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteActualKmNote,The final fare is by actual km if the trip runs more than the billed km.,ଯଦି ଯାତ୍ରା ବିଲ୍ ହୋଇଥିବା କିଲୋମିଟରରୁ ଅଧିକ ଚାଲିଥାଏ ତେବେ ଅନ୍ତିମ ଭଡା ପ୍ରକୃତ କିଲୋମିଟର ଦ୍ୱାରା ହୋଇଥାଏ |,,
+quoteCardDays,{{days}} day(s),{{days}} ଦିନ(ଗୁଡିକ),,Keep unchanged: {{days}}
+quoteCardKm,{{km}} km,{{km}} କି.ମି.,,Keep unchanged: {{km}}
+quoteCardPackage,package fare,ପ୍ୟାକେଜ୍ ଭଡ଼ା,,
+quoteCardOnRequest,Price: our team will confirm,ମୂଲ୍ୟ: ଆମର ଟିମ୍ ନିଶ୍ଚିତ କରିବ,,
+quotePriceOnRequestReply,We will confirm the Round Trip price for your trip and get back to you shortly. Our team has been notified.,ଆମେ ଆପଣଙ୍କ ଯାତ୍ରା ପାଇଁ ରାଉଣ୍ଡ ଟ୍ରିପ୍ ମୂଲ୍ୟ ନିଶ୍ଚିତ କରିବୁ ଏବଂ ଶୀଘ୍ର ଆପଣଙ୍କ ପାଖକୁ ଫେରିବୁ । ଆମ ଦଳକୁ ସୂଚିତ କରାଯାଇଛି ।,,
+quotePriceChanged,The prices were just updated. Please choose again:,ମୂଲ୍ୟ ବର୍ତ୍ତମାନ ଅପଡେଟ୍ ହୋଇଛି । ଦୟାକରି ପୁନର୍ବାର ବାଛନ୍ତୁ:,,
+quoteTotalLine,Total: *₹{{amount}}*,ମୋଟ: ₹ *{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
+quoteTollIncluded,Toll is included in this fare.,ଏହି ଭଡ଼ାରେ ଟୋଲ୍ ଅନ୍ତର୍ଭୁକ୍ତ ।,,
+quoteTollExtra,Toll is extra and not included in this fare.,ଟୋଲ୍ ଅତିରିକ୍ତ ଏବଂ ଏହି ଭଡାରେ ଅନ୍ତର୍ଭୂକ୍ତ ନୁହେଁ |,,
+quoteAdvanceLine,Advance to confirm: *₹{{amount}}*,ନିଶ୍ଚିତ କରିବାକୁ ଅଗ୍ରୀମ: *₹{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
+quoteValidUntil,This quote is valid until {{until}}.,ଏହି ଉଦ୍ଧୃତି {{until}} ପର୍ଯ୍ୟନ୍ତ ବୈଧ ଅଟେ ।,,Keep unchanged: {{until}}
+quoteReminder,"Your trip quote for *{{route}}* (*₹{{total}}*) is still open until {{until}}. Tap *{{button}}* on the quote above to book, or reply here if you have any questions.","*{{route}}* (₹ *{{total}})*ପାଇଁ ଆପଣଙ୍କର ଯାତ୍ରା କୋଟ୍ {{until}} ପର୍ଯ୍ୟନ୍ତ ଖୋଲା ଅଛି । ବୁକ୍ କରିବାକୁ ଉପରୋକ୍ତ କୋଟ୍ ଉପରେ *{{button}} ଟ୍ୟାପ୍* କରନ୍ତୁ, କିମ୍ବା ଯଦି ଆପଣଙ୍କର କୌଣସି ପ୍ରଶ୍ନ ଅଛି ତେବେ ଏଠାରେ ଉତ୍ତର ଦିଅନ୍ତୁ ।",,Keep unchanged: {{route}} {{total}} {{until}} {{button}}; *bold* markers must stay around the same words
+quoteBtnConfirmPay,Confirm & pay,,,Machine translation was over the 20-character limit and was dropped: English is used until a short reviewed text is given
+quoteBtnConfirm,Confirm,ନିଶ୍ଚିତ କରନ୍ତୁ,,
+quoteBtnChange,Change,ପରିବର୍ତ୍ତନ କରନ୍ତୁ,,
+quoteBtnTalk,Talk to us,ଆମ ସହିତ କଥା ହୁଅନ୍ତୁ,,
+quoteBtnPaid,I've paid,ମୁଁ ଦେୟ ଦେଇଛି,,
+quoteBtnNew,New quote,ନୂତନ ଉଦ୍ଧୃତି,,
+quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","ଦୁଃଖିତ, ଏହି ମାର୍ଗରେ ଆପଣଙ୍କ ଗୋଷ୍ଠୀ ଆକାର ପାଇଁ ଆମର କୌଣସି ଗାଡି ନାହିଁ। ଆମ *ସହିତ କଥାବାର୍ତ୍ତା ଟ୍ୟାପ୍* କରନ୍ତୁ ଏବଂ ଆମର ଦଳ ଆପଣଙ୍କୁ ସାହାଯ୍ୟ କରିବ।",,*bold* markers must stay around the same words
+quoteExpired,This quote has expired. Tap below to get a new one.,ଏହି କୋଟ୍ ସମୟ ସମାପ୍ତ ହୋଇଛି। ଏକ ନୂତନ ପାଇବାକୁ ନିମ୍ନରେ ଟ୍ୟାପ୍ କରନ୍ତୁ।,,
+quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","ଦୁଃଖିତ, ଏହି ଉଦ୍ଧୃତି ଆଉ ଉପଲବ୍ଧ ନାହିଁ। ପୁନଃ ଆରମ୍ଭ କରିବାକୁ *ହାଏ ପଠାନ୍ତୁ* ।",,*bold* markers must stay around the same words
+quoteConfirmedTitle,✅ *Booking confirmed!*,✅ *ବୁକିଂ ନିଶ୍ଚିତ ହୋଇଛି!*,,*bold* markers must stay around the same words
+quoteConfirmedNext,Our team will contact you with the pickup details.,ଆମର ଟିମ୍ ପିକଅପ୍ ବିବରଣୀ ସହିତ ଆପଣଙ୍କୁ ଯୋଗାଯୋଗ କରିବ।,,
+quotePaidPrompt,Paid already? Tap below once you have paid and we will check it.,ପୂର୍ବରୁ ଦେୟ ପ୍ରଦାନ କରିସାରିଛନ୍ତି କି? ଥରେ ଆପଣ ଦେୟ ଦେବା ପରେ ନିମ୍ନରେ ଟ୍ୟାପ୍ କରନ୍ତୁ ଏବଂ ଆମେ ଏହାକୁ ଯାଞ୍ଚ କରିବୁ।,,
+quotePaidThanks,Thanks! We will check your payment and confirm your booking shortly.,ଧନ୍ୟବାଦ! ଆମେ ଆପଣଙ୍କର ଦେୟ ଯାଞ୍ଚ କରିବୁ ଏବଂ ଶୀଘ୍ର ଆପଣଙ୍କର ବୁକିଂ ନିଶ୍ଚିତ କରିବୁ ।,,
+quotePaidAlready,We have already received your payment ✅,ଆମେ ପୂର୍ବରୁ ଆପଣଙ୍କ ଦେୟ ପ୍ରାପ୍ତ ✅ କରିସାରିଛୁ,,
+pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","କ୍ଷମା କରିବେ, ମୁଁ ସେହି ସମୟରେ ପଢିପାରିଲି ନାହିଁ । ଦୟାକରି ଏହାକୁ ସକାଳ 6:30 କିମ୍ବା 18:30 ପରି ଟାଇପ୍ କରନ୍ତୁ ।",,
 chooseLanguageLine,Choose your language,ଆପଣଙ୍କ ଭାଷା ବାଛନ୍ତୁ,,

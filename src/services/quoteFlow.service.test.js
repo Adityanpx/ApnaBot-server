@@ -145,11 +145,12 @@ test('send: a new quote silences the reminder of the customer\'s older open quot
 
 test('send: the message and buttons follow the customer\'s language and fit WhatsApp\'s limits', async () => {
   const { buildQuoteText, quoteButtons } = quoteFlow;
-  for (const lang of ['en', 'hi', 'mr']) {
+  for (const lang of ['en', 'hi', 'mr', 'gu', 'kn', 'ta', 'te', 'ml', 'bn', 'pa', 'or']) { // incl. the machine-translated languages
     const q = {
       id: uuid(777), trip_type: 'round_trip', base_fare: 12345, total_amount: 20000, advance_amount: 4000, expires_at: new Date().toISOString(),
       extras: [{ key: 'night_charge', amount: 300 }, { key: 'driver_allowance', amount: 1000 }, { key: 'minimum_charge', amount: 5 }],
-      collected: { fromLabel: 'A City Name Here 24', toLabel: 'Another City Name 24', date: '12/12/2026', pickupTime: '11:59 PM', passengers: '5-6', days: 10, vehicleName: 'Tempo Traveller 12 Seater', tollIncluded: false }
+      collected: { fromLabel: 'A City Name Here 24', toLabel: 'Another City Name 24', date: '12/12/2026', pickupTime: '11:59 PM', passengers: '5-6', days: 10, vehicleName: 'Tempo Traveller 12 Seater', tollIncluded: false,
+        pricing: { method: 'formula', days: 10, oneWayKm: 185.5, minKmPerDay: 250, billedKm: 2500, ratePerKm: 23.5, kmCharge: 12345, allowance: { perUnit: 100, units: 10, basis: 'day', amount: 1000 } } }
     };
     assert.ok(buildQuoteText(q, lang).length <= 1024, `${lang} body`);
     for (const withAdvance of [true, false]) {

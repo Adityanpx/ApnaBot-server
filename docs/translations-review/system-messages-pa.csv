@@ -9,6 +9,12 @@ handoffReply,Thank you! 🙏 Our team has been told and will reply to you here s
 handoffClosed,Thank you! 🙏 We are closed right now. Our team will reply to you here {{nextOpening}}.,ਤੁਹਾਡਾ ਧੰਨਵਾਦ! ਅਸੀਂ 🙏 ਇਸ ਸਮੇਂ ਬੰਦ ਹਾਂ. ਸਾਡੀ ਟੀਮ ਤੁਹਾਨੂੰ ਇੱਥੇ ਜਵਾਬ ਦੇਵੇਗੀ {{nextOpening}}.,,Keep unchanged: {{nextOpening}}
 mediaReceived,Thanks! We've received your file. Our team will reply with details shortly.,ਧੰਨਵਾਦ! ਸਾਨੂੰ ਤੁਹਾਡੀ ਫਾਈਲ ਮਿਲੀ ਹੈ. ਸਾਡੀ ਟੀਮ ਜਲਦੀ ਹੀ ਵੇਰਵਿਆਂ ਦੇ ਨਾਲ ਜਵਾਬ ਦੇਵੇਗੀ.,,
 locationNotConfigured,"Sorry, our location is not set up yet.","ਮਾਫ਼ ਕਰਨਾ, ਸਾਡਾ ਟਿਕਾਣਾ ਅਜੇ ਸਥਾਪਤ ਨਹੀਂ ਹੋਇਆ ਹੈ।",,
+vehicleSeats,{{seats}} seats,{{seats}} ਸੀਟਾਂ,,Keep unchanged: {{seats}}
+vehicleBookThis,Book this,ਇਸ ਨੂੰ ਬੁੱਕ ਕਰੋ,,
+vehicleOtherPrompt,Don't see the vehicle you want?,ਕੀ ਤੁਸੀਂ ਉਹ ਗੱਡੀ ਨਹੀਂ ਵੇਖਦੇ ਜੋ ਤੁਸੀਂ ਚਾਹੁੰਦੇ ਹੋ?,,
+vehicleOtherBtn,Other options,ਹੋਰ ਵਿਕਲਪ,,
+vehicleTapOne,Please tap one of the vehicle options above.,ਕਿਰਪਾ ਕਰਕੇ ਉੱਪਰ ਦਿੱਤੇ ਵਾਹਨ ਵਿਕਲਪਾਂ ਵਿੱਚੋਂ ਕਿਸੇ ਇੱਕ 'ਤੇ ਟੈਪ ਕਰੋ।,,
+chooseOneOf,Please choose one of:,ਕਿਰਪਾ ਕਰਕੇ ਇਹਨਾਂ ਵਿੱਚੋਂ ਇੱਕ ਦੀ ਚੋਣ ਕਰੋ:,,
 vehicleNoLongerAvailable,"Sorry, that vehicle is no longer available for this route. Here are the current options:","ਮਾਫ ਕਰਨਾ, ਉਹ ਵਾਹਨ ਹੁਣ ਇਸ ਰੂਟ ਲਈ ਉਪਲਬਧ ਨਹੀਂ ਹੈ. ਇੱਥੇ ਮੌਜੂਦਾ ਵਿਕਲਪ ਹਨ:",,
 bookingReceived,✅ *Booking request received!*,✅ *ਬੁਕਿੰਗ ਬੇਨਤੀ ਪ੍ਰਾਪਤ ਹੋਈ!*,,*bold* markers must stay around the same words
 bookingIdLine,Booking ID: *{{code}}*,ਬੁਕਿੰਗ ਆਈਡੀ: *{{code}}*,,Keep unchanged: {{code}}; *bold* markers must stay around the same words
@@ -87,4 +93,57 @@ bookingTapHintFile,Please send a photo or file as your answer. Send *menu* to le
 bookingFileRejected,"Sorry, we couldn't accept that file. Please send a JPG, PNG, WEBP, PDF, XLSX, XLS, CSV or DOCX file under 16 MB.","ਮਾਫ ਕਰਨਾ, ਅਸੀਂ ਉਸ ਫਾਈਲ ਨੂੰ ਸਵੀਕਾਰ ਨਹੀਂ ਕਰ ਸਕੇ. ਕਿਰਪਾ ਕਰਕੇ 16 MB ਤੋਂ ਘੱਟ JPG, PNG, WEBP, PDF, XLSX, XLS, CSV ਜਾਂ DOCX ਫਾਈਲ ਭੇਜੋ.",,
 summaryFileReceived,received,ਪ੍ਰਾਪਤ ਹੋਇਆ,,
 listButtonChoose,Choose,ਚੁਣੋ,,
+routePickerFromPrompt,Where will your trip start from? 📍,ਤੁਹਾਡੀ ਯਾਤਰਾ ਕਿੱਥੋਂ ਸ਼ੁਰੂ ਹੋਵੇਗੀ? 📍,,
+routePickerRegionPrompt,Which area do you want to go to?,ਤੁਸੀਂ ਕਿਹੜੇ ਖੇਤਰ ਵਿੱਚ ਜਾਣਾ ਚਾਹੁੰਦੇ ਹੋ?,,
+routePickerToPrompt,Where do you want to go? 🚕,ਤੁਸੀਂ ਕਿੱਥੇ ਜਾਣਾ ਚਾਹੁੰਦੇ ਹੋ? 🚕,,
+routePickerMore,More...,ਹੋਰ...,,
+routePickerOtherRoute,Other route,ਹੋਰ ਰੂਟ,,
+routePickerOtherPlaces,Other places,ਹੋਰ ਸਥਾਨ,,
+quoteHeader,🚕 *Your trip quote*,🚕 *ਤੁਹਾਡੀ ਯਾਤਰਾ ਦਾ ਹਵਾਲਾ*,,*bold* markers must stay around the same words
+quoteTripLine,Trip: *{{trip}}*,ਯਾਤਰਾ: *{{trip}}*,,Keep unchanged: {{trip}}; *bold* markers must stay around the same words
+quoteTripOneWay,One Way,ਇੱਕ ਤਰੀਕਾ,,
+quoteTripRoundTrip,Round Trip,ਰਾਊਂਡ ਟ੍ਰਿਪ,,
+quoteDateLine,Date: *{{date}}*,ਮਿਤੀ: *{{date}}*,,Keep unchanged: {{date}}; *bold* markers must stay around the same words
+quoteTimeLine,Pickup time: *{{time}}*,ਪਿਕਅਪ ਸਮਾਂ: *{{time}}*,,Keep unchanged: {{time}}; *bold* markers must stay around the same words
+quotePassengersLine,Passengers: *{{passengers}}*,ਯਾਤਰੀਆਂ: *{{passengers}}*,,Keep unchanged: {{passengers}}; *bold* markers must stay around the same words
+quoteVehicleLine,Vehicle: *{{vehicle}}*,ਵਾਹਨ: *{{vehicle}}*,,Keep unchanged: {{vehicle}}; *bold* markers must stay around the same words
+quoteBaseFareLine,Fare: ₹{{amount}},ਕਿਰਾਇਆ: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteExtraNight,Night charge: ₹{{amount}},ਰਾਤ ਦਾ ਚਾਰਜ: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteExtraDriver,Driver allowance ({{days}} day(s)): ₹{{amount}},ਡਰਾਈਵਰ ਭੱਤਾ ({{days}} ਦਿਨ)): ₹{{amount}},,Keep unchanged: {{days}} {{amount}}
+quoteExtraMinimum,Minimum charge adjustment: ₹{{amount}},ਨਿਊਨਤਮ ਚਾਰਜ ਐਡਜਸਟਮੈਂਟ: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteDaysLine,Days: *{{days}}*,ਦਿਨ: *{{days}}*,,Keep unchanged: {{days}}; *bold* markers must stay around the same words
+quoteKmFareLine,Fare: {{km}} km × ₹{{rate}}/km = ₹{{amount}},ਕਿਰਾਇਆ: {{km}} ਕਿਲੋਮੀਟਰ × ₹{{rate}}/km = ₹{{amount}},,Keep unchanged: {{km}} {{rate}} {{amount}}
+quoteBilledByMin,Billed distance: {{km}} km ({{days}} day(s) × {{min}} km minimum per day),ਬਿੱਲ ਕੀਤੀ ਦੂਰੀ: {{km}} ਕਿਲੋਮੀਟਰ ({{days}} ਦਿਨ) × {{min}} ਕਿਲੋਮੀਟਰ ਘੱਟੋ ਘੱਟ) ਪ੍ਰਤੀ ਦਿਨ),,Keep unchanged: {{km}} {{days}} {{min}}
+quoteBilledByDistance,"Billed distance: {{km}} km (there and back, 2 × {{one}} km)","ਬਿੱਲ ਦੀ ਦੂਰੀ: {{km}} ਕਿਲੋਮੀਟਰ (ਉਥੇ ਅਤੇ ਵਾਪਸ, 2 × {{one}} ਕਿਲੋਮੀਟਰ)",,Keep unchanged: {{km}} {{one}}
+quoteExtraDriverDays,Driver allowance ({{units}} day(s) × ₹{{perUnit}}): ₹{{amount}},ਡਰਾਈਵਰ ਭੱਤਾ ({{units}} ਦਿਨ) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quoteExtraDriverNights,Driver allowance ({{units}} night(s) × ₹{{perUnit}}): ₹{{amount}},ਡਰਾਈਵਰ ਭੱਤਾ ({{units}} ਰਾਤ (ਰਾਤ) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quotePackageFareLine,Package fare: ₹{{amount}},ਪੈਕੇਜ ਕਿਰਾਇਆ: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteActualKmNote,The final fare is by actual km if the trip runs more than the billed km.,ਅੰਤਮ ਕਿਰਾਇਆ ਅਸਲ ਕਿਲੋਮੀਟਰ ਦੁਆਰਾ ਹੁੰਦਾ ਹੈ ਜੇ ਯਾਤਰਾ ਬਿੱਲ ਵਾਲੇ ਕਿਲੋਮੀਟਰ ਤੋਂ ਵੱਧ ਚਲਦੀ ਹੈ।,,
+quoteCardDays,{{days}} day(s),{{days}} ਦਿਨ(ਮਾਂ),,Keep unchanged: {{days}}
+quoteCardKm,{{km}} km,{{km}} ਕਿਲੋਮੀਟਰ,,Keep unchanged: {{km}}
+quoteCardPackage,package fare,ਪੈਕੇਜ ਦਾ ਕਿਰਾਇਆ,,
+quoteCardOnRequest,Price: our team will confirm,ਕੀਮਤ: ਸਾਡੀ ਟੀਮ ਇਸ ਦੀ ਪੁਸ਼ਟੀ ਕਰੇਗੀ,,
+quotePriceOnRequestReply,We will confirm the Round Trip price for your trip and get back to you shortly. Our team has been notified.,ਅਸੀਂ ਤੁਹਾਡੀ ਯਾਤਰਾ ਲਈ ਗੋਲ ਯਾਤਰਾ ਦੀ ਕੀਮਤ ਦੀ ਪੁਸ਼ਟੀ ਕਰਾਂਗੇ ਅਤੇ ਜਲਦੀ ਹੀ ਤੁਹਾਡੇ ਕੋਲ ਵਾਪਸ ਆਵਾਂਗੇ. ਸਾਡੀ ਟੀਮ ਨੂੰ ਸੂਚਿਤ ਕੀਤਾ ਗਿਆ ਹੈ.,,
+quotePriceChanged,The prices were just updated. Please choose again:,ਕੀਮਤਾਂ ਹੁਣੇ ਹੀ ਅਪਡੇਟ ਕੀਤੀਆਂ ਗਈਆਂ ਸਨ. ਕਿਰਪਾ ਕਰਕੇ ਦੁਬਾਰਾ ਚੁਣੋ:,,
+quoteTotalLine,Total: *₹{{amount}}*,ਕੁੱਲ: *₹{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
+quoteTollIncluded,Toll is included in this fare.,ਇਸ ਕਿਰਾਏ ਵਿੱਚ ਟੋਲ ਸ਼ਾਮਲ ਹੈ।,,
+quoteTollExtra,Toll is extra and not included in this fare.,ਟੋਲ ਵਾਧੂ ਹੈ ਅਤੇ ਇਸ ਕਿਰਾਏ ਵਿੱਚ ਸ਼ਾਮਲ ਨਹੀਂ ਹੈ।,,
+quoteAdvanceLine,Advance to confirm: *₹{{amount}}*,ਪੁਸ਼ਟੀ ਕਰਨ ਲਈ ਪੇਸ਼ਗੀ: *₹{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
+quoteValidUntil,This quote is valid until {{until}}.,ਇਹ ਹਵਾਲਾ {{until}} ਤੱਕ ਜਾਇਜ਼ ਹੈ.,,Keep unchanged: {{until}}
+quoteReminder,"Your trip quote for *{{route}}* (*₹{{total}}*) is still open until {{until}}. Tap *{{button}}* on the quote above to book, or reply here if you have any questions.","*{{route}}* (₹ *{{total}})*ਲਈ ਤੁਹਾਡਾ ਟ੍ਰਿਪ ਹਵਾਲਾ ਅਜੇ ਵੀ {{until}} ਤੱਕ ਖੁੱਲਾ ਹੈ। ਬੁੱਕ ਕਰਨ ਲਈ ਉਪਰੋਕਤ ਹਵਾਲੇ 'ਤੇ *{{button}}* ਟੈਪ ਕਰੋ, ਜਾਂ ਜੇ ਤੁਹਾਡੇ ਕੋਈ ਪ੍ਰਸ਼ਨ ਹਨ ਤਾਂ ਇੱਥੇ ਜਵਾਬ ਦਿਓ।",,Keep unchanged: {{route}} {{total}} {{until}} {{button}}; *bold* markers must stay around the same words
+quoteBtnConfirmPay,Confirm & pay,,,Machine translation was over the 20-character limit and was dropped: English is used until a short reviewed text is given
+quoteBtnConfirm,Confirm,ਪੁਸ਼ਟੀ ਕਰੋ,,
+quoteBtnChange,Change,ਬਦਲੋ,,
+quoteBtnTalk,Talk to us,ਸਾਡੇ ਨਾਲ ਗੱਲ ਕਰੋ,,
+quoteBtnPaid,I've paid,ਮੈਂ ਭੁਗਤਾਨ ਕੀਤਾ ਹੈ,,
+quoteBtnNew,New quote,ਨਵਾਂ ਹਵਾਲਾ,,
+quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","ਮਾਫ ਕਰਨਾ, ਸਾਡੇ ਕੋਲ ਇਸ ਰਸਤੇ 'ਤੇ ਤੁਹਾਡੇ ਸਮੂਹ ਦੇ ਆਕਾਰ ਲਈ ਕੋਈ ਵਾਹਨ ਨਹੀਂ ਹੈ. ਸਾਡੇ *ਨਾਲ ਗੱਲ ਕਰੋ '* ਤੇ ਟੈਪ ਕਰੋ ਅਤੇ ਸਾਡੀ ਟੀਮ ਤੁਹਾਡੀ ਮਦਦ ਕਰੇਗੀ.",,*bold* markers must stay around the same words
+quoteExpired,This quote has expired. Tap below to get a new one.,ਇਸ ਹਵਾਲੇ ਦੀ ਮਿਆਦ ਖਤਮ ਹੋ ਗਈ ਹੈ. ਨਵਾਂ ਪ੍ਰਾਪਤ ਕਰਨ ਲਈ ਹੇਠਾਂ ਟੈਪ ਕਰੋ.,,
+quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","ਮਾਫ਼ ਕਰਨਾ, ਇਹ ਹਵਾਲਾ ਹੁਣ ਉਪਲਬਧ ਨਹੀਂ ਹੈ. ਦੁਬਾਰਾ ਸ਼ੁਰੂ ਕਰਨ ਲਈ *ਹਾਇ ਭੇਜੋ* .",,*bold* markers must stay around the same words
+quoteConfirmedTitle,✅ *Booking confirmed!*,✅ *ਬੁਕਿੰਗ ਦੀ ਪੁਸ਼ਟੀ ਹੋਈ!*,,*bold* markers must stay around the same words
+quoteConfirmedNext,Our team will contact you with the pickup details.,ਸਾਡੀ ਟੀਮ ਪਿਕਅੱਪ ਵੇਰਵਿਆਂ ਨਾਲ ਤੁਹਾਡੇ ਨਾਲ ਸੰਪਰਕ ਕਰੇਗੀ।,,
+quotePaidPrompt,Paid already? Tap below once you have paid and we will check it.,ਪਹਿਲਾਂ ਹੀ ਭੁਗਤਾਨ ਕੀਤਾ ਹੈ? ਇੱਕ ਵਾਰ ਜਦੋਂ ਤੁਸੀਂ ਭੁਗਤਾਨ ਕਰ ਲੈਂਦੇ ਹੋ ਤਾਂ ਹੇਠਾਂ ਟੈਪ ਕਰੋ ਅਤੇ ਅਸੀਂ ਇਸ ਦੀ ਜਾਂਚ ਕਰਾਂਗੇ.,,
+quotePaidThanks,Thanks! We will check your payment and confirm your booking shortly.,ਧੰਨਵਾਦ! ਅਸੀਂ ਤੁਹਾਡੇ ਭੁਗਤਾਨ ਦੀ ਜਾਂਚ ਕਰਾਂਗੇ ਅਤੇ ਜਲਦੀ ਹੀ ਤੁਹਾਡੀ ਬੁਕਿੰਗ ਦੀ ਪੁਸ਼ਟੀ ਕਰਾਂਗੇ.,,
+quotePaidAlready,We have already received your payment ✅,ਸਾਨੂੰ ਪਹਿਲਾਂ ਹੀ ਤੁਹਾਡਾ ਭੁਗਤਾਨ ਪ੍ਰਾਪਤ ✅ ਹੋ ਗਿਆ ਹੈ,,
+pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","ਮਾਫ ਕਰਨਾ, ਮੈਂ ਉਸ ਸਮੇਂ ਨਹੀਂ ਪੜ੍ਹ ਸਕਿਆ. ਕਿਰਪਾ ਕਰਕੇ ਇਸ ਨੂੰ ਸਵੇਰੇ 6:30 ਵਜੇ ਜਾਂ 18:30 ਵਜੇ ਟਾਈਪ ਕਰੋ.",,
 chooseLanguageLine,Choose your language,ਆਪਣੀ ਭਾਸ਼ਾ ਚੁਣੋ,,

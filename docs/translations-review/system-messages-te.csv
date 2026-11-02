@@ -9,6 +9,12 @@ handoffReply,Thank you! 🙏 Our team has been told and will reply to you here s
 handoffClosed,Thank you! 🙏 We are closed right now. Our team will reply to you here {{nextOpening}}.,ధన్యవాదాలు! మేము 🙏 ప్రస్తుతం మూసివేయబడ్డాము. మా బృందం మీకు ఇక్కడ ప్రత్యుత్తరం ఇస్తుంది {{nextOpening}}.,,Keep unchanged: {{nextOpening}}
 mediaReceived,Thanks! We've received your file. Our team will reply with details shortly.,ధన్యవాదాలు! మేము మీ ఫైల్ ను స్వీకరించాము. మా బృందం త్వరలో వివరాలతో ప్రత్యుత్తరం ఇస్తుంది.,,
 locationNotConfigured,"Sorry, our location is not set up yet.","క్షమించండి, మా లొకేషన్ ఇంకా సెటప్ చేయబడలేదు.",,
+vehicleSeats,{{seats}} seats,{{seats}} సీట్లు,,Keep unchanged: {{seats}}
+vehicleBookThis,Book this,దీన్ని బుక్ చేయండి,,
+vehicleOtherPrompt,Don't see the vehicle you want?,మీకు కావలసిన వాహనం కనిపించడం లేదా?,,
+vehicleOtherBtn,Other options,ఇతర ఎంపికలు,,
+vehicleTapOne,Please tap one of the vehicle options above.,దయచేసి ఎగువ వాహన ఎంపికల్లో ఒకదాన్ని తట్టండి.,,
+chooseOneOf,Please choose one of:,దయచేసి వీటిలో ఒకదానిని ఎంచుకోండి:,,
 vehicleNoLongerAvailable,"Sorry, that vehicle is no longer available for this route. Here are the current options:","క్షమించండి, ఆ వాహనం ఇకపై ఈ మార్గం కోసం అందుబాటులో లేదు. ప్రస్తుత ఎంపికలు ఇక్కడ ఉన్నాయి:",,
 bookingReceived,✅ *Booking request received!*,✅ *బుకింగ్ అభ్యర్ధన అందుకుంది!*,,*bold* markers must stay around the same words
 bookingIdLine,Booking ID: *{{code}}*,బుకింగ్ ఐడీ: *{{code}}*,,Keep unchanged: {{code}}; *bold* markers must stay around the same words
@@ -87,4 +93,57 @@ bookingTapHintFile,Please send a photo or file as your answer. Send *menu* to le
 bookingFileRejected,"Sorry, we couldn't accept that file. Please send a JPG, PNG, WEBP, PDF, XLSX, XLS, CSV or DOCX file under 16 MB.","క్షమించండి, మేము ఆ ఫైల్ ను అంగీకరించలేకపోయాము. దయచేసి 16 MB లోపు JPG, PNG, WEBP, PDF, XLSX, XLS, CSV లేదా DOCX ఫైల్ ను పంపండి.",,
 summaryFileReceived,received,స్వీకరించబడింది,,
 listButtonChoose,Choose,ఎంచుకోండి,,
+routePickerFromPrompt,Where will your trip start from? 📍,మీ ట్రిప్ ఎక్కడ నుంచి మొదలవుతుంది? 📍,,
+routePickerRegionPrompt,Which area do you want to go to?,మీరు ఏ ప్రాంతానికి వెళ్లాలనుకుంటున్నారు?,,
+routePickerToPrompt,Where do you want to go? 🚕,మీరు ఎక్కడికి వెళ్లాలని అనుకుంటున్నారు? 🚕,,
+routePickerMore,More...,మరిన్ని...,,
+routePickerOtherRoute,Other route,ఇతర మార్గం[మార్చు],,
+routePickerOtherPlaces,Other places,ఇతర ప్రదేశాలు,,
+quoteHeader,🚕 *Your trip quote*,🚕 *మీ ట్రిప్ కోట్*,,*bold* markers must stay around the same words
+quoteTripLine,Trip: *{{trip}}*,ట్రిప్: *{{trip}}*,,Keep unchanged: {{trip}}; *bold* markers must stay around the same words
+quoteTripOneWay,One Way,వన్ వే,,
+quoteTripRoundTrip,Round Trip,రౌండ్ ట్రిప్,,
+quoteDateLine,Date: *{{date}}*,తేదీ: *{{date}}*,,Keep unchanged: {{date}}; *bold* markers must stay around the same words
+quoteTimeLine,Pickup time: *{{time}}*,పికప్ సమయం: *{{time}}*,,Keep unchanged: {{time}}; *bold* markers must stay around the same words
+quotePassengersLine,Passengers: *{{passengers}}*,ప్రయాణికులు: *{{passengers}}*,,Keep unchanged: {{passengers}}; *bold* markers must stay around the same words
+quoteVehicleLine,Vehicle: *{{vehicle}}*,వాహనం: *{{vehicle}}*,,Keep unchanged: {{vehicle}}; *bold* markers must stay around the same words
+quoteBaseFareLine,Fare: ₹{{amount}},ఛార్జీలు: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteExtraNight,Night charge: ₹{{amount}},రాత్రి ఛార్జీ: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteExtraDriver,Driver allowance ({{days}} day(s)): ₹{{amount}},డ్రైవర్ అలవెన్స్ ({{days}} రోజు(లు)): ₹{{amount}},,Keep unchanged: {{days}} {{amount}}
+quoteExtraMinimum,Minimum charge adjustment: ₹{{amount}},కనీస ఛార్జ్ సర్దుబాటు: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteDaysLine,Days: *{{days}}*,రోజులు: *{{days}}*,,Keep unchanged: {{days}}; *bold* markers must stay around the same words
+quoteKmFareLine,Fare: {{km}} km × ₹{{rate}}/km = ₹{{amount}},ఛార్జీలు: {{km}} కి.మీ × ₹{{rate}}/ కిమీ = ₹{{amount}},,Keep unchanged: {{km}} {{rate}} {{amount}}
+quoteBilledByMin,Billed distance: {{km}} km ({{days}} day(s) × {{min}} km minimum per day),బిల్లు చేయబడిన దూరం: {{km}} కిమీ ({{days}} రోజు(లు) × {{min}} రోజుకు కనిష్ట),,Keep unchanged: {{km}} {{days}} {{min}}
+quoteBilledByDistance,"Billed distance: {{km}} km (there and back, 2 × {{one}} km)","బిల్లింగ్ దూరం: {{km}} కి.మీ (అక్కడి మరియు వెనక్కి, 2 × {{one}} కి.మీ)",,Keep unchanged: {{km}} {{one}}
+quoteExtraDriverDays,Driver allowance ({{units}} day(s) × ₹{{perUnit}}): ₹{{amount}},డ్రైవర్ అలవెన్స్ ({{units}} రోజు(లు) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quoteExtraDriverNights,Driver allowance ({{units}} night(s) × ₹{{perUnit}}): ₹{{amount}},డ్రైవర్ అలవెన్స్ ({{units}} రాత్రి(లు) × ₹{{perUnit}}): ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quotePackageFareLine,Package fare: ₹{{amount}},ప్యాకేజీ ఛార్జీలు: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteActualKmNote,The final fare is by actual km if the trip runs more than the billed km.,ఒకవేళ ట్రిప్పు బిల్లు చేయబడ్డ కిలోమీటర్ల కంటే ఎక్కువగా నడిచినట్లయితే తుది ఛార్జీలు వాస్తవ కిలోమీటర్లు ఉంటాయి.,,
+quoteCardDays,{{days}} day(s),{{days}} రోజు(లు),,Keep unchanged: {{days}}
+quoteCardKm,{{km}} km,{{km}} కి.మీ.,,Keep unchanged: {{km}}
+quoteCardPackage,package fare,ప్యాకేజీ ఛార్జీలు,,
+quoteCardOnRequest,Price: our team will confirm,ధర: మా బృందం నిర్ధారిస్తుంది,,
+quotePriceOnRequestReply,We will confirm the Round Trip price for your trip and get back to you shortly. Our team has been notified.,మేము మీ ట్రిప్ కోసం రౌండ్ ట్రిప్ ధరను నిర్ధారిస్తాము మరియు త్వరలో మిమ్మల్ని సంప్రదిస్తాము. మా బృందానికి తెలియజేయబడింది.,,
+quotePriceChanged,The prices were just updated. Please choose again:,ధరలు ఇప్పుడే నవీకరించబడ్డాయి. దయచేసి మళ్లీ ఎంచుకోండి:,,
+quoteTotalLine,Total: *₹{{amount}}*,మొత్తం: ₹ *{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
+quoteTollIncluded,Toll is included in this fare.,ఈ ఛార్జీలలో టోల్ చేర్చబడింది.,,
+quoteTollExtra,Toll is extra and not included in this fare.,టోల్ అదనంగా ఉంటుంది మరియు ఈ ఛార్జీలో చేర్చబడదు.,,
+quoteAdvanceLine,Advance to confirm: *₹{{amount}}*,ధృవీకరించడం కొరకు అడ్వాన్సు: *₹{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
+quoteValidUntil,This quote is valid until {{until}}.,ఈ కోట్ {{until}} వరకు చెల్లుబాటు అవుతుంది.,,Keep unchanged: {{until}}
+quoteReminder,"Your trip quote for *{{route}}* (*₹{{total}}*) is still open until {{until}}. Tap *{{button}}* on the quote above to book, or reply here if you have any questions.",*{{route}}* (₹ *{{total}}*) కోసం మీ ట్రిప్ కోట్ {{until}} వరకు తెరిచి ఉంటుంది. బుక్ చేయడానికి పై కోట్ పై *{{button}}* నొక్కండి లేదా మీకు ఏవైనా ప్రశ్నలు ఉంటే ఇక్కడ ప్రత్యుత్తరం ఇవ్వండి.,,Keep unchanged: {{route}} {{total}} {{until}} {{button}}; *bold* markers must stay around the same words
+quoteBtnConfirmPay,Confirm & pay,,,Machine translation was over the 20-character limit and was dropped: English is used until a short reviewed text is given
+quoteBtnConfirm,Confirm,ధృవీకరించండి,,
+quoteBtnChange,Change,మార్చు,,
+quoteBtnTalk,Talk to us,మాతో మాట్లాడండి,,
+quoteBtnPaid,I've paid,నేను చెల్లించాను,,
+quoteBtnNew,New quote,కొత్త కోట్,,
+quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","క్షమించండి, ఈ మార్గంలో మీ సమూహ పరిమాణం కోసం మాకు వాహనం లేదు. *మాతో మాట్లాడు నొక్కండి* మరియు మా బృందం మీకు సహాయం చేస్తుంది.",,*bold* markers must stay around the same words
+quoteExpired,This quote has expired. Tap below to get a new one.,ఈ కోట్ గడువు ముగిసింది. క్రొత్తదాన్ని పొందడానికి క్రింద నొక్కండి.,,
+quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","క్షమించండి, ఈ కోట్ ఇకపై అందుబాటులో లేదు. మళ్లీ ప్రారంభించడానికి *హాయ్ పంపండి* .",,*bold* markers must stay around the same words
+quoteConfirmedTitle,✅ *Booking confirmed!*,✅ *బుకింగ్ ధృవీకరించబడింది!*,,*bold* markers must stay around the same words
+quoteConfirmedNext,Our team will contact you with the pickup details.,పికప్ వివరాలతో మా టీమ్ మిమ్మల్ని సంప్రదిస్తుంది.,,
+quotePaidPrompt,Paid already? Tap below once you have paid and we will check it.,ఇప్పటికే చెల్లించారా? మీరు చెల్లించిన తర్వాత క్రింద నొక్కండి మరియు మేము దానిని తనిఖీ చేస్తాము.,,
+quotePaidThanks,Thanks! We will check your payment and confirm your booking shortly.,ధన్యవాదాలు! మేము మీ చెల్లింపును తనిఖీ చేస్తాము మరియు త్వరలో మీ బుకింగ్ ను నిర్ధారిస్తాము.,,
+quotePaidAlready,We have already received your payment ✅,మేం ఇప్పటికే మీ పేమెంట్ ని ✅ అందుకున్నాం,,
+pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","క్షమించండి, నేను ఆ సమయంలో చదవలేకపోయాను. దయచేసి ఉదయం 6:30 లేదా 18:30 లాగా టైప్ చేయండి.",,
 chooseLanguageLine,Choose your language,మీ భాషను ఎంచుకోండి,,

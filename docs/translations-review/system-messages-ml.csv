@@ -9,6 +9,12 @@ handoffReply,Thank you! 🙏 Our team has been told and will reply to you here s
 handoffClosed,Thank you! 🙏 We are closed right now. Our team will reply to you here {{nextOpening}}.,നന്ദി! ഞങ്ങൾ 🙏 ഇപ്പോൾ അടച്ചിരിക്കുന്നു. ഞങ്ങളുടെ ടീം നിങ്ങൾക്ക് ഇവിടെ മറുപടി നൽകും {{nextOpening}}.,,Keep unchanged: {{nextOpening}}
 mediaReceived,Thanks! We've received your file. Our team will reply with details shortly.,നന്ദി! ഞങ്ങൾക്ക് നിങ്ങളുടെ ഫയൽ ലഭിച്ചു. ഞങ്ങളുടെ ടീം ഉടൻ തന്നെ വിശദാംശങ്ങൾ നൽകും.,,
 locationNotConfigured,"Sorry, our location is not set up yet.","ക്ഷമിക്കണം, ഞങ്ങളുടെ ലൊക്കേഷൻ ഇതുവരെ സജ്ജീകരിച്ചിട്ടില്ല.",,
+vehicleSeats,{{seats}} seats,{{seats}} സീറ്റ്,,Keep unchanged: {{seats}}
+vehicleBookThis,Book this,ഇത് ബുക്ക് ചെയ്യുക,,
+vehicleOtherPrompt,Don't see the vehicle you want?,ആവശ്യമുള്ള വാഹനം കാണുന്നില്ലേ?,,
+vehicleOtherBtn,Other options,മറ്റ് ഓപ്ഷനുകൾ,,
+vehicleTapOne,Please tap one of the vehicle options above.,മുകളിലുള്ള വാഹന ഓപ്ഷനുകളിൽ ഒന്ന് ടാപ്പുചെയ്യുക.,,
+chooseOneOf,Please choose one of:,ഇവയിൽ ഒന്ന് തിരഞ്ഞെടുക്കുക:,,
 vehicleNoLongerAvailable,"Sorry, that vehicle is no longer available for this route. Here are the current options:","ക്ഷമിക്കണം, ആ വാഹനം ഈ റൂട്ടിൽ ലഭ്യമല്ല. നിലവിലെ ഓപ്ഷനുകൾ ഇതാ:",,
 bookingReceived,✅ *Booking request received!*,✅ *ബുക്കിംഗ് അഭ്യർത്ഥന ലഭിച്ചു!*,,*bold* markers must stay around the same words
 bookingIdLine,Booking ID: *{{code}}*,ബുക്കിംഗ് ഐഡി: *{{code}}*,,Keep unchanged: {{code}}; *bold* markers must stay around the same words
@@ -87,4 +93,57 @@ bookingTapHintFile,Please send a photo or file as your answer. Send *menu* to le
 bookingFileRejected,"Sorry, we couldn't accept that file. Please send a JPG, PNG, WEBP, PDF, XLSX, XLS, CSV or DOCX file under 16 MB.","ക്ഷമിക്കണം, ഞങ്ങൾക്ക് ആ ഫയൽ സ്വീകരിക്കാൻ കഴിഞ്ഞില്ല. 16 MB യിൽ താഴെയുള്ള JPG, PNG, WEBP, PDF, XLSX, XLS, CSV അല്ലെങ്കിൽ DOCX ഫയൽ അയയ്ക്കുക.",,
 summaryFileReceived,received,സ്വീകരിച്ചു,,
 listButtonChoose,Choose,തിരഞ്ഞെടുക്കുക,,
+routePickerFromPrompt,Where will your trip start from? 📍,നിങ്ങളുടെ യാത്ര എവിടെ നിന്ന് ആരംഭിക്കും? 📍,,
+routePickerRegionPrompt,Which area do you want to go to?,ഏത് പ്രദേശത്തേക്കാണ് നിങ്ങൾ പോകാൻ ആഗ്രഹിക്കുന്നത്?,,
+routePickerToPrompt,Where do you want to go? 🚕,എങ്ങോട്ടാണ് പോകേണ്ടത്? 🚕,,
+routePickerMore,More...,കൂടുതൽ...,,
+routePickerOtherRoute,Other route,മറ്റു വഴി[തിരുത്തുക],,
+routePickerOtherPlaces,Other places,മറ്റു സ്ഥലങ്ങൾ,,
+quoteHeader,🚕 *Your trip quote*,🚕 *നിങ്ങളുടെ യാത്രാ ഉദ്ധരണി*,,*bold* markers must stay around the same words
+quoteTripLine,Trip: *{{trip}}*,യാത്ര: *{{trip}}*,,Keep unchanged: {{trip}}; *bold* markers must stay around the same words
+quoteTripOneWay,One Way,ഒരു വഴി,,
+quoteTripRoundTrip,Round Trip,റൗണ്ട് ട്രിപ്പ്,,
+quoteDateLine,Date: *{{date}}*,തീയതി: *{{date}}*,,Keep unchanged: {{date}}; *bold* markers must stay around the same words
+quoteTimeLine,Pickup time: *{{time}}*,പിക്കപ്പ് സമയം: *{{time}}*,,Keep unchanged: {{time}}; *bold* markers must stay around the same words
+quotePassengersLine,Passengers: *{{passengers}}*,യാത്രക്കാർ: *{{passengers}}*,,Keep unchanged: {{passengers}}; *bold* markers must stay around the same words
+quoteVehicleLine,Vehicle: *{{vehicle}}*,വാഹനം: *{{vehicle}}*,,Keep unchanged: {{vehicle}}; *bold* markers must stay around the same words
+quoteBaseFareLine,Fare: ₹{{amount}},നിരക്കൂലി: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteExtraNight,Night charge: ₹{{amount}},രാത്രി ചാർജ്: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteExtraDriver,Driver allowance ({{days}} day(s)): ₹{{amount}},ഡ്രൈവർ അലവൻസ് ({{days}} ദിവസം): ₹{{amount}},,Keep unchanged: {{days}} {{amount}}
+quoteExtraMinimum,Minimum charge adjustment: ₹{{amount}},മിനിമം ചാർജ് ക്രമീകരണം: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteDaysLine,Days: *{{days}}*,ദിവസങ്ങൾ: *{{days}}*,,Keep unchanged: {{days}}; *bold* markers must stay around the same words
+quoteKmFareLine,Fare: {{km}} km × ₹{{rate}}/km = ₹{{amount}},നിരക്ക്: {{km}} കിലോമീറ്റർ × ₹{{rate}}/ കിലോമീറ്റർ = ₹{{amount}},,Keep unchanged: {{km}} {{rate}} {{amount}}
+quoteBilledByMin,Billed distance: {{km}} km ({{days}} day(s) × {{min}} km minimum per day),ബിൽ ചെയ്ത ദൂരം: {{km}} കിലോമീറ്റർ ({{days}} ദിവസം) × {{min}} കിലോമീറ്റർ),,Keep unchanged: {{km}} {{days}} {{min}}
+quoteBilledByDistance,"Billed distance: {{km}} km (there and back, 2 × {{one}} km)","ബിൽ ചെയ്ത ദൂരം: {{km}} കിലോമീറ്റർ (അവിടെയും പിന്നിലേക്കും, 2 × {{one}} കിലോമീറ്റർ)",,Keep unchanged: {{km}} {{one}}
+quoteExtraDriverDays,Driver allowance ({{units}} day(s) × ₹{{perUnit}}): ₹{{amount}},ഡ്രൈവർ അലവൻസ് ({{units}} ദിവസം (കൾ) × ₹{{perUnit}}: ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quoteExtraDriverNights,Driver allowance ({{units}} night(s) × ₹{{perUnit}}): ₹{{amount}},ഡ്രൈവർ അലവൻസ് ({{units}} രാത്രി (കൾ) × ₹{{perUnit}}: ₹{{amount}},,Keep unchanged: {{units}} {{perUnit}} {{amount}}
+quotePackageFareLine,Package fare: ₹{{amount}},പാക്കേജ് നിരക്ക്: ₹{{amount}},,Keep unchanged: {{amount}}
+quoteActualKmNote,The final fare is by actual km if the trip runs more than the billed km.,യാത്ര ബിൽ ചെയ്ത കിലോമീറ്ററിനേക്കാൾ കൂടുതൽ ഓടുകയാണെങ്കിൽ അന്തിമ നിരക്ക് യഥാർത്ഥ കിലോമീറ്ററാണ്.,,
+quoteCardDays,{{days}} day(s),{{days}} ദിവസം (കൾ),,Keep unchanged: {{days}}
+quoteCardKm,{{km}} km,{{km}} കി.മീ.,,Keep unchanged: {{km}}
+quoteCardPackage,package fare,പാക്കേജ് നിരക്ക്,,
+quoteCardOnRequest,Price: our team will confirm,വില: ഞങ്ങളുടെ ടീം സ്ഥിരീകരിക്കും,,
+quotePriceOnRequestReply,We will confirm the Round Trip price for your trip and get back to you shortly. Our team has been notified.,നിങ്ങളുടെ യാത്രയ്ക്കുള്ള റൗണ്ട് ട്രിപ്പ് വില ഞങ്ങൾ സ്ഥിരീകരിക്കുകയും ഉടൻ തന്നെ നിങ്ങളെ ബന്ധപ്പെടുകയും ചെയ്യും. ഞങ്ങളുടെ ടീമിനെ അറിയിച്ചിട്ടുണ്ട്.,,
+quotePriceChanged,The prices were just updated. Please choose again:,വിലകൾ അപ് ഡേറ്റ് ചെയ്തു. ദയവായി വീണ്ടും തിരഞ്ഞെടുക്കുക:,,
+quoteTotalLine,Total: *₹{{amount}}*,മൊത്തം: ₹ *{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
+quoteTollIncluded,Toll is included in this fare.,ഈ നിരക്കിൽ ടോൾ ഉൾപ്പെടുന്നു.,,
+quoteTollExtra,Toll is extra and not included in this fare.,"ടോൾ അധികമാണ്, ഈ നിരക്കിൽ ഉൾപ്പെടുത്തിയിട്ടില്ല.",,
+quoteAdvanceLine,Advance to confirm: *₹{{amount}}*,സ്ഥിരീകരിക്കുന്നതിനുള്ള അഡ്വാൻസ്: ₹ *{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
+quoteValidUntil,This quote is valid until {{until}}.,ഈ ഉദ്ധരണി {{until}} വരെ സാധുവാണ്.,,Keep unchanged: {{until}}
+quoteReminder,"Your trip quote for *{{route}}* (*₹{{total}}*) is still open until {{until}}. Tap *{{button}}* on the quote above to book, or reply here if you have any questions.",*{{route}}* (₹ *{{total}})*നുള്ള നിങ്ങളുടെ ട്രിപ്പ് ക്വോട്ട് {{until}} വരെ തുറന്നിരിക്കുന്നു. ബുക്ക് ചെയ്യുന്നതിന് മുകളിലുള്ള ഉദ്ധരണിയിൽ *{{button}} ടാപ്പുചെയ്യുക* അല്ലെങ്കിൽ നിങ്ങൾക്ക് എന്തെങ്കിലും ചോദ്യങ്ങൾ ഉണ്ടെങ്കിൽ ഇവിടെ മറുപടി നൽകുക.,,Keep unchanged: {{route}} {{total}} {{until}} {{button}}; *bold* markers must stay around the same words
+quoteBtnConfirmPay,Confirm & pay,,,Machine translation was over the 20-character limit and was dropped: English is used until a short reviewed text is given
+quoteBtnConfirm,Confirm,സ്ഥിരീകരിക്കുക,,
+quoteBtnChange,Change,മാറ്റം,,
+quoteBtnTalk,Talk to us,ഞങ്ങളോട് സംസാരിക്കൂ,,
+quoteBtnPaid,I've paid,ഞാൻ കാശ് കൊടുത്തു,,
+quoteBtnNew,New quote,പുതിയ ഉദ്ധരണി,,
+quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","ക്ഷമിക്കണം, ഈ റൂട്ടിൽ നിങ്ങളുടെ ഗ്രൂപ്പ് വലുപ്പത്തിനായി ഞങ്ങൾക്ക് ഒരു വാഹനം ഇല്ല. *ഞങ്ങളോട് സംസാരിക്കുക ടാപ്പുചെയ്യുക* , ഞങ്ങളുടെ ടീം നിങ്ങളെ സഹായിക്കും.",,*bold* markers must stay around the same words
+quoteExpired,This quote has expired. Tap below to get a new one.,ഈ ഉദ്ധരണി കാലഹരണപ്പെട്ടു. പുതിയൊരെണ്ണം ലഭിക്കുന്നതിന് താഴെ ടാപ്പുചെയ്യുക.,,
+quoteUnavailable,"Sorry, this quote is no longer available. Send *hi* to start again.","ക്ഷമിക്കണം, ഈ ഉദ്ധരണി ഇനി ലഭ്യമല്ല. വീണ്ടും ആരംഭിക്കാൻ *ഹായ് അയയ്ക്കുക* .",,*bold* markers must stay around the same words
+quoteConfirmedTitle,✅ *Booking confirmed!*,✅ *ബുക്കിംഗ് സ്ഥിരീകരിച്ചു!*,,*bold* markers must stay around the same words
+quoteConfirmedNext,Our team will contact you with the pickup details.,ഞങ്ങളുടെ ടീം പിക്കപ്പ് വിശദാംശങ്ങളുമായി നിങ്ങളെ ബന്ധപ്പെടും.,,
+quotePaidPrompt,Paid already? Tap below once you have paid and we will check it.,"ഇതിനകം പണമടച്ചോ? നിങ്ങൾ പണമടച്ചുകഴിഞ്ഞാൽ താഴെ ടാപ്പുചെയ്യുക, ഞങ്ങൾ അത് പരിശോധിക്കും.",,
+quotePaidThanks,Thanks! We will check your payment and confirm your booking shortly.,നന്ദി! ഞങ്ങൾ നിങ്ങളുടെ പേയ് മെന്റ് പരിശോധിക്കുകയും ഉടൻ തന്നെ നിങ്ങളുടെ ബുക്കിംഗ് സ്ഥിരീകരിക്കുകയും ചെയ്യും.,,
+quotePaidAlready,We have already received your payment ✅,നിങ്ങളുടെ പേയ് മെന്റ് ഞങ്ങൾക്ക് ✅ ഇതിനകം ലഭിച്ചിട്ടുണ്ട്,,
+pickupTimeInvalid,"Sorry, I couldn't read that time. Please type it like 6:30 AM or 18:30.","ക്ഷമിക്കണം, എനിക്ക് ആ സമയം വായിക്കാൻ കഴിഞ്ഞില്ല. ദയവായി രാവിലെ 6:30 അല്ലെങ്കിൽ 18:30 ആയി ടൈപ്പ് ചെയ്യുക.",,
 chooseLanguageLine,Choose your language,നിങ്ങളുടെ ഭാഷ തിരഞ്ഞെടുക്കുക,,
