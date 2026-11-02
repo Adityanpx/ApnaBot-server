@@ -1855,7 +1855,7 @@ shows an informational entry; uploads are not simulated.
 ## Travel quotes - route rate card, quote settings, quotes, report, chat quote (part A 2026-11-04, migration `20261104120000_travel_quotes.sql`; part C 2026-11-05, migration `20261105120000_flow_quote_node_types.sql`)
 
 Phase 1 of travel automation: an instant fare quote from an owner-defined route rate card, with an advance to confirm. Parts: A server
-(data + owner API + report), B web Rates screen, **C bot + sweep (built; see "Part C" below)**, D Flutter Rates screen, E Travel default
+(data + owner API + report), B web Rates screen, **C bot + sweep (built; see "Part C" below)**, D Flutter Rates screen (**not built - Flutter has no Rates or quote screens at all**), E Travel default
 template (only after a separate OK). **Part C is live only for a business whose flow has the quote nodes AND whose `travel_quotes` switch
 is on: today that is SG Travels, after `scripts/seedTravelQuoteFlow.js --confirm` is run. Deploying the code changes nothing for any other business.**
 
@@ -1871,7 +1871,8 @@ is on: today that is SG Travels, after `scripts/seedTravelQuoteFlow.js --confirm
     linked. A fare saved through the old `/api/route-fares` has `route_id` null; readers match on (business, from, to) and list an
     unmatched pair as `unlisted: true` (id null) until saved once through `/api/travel/routes`. The old endpoint is unchanged.
   - `travel_quote_settings` (one row per business, created on first save; defaults when none): night_charge, night_start_minute (1320 =
-    22:00 IST), night_end_minute (360), driver_allowance_per_day, toll_included, minimum_charge, valid_hours (24, 1-168),
+    22:00 IST), night_end_minute (360), driver_allowance_per_day (**retired**: kept, returned read-only, never priced from), allowance_basis
+    (`day | night`, added by migration `20261106120000`), toll_included, minimum_charge, valid_hours (24, 1-168),
     reminder_after_hours (3, 0 = none, must be < valid_hours). **No advance columns.**
   - `travel_quotes` (business, customer, booking_id, route_id, route_fare_id, vehicle_id, from/to/trip_type, collected jsonb, base_fare,
     extras jsonb, total_amount, advance_amount null = none, sent_at, expires_at, reminder_sent_at, accepted_at, customer_paid_claim_at,
@@ -1899,8 +1900,9 @@ is on: today that is SG Travels, after `scripts/seedTravelQuoteFlow.js --confirm
   `reports.service.js#getPeriodRanges` is now exported for it). Validation in `utils/travelQuote.js`: fares > 0, trip type oneway /
   round_trip, vehicle must belong to the business (404), <= 60 fares per request.
 - **Pricing helper** (`utils/travelQuote.js#computeQuote`, used by part C): base fare + night charge (pickup minute inside the window, which
-  may wrap midnight) + driver allowance x days (round trips only) -> rounded to the nearest 10, raised to the minimum charge; toll is
-  reported (route override, else settings), never added.
+  may wrap midnight) -> raised to the minimum charge; toll is reported (route override, else settings), never added. One Way is rounded
+  to the nearest 10; **Round Trip is used as entered / to the rupee and takes its allowance from the vehicle - the business-wide
+  "driver allowance x days" this bullet used to describe is retired (see "Round Trip pricing")**.
 - **WhatsApp limits to honour in part C:** list rows <= 10 and titles <= 24 chars (`flowSpec.js#LIMITS`), buttons <= 3 with titles <= 20
   ("Confirm & pay" / "Confirm" when advance is off, "Change", "Talk to us"). More than 9 routes -> group by `region`; "Other route" -> handoff.
   Session TTL is 5 minutes, so a quote lives in `travel_quotes`, never the Redis session.
@@ -1920,7 +1922,8 @@ is on: today that is SG Travels, after `scripts/seedTravelQuoteFlow.js --confirm
   (`booking_trigger` reply, exact; aliases get a quote / quotation / कोटेशन). Questions: `tripType` (One Way / Round Trip) ->
   `routePicker` -> `passengers` (1-4 / 5-6 / 7+) -> vehicle carousel (rate-card fares only, filtered by seats) -> `travelDate` (+ typed
   "Other date") -> `pickupTime` (9 slots + typed "Other time", re-asked when unreadable - the night charge depends on it) ->
-  `numberOfDays` (round trip only, 1-9) -> `quote`. All copy en / hi / mr in `label_translations`.
+  `numberOfDays` (round trip only, 1-9) -> `quote`. All copy en / hi / mr in `label_translations`. **As seeded the days come after the
+  pickup time; `scripts/cutoverRoundTripDaysFirst.js` (see "Round Trip pricing") moves them before the vehicle carousel for Round Trip.**
 - **Node types** (migration `20261105120000`: `flow_nodes_node_type_check` + `flow_nodes_is_computed_only_for_computed_types` now allow
   `route_picker`, `quote`): both `is_computed`, created only by the seed script (`VALID_QUESTION_NODE_TYPES` unchanged - no editor
   creates them). `utils/flowGraphValidation.js#QUESTION_SUBGRAPH_TYPES` is the one list of question-subgraph types (GET /api/flow-graph/full,
@@ -1968,7 +1971,7 @@ is on: today that is SG Travels, after `scripts/seedTravelQuoteFlow.js --confirm
   Travels: its customers get the new entry immediately, no flag). Search cab AI, Pradip, Jyotirling, every template and the Travel default
   snapshot are untouched.
 - **Follow-ups / not done:** (1) the exact pickup address / location pin step after Confirm; (2) owner-editable "what is included" text;
-  (3) `webhook.controller.js` `sendFieldPrompt` hardcodes English "Book this" / "Other options" on the vehicle carousel (also used here);
+  (3) ~~`sendFieldPrompt` hardcodes English "Book this" / "Other options" on the vehicle carousel~~ - done, now `systemMessages` en / hi / mr (see "Round Trip pricing");
   (4) the owner cannot mute the two new alerts; (5) machine-translated languages other than en / hi / mr fall back to English for the new
   system messages until the machine files are regenerated; (6) `findUnreachableNodes` takes its entry points from `booking_trigger` replies
   only, so a flow entered from a menu button alone counts every question as unreachable (the check is differential, so saves are not
@@ -1977,6 +1980,96 @@ is on: today that is SG Travels, after `scripts/seedTravelQuoteFlow.js --confirm
 - Tests: `utils/{routePicker,pickupTime,quoteIds,quoteText}.test.js`, `utils/travelQuote.test.js` (seats), `services/bookingGraph.quoteFlow.test.js`,
   `services/quoteFlow.service.test.js`, `services/quoteSweep.service.test.js`, `services/payment.service.quote.test.js`,
   `controllers/{webhook.quoteTap,flowGraphPreview.quote,flowGraph.quoteNodes}.test.js`, `scripts/seedTravelQuoteFlow{,.canvas,.engine}.test.js`.
+
+### Round Trip pricing (migration `20261106120000_round_trip_pricing.sql`; server code built, web / Flutter screens and the live cutover NOT done)
+
+Why: a Round Trip used to quote the flat `route_fares` round_trip fare for any number of days (a 3-day Pune -> Shirdi Innova quoted 7,300
+like a 1-day one), because the days were asked after the vehicle and nothing multiplied them. Now:
+
+- **One Way**: unchanged - the route fare as entered, rounded to the nearest 10 by `computeQuote`.
+- **Round Trip, fixed price**: if the vehicle has an active `round_trip` fare on the route, it is the **package price**, used exactly as
+  entered (no rounding) for any number of days, no allowance added.
+- **Round Trip, formula** (no fixed fare): `billed_km = max(2 x one_way_distance_km, days x min_km_per_day)`, `km charge = billed_km x
+  vehicles.per_km_rate`, `driver allowance = vehicles.driver_allowance_per_day x days` (basis `day`) or `x (days - 1)` (basis `night`; a
+  same-day return has 0 nights; a missing allowance counts as 0), `total = km charge + allowance` to the nearest rupee, half up. The maths is
+  integer (tenths of a km, paise), `kmCharge = total - allowance` so the printed lines always add up. Toll and parking are never added.
+  The night charge and the minimum charge stay separate lines on top, as for One Way. Examples (185 km, Rs 23/km, 250 km/day, Rs 300): 1 day =
+  8,810 (370 km billed), 3 days = 18,150 (750 km billed), per night 3 days = 17,850.
+- **Nothing is guessed**: a missing / zero / negative min km, distance or per-km rate (or no day count) means **the owner confirms the
+  price** - see "price_on_request" below. A web-form-style `per_km_rate` of 0 counts as missing.
+- **Data** (all nullable except the setting; no backfill; no existing constraint touched - the migration restates the live ones and runs in
+  `begin` / `commit`): `vehicles.min_km_per_day` (> 0), `vehicles.driver_allowance_per_day` (>= 0, null = 0), `travel_routes.one_way_distance_km`
+  (> 0, <= 5000 in the API), `travel_quote_settings.allowance_basis` (`day` default | `night`). The business-wide
+  `travel_quote_settings.driver_allowance_per_day` is **retired**: the column stays, `GET /api/travel/quote-settings` still returns it
+  (`settings.driverAllowancePerDay`, read-only, because the live web Settings page builds its form from it and would otherwise fail its own
+  validation), `PUT` ignores it, nothing prices from it. `business_travel_settings.round_trip_per_day_km` / `round_trip_driver_da_*` are
+  untouched and still feed only the distance-estimate engine and the web form.
+- **Code**: `utils/travelQuote.js` - `computeRoundTripFare`, `priceVehicleTrip` (**the one function that prices a vehicle on a route**: card,
+  tap and quote all call it, so they cannot disagree), `roundTripCandidates` / `roundTripReadiness`, `validateVehicleFareInput`,
+  `computeQuote({ roundTrip })`. `services/travelQuote.service.js` - `listQuotableRoutes('round_trip')` (a route is offered only when at
+  least one of its vehicles can be priced: fixed fare, or distance + min km + rate), `listRoundTripVehicleOptions`, `priceRoundTripVehicle`
+  (both read fresh rows).
+- **API**: `POST/PUT /api/vehicles` accept `minKmPerDay` / `driverAllowancePerDay` (null or '' clears); `POST/PUT /api/travel/routes` accept
+  `oneWayDistanceKm`; every route in `GET /api/travel/routes` carries `oneWayDistanceKm` and `roundTrip: { ready, reason }` (reasons
+  `add_distance`, `add_min_km`, `add_rate`, `no_vehicle`, `inactive`) for the editor's "Round Trip not ready: add distance" state;
+  `PUT /api/travel/quote-settings` accepts `allowanceBasis`; **`POST /api/travel/routes/:id/fill-distance`** (owner) saves the Google driving
+  distance (rounded to 0.1 km, editable afterwards). It asks Google with the same lowercased city keys the distance-fares engine uses
+  (`booking.service.js#findDistanceBasedVehicleOptions`; that engine caches `distance:{businessId}:{from}:{to}` in Redis for 7 days and never
+  stores the value, and silently offers nothing when `GOOGLE_MAPS_API_KEY` is missing or Google fails) but fresh and into the database;
+  no API key -> 503, no result or > 5000 km -> 422, both telling the owner to type it.
+- **Quote flow** (`bookingGraph.service.js`, `quoteFlow.service.js`): with the days asked first, every Round Trip carousel card is priced for
+  those days - caption `Rs18150 • 3 days • 750 km`, `... • package fare`, or "Price: our team will confirm". A new option `source:
+  'quote_vehicle'`; the tap prices the vehicle again from fresh rows and, if the result differs from the card (or the vehicle / route is
+  gone), shows the cards again ("The prices were just updated") instead of quoting. The quote uses the tap's price (`session.collected.quotePricing`)
+  and saves `travel_quotes.collected.pricing` (method package | formula, days, one-way km, min km, billed km, rate, km charge, allowance). Without
+  the days (the as-seeded order) a formula vehicle shows "team will confirm".
+- **price_on_request** (new hand-off reason, also `days_mismatch` when a priced snapshot no longer matches the quote's days - the quote is never
+  sent, the customer is not left with a generic error): a handoff lead (`vehicle_id`, `collected.vehicleName / days / pricingReason`), the
+  reply "We will confirm the Round Trip price...", and the owner alert `human_needed` carrying `quoteRequest` (route, vehicle, days). The alert
+  title / body are en / hi / mr in `notification.service.js`.
+- **Message** (en / hi / mr): a `Days: N` line; formula = `Fare: 750 km x Rs23/km = Rs17,250`, the reason for the billed km (minimum km or there
+  and back), the allowance line (days or nights), night / minimum lines, the total, toll, and "The final fare is by actual km if the trip runs more
+  than the billed km."; package = `Package fare: Rs7,300` + the Days line, no actual-km note. Booking `fields` gain `fareType`, `billedKm`,
+  `ratePerKm`, `driverAllowance` (+ labels; `numberOfDays` was already saved); `booking_new` carries days and billed km. The Quotes tab (web) does
+  not show days / billed km yet.
+- **Strings**: `Book this`, `Other options`, "Don't see the vehicle you want?", `N seats`, "Please tap one of the vehicle options above." and the
+  "Please choose one of:" replies now come from `systemMessages` in en / hi / mr (customer's `preferredLanguage`); English is byte-identical
+  (`webhook.interactiveSites.golden.json` unchanged). The quote validity line is `formatUntil(date, lang)`: English unchanged ("11 Nov, 7:30 pm"),
+  hi / mr = localized month, Latin digits, AM / PM ("11 नव॰, 7:30 PM"). **This carousel text is shared by every flow with a vehicle carousel:
+  Search cab AI (active carousel node, 8 vehicles, distance-estimate tier), Jyotirling, Pradip and SG Travels - their Hindi / Marathi
+  customers now see it translated; English customers see no change.**
+- **Scripts** (both dry-run by default, hard-scoped to SG Travels' id, refuse Search cab AI, `--confirm` / `--rollback`, tested with fixtures,
+  **never run yet**): `scripts/cutoverRoundTripDaysFirst.js` deletes the 3 tagged edges `timeToDays`, `timeManualToDays`, `daysToQuote` and
+  creates `paxToDays` (`5eed7a01-...115`, Round Trip only, order -1) and `daysToVehicle` (`...116`) - no node, no non-tagged row touched;
+  verifies every path still reaches the quote and One Way is unchanged; a customer mid-flow (5-minute sessions) at the time question goes
+  straight to the quote, so apply when quiet. `scripts/deactivateSgRoundTripFares.js` sets `route_fares.is_active = false` (never deletes) on the
+  listed active round_trip rows only, after writing a manifest `logs/sg-round-trip-fares-deactivated.json` (the tag; `--rollback` re-activates
+  exactly the manifest rows still off); refuses unless the flow is cut over, SG has no other active vehicle carousel, every route keeps an
+  active One Way fare, and every route would still be offered for Round Trip afterwards (`--allow-routes-off` overrides); `--routes=pune>shirdi`,
+  `--expect-rows=N`. `seedTravelQuoteFlow.js` now reserves the two cutover edge ids (its `--rollback` removes them too).
+- **Deploy order / cutovers** (SG Travels, no feature flag): 1) apply the migration, 2) deploy the server - with the 36 fixed Round Trip fares
+  still active SG customers see `package fare` captions, the Days line, and Round Trip totals exact instead of rounded to 10, 3) the owner sets
+  min km / allowance per vehicle, distance per route and the allowance basis (**no web or Flutter screen for these yet - API only**), 4)
+  `cutoverRoundTripDaysFirst.js` dry run, `--confirm`, 5) `deactivateSgRoundTripFares.js` dry run, `--confirm`. Today the fare script
+  refuses: no SG route has a distance and no vehicle a min km. `verifyBookingGraph.js` was not run (it reads live data and needs the migration).
+- **Search cab AI**: no quote flow, no `route_fares`; the migration and API additions are nullable and change nothing for it; only the shared
+  carousel text above reaches its Hindi / Marathi customers.
+- **Follow-ups / not done**:
+  (1) **the route API revives switched-off fares**: `travelRoute.service.js#updateRoute` copies a route's `isActive` change to every fare of
+  its from / to pair, and `applyFares` upserts every fare it is sent with `is_active = route.is_active`. So switching a route off and on
+  again, or saving a price on a Round Trip cell, re-activates a fare `deactivateSgRoundTripFares.js` switched off. No fix yet;
+  (2) **the web Rates grid shows an inactive fare as a normal price** (it fills a cell from every `fares[]` row, active or not), so a switched-off
+  Round Trip fare looks live;
+  (3) **Flutter has no Rates, route or quote screens** (only the Fleet vehicle form, `lib/features/fleet`); neither web nor Flutter Fleet has the
+  min km / allowance fields (nor the "Round Trip: set min km" hint), and the web Rates screen has no distance field, "Fill from Google" button,
+  allowance-basis toggle or "Round Trip not ready" state - the old allowance field still shows on Rates -> Settings;
+  (4) the **"Other options" label in the owner simulator** (`flowGraphPreview.controller.js`) is English-only;
+  (5) the Quotes tab does not show days / billed km / method; (6) machine-translated languages other than en / hi / mr fall back to English for
+  the new messages; (7) pre-existing failing tests unrelated to this work: `graphApiVersion`, `admin.chatMediaRetention`,
+  `broadcast.bodyLimit`, `notification.hooks`, and a `defaultSetup.service` test that hangs `npm test` past 60 s (run test files one by one).
+- Tests: `utils/travelQuote.test.js`, `routes/travelQuote.routes.test.js`, `controllers/travel/vehicle.controller.test.js`,
+  `services/{quoteFlow.service,bookingGraph.roundTripQuote,notification.service}.test.js`, `utils/{quoteText,systemMessages}.test.js`,
+  `controllers/webhook.interactiveSites.test.js`, `scripts/{cutoverRoundTripDaysFirst,cutoverRoundTripDaysFirst.engine,deactivateSgRoundTripFares}.test.js`.
 
 ## Known gaps / deferred work
 
@@ -2140,6 +2233,8 @@ is on: today that is SG Travels, after `scripts/seedTravelQuoteFlow.js --confirm
     `botSettingsPreview.service.js` (Bot Builder draft preview) does not render a handoff node (presets never produce one);
     `GET /api/customers` / chat payloads now carry the raw `needsHumanAt` / `needsHumanReason` / `handoffClearedAt` /
     `handoffPauseSetTo` fields because they select `*`.
+35. **Round Trip pricing is built on the server only**: no web / Flutter screens for the new fields, the route API can revive switched-off fares,
+    the web grid shows inactive fares as live, and the two SG Travels scripts have not been run - see "Round Trip pricing" > Follow-ups.
 
 ## Session log (append here as major milestones land)
 - 2026-10-28: Human-needed alert ("handoff"): migration `20261028120000_handoff.sql` (apply BEFORE the server), `business_handoff_settings`,
@@ -2515,3 +2610,4 @@ is on: today that is SG Travels, after `scripts/seedTravelQuoteFlow.js --confirm
 - 2026-11-03: owner phone (`users.phone`, `REQUIRE_OWNER_PHONE`, `GET/PATCH /api/auth/me`, Super Admin `ownerName/ownerEmail/ownerPhone` + phone search, sanitised list search) - see "Owner phone number". Working tree only; migration not applied.
 - 2026-11-04: travel quotes part A (route rate card API `/api/travel/*`, `travel_quote_settings`, `travel_quotes`, `GET /api/reports/quotes`, `travel_quotes` switch, off for all) - see "Travel quotes". Migration `20261104120000_travel_quotes.sql` must be applied BEFORE the server. Bot side (part C) not built.
 - 2026-11-05: travel quotes part C (chat quote: `route_picker` / `quote` nodes, `quote:` taps, quote sweep, quote bookings, `scripts/seedTravelQuoteFlow.js`) - see "Travel quotes" > "Part C". Migration `20261105120000_flow_quote_node_types.sql` must be applied BEFORE the server; nothing changes for any business until the seed script is run for SG Travels.
+- 2026-11-02: Round Trip pricing (formula, per-vehicle min km / allowance, route distance + Google fill, allowance basis, priced carousel cards, `price_on_request` hand-off, carousel strings and quote date in en / hi / mr, `cutoverRoundTripDaysFirst.js`, `deactivateSgRoundTripFares.js`) - see "Travel quotes" > "Round Trip pricing". Migration `20261106120000_round_trip_pricing.sql` must be applied BEFORE the server. Server only: no web / Flutter screens yet, both SG Travels scripts not run, so the as-seeded SG flow still asks the days after the vehicle and the 36 fixed Round Trip fares are still active.
