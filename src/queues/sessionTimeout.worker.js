@@ -3,7 +3,7 @@ const whatsappService = require('../services/whatsapp.service');
 const bookingService = require('../services/booking.service');
 const usageService = require('../services/usage.service');
 const supabase = require('../config/supabase');
-const { getSystemMessage } = require('../utils/systemMessages');
+const { sessionTimeoutText } = require('../services/sessionTimeoutText.service');
 const logger = require('../utils/logger');
 const config = require('../config/env');
 const { workerConnection } = require('../config/queueConnection');
@@ -31,7 +31,7 @@ const worker = new Worker('session-timeout', async (job) => {
       phoneNumberId,
       encryptedAccessToken,
       customerNumber,
-      getSystemMessage('sessionTimeout', customer?.preferred_language)
+      await sessionTimeoutText(businessId, session, customer?.preferred_language)
     );
     // Sent straight to Meta (not through the whatsapp-outbound worker), so counted here. Never throws.
     usageService.recordOutbound(businessId);

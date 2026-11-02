@@ -219,6 +219,14 @@ const SYSTEM_MESSAGES = {
     mr: "तुम्ही व्यस्त आहात असे दिसते — प्रतिसाद न मिळाल्यामुळे मी हे संभाषण बंद केले आहे. पुन्हा सुरू करण्यासाठी कधीही 'book' पाठवा."
   },
 
+  // The same, for a chat that was in a travel-quote flow (services/sessionTimeoutText.service.js): {{keyword}} is the keyword that
+  // starts THAT flow (e.g. 'quote'), read from its entry trigger - not 'book', which can open the web booking form.
+  sessionTimeoutQuote: {
+    en: "Looks like you've stepped away — I've ended this quote chat due to inactivity. Send '{{keyword}}' anytime to start again.",
+    hi: "लगता है आप व्यस्त हैं — जवाब न मिलने के कारण मैंने यह किराया चैट बंद कर दी है। फिर से शुरू करने के लिए कभी भी '{{keyword}}' भेजें।",
+    mr: "तुम्ही व्यस्त आहात असे दिसते — प्रतिसाद न मिळाल्यामुळे मी ही भाडे चॅट बंद केली आहे. पुन्हा सुरू करण्यासाठी कधीही '{{keyword}}' पाठवा."
+  },
+
   // ── Customer sent STOP / UNSUBSCRIBE (webhook.controller.js) ──
   // Used only when the business has no stop message of its own. 'START' is
   // the typed keyword, so it stays in English.
