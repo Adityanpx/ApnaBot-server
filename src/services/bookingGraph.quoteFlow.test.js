@@ -126,6 +126,18 @@ test('choosing a route sets the city keys + labels the vehicle lookup and the qu
   assert.equal(r.session.currentNodeId, PAX);
 });
 
+test('a route with no labels is quoted as the title-cased city keys; a long custom label is not clipped', async () => {
+  const long = 'Pune Airport Terminal Pickup Point';
+  state.routes = [route(1, { fromCity: 'pune', toCity: 'shirdi', fromLabel: null, toLabel: null }), route(2, { toLabel: long })];
+  const a = await toPassengers();
+  assert.deepEqual([a.session.collected.quoteFromLabel, a.session.collected.quoteToLabel], ['Pune', 'Shirdi']);
+  assert.equal(a.session.collected.pickupLocation, 'pune'); // the vehicle lookup still gets the city key
+  const { session } = await start();
+  await say(session, 'One Way');
+  const b = await say(session, 'to:r2');
+  assert.equal(b.session.collected.quoteToLabel, long);
+});
+
 test('a typed city name or a row number also picks the row; an unknown reply re-asks without moving', async () => {
   const { session } = await start();
   let r = await say(session, 'One Way');

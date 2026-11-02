@@ -772,8 +772,8 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
     if (outcome.state) return reshow(routePicker.view(routes, outcome.state, text));
 
     const { route } = outcome;
-    const fromLabel = route.fromLabel || route.fromCity;
-    const toLabel = route.toLabel || route.toCity;
+    const fromLabel = routePicker.routeLabel(route.fromLabel, route.fromCity);
+    const toLabel = routePicker.routeLabel(route.toLabel, route.toCity);
     session.collected.quoteRouteId = route.id;
     session.collected.pickupLocation = route.fromCity; // city keys: the vehicle lookup matches route_fares on them
     session.collected.dropLocation = route.toCity;

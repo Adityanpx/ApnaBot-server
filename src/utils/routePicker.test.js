@@ -1,7 +1,7 @@
 // Run: node --test src/utils/routePicker.test.js
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { view, choose, NO_REGION } = require('./routePicker');
+const { view, choose, routeLabel, NO_REGION } = require('./routePicker');
 
 const text = {
   more: { en: 'More...', translations: { hi: 'और देखें...', mr: 'आणखी...' } },
@@ -109,4 +109,13 @@ test('row labels use the route label when set, in the routes\' sort order', () =
     { id: 'a', fromCity: 'pune', toCity: 'a', fromLabel: null, toLabel: 'Alpha', region: null, sortOrder: 1 }
   ];
   assert.deepEqual(labels(view(rs, undefined, text).rows), ['Alpha', 'Bravo', 'Other route']);
+});
+
+test('routeLabel: a null label becomes the title-cased city key; a custom label is kept unclipped (only list rows clip)', () => {
+  assert.equal(routeLabel(null, 'pune'), 'Pune');
+  assert.equal(routeLabel('  ', 'navi mumbai'), 'Navi Mumbai');
+  const long = 'Pune Airport Terminal Pickup Point';
+  assert.equal(routeLabel(long, 'pune'), long);
+  const [row] = view([{ id: 'r', fromCity: 'pune', toCity: 'x', fromLabel: null, toLabel: long, region: null, sortOrder: 0 }], null, text).rows;
+  assert.equal(row.label.length, 24);
 });

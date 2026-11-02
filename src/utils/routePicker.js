@@ -18,7 +18,10 @@ const NO_REGION = '__none__'; // routes with no region, shown as "Other places"
 
 const initcap = (key) => String(key || '').replace(/\b\w/g, (c) => c.toUpperCase());
 const clip = (text) => String(text).slice(0, ROW_MAX);
-const cityLabel = (label, key) => clip((label && String(label).trim()) || initcap(key));
+/** The route's own label, or the title-cased city key. Unclipped: the quote and hand-off use it as is. */
+const routeLabel = (label, key) => (label && String(label).trim()) || initcap(key);
+/** The same, clipped to a WhatsApp list row. */
+const cityLabel = (label, key) => clip(routeLabel(label, key));
 const byOrder = (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || String(a.label).localeCompare(String(b.label));
 
 /** Distinct From cities, in the routes' sort order. */
@@ -114,4 +117,4 @@ const choose = (routes, state, value, text) => {
   return { invalid: true };
 };
 
-module.exports = { ITEMS_LAST_PAGE, ITEMS_PAGE_WITH_MORE, NO_REGION, view, choose };
+module.exports = { routeLabel, ITEMS_LAST_PAGE, ITEMS_PAGE_WITH_MORE, NO_REGION, view, choose };
