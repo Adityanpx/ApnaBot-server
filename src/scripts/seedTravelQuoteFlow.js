@@ -53,7 +53,10 @@ const N = {
 const E = {
   rates: tagId(101), menu: tagId(102), triggerToTrip: tagId(103), tripToPicker: tagId(104), pickerToPax: tagId(105),
   paxToVehicle: tagId(106), vehicleToDate: tagId(107), dateToTime: tagId(108), dateManualToTime: tagId(109),
-  timeToDays: tagId(110), timeToQuote: tagId(111), timeManualToDays: tagId(112), timeManualToQuote: tagId(113), daysToQuote: tagId(114)
+  timeToDays: tagId(110), timeToQuote: tagId(111), timeManualToDays: tagId(112), timeManualToQuote: tagId(113), daysToQuote: tagId(114),
+  // Reserved for cutoverRoundTripDaysFirst.js (days asked before the vehicles for Round Trip). This script never creates
+  // them; they are listed so --rollback also removes them if that cutover is still applied.
+  paxToDays: tagId(115), daysToVehicle: tagId(116)
 };
 const NODE_ID_LIST = Object.values(N);
 const EDGE_ID_LIST = Object.values(E);
@@ -395,7 +398,7 @@ const run = async (options, deps) => {
 
 module.exports = {
   SG_TRAVELS_ID, N, E, NODE_ID_LIST, EDGE_ID_LIST, COPY, TRIGGER_KEYWORD, TRIGGER_ALIASES,
-  findAnchors, firstOrder, buildPlan, copyProblems, triggerShadowProblems, run
+  findAnchors, firstOrder, edgeRow, buildPlan, copyProblems, triggerShadowProblems, run
 };
 
 // ── CLI ─────────────────────────────────────────────────────────────────────────────────────────
