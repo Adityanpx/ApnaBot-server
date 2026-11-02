@@ -5,10 +5,11 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { createFakeSupabase } = require('../test-support/fakeSupabase');
-const seed = require('./seedTravelQuoteFlow');
+const { derive } = require('../utils/quoteFlowIds');
 const script = require('./deactivateSgRoundTripFares');
 
-const { SG_TRAVELS_ID: SG, N, E } = seed;
+const SG = 'a94aec66-23fb-43e1-afcc-f4e8d518134b';
+const { N, E } = derive(SG);
 const OTHER = 'b2b2b2b2-0000-4000-8000-000000000002';
 const MANIFEST = 'logs/test-manifest.json';
 let fake; let db; let lines; let migration; let marker; let manifests; let writes;
@@ -221,12 +222,12 @@ test('refuses when the migration is not applied', async () => {
   await refuses({ confirm: true }, /apply supabase\/migrations\/20261106120000_round_trip_pricing\.sql first/);
 });
 
-test('refuses when the flow is not cut over (the days would still come after the vehicles)', async () => {
+test('refuses when the quote flow is not installed with the days first (the days would still come after the vehicles)', async () => {
   db.flow_edges = [];
-  await refuses({ confirm: true }, /run cutoverRoundTripDaysFirst\.js --confirm first/);
+  await refuses({ confirm: true }, /install the quote flow first/);
   lines = [];
-  db.flow_edges = [E.paxToDays, E.daysToVehicle, E.timeToDays].map((id) => ({ id, business_id: SG }));
-  await refuses({ confirm: true }, /run cutoverRoundTripDaysFirst\.js --confirm first/);
+  db.flow_edges = [E.paxToDays].map((id) => ({ id, business_id: SG }));
+  await refuses({ confirm: true }, /install the quote flow first/);
 });
 
 test('refuses when another path reads these rows: a second active vehicle carousel in the flow', async () => {

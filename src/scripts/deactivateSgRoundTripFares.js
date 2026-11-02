@@ -17,7 +17,7 @@
 // REFUSES (and says why) when
 //   - the business is not SG Travels (hard-coded id), is named like Search cab AI, or migration 20261106120000 or
 //     20261107120000 (route_fares.off_reason) is missing;
-//   - the flow is not cut over (cutoverRoundTripDaysFirst.js): the formula needs the days asked before the vehicles;
+//   - the quote flow is not installed with the days asked before the vehicles (the installer's default order);
 //   - ANOTHER PATH READS THESE ROWS: SG has an active vehicle carousel other than the quote flow's (it would lose the
 //     vehicles priced by these rows), or a route that has a Round Trip fare would be left with no active One Way fare
 //     (it would drop out of the served-city suggestions and the rate card);
@@ -45,11 +45,13 @@
 //   node src/scripts/deactivateSgRoundTripFares.js --rollback --confirm
 //   --allow-routes-off   go ahead even though some routes would no longer be offered for Round Trip
 //   --manifest=PATH      where the manifest is written / read (default logs/sg-round-trip-fares-deactivated.json)
-const seed = require('./seedTravelQuoteFlow');
-const cutover = require('./cutoverRoundTripDaysFirst');
+const { derive } = require('../utils/quoteFlowIds');
 const { roundTripCandidates, roundTripReadiness, priceVehicleTrip } = require('../utils/travelQuote');
 
-const { SG_TRAVELS_ID, N } = seed;
+// This script predates the generic installer and is deleted once its job is done. The quote flow's ids are derived from the
+// business id exactly as the installer derives them (utils/quoteFlowIds.js).
+const SG_TRAVELS_ID = 'a94aec66-23fb-43e1-afcc-f4e8d518134b';
+const { N, E } = derive(SG_TRAVELS_ID);
 const REFUSED_NAME = /search\s*cab/i;
 const DEFAULT_MANIFEST = 'logs/sg-round-trip-fares-deactivated.json';
 const MANUAL = 'manual';
@@ -133,9 +135,9 @@ const run = async (options, deps) => {
   const nodes = await read('flow_nodes');
   const edges = await read('flow_edges');
   const edgeIds = new Set(edges.map((e) => e.id));
-  const cutOver = cutover.ADDED_IDS.every((id) => edgeIds.has(id)) && cutover.REMOVED_IDS.every((id) => !edgeIds.has(id));
-  if (!record(cutOver, 'the quote flow asks the days BEFORE the vehicles for Round Trip (cutoverRoundTripDaysFirst.js is applied)')) {
-    return fail('run cutoverRoundTripDaysFirst.js --confirm first: the formula needs the days before the vehicle cards.');
+  const cutOver = edgeIds.has(E.paxToDays) && edgeIds.has(E.daysToVehicle);
+  if (!record(cutOver, 'the quote flow asks the days BEFORE the vehicles for Round Trip (the installed quote flow has the days-first edges)')) {
+    return fail('install the quote flow first (installTravelQuoteFlow.js): the formula needs the days before the vehicle cards.');
   }
 
   // Another path that reads these rows
