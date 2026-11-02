@@ -855,10 +855,15 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
         return rebuildOrFallback(businessId, nodes, currentNode, session, servedCities, languageCode);
       }
 
-      const daTotal = tappedOption.driverDaIncluded ? tappedOption.driverDaTotal : 0;
+      // Same formula as the card (a Round Trip card re-prices with the vehicle's current rate).
+      const repriced = bookingService.repriceEstimateOption(tappedOption, freshVehicle.per_km_rate);
+      if (!repriced) {
+        return rebuildOrFallback(businessId, nodes, currentNode, session, servedCities, languageCode);
+      }
+      const daTotal = repriced.driverDaTotal;
       session.collected.vehicleId = freshVehicle.id;
       session.collected.vehicleName = freshVehicle.custom_name || freshVehicle.catalog.name;
-      session.collected.vehicleFare = Math.round((tappedOption.distanceKm * freshVehicle.per_km_rate) / 10) * 10 + daTotal;
+      session.collected.vehicleFare = repriced.fare;
       session.collected.fareSource = 'distance_estimate';
       session.collected.distanceKm = Math.round(tappedOption.distanceKm * 10) / 10;
       if (daTotal > 0) {

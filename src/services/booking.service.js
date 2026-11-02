@@ -14,6 +14,7 @@ const socketService = require('./socket.service');
 const distanceMatrixService = require('./distanceMatrix.service');
 const logger = require('../utils/logger');
 const { isTravelFeaturedCategory } = require('../config/categoryFeatures');
+const { computeRoundTripFare } = require('../utils/travelQuote');
 
 /**
  * Map a trip-type answer to 'oneway' | 'round_trip' | 'local'. Tolerant of
@@ -142,6 +143,57 @@ const buildVehicleCarouselOptions = (routeFares) => routeFares.map((rf, idx) => 
   source: 'route_fare'
 }));
 
+const positiveOrNull = (v) => (v !== null && v !== undefined && Number(v) > 0 ? Number(v) : null);
+
+/**
+ * travel_quote_settings.allowance_basis ('day' | 'night') for a business; 'day' when it has no row yet.
+ * Throws on a database error so the caller can fall through to "no estimate".
+ */
+const loadAllowanceBasis = async (businessId) => {
+  const { data, error } = await supabase
+    .from('travel_quote_settings').select('allowance_basis').eq('business_id', businessId).maybeSingle();
+  if (error) throw error;
+  return data?.allowance_basis === 'night' ? 'night' : 'day';
+};
+
+/**
+ * Round Trip estimate for ONE vehicle - the same formula the quote uses (utils/travelQuote.js
+ * computeRoundTripFare: billed km = max(2 x one-way, days x min km), integer money, nearest rupee).
+ * The vehicle's own min km / driver allowance win; business_travel_settings (roundTripPerDayKm,
+ * roundTripDriverDaEnabled / Amount) are only the fallback for a vehicle where that field is null, and
+ * 250 km is the last resort for the min km.
+ * @returns {Object|null} computeRoundTripFare's ok result plus the inputs used, or null when it cannot be priced
+ */
+const estimateRoundTripForVehicle = ({ vehicle, travelSettings, oneWayKm, days, allowanceBasis }) => {
+  const minKmPerDay = positiveOrNull(vehicle.min_km_per_day) ?? positiveOrNull(travelSettings?.roundTripPerDayKm) ?? 250;
+  const allowancePerUnit = vehicle.driver_allowance_per_day !== null && vehicle.driver_allowance_per_day !== undefined
+    ? Number(vehicle.driver_allowance_per_day)
+    : (travelSettings?.roundTripDriverDaEnabled ? Number(travelSettings.roundTripDriverDaAmount) || 0 : 0);
+  const result = computeRoundTripFare({
+    oneWayKm, days, minKmPerDay, ratePerKm: vehicle.per_km_rate, allowancePerUnit, allowanceBasis
+  });
+  return result.ok ? { ...result, inputs: { oneWayKm, days, minKmPerDay, allowancePerUnit, allowanceBasis } } : null;
+};
+
+/**
+ * Re-prices a distance_estimate carousel card with the vehicle's CURRENT per-km rate (the tap in
+ * bookingGraph.service.js). A Round Trip card carries `estimate` (the inputs it was priced from) and goes
+ * through the same formula again; any other card is the old distance x rate, rounded to 10, plus its DA.
+ * @returns {{ fare:number, driverDaTotal:number }|null} null when a Round Trip card can no longer be priced
+ */
+const repriceEstimateOption = (option, perKmRate) => {
+  if (option.estimate) {
+    const e = option.estimate;
+    const r = computeRoundTripFare({
+      oneWayKm: e.oneWayKm, days: e.days, minKmPerDay: e.minKmPerDay, ratePerKm: perKmRate,
+      allowancePerUnit: e.allowancePerUnit, allowanceBasis: e.allowanceBasis
+    });
+    return r.ok ? { fare: r.total, driverDaTotal: r.allowance.amount } : null;
+  }
+  const driverDaTotal = option.driverDaIncluded ? option.driverDaTotal : 0;
+  return { fare: Math.round((option.distanceKm * perKmRate) / 10) * 10 + driverDaTotal, driverDaTotal };
+};
+
 /**
  * Find distance-estimated vehicle options for a pickup/drop pair, for businesses
  * that have opted in via business.travelSettings.enableDistanceFares (see
@@ -149,10 +201,12 @@ const buildVehicleCarouselOptions = (routeFares) => routeFares.map((rf, idx) => 
  * "can't compute" condition (opt-out, no Google result, no priced vehicles)
  * so the caller can fall through to the next tier without special-casing.
  *
- * For round trips where numberOfDays is known, distance is estimated as
- * numberOfDays * travelSettings.roundTripPerDayKm instead of doubling the
- * one-way distance, and the Google/cache one-way lookup is skipped entirely
- * since it isn't needed for that calculation.
+ * One Way (and a Round Trip with no day count) is the one-way driving distance x the vehicle's
+ * per-km rate (doubled for a Round Trip), rounded to the nearest 10. A Round Trip with a day count is
+ * priced per vehicle by the quote's own formula (estimateRoundTripForVehicle) from the same Google
+ * (or cached) one-way distance; the card then shows the billed km as its distance and the driver
+ * allowance as driverDaTotal / driverDaPerDay / driverDaDays (days, or nights on a 'night' basis).
+ * A vehicle that formula cannot price (e.g. a per-km rate of 0) is left out.
  * @param {string|number} [numberOfDays] - customer-provided day count for round trips
  * @returns {Promise<Array>} Carousel-shaped options with source: 'distance_estimate', or []
  */
@@ -171,48 +225,43 @@ const findDistanceBasedVehicleOptions = async (businessId, pickupLocation, dropL
 
   const mappedTripType = normalizeTripType(tripType);
   const days = Number(numberOfDays);
-  const useDayBasedEstimate = mappedTripType === 'round_trip' && Number.isFinite(days) && days > 0;
+  const useDayBasedEstimate = mappedTripType === 'round_trip' && Number.isInteger(days) && days >= 1;
 
-  let distanceKm;
-  if (useDayBasedEstimate) {
-    const perDayKm = travelSettings.roundTripPerDayKm || 250;
-    distanceKm = days * perDayKm;
-  } else {
-    const fromCity = (pickupLocation || '').toLowerCase().trim();
-    const toCity = (dropLocation || '').toLowerCase().trim();
-    if (!fromCity || !toCity) {
-      logger.warn('Distance fares lookup skipped: empty pickup/drop location', { businessId, pickupLocation, dropLocation });
-      return [];
-    }
-
-    const cacheKey = `distance:${businessId}:${fromCity}:${toCity}`;
-    let oneWayDistanceKm = null;
-    try {
-      const cached = await redis.get(cacheKey);
-      if (cached !== null && cached !== undefined) {
-        oneWayDistanceKm = Number(cached);
-      }
-    } catch (error) {
-      logger.error('Error reading distance cache:', error);
-    }
-
-    if (oneWayDistanceKm === null) {
-      oneWayDistanceKm = await distanceMatrixService.getDistanceKm(pickupLocation, dropLocation);
-      if (oneWayDistanceKm === null) {
-        logger.warn('Distance fares lookup skipped: distance lookup failed', { businessId, fromCity, toCity });
-        return [];
-      }
-      try {
-        await redis.set(cacheKey, oneWayDistanceKm, 'EX', 604800);
-      } catch (error) {
-        logger.error('Error writing distance cache:', error);
-      }
-    }
-
-    distanceKm = mappedTripType === 'round_trip' ? oneWayDistanceKm * 2 : oneWayDistanceKm;
+  const fromCity = (pickupLocation || '').toLowerCase().trim();
+  const toCity = (dropLocation || '').toLowerCase().trim();
+  if (!fromCity || !toCity) {
+    logger.warn('Distance fares lookup skipped: empty pickup/drop location', { businessId, pickupLocation, dropLocation });
+    return [];
   }
 
+  const cacheKey = `distance:${businessId}:${fromCity}:${toCity}`;
+  let oneWayDistanceKm = null;
+  try {
+    const cached = await redis.get(cacheKey);
+    if (cached !== null && cached !== undefined) {
+      oneWayDistanceKm = Number(cached);
+    }
+  } catch (error) {
+    logger.error('Error reading distance cache:', error);
+  }
+
+  if (oneWayDistanceKm === null) {
+    oneWayDistanceKm = await distanceMatrixService.getDistanceKm(pickupLocation, dropLocation);
+    if (oneWayDistanceKm === null) {
+      logger.warn('Distance fares lookup skipped: distance lookup failed', { businessId, fromCity, toCity });
+      return [];
+    }
+    try {
+      await redis.set(cacheKey, oneWayDistanceKm, 'EX', 604800);
+    } catch (error) {
+      logger.error('Error writing distance cache:', error);
+    }
+  }
+
+  const distanceKm = mappedTripType === 'round_trip' ? oneWayDistanceKm * 2 : oneWayDistanceKm;
+
   let vehicles;
+  let allowanceBasis = 'day';
   try {
     const { data, error } = await supabase
       .from('vehicles')
@@ -220,6 +269,7 @@ const findDistanceBasedVehicleOptions = async (businessId, pickupLocation, dropL
       .eq('business_id', businessId).eq('is_active', true).not('per_km_rate', 'is', null);
     if (error) throw error;
     vehicles = data || [];
+    if (useDayBasedEstimate) allowanceBasis = await loadAllowanceBasis(businessId);
   } catch (error) {
     logger.error('Error finding distance-based vehicle options:', error);
     return [];
@@ -230,33 +280,42 @@ const findDistanceBasedVehicleOptions = async (businessId, pickupLocation, dropL
     return [];
   }
 
-  const driverDaTotal = (useDayBasedEstimate && travelSettings.roundTripDriverDaEnabled)
-    ? travelSettings.roundTripDriverDaAmount * days
-    : 0;
-
-  const options = vehicles.map((vehicle, idx) => {
-    const baseFare = Math.round((distanceKm * vehicle.per_km_rate) / 10) * 10;
-    const option = {
+  const options = [];
+  vehicles.forEach((vehicle, idx) => {
+    const base = {
       index: idx,
       vehicleId: vehicle.id,
       name: vehicle.custom_name || vehicle.catalog.name,
       photoUrl: vehicle.custom_photo_url || vehicle.catalog.photo_url || null,
       seats: vehicle.catalog.seats || null,
-      fare: baseFare + driverDaTotal,
       source: 'distance_estimate',
-      distanceKm: Math.round(distanceKm * 10) / 10,
       perKmRate: vehicle.per_km_rate
     };
-    if (driverDaTotal > 0) {
-      option.driverDaIncluded = true;
-      option.driverDaTotal = driverDaTotal;
-      option.driverDaPerDay = travelSettings.roundTripDriverDaAmount;
-      option.driverDaDays = days;
+    if (!useDayBasedEstimate) {
+      options.push({ ...base, fare: Math.round((distanceKm * vehicle.per_km_rate) / 10) * 10, distanceKm: Math.round(distanceKm * 10) / 10 });
+      return;
     }
-    return option;
+    const priced = estimateRoundTripForVehicle({ vehicle, travelSettings, oneWayKm: oneWayDistanceKm, days, allowanceBasis });
+    if (!priced) {
+      logger.warn('Distance fares: vehicle left out, Round Trip formula cannot price it', { businessId, vehicleId: vehicle.id, perKmRate: vehicle.per_km_rate });
+      return;
+    }
+    const option = {
+      ...base,
+      fare: priced.total,
+      distanceKm: Math.round(priced.billedKm * 10) / 10,
+      estimate: priced.inputs
+    };
+    if (priced.allowance.amount > 0) {
+      option.driverDaIncluded = true;
+      option.driverDaTotal = priced.allowance.amount;
+      option.driverDaPerDay = priced.allowance.perUnit;
+      option.driverDaDays = priced.allowance.units;
+    }
+    options.push(option);
   });
 
-  logger.info('Distance-based fares computed', { businessId, fromCity: pickupLocation, toCity: dropLocation, distanceKm, vehicleCount: vehicles.length });
+  logger.info('Distance-based fares computed', { businessId, fromCity: pickupLocation, toCity: dropLocation, distanceKm, vehicleCount: options.length });
   return options;
 };
 
@@ -930,6 +989,7 @@ module.exports = {
   // the only caller that needs the distance-estimate tier in isolation
   // rather than via the route-fare-first findBestVehicleCarouselOptions.
   findDistanceBasedVehicleOptions,
+  repriceEstimateOption,
   getVehicleCarouselPreview,
   getPreviewCreditsStatus,
   checkAndConsumeManualPreviewCredit,
