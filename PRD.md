@@ -2098,6 +2098,22 @@ like a 1-day one), because the days were asked after the vehicle and nothing mul
   English for them (never shown: `countText` returns the bare number for them). The card caption total uses the Indian thousands separator
   (`₹12,600`). One Way cards (`₹3000`, webhook fallback) and the legacy `quoteExtraDriver` / booking-summary "days" lines are unchanged.
 
+### Expired quote chat (a quote question answered after the 5-minute session)
+
+- The booking session lasts 5 minutes (`BOOKING_SESSION_TTL`); the session-timeout worker then sends `sessionTimeout` and deletes it. A quote
+  question tapped (`{nodeId}:{n}`) or typed later used to match no rule and got the generic "Thank you for your message" and the menu.
+- Now, at the no-rule-matched point of `webhook.controller.js` (never for a message a rule answers or while a session runs),
+  `quoteFlow.service#handleExpiredChat` checks: the business has an active `route_picker` node (one cheap query - every other business is
+  untouched); a tap names its question by its id, a typed answer is matched to the customer's last **bot** message within 24 h when that was a
+  buttons / list question (its saved `interactive_payload` carries the same `{nodeId}:{n}` ids; plain-text questions - days, a typed time - have
+  no id, so a typed answer to those still gets the generic reply); and the question belongs to a flow whose entry reaches a `route_picker`
+  (`utils/quoteChat.js#quoteFlowEntry`). If so: `quoteChatExpired` ("That quote chat expired. Tap *Get a quote* to start again.", en / hi / mr)
+  with one `quoteBtnStart` button (`quote:start:{entryNodeId}`, `utils/quoteIds.js`), which `handleQuoteTap` routes to `handleStart` and restarts
+  the flow at its entry (the entry is re-checked against the business's graph). Other flows and the machine languages (English text) otherwise unchanged.
+- Only SG Travels has a route picker today (checked 2026-11-02); Search cab AI has none, so it is unaffected. The `sessionTimeout` text still says
+  "Send 'book'" - for SG Travels that keyword opens the web booking form, not the quote chat (the quote keyword is `quote`, exact); see the proposal
+  in the 2026-11-02 report - not changed.
+
 ### Route name translations (migration `20261108120000_travel_routes_translations.sql`; server code built, web / Flutter edit fields NOT done)
 
 - `travel_routes` has nullable `from_label_translations`, `to_label_translations`, `region_translations` (`{ "<lang>": "<text>" }`, each

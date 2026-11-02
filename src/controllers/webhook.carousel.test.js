@@ -64,6 +64,8 @@ stub('../services/usage.service', {
   recordOutbound: async () => { usage.push('outbound'); }
 });
 stub('../services/smartFallback.service', { getSmartFallbackReply: async () => null });
+// a business with no quote flow: nothing to say about an expired quote chat (services/quoteFlow.service.test.js covers it)
+stub('../services/quoteFlow.service', { handleExpiredChat: async () => false });
 stub('../services/business.service', { getBusinessById: async () => ({ id: BIZ, enabledLanguages: ['en', 'hi'], name: 'Sunrise Hotel' }) });
 stub('../services/booking.service', {
   getBookingSession: async () => null, deleteBookingSession: async () => {}, saveBookingSession: async () => {},

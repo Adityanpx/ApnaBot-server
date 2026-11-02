@@ -19,7 +19,7 @@ const HOUR = 3600 * 1000;
 const QID = '0b9c2f3e-1a4d-4e8b-9c7a-5d6e7f8a9b0c';
 
 let db; let queued; let tenantFound; let activeSession; let matchResult; let findCalls; let redisStore; let usageAllowed;
-let quoteCalls; let quoteImpl; let advanceCalls; let advanceImpl; let finalized; let savedSessions; let startedAt;
+let expiredCalls; let expiredAnswer; let quoteCalls; let quoteImpl; let advanceCalls; let advanceImpl; let finalized; let savedSessions; let startedAt;
 
 const from = (table) => {
   const filters = []; let op = 'select'; let payload;
@@ -103,6 +103,8 @@ stub('../services/bookingGraph.service', {
 stub('../services/quoteFlow.service', {
   handleTap: async (ctx, tap) => { quoteCalls.push(['tap', ctx, tap]); return quoteImpl(ctx, tap); },
   handleStaleTap: async (ctx) => { quoteCalls.push(['stale', ctx]); },
+  handleExpiredChat: async (ctx, tappedId) => { expiredCalls.push([ctx, tappedId]); return expiredAnswer; },
+  handleStart: async (ctx, entryNodeId) => { quoteCalls.push(['start', ctx, entryNodeId]); return { restart: { entryNodeId } }; },
   handleResult: async (ctx, session, quote) => { quoteCalls.push(['result', ctx, session, quote]); return quoteImpl(ctx, quote); }
 });
 stub('../services/chatbot.service', {
@@ -135,7 +137,7 @@ const confirmId = `quote:${QID}:confirm`;
 
 test.beforeEach(() => {
   queued = []; tenantFound = true; activeSession = null; matchResult = null; findCalls = []; redisStore = new Map(); usageAllowed = true;
-  quoteCalls = []; quoteImpl = async () => ({}); advanceCalls = []; advanceImpl = async () => ({ session: {}, result: 'x' });
+  expiredCalls = []; expiredAnswer = false; quoteCalls = []; quoteImpl = async () => ({}); advanceCalls = []; advanceImpl = async () => ({ session: {}, result: 'x' });
   finalized = 0; savedSessions = []; startedAt = [];
   db = {
     customers: [
@@ -290,4 +292,46 @@ test('the existing result shapes are unchanged: done finalizes the booking, a st
   await text('z');
   assert.equal(lastReply(), 'Next question?');
   assert.equal(quoteCalls.length, 0);
+});
+
+// ── an expired quote chat ─────────────────────────────────────────────────────
+
+const STALE_TAP = '0b9c2f3e-1a4d-4e8b-9c7a-5d6e7f8a9b0c:1';
+const ENTRY = '1c9d3a4f-2b5e-4f9c-8d8b-6e7f8a9b0c1d';
+
+test('no rule matched and no session: a stale question tap and a typed answer are offered to the expired-chat check; when it replies nothing else does', async () => {
+  expiredAnswer = true;
+  await tapButton(STALE_TAP);
+  await text('1-4');
+  assert.deepEqual(expiredCalls.map(([, id]) => id), [STALE_TAP, null]);
+  assert.deepEqual([expiredCalls[0][0].tenant.businessId, expiredCalls[0][0].customer.id, expiredCalls[0][0].customerNumber], [BIZ, 'c1', NUMBER]);
+  assert.equal(queued.length, 0, 'no generic fallback, no menu');
+});
+
+test('when the check says it is not a quote answer, the generic fallback goes out exactly as before', async () => {
+  expiredAnswer = false;
+  await text('what is the weather');
+  assert.equal(expiredCalls.length, 1);
+  assert.equal(queued.length, 1);
+  assert.ok(lastReply().includes('Thank you for your message'));
+});
+
+test('the check is never made for a message a rule answers, or while a booking session is running', async () => {
+  matchResult = { node: { id: 'n1', label: 'Hello there', contentType: 'text', replyKind: 'text' }, edges: [] };
+  await text('hi there');
+  matchResult = null;
+  activeSession = { ruleId: 'r', currentNodeId: 'n', collected: {} };
+  await text('1-4');
+  assert.equal(expiredCalls.length, 0);
+});
+
+test('the "Get a quote" button (quote:start:{entry}) restarts the quote flow at that entry question; a bad id is "no longer available"', async () => {
+  await tapButton(`quote:start:${ENTRY}`);
+  assert.deepEqual(quoteCalls.map((c) => c[0]), ['start']);
+  assert.equal(quoteCalls[0][2], ENTRY);
+  assert.equal(startedAt.length, 1);
+  assert.equal(startedAt[0][1], ENTRY);
+  assert.equal(savedSessions.length, 1);
+  await tapButton('quote:start:not-a-uuid');
+  assert.equal(quoteCalls.at(-1)[0], 'stale');
 });

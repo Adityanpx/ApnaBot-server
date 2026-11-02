@@ -20,3 +20,12 @@ test('anything else is not a quote tap', () => {
   }
 });
 
+
+test('the "Get a quote" start id round-trips an entry node and is not a quote tap', () => {
+  const { quoteStartTapId, parseQuoteStartTapId, parseQuoteTapId } = require('./quoteIds');
+  const entry = '0b9c2f3e-1a4d-4e8b-9c7a-5d6e7f8a9b0c';
+  assert.equal(quoteStartTapId(entry), `quote:start:${entry}`);
+  assert.deepEqual(parseQuoteStartTapId(quoteStartTapId(entry)), { entryNodeId: entry });
+  assert.equal(parseQuoteTapId(quoteStartTapId(entry)), null);
+  for (const bad of ['quote:start:', 'quote:start:nope', `quote:confirm:${entry}`, `quote:${entry}:confirm`, null, undefined]) assert.equal(parseQuoteStartTapId(bad), null, String(bad));
+});

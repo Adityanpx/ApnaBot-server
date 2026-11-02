@@ -26,7 +26,8 @@ const { buildInteractivePayload } = require('../utils/interactivePayload');
 const { applyMessageTemplate } = require('../utils/messageTemplating');
 const { computeQuote, computeAdvance } = require('../utils/travelQuote');
 const { getSystemMessage } = require('../utils/systemMessages');
-const { quoteTapId } = require('../utils/quoteIds');
+const { quoteTapId, quoteStartTapId } = require('../utils/quoteIds');
+const { tapNodeId, payloadNodeId, quoteFlowEntry } = require('../utils/quoteChat');
 const { money, formatUntil, routeLine, countText } = require('../utils/quoteText');
 const { findFlowEntryNodeId } = require('../utils/flowGraphValidation');
 
@@ -522,4 +523,64 @@ const handleTap = async (ctx, tap) => {
 /** "This quote is no longer available": a tap whose id is malformed, unknown, or another customer's. */
 const handleStaleTap = (ctx) => sendUnavailable(ctx);
 
-module.exports = { buildQuoteText, quoteButtons, tripLines, handleResult, handleTap, handleStaleTap, languageOf };
+// ---- an expired quote chat ----------------------------------------------------------------------------
+
+const EXPIRED_CHAT_WINDOW_MS = 24 * HOUR_MS; // WhatsApp's own reply window: an older question is not "just answered late"
+
+/**
+ * The entry question of the quote flow a late answer belongs to, or null (not a quote flow's, or nothing to go by).
+ * Called only for a message no rule matched. A business with no route_picker node is dropped after one cheap query.
+ * A tap names its question ("{nodeId}:{n}"); a typed answer is matched to the customer's last bot message when that
+ * was a buttons / list question (its saved payload carries the same ids).
+ */
+const findExpiredQuoteChat = async (ctx, tappedId) => {
+  const businessId = ctx.tenant.businessId;
+  const { data: pickers, error } = await supabase.from('flow_nodes').select('id')
+    .eq('business_id', businessId).eq('node_type', 'route_picker').eq('is_active', true).limit(1);
+  if (error) throw error;
+  if (!pickers || pickers.length === 0) return null;
+
+  let nodeId = tapNodeId(tappedId);
+  if (!nodeId && !tappedId) {
+    const since = new Date(Date.now() - EXPIRED_CHAT_WINDOW_MS).toISOString();
+    const { data: last, error: lastErr } = await supabase.from('messages').select('interactive_payload')
+      .eq('business_id', businessId).eq('customer_id', ctx.customer.id).eq('direction', 'outbound').eq('sender_type', 'bot')
+      .gte('created_at', since).order('created_at', { ascending: false }).limit(1);
+    if (lastErr) throw lastErr;
+    nodeId = payloadNodeId(last && last[0] ? last[0].interactive_payload : null);
+  }
+  if (!nodeId) return null;
+  const { nodes, edges } = await bookingGraphService.loadGraph(businessId);
+  return quoteFlowEntry(nodes, edges, nodeId);
+};
+
+/**
+ * "That quote chat expired" with a "Get a quote" button, for a quote question tapped or answered after the 5-minute
+ * session ended. Returns true when it replied (the caller then stops: nothing else answers this message), false when
+ * the message is not a quote-flow answer or anything failed (logged) - the caller carries on as before.
+ * @param {string|null} tappedId  the button / list id of the message, null for typed text
+ */
+const handleExpiredChat = async (ctx, tappedId) => {
+  try {
+    const entryNodeId = await findExpiredQuoteChat(ctx, tappedId);
+    if (!entryNodeId) return false;
+    const lang = languageOf(ctx);
+    await deliver(ctx, {
+      text: getSystemMessage('quoteChatExpired', lang),
+      buttons: [{ title: getSystemMessage('quoteBtnStart', lang), nextKeyword: quoteStartTapId(entryNodeId) }]
+    });
+    return true;
+  } catch (error) {
+    logger.error('Quote: could not check for an expired quote chat:', { businessId: ctx.tenant.businessId, message: error.message });
+    return false;
+  }
+};
+
+/** The "Get a quote" button: starts the quote flow at its entry question (only an entry of a real quote flow of this business). */
+const handleStart = async (ctx, entryNodeId) => {
+  const { nodes, edges } = await bookingGraphService.loadGraph(ctx.tenant.businessId);
+  if (quoteFlowEntry(nodes, edges, entryNodeId) !== entryNodeId) { await sendUnavailable(ctx); return {}; }
+  return { restart: { entryNodeId } };
+};
+
+module.exports = { buildQuoteText, quoteButtons, tripLines, handleResult, handleTap, handleStaleTap, handleExpiredChat, handleStart, languageOf };

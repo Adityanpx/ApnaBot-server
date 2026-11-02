@@ -10,6 +10,17 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const quoteTapId = (quoteId, action) => `${PREFIX}${quoteId}:${action}`;
 
+// "quote:start:{entryNodeId}": the "Get a quote" button of the expired-chat reply - starts the quote flow at that entry question.
+const START = 'start';
+const quoteStartTapId = (entryNodeId) => `${PREFIX}${START}:${entryNodeId}`;
+
+/** @returns {{ entryNodeId: string } | null} */
+const parseQuoteStartTapId = (id) => {
+  if (typeof id !== 'string' || !id.startsWith(`${PREFIX}${START}:`)) return null;
+  const entryNodeId = id.slice(`${PREFIX}${START}:`.length);
+  return UUID.test(entryNodeId) ? { entryNodeId: entryNodeId.toLowerCase() } : null;
+};
+
 /** @returns {{ quoteId: string, action: string } | null} null for anything that is not a well-formed quote tap */
 const parseQuoteTapId = (id) => {
   if (typeof id !== 'string' || !id.startsWith(PREFIX)) return null;
@@ -18,4 +29,4 @@ const parseQuoteTapId = (id) => {
   return { quoteId: quoteId.toLowerCase(), action };
 };
 
-module.exports = { QUOTE_TAP_PREFIX: PREFIX, QUOTE_ACTIONS: ACTIONS, quoteTapId, parseQuoteTapId };
+module.exports = { QUOTE_TAP_PREFIX: PREFIX, QUOTE_ACTIONS: ACTIONS, quoteTapId, parseQuoteTapId, quoteStartTapId, parseQuoteStartTapId };

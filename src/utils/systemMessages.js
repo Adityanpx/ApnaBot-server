@@ -615,6 +615,13 @@ const SYSTEM_MESSAGES = {
   quoteBtnChange: { en: 'Change', hi: 'बदलें', mr: 'बदला' },
   quoteBtnTalk: { en: 'Talk to us', hi: 'हमसे बात करें', mr: 'आमच्याशी बोला' },
   quoteBtnPaid: { en: "I've paid", hi: 'मैंने भुगतान किया', mr: 'मी पैसे भरले' },
+  // The customer answered a quote question after the booking chat ended (services/quoteFlow.service.js#handleExpiredChat).
+  quoteChatExpired: {
+    en: 'That quote chat expired. Tap *Get a quote* to start again.',
+    hi: 'यह किराया चैट समाप्त हो गई है। फिर से शुरू करने के लिए *किराया जानें* दबाएँ।',
+    mr: 'ही भाडे चॅट संपली आहे. पुन्हा सुरू करण्यासाठी *भाडे जाणून घ्या* दाबा.'
+  },
+  quoteBtnStart: { en: 'Get a quote', hi: 'किराया जानें', mr: 'भाडे जाणून घ्या' },
   quoteBtnNew: { en: 'New quote', hi: 'नया किराया', mr: 'नवीन भाडे' },
   quoteNoVehicle: {
     en: "Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.",

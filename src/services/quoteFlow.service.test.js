@@ -612,3 +612,90 @@ test('the quote names the route in the customer\'s language when the quote carri
   assert.ok(quoteFlow.buildQuoteText(q, 'hi').split('\n').includes('Pune → Shirdi'), 'no Hindi translation: English');
   assert.ok(quoteFlow.buildQuoteText(q, 'en').split('\n').includes('Pune → Shirdi'));
 });
+
+// ── an expired quote chat ─────────────────────────────────────────────────────
+
+const Q = { menu: uuid(1000), trip: uuid(1001), picker: uuid(1002), pax: uuid(1003), quote: uuid(1004), otherMenu: uuid(1010), otherQ: uuid(1011) };
+const quoteGraph = () => ({
+  nodes: [
+    { id: Q.menu, nodeType: 'reply' }, { id: Q.trip, nodeType: 'question' }, { id: Q.picker, nodeType: 'route_picker' },
+    { id: Q.pax, nodeType: 'question' }, { id: Q.quote, nodeType: 'quote' }, { id: Q.otherMenu, nodeType: 'reply' }, { id: Q.otherQ, nodeType: 'question' }
+  ],
+  edges: [
+    { fromNodeId: Q.menu, toNodeId: Q.trip }, { fromNodeId: Q.trip, toNodeId: Q.picker }, { fromNodeId: Q.picker, toNodeId: Q.pax },
+    { fromNodeId: Q.pax, toNodeId: Q.quote }, { fromNodeId: Q.otherMenu, toNodeId: Q.otherQ }
+  ]
+});
+const quoteBusiness = () => {
+  state.graph = quoteGraph();
+  db.flow_nodes = [{ id: Q.picker, business_id: B1, node_type: 'route_picker', is_active: true }];
+};
+const lastBot = (payload, at = new Date()) => (db.messages ||= []).push({
+  id: `m${(db.messages || []).length + 1}`, business_id: B1, customer_id: CUSTOMER.id, direction: 'outbound', sender_type: 'bot',
+  interactive_payload: payload, created_at: at.toISOString()
+});
+const paxPayload = () => ({ kind: 'buttons', body: 'How many?', options: [{ id: `${Q.pax}:0`, title: '1-4' }, { id: `${Q.pax}:1`, title: '5-6' }] });
+
+test('expired chat, a stale tap on a quote question: "That quote chat expired" with one "Get a quote" button that restarts at the entry', async () => {
+  quoteBusiness();
+  assert.equal(await quoteFlow.handleExpiredChat(ctxFor(), `${Q.pax}:0`), true);
+  assert.equal(state.jobs.length, 1);
+  const [job] = state.jobs;
+  assert.equal(job.message, 'That quote chat expired. Tap *Get a quote* to start again.');
+  assert.deepEqual(job.buttons.map((b) => b.title), ['Get a quote']);
+  assert.equal(job.buttons[0].nextKeyword, `quote:start:${Q.trip}`);
+  assert.equal(db.messages.length, 1, 'saved to the chat');
+  assert.deepEqual(await quoteFlow.handleStart(ctxFor(), Q.trip), { restart: { entryNodeId: Q.trip } });
+});
+
+test('expired chat, a typed answer: matched to the last bot message when that was a quote question; in the customer\'s language', async () => {
+  quoteBusiness();
+  lastBot(paxPayload());
+  const hi = { ...CUSTOMER, preferredLanguage: 'hi' };
+  assert.equal(await quoteFlow.handleExpiredChat(ctxFor(hi), null), true);
+  assert.equal(state.jobs[0].message, 'यह किराया चैट समाप्त हो गई है। फिर से शुरू करने के लिए *किराया जानें* दबाएँ।');
+  assert.equal(state.jobs[0].buttons[0].title, 'किराया जानें');
+});
+
+test('expired chat: not offered when the last bot message was a quote, a plain text, another flow\'s question, older than a day, or another customer\'s', async () => {
+  quoteBusiness();
+  const none = async () => { state.jobs = []; return [await quoteFlow.handleExpiredChat(ctxFor(), null), state.jobs.length]; };
+  assert.deepEqual(await none(), [false, 0], 'no bot message at all');
+  lastBot({ kind: 'buttons', body: 'Your quote', options: [{ id: `quote:${uuid(7)}:confirm`, title: 'Confirm' }] });
+  assert.deepEqual(await none(), [false, 0], 'the quote itself');
+  lastBot(null);
+  assert.deepEqual(await none(), [false, 0], 'plain text');
+  db.messages = [];
+  lastBot({ kind: 'buttons', body: 'Other', options: [{ id: `${Q.otherQ}:0`, title: 'A' }] });
+  assert.deepEqual(await none(), [false, 0], 'a question of a flow with no route picker');
+  db.messages = [];
+  lastBot(paxPayload(), new Date(Date.now() - 25 * 3600 * 1000));
+  assert.deepEqual(await none(), [false, 0], 'older than 24 hours');
+  db.messages = [];
+  lastBot(paxPayload());
+  db.messages[0].customer_id = OTHER_CUSTOMER.id;
+  assert.deepEqual(await none(), [false, 0], 'another customer\'s chat');
+  assert.equal(await quoteFlow.handleExpiredChat(ctxFor(), 'lang_hi'), false, 'a tap that names no question');
+  assert.equal(await quoteFlow.handleExpiredChat(ctxFor(), 'quote:x:confirm'), false);
+});
+
+test('expired chat: a business with no quote flow (no route_picker node) is never touched, and a failure is swallowed', async () => {
+  state.graph = quoteGraph();
+  db.flow_nodes = [];
+  lastBot(paxPayload());
+  assert.equal(await quoteFlow.handleExpiredChat(ctxFor(), `${Q.pax}:0`), false);
+  db.flow_nodes = [{ id: Q.picker, business_id: B1, node_type: 'route_picker', is_active: true }];
+  state.graph = null; // loadGraph returns nothing usable -> the check throws
+  assert.equal(await quoteFlow.handleExpiredChat(ctxFor(), `${Q.pax}:0`), false);
+  assert.equal(state.jobs.length, 0);
+});
+
+test('Get a quote: only an entry question of a real quote flow starts; anything else is "no longer available"', async () => {
+  quoteBusiness();
+  assert.deepEqual(await quoteFlow.handleStart(ctxFor(), Q.pax), {}, 'a later question, not the entry');
+  assert.equal(state.jobs[0].message.startsWith('Sorry, this quote is no longer available'), true);
+  state.jobs = [];
+  assert.deepEqual(await quoteFlow.handleStart(ctxFor(), Q.otherQ), {}, 'a flow with no route picker');
+  assert.deepEqual(await quoteFlow.handleStart(ctxFor(), uuid(4242)), {}, 'unknown node');
+  assert.equal(state.jobs.length, 2, "one unavailable reply for each of the two refused starts");
+});

@@ -24,7 +24,7 @@ const { cleanValue } = require('../utils/templateValue');
 const { isIndefinitePause } = require('../utils/botPause');
 const { isChoiceFieldType, withTapHint } = require('../utils/bookingTapGuard');
 const { parseJoinCode, isSystemTapId, parseOptInTapId, OPT_IN_YES_PREFIX, OPT_IN_NO_PREFIX } = require('../utils/optInLink');
-const { QUOTE_TAP_PREFIX, parseQuoteTapId } = require('../utils/quoteIds');
+const { QUOTE_TAP_PREFIX, parseQuoteTapId, parseQuoteStartTapId } = require('../utils/quoteIds');
 // Loaded on first use (a quote tap / the quote step), so every other path loads exactly what it did before.
 const quoteFlowService = { get impl() { return require('../services/quoteFlow.service'); } };
 const optInLinkService = require('../services/optInLink.service');
@@ -964,12 +964,15 @@ const resendCurrentBookingPrompt = async (ctx, activeSession, { withHint = false
 const handleQuoteTap = async (ctx, buttonReplyId) => {
   const { tenant, customer, customerNumber } = ctx;
   const tap = parseQuoteTapId(buttonReplyId);
+  const start = parseQuoteStartTapId(buttonReplyId); // "Get a quote" on the expired-chat reply
   try {
-    if (!tap) {
+    if (!tap && !start) {
       await quoteFlowService.impl.handleStaleTap(ctx);
       return;
     }
-    const outcome = await quoteFlowService.impl.handleTap(ctx, tap);
+    const outcome = start
+      ? await quoteFlowService.impl.handleStart(ctx, start.entryNodeId)
+      : await quoteFlowService.impl.handleTap(ctx, tap);
     if (outcome.restart) {
       const ruleId = outcome.restart.entryNodeId;
       const { session, field } = await bookingGraphService.startGraphSessionAtNode(
@@ -2868,6 +2871,13 @@ const processWebhookChange = async (entry, changes) => {
         }
       }
     } else {
+      // A quote-flow question tapped or answered after its booking session ended (the session lasts 5 minutes):
+      // say so and offer "Get a quote" instead of the generic reply. Only a business with a quote flow (a route_picker
+      // node) and only a message that matched no rule gets here; any other message carries on below as before.
+      if (!isUnsupportedTypeTurn && await quoteFlowService.impl.handleExpiredChat({ tenant, customer, customerNumber }, buttonReplyId || listReplyId || null)) {
+        return;
+      }
+
       // No rule matched — try an AI-generated fallback (opt-in per business),
       // falling back to the static reply on any failure or timeout.
       let smartReply = null;
