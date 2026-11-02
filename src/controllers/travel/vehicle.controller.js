@@ -3,6 +3,7 @@ const { toCamelCase } = require('../../utils/caseConvert');
 const r2 = require('../../services/r2.service');
 const { successResponse, errorResponse } = require('../../utils/response');
 const logger = require('../../utils/logger');
+const { validateVehicleFareInput } = require('../../utils/travelQuote');
 
 /**
  * GET /api/vehicles/catalog
@@ -77,6 +78,10 @@ const createVehicle = async (req, res, next) => {
     if (!catalogId) {
       return errorResponse(res, 400, 'catalogId is required');
     }
+    const fareInput = validateVehicleFareInput(req.body);
+    if (fareInput.errors.length > 0) {
+      return errorResponse(res, 400, fareInput.errors[0], fareInput.errors);
+    }
 
     const { data: catalogEntry } = await supabase
       .from('vehicle_type_catalog').select('id').eq('id', catalogId).maybeSingle();
@@ -90,6 +95,7 @@ const createVehicle = async (req, res, next) => {
       custom_name: customName,
       custom_photo_url: customPhotoUrl,
       per_km_rate: perKmRate,
+      ...fareInput.value,
       order,
       is_active: true
     }).select().single();
@@ -126,11 +132,16 @@ const updateVehicle = async (req, res, next) => {
       }
     }
 
+    const fareInput = validateVehicleFareInput(req.body);
+    if (fareInput.errors.length > 0) {
+      return errorResponse(res, 400, fareInput.errors[0], fareInput.errors);
+    }
+
     const fieldMap = {
       catalogId: 'catalog_id', customName: 'custom_name', customPhotoUrl: 'custom_photo_url',
       perKmRate: 'per_km_rate', isActive: 'is_active', order: 'order'
     };
-    const updates = {};
+    const updates = { ...fareInput.value };
     for (const [field, column] of Object.entries(fieldMap)) {
       if (req.body[field] !== undefined) updates[column] = req.body[field];
     }

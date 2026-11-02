@@ -9,13 +9,14 @@
 // Errors the owner can fix are thrown with .statusCode (errorHandler maps it).
 const supabase = require('../config/supabase');
 const { toCamelCase } = require('../utils/caseConvert');
-const { validateRouteInput } = require('../utils/travelQuote');
+const { validateRouteInput, roundTripReadiness } = require('../utils/travelQuote');
+const distanceMatrixService = require('./distanceMatrix.service');
 
 const fail = (statusCode, message, errors = null) => Object.assign(new Error(message), { statusCode, errors });
 const pairKey = (from, to) => `${from}>${to}`;
 const titleCase = (key) => key.replace(/\b\w/g, c => c.toUpperCase());
 
-const FARE_SELECT = 'id, from_city, to_city, trip_type, vehicle_id, fare, is_active, route_id, vehicle:vehicles(id, custom_name, catalog:vehicle_type_catalog(name, seats))';
+const FARE_SELECT = 'id, from_city, to_city, trip_type, vehicle_id, fare, is_active, route_id, vehicle:vehicles(id, custom_name, is_active, per_km_rate, min_km_per_day, driver_allowance_per_day, catalog:vehicle_type_catalog(name, seats))';
 
 const fareToApi = (row) => ({
   id: row.id,
@@ -27,8 +28,34 @@ const fareToApi = (row) => ({
   isActive: row.is_active
 });
 
+const numberOrNull = (v) => (v === null || v === undefined ? null : Number(v));
+
+/**
+ * Whether Round Trip can be priced for the route (shown in the route editor as "Round Trip not
+ * ready: add distance"): its vehicles are the active ones with an active one-way or Round Trip fare.
+ * A vehicle's fixed Round Trip fare, or the route distance + the vehicle's min km and rate, prices it.
+ */
+const roundTripFor = (route, fareRows) => {
+  if (route.is_active === false) return { ready: false, reason: 'inactive' };
+  const byVehicle = new Map();
+  for (const row of fareRows) {
+    if (!row.is_active || !row.vehicle || row.vehicle.is_active === false) continue;
+    if (row.trip_type !== 'oneway' && row.trip_type !== 'round_trip') continue;
+    if (!byVehicle.has(row.vehicle_id)) {
+      byVehicle.set(row.vehicle_id, {
+        fare: null,
+        vehicle: { perKmRate: numberOrNull(row.vehicle.per_km_rate), minKmPerDay: numberOrNull(row.vehicle.min_km_per_day) }
+      });
+    }
+    if (row.trip_type === 'round_trip') byVehicle.get(row.vehicle_id).fare = numberOrNull(row.fare);
+  }
+  return roundTripReadiness({ oneWayKm: numberOrNull(route.one_way_distance_km), vehicles: [...byVehicle.values()] });
+};
+
 const routeToApi = (route, fareRows) => ({
   ...toCamelCase(route),
+  oneWayDistanceKm: numberOrNull(route.one_way_distance_km),
+  roundTrip: roundTripFor(route, fareRows),
   fares: fareRows.map(fareToApi)
 });
 
@@ -65,7 +92,8 @@ const listRoutes = async (businessId) => {
     const [from, to] = key.split('>');
     result.push({
       id: null, unlisted: true, fromCity: from, toCity: to, fromLabel: titleCase(from), toLabel: titleCase(to),
-      region: null, tollIncluded: null, sortOrder: 0, isActive: rows.some(r => r.is_active), fares: rows.map(fareToApi)
+      region: null, tollIncluded: null, sortOrder: 0, isActive: rows.some(r => r.is_active), oneWayDistanceKm: null,
+      roundTrip: roundTripFor({ is_active: true, one_way_distance_km: null }, rows), fares: rows.map(fareToApi)
     });
   }
   return result;
@@ -171,6 +199,34 @@ const updateRoute = async (businessId, id, body) => {
   return routeWithFares(route);
 };
 
+/**
+ * "Fill from Google": looks up the driving distance for the route and saves it as the route's
+ * one-way distance (the owner can edit it afterwards). Asks Google with the same city keys the
+ * distance-fares engine uses (booking.service.js#findDistanceBasedVehicleOptions passes the lowercased
+ * city names to distanceMatrix.service.getDistanceKm) - but fresh, not through that engine's 7-day
+ * Redis cache (distance:{businessId}:{from}:{to}), and the saved value lives in the database.
+ * getDistanceKm returns null for a missing GOOGLE_MAPS_API_KEY, a Google error or an unknown place
+ * (the engine then silently offers nothing); here each of those is a clear error telling the owner to type it.
+ * @returns {Promise<{ route: Object, distanceKm: number, source: 'google' }>}
+ */
+const fillDistance = async (businessId, id) => {
+  const existing = await loadRoute(businessId, id);
+  if (!existing) throw fail(404, 'Route not found');
+  if (!process.env.GOOGLE_MAPS_API_KEY) {
+    throw fail(503, 'Automatic distance lookup is not set up on the server. Type the one-way distance in km instead.');
+  }
+  const km = await distanceMatrixService.getDistanceKm(existing.from_city, existing.to_city);
+  const distanceKm = km === null || km === undefined ? null : Math.round(km * 10) / 10;
+  const { errors } = validateRouteInput({ oneWayDistanceKm: distanceKm }, { isEdit: true });
+  if (distanceKm === null || errors.length > 0) {
+    throw fail(422, `Could not find a driving distance from ${titleCase(existing.from_city)} to ${titleCase(existing.to_city)}. Type the one-way distance in km instead.`);
+  }
+  const { data, error } = await supabase.from('travel_routes')
+    .update({ one_way_distance_km: distanceKm }).eq('id', id).eq('business_id', businessId).select().single();
+  if (error) throw error;
+  return { route: await routeWithFares(data), distanceKm, source: 'google' };
+};
+
 /** Deletes a route and all its fares. */
 const deleteRoute = async (businessId, id) => {
   const existing = await loadRoute(businessId, id);
@@ -182,4 +238,4 @@ const deleteRoute = async (businessId, id) => {
   if (error) throw error;
 };
 
-module.exports = { listRoutes, createRoute, updateRoute, deleteRoute };
+module.exports = { listRoutes, createRoute, updateRoute, fillDistance, deleteRoute };

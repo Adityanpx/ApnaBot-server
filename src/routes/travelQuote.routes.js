@@ -14,6 +14,7 @@ router.use(protect, requireBusiness, requireCategoryFeature('travel_quotes'));
 router.get('/routes', travelQuoteController.getRoutes);
 router.post('/routes', requireRole('owner'), travelQuoteController.createRoute);
 router.put('/routes/:id', requireRole('owner'), travelQuoteController.updateRoute);
+router.post('/routes/:id/fill-distance', requireRole('owner'), travelQuoteController.fillRouteDistance);
 router.delete('/routes/:id', requireRole('owner'), travelQuoteController.deleteRoute);
 
 // Extras + quote timing (+ the business-wide advance, read-only)

@@ -33,6 +33,12 @@ const updateRoute = handler('updateRoute', async (req, res) => {
   return successResponse(res, 200, route, 'Route updated successfully');
 });
 
+/** POST /api/travel/routes/:id/fill-distance - saves the Google driving distance as the route's one-way distance */
+const fillRouteDistance = handler('fillRouteDistance', async (req, res) => {
+  const result = await travelRouteService.fillDistance(req.user.businessId, req.params.id);
+  return successResponse(res, 200, result, 'Distance saved');
+});
+
 /** DELETE /api/travel/routes/:id */
 const deleteRoute = handler('deleteRoute', async (req, res) => {
   await travelRouteService.deleteRoute(req.user.businessId, req.params.id);
@@ -72,6 +78,6 @@ const getQuoteReport = handler('getQuoteReport', async (req, res) => {
 });
 
 module.exports = {
-  getRoutes, createRoute, updateRoute, deleteRoute,
+  getRoutes, createRoute, updateRoute, fillRouteDistance, deleteRoute,
   getSettings, updateSettings, getQuotes, cancelQuote, getQuoteReport
 };

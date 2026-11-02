@@ -111,19 +111,20 @@ test('send: prices from the rate card, saves a sent quote, sends the message wit
   assert.equal(db.messages.length, 1);
 });
 
-test('send: night charge, driver allowance and minimum charge are itemised; the total is rounded and the toll override shown', async () => {
+test('send: a Round Trip package fare gets the night charge only (the retired settings allowance is ignored), exact to the rupee, and the toll override shown', async () => {
   db.travel_quote_settings = [{ business_id: B1, night_charge: 300, night_start_minute: 1320, night_end_minute: 360, driver_allowance_per_day: 500, toll_included: false, minimum_charge: 0, valid_hours: 24, reminder_after_hours: 3 }];
   db.travel_routes = [{ id: 'route-1', business_id: B1, toll_included: true }];
   await send(session({ tripType: 'Round Trip', numberOfDays: '2', pickupMinute: 1380, pickupTime: '11:00 PM', vehicleFare: 4905 }));
   const [q] = quotes();
   assert.equal(q.trip_type, 'round_trip');
-  assert.deepEqual(q.extras.map(e => [e.key, e.amount]), [['night_charge', 300], ['driver_allowance', 1000]]);
-  assert.equal(q.total_amount, 6210); // 4905 + 300 + 1000 = 6205 -> nearest 10
+  assert.deepEqual(q.extras.map(e => [e.key, e.amount]), [['night_charge', 300]]);
+  assert.equal(q.total_amount, 5205); // 4905 + 300, used as entered (Round Trip is not rounded to 10)
   assert.equal(q.collected.tollIncluded, true);
   const text = state.jobs[0].message;
-  for (const part of ['Fare: ₹4,905', 'Night charge: ₹300', 'Driver allowance (2 day(s)): ₹1,000', 'Total: *₹6,210*', 'Toll is included']) {
+  for (const part of ['Fare: ₹4,905', 'Night charge: ₹300', 'Total: *₹5,205*', 'Toll is included']) {
     assert.ok(text.includes(part), part);
   }
+  assert.ok(!text.includes('Driver allowance'));
 });
 
 test('send: with the advance off the button says Confirm and no advance line is shown', async () => {

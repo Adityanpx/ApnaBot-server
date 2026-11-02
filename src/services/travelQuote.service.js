@@ -16,10 +16,16 @@ const fail = (statusCode, message, errors = null) => Object.assign(new Error(mes
 const PAGE_SIZE_MAX = 50;
 const STATUSES = ['sent', 'accepted', 'paid', 'expired', 'cancelled', 'handoff'];
 
+// driverAllowancePerDay is RETIRED (the per-vehicle allowance replaced it; nothing prices from it). It is
+// still returned, read-only, because the live Rates -> Settings page builds its form from it and would
+// fail its own validation without it; PUT ignores it. Remove once the web page stops showing it.
 const settingsFromRow = (row) => {
-  if (!row) return { ...DEFAULT_SETTINGS };
+  if (!row) return { ...DEFAULT_SETTINGS, driverAllowancePerDay: 0 };
   const camel = toCamelCase(row);
-  return Object.fromEntries(Object.keys(DEFAULT_SETTINGS).map(key => [key, camel[key] ?? DEFAULT_SETTINGS[key]]));
+  return {
+    ...Object.fromEntries(Object.keys(DEFAULT_SETTINGS).map(key => [key, camel[key] ?? DEFAULT_SETTINGS[key]])),
+    driverAllowancePerDay: Number(row.driver_allowance_per_day ?? 0)
+  };
 };
 
 const loadSettingsRow = async (businessId) => {
