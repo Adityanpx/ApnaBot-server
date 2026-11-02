@@ -504,10 +504,25 @@ test('Round Trip text in Hindi and Marathi: Days line, breakdown, allowance and 
   }
 });
 
-test('a Round Trip priced for other days than the quote is refused, never sent', async () => {
+test('a Round Trip priced for other days than the quote is never sent: the customer gets the owner-confirms reply, a lead and the alert - not a generic error', async () => {
+  state.handoffSettings = { enabled: true };
   const s = roundTripSession({ days: 3 });
   s.collected.numberOfDays = '4';
-  await assert.rejects(() => send(s), /different number of days/);
+  const out = await send(s); // does not throw
+  assert.equal(quotes().length, 1);
+  const [q] = quotes();
+  assert.deepEqual([q.status, q.total_amount, q.collected.reason, q.collected.pricingReason, q.collected.days, q.vehicle_id], ['handoff', 0, 'price_on_request', 'days_mismatch', 4, 'veh-1']);
+  assert.equal(out.quoteId, q.id);
+  assert.deepEqual(state.raiseArgs.quoteRequest, { route: 'Pune → Mumbai', vehicle: 'Toyota Innova Crysta', days: 4 });
+  assert.equal(state.jobs.length, 1);
+  assert.ok(state.jobs[0].message.startsWith('We will confirm the Round Trip price'));
+  assert.ok(!state.jobs[0].message.includes('Total:'), 'no price is sent');
+  assert.deepEqual(state.deleted, [[B1, '919000000001']]);
+});
+
+test('any other failure while creating the quote still reaches the caller (the webhook sends its fallback)', async () => {
+  const s = session({ vehicleFare: undefined }); // no fare in the session
+  await assert.rejects(() => send(s), /no vehicle fare/);
   assert.equal(quotes().length, 0);
 });
 

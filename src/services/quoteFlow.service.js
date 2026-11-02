@@ -31,6 +31,8 @@ const { money, formatUntil } = require('../utils/quoteText');
 const { findFlowEntryNodeId } = require('../utils/flowGraphValidation');
 
 const HOUR_MS = 60 * 60 * 1000;
+// createQuote refuses to send a price that does not match the quote (handleResult hands the customer to the owner instead).
+const PRICE_MISMATCH = 'QUOTE_PRICE_MISMATCH';
 
 /** The language a message goes out in: the customer's if the business still offers it, else its first. */
 const languageOf = ({ tenant, customer }) => {
@@ -222,7 +224,7 @@ const createQuote = async (ctx, session, quoteNodeId) => {
   // the card): the quote uses that price, so the card, the tap and the quote cannot disagree.
   const tapPricing = tripType === 'round_trip' && c.quotePricing ? c.quotePricing : null;
   if (tapPricing && tapPricing.method === 'formula' && tapPricing.days !== days) {
-    throw new Error('Quote: the Round Trip was priced for a different number of days than the quote');
+    throw Object.assign(new Error('Quote: the Round Trip was priced for a different number of days than the quote'), { code: PRICE_MISMATCH });
   }
   const priced = computeQuote({
     baseFare,
@@ -339,16 +341,28 @@ const raiseHandoff = async (ctx, { quoteRequest = null, replyKey = null } = {}) 
 /**
  * @param {{ tenant: Object, customer: Object, customerNumber: string }} ctx
  * @param {Object} session  the booking session as the engine left it
- * @param {{ action: 'send'|'no_vehicle'|'handoff', reason: string|null, nodeId?: string }} quote
+ * @param {{ action: 'send'|'no_vehicle'|'handoff', reason: string|null, nodeId?: string, pricingReason?: string }} result
  */
-const handleResult = async (ctx, session, quote) => {
+const handleResult = async (ctx, session, result) => {
   const { tenant, customerNumber } = ctx;
   const lang = languageOf(ctx);
+  let quote = result;
   try {
     if (quote.action === 'send') {
-      const row = await createQuote(ctx, session, quote.nodeId);
-      await deliver(ctx, { text: buildQuoteText(row, lang), buttons: quoteButtons(row, lang), ruleId: session.ruleId || null });
-      return { quoteId: row.id };
+      let row;
+      try {
+        row = await createQuote(ctx, session, quote.nodeId);
+      } catch (error) {
+        if (error.code !== PRICE_MISMATCH) throw error;
+        // Never send a price that is not the one priced at the vehicle tap, and never leave the customer with
+        // a generic error: the owner confirms the price (the hand-off below, with the trip in the alert).
+        logger.error('Quote: price mismatch, handing the customer to the owner instead:', { businessId: tenant.businessId, message: error.message });
+        quote = { action: 'handoff', reason: 'price_on_request', pricingReason: 'days_mismatch' };
+      }
+      if (row) {
+        await deliver(ctx, { text: buildQuoteText(row, lang), buttons: quoteButtons(row, lang), ruleId: session.ruleId || null });
+        return { quoteId: row.id };
+      }
     }
 
     if (quote.action === 'no_vehicle') {
