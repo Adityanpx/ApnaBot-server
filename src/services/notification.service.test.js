@@ -377,3 +377,19 @@ test('travel quote alerts: worded in every language, kept out of the alert setti
   }
   assert.equal(svc.buildText('quote_paid_claim', { customerName: 'Ravi', amount: 700 }, 'en').body, 'Ravi says they paid ₹700. Please check and mark it paid');
 });
+
+test('a Round Trip the owner has to price: the alert names who, route, vehicle and days (en/hi/mr); the plain handoff text is unchanged', () => {
+  const payload = { customerName: 'Ravi', quoteRequest: { route: 'Pune → Shirdi', vehicle: 'Innova Crysta', days: 3 } };
+  assert.deepEqual(svc.buildText('human_needed', payload, 'en'), { title: 'Round Trip price needed', body: 'Ravi · Pune → Shirdi · Innova Crysta · 3 days' });
+  assert.equal(svc.buildText('human_needed', payload, 'hi').body, 'Ravi · Pune → Shirdi · Innova Crysta · 3 दिन');
+  assert.equal(svc.buildText('human_needed', payload, 'mr').body, 'Ravi · Pune → Shirdi · Innova Crysta · 3 दिवस');
+  assert.equal(svc.buildText('human_needed', { customerName: 'Ravi' }, 'en').body, "Ravi asked something the bot couldn't answer");
+});
+
+test('booking_new for a quoted Round Trip adds the days and the billed km', () => {
+  const base = { customerName: 'Ravi', summary: 'Innova Crysta', date: '03/11/2026' };
+  assert.equal(svc.buildText('booking_new', { ...base, days: 3, billedKm: 750 }, 'en').body, 'Ravi · Innova Crysta · 03/11/2026 · 3 days · 750 km');
+  assert.equal(svc.buildText('booking_new', { ...base, days: 3, billedKm: 750 }, 'hi').body, 'Ravi · Innova Crysta · 03/11/2026 · 3 दिन · 750 किमी');
+  assert.equal(svc.buildText('booking_new', { ...base, days: null, billedKm: null }, 'en').body, 'Ravi · Innova Crysta · 03/11/2026');
+  assert.equal(svc.buildText('booking_new', base, 'en').body, 'Ravi · Innova Crysta · 03/11/2026');
+});

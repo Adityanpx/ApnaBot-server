@@ -245,6 +245,41 @@ const priceVehicleTrip = ({ tripType, days = null, fare = null, oneWayKm = null,
   return computed.ok ? { ...computed, method: 'formula', baseFare: computed.kmCharge } : computed;
 };
 
+const numberOrNull = (v) => (v === null || v === undefined ? null : Number(v));
+
+/**
+ * The vehicles a route can offer for a Round Trip, from its route_fares rows joined with their vehicle
+ * (snake_case, as supabase returns them): the active vehicles with an active One Way or Round Trip fare
+ * on the route. `fare` is the vehicle's fixed Round Trip fare (null when it has none). Used by the route
+ * list's readiness, the quotable-route filter and the carousel, so all three see the same vehicles.
+ * @returns {{ vehicleId:string, fare:number|null, row:Object, vehicle:{ perKmRate, minKmPerDay, driverAllowancePerDay } }[]}
+ */
+const roundTripCandidates = (fareRows) => {
+  const byVehicle = new Map();
+  for (const row of fareRows || []) {
+    if (!row.is_active || !row.vehicle || row.vehicle.is_active === false) continue;
+    if (row.trip_type !== 'oneway' && row.trip_type !== 'round_trip') continue;
+    if (!byVehicle.has(row.vehicle_id)) {
+      byVehicle.set(row.vehicle_id, {
+        vehicleId: row.vehicle_id,
+        fare: null,
+        row,
+        vehicle: {
+          perKmRate: numberOrNull(row.vehicle.per_km_rate),
+          minKmPerDay: numberOrNull(row.vehicle.min_km_per_day),
+          driverAllowancePerDay: numberOrNull(row.vehicle.driver_allowance_per_day)
+        }
+      });
+    }
+    if (row.trip_type === 'round_trip') {
+      const entry = byVehicle.get(row.vehicle_id);
+      entry.fare = numberOrNull(row.fare);
+      entry.row = row; // the Round Trip row is the one a package quote is priced from
+    }
+  }
+  return [...byVehicle.values()];
+};
+
 /**
  * Whether Round Trip can be priced for a route at all (any day count), and if not, what to add first.
  * A route is offered for Round Trip only when at least one of its vehicles can be priced.
@@ -348,5 +383,5 @@ const filterOptionsBySeats = (options, passengers) => {
 module.exports = {
   minSeatsFor, filterOptionsBySeats,
   TRIP_TYPES, DEFAULT_SETTINGS, normalizeCity, validateRouteInput, validateSettingsInput, validateVehicleFareInput,
-  isNightMinute, computeRoundTripFare, priceVehicleTrip, roundTripReadiness, computeQuote, computeAdvance
+  isNightMinute, computeRoundTripFare, priceVehicleTrip, roundTripCandidates, roundTripReadiness, computeQuote, computeAdvance
 };

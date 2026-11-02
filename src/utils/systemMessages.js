@@ -515,6 +515,54 @@ const SYSTEM_MESSAGES = {
     hi: 'न्यूनतम शुल्क समायोजन: ₹{{amount}}',
     mr: 'किमान शुल्क समायोजन: ₹{{amount}}'
   },
+  // Round Trip quotes: the Days line and the fare breakdown (billed km x rate + driver allowance).
+  quoteDaysLine: { en: 'Days: *{{days}}*', hi: 'दिन: *{{days}}*', mr: 'दिवस: *{{days}}*' },
+  quoteKmFareLine: {
+    en: 'Fare: {{km}} km × ₹{{rate}}/km = ₹{{amount}}',
+    hi: 'किराया: {{km}} किमी × ₹{{rate}}/किमी = ₹{{amount}}',
+    mr: 'भाडे: {{km}} किमी × ₹{{rate}}/किमी = ₹{{amount}}'
+  },
+  quoteBilledByMin: {
+    en: 'Billed distance: {{km}} km ({{days}} day(s) × {{min}} km minimum per day)',
+    hi: 'बिल किया गया अंतर: {{km}} किमी ({{days}} दिन × {{min}} किमी न्यूनतम प्रतिदिन)',
+    mr: 'बिल केलेले अंतर: {{km}} किमी ({{days}} दिवस × दररोज किमान {{min}} किमी)'
+  },
+  quoteBilledByDistance: {
+    en: 'Billed distance: {{km}} km (there and back, 2 × {{one}} km)',
+    hi: 'बिल किया गया अंतर: {{km}} किमी (आना-जाना, 2 × {{one}} किमी)',
+    mr: 'बिल केलेले अंतर: {{km}} किमी (जाऊन-येऊन, 2 × {{one}} किमी)'
+  },
+  quoteExtraDriverDays: {
+    en: 'Driver allowance ({{units}} day(s) × ₹{{perUnit}}): ₹{{amount}}',
+    hi: 'ड्राइवर भत्ता ({{units}} दिन × ₹{{perUnit}}): ₹{{amount}}',
+    mr: 'ड्रायव्हर भत्ता ({{units}} दिवस × ₹{{perUnit}}): ₹{{amount}}'
+  },
+  quoteExtraDriverNights: {
+    en: 'Driver allowance ({{units}} night(s) × ₹{{perUnit}}): ₹{{amount}}',
+    hi: 'ड्राइवर भत्ता ({{units}} रात × ₹{{perUnit}}): ₹{{amount}}',
+    mr: 'ड्रायव्हर भत्ता ({{units}} रात्री × ₹{{perUnit}}): ₹{{amount}}'
+  },
+  quotePackageFareLine: { en: 'Package fare: ₹{{amount}}', hi: 'पैकेज किराया: ₹{{amount}}', mr: 'पॅकेज भाडे: ₹{{amount}}' },
+  quoteActualKmNote: {
+    en: 'The final fare is by actual km if the trip runs more than the billed km.',
+    hi: 'यदि यात्रा बिल किए गए किमी से अधिक चलती है तो अंतिम किराया वास्तविक किमी के अनुसार होगा।',
+    mr: 'प्रवास बिल केलेल्या किमीपेक्षा जास्त झाल्यास अंतिम भाडे प्रत्यक्ष किमीनुसार असेल.'
+  },
+  // The vehicle card's price for a Round Trip quote, joined with " • " (utils/quoteText.js#carouselPriceText).
+  quoteCardDays: { en: '{{days}} day(s)', hi: '{{days}} दिन', mr: '{{days}} दिवस' },
+  quoteCardKm: { en: '{{km}} km', hi: '{{km}} किमी', mr: '{{km}} किमी' },
+  quoteCardPackage: { en: 'package fare', hi: 'पैकेज किराया', mr: 'पॅकेज भाडे' },
+  quoteCardOnRequest: { en: 'Price: our team will confirm', hi: 'किराया: हमारी टीम बताएगी', mr: 'भाडे: आमची टीम कळवेल' },
+  quotePriceOnRequestReply: {
+    en: 'We will confirm the Round Trip price for your trip and get back to you shortly. Our team has been notified.',
+    hi: 'हम आपकी राउंड ट्रिप का किराया तय करके जल्द ही आपको बताएँगे। हमारी टीम को सूचित कर दिया गया है।',
+    mr: 'आम्ही तुमच्या राउंड ट्रिपचे भाडे निश्चित करून लवकरच कळवू. आमच्या टीमला कळवले आहे.'
+  },
+  quotePriceChanged: {
+    en: 'The prices were just updated. Please choose again:',
+    hi: 'कीमतें अभी अपडेट हुई हैं। कृपया फिर से चुनें:',
+    mr: 'किमती आत्ताच अपडेट झाल्या आहेत. कृपया पुन्हा निवडा:'
+  },
   quoteTotalLine: { en: 'Total: *₹{{amount}}*', hi: 'कुल: *₹{{amount}}*', mr: 'एकूण: *₹{{amount}}*' },
   quoteTollIncluded: { en: 'Toll is included in this fare.', hi: 'इस किराये में टोल शामिल है।', mr: 'या भाड्यात टोल समाविष्ट आहे.' },
   quoteTollExtra: {

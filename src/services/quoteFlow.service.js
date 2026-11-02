@@ -44,7 +44,14 @@ const languageOf = ({ tenant, customer }) => {
 const extraLine = (extra, lang, quote) => {
   const amount = money(extra.amount);
   if (extra.key === 'night_charge') return getSystemMessage('quoteExtraNight', lang, { amount });
-  if (extra.key === 'driver_allowance') return getSystemMessage('quoteExtraDriver', lang, { days: quote.collected?.days ?? '', amount });
+  if (extra.key === 'driver_allowance') {
+    const allowance = quote.collected?.pricing?.allowance;
+    if (allowance) {
+      const key = allowance.basis === 'night' ? 'quoteExtraDriverNights' : 'quoteExtraDriverDays';
+      return getSystemMessage(key, lang, { units: allowance.units, perUnit: money(allowance.perUnit), amount });
+    }
+    return getSystemMessage('quoteExtraDriver', lang, { days: quote.collected?.days ?? '', amount }); // a quote saved before per-vehicle allowances
+  }
   return getSystemMessage('quoteExtraMinimum', lang, { amount });
 };
 
@@ -54,6 +61,7 @@ const tripLines = (quote, lang) => {
   const msg = (key, vars) => getSystemMessage(key, lang, vars);
   const lines = [`${c.fromLabel} → ${c.toLabel}`,
     msg('quoteTripLine', { trip: msg(quote.trip_type === 'round_trip' ? 'quoteTripRoundTrip' : 'quoteTripOneWay') })];
+  if (quote.trip_type === 'round_trip' && c.days) lines.push(msg('quoteDaysLine', { days: c.days }));
   if (c.date) lines.push(msg('quoteDateLine', { date: c.date }));
   if (c.pickupTime) lines.push(msg('quoteTimeLine', { time: c.pickupTime }));
   if (c.passengers) lines.push(msg('quotePassengersLine', { passengers: c.passengers }));
@@ -69,12 +77,26 @@ const tripLines = (quote, lang) => {
 const buildQuoteText = (quote, lang) => {
   const msg = (key, vars) => getSystemMessage(key, lang, vars);
   const extras = Array.isArray(quote.extras) ? quote.extras : [];
+  const pricing = quote.collected?.pricing || null;
   const lines = [msg('quoteHeader'), '', ...tripLines(quote, lang), ''];
-  if (extras.length > 0) {
+  if (pricing?.method === 'formula') {
+    // billed km x the vehicle's rate, why that many km, then the allowance / night / minimum lines
+    const byDistance = Math.round(pricing.billedKm * 10) === Math.round(2 * pricing.oneWayKm * 10);
+    lines.push(
+      msg('quoteKmFareLine', { km: money(pricing.billedKm), rate: money(pricing.ratePerKm), amount: money(quote.base_fare) }),
+      byDistance
+        ? msg('quoteBilledByDistance', { km: money(pricing.billedKm), one: money(pricing.oneWayKm) })
+        : msg('quoteBilledByMin', { km: money(pricing.billedKm), days: pricing.days, min: money(pricing.minKmPerDay) }),
+      ...extras.map(e => extraLine(e, lang, quote))
+    );
+  } else if (pricing?.method === 'package') {
+    lines.push(msg('quotePackageFareLine', { amount: money(quote.base_fare) }), ...extras.map(e => extraLine(e, lang, quote)));
+  } else if (extras.length > 0) {
     lines.push(msg('quoteBaseFareLine', { amount: money(quote.base_fare) }), ...extras.map(e => extraLine(e, lang, quote)));
   }
   lines.push(msg('quoteTotalLine', { amount: money(quote.total_amount) }), '');
   lines.push(msg(quote.collected?.tollIncluded ? 'quoteTollIncluded' : 'quoteTollExtra'));
+  if (pricing?.method === 'formula') lines.push(msg('quoteActualKmNote'));
   if (quote.advance_amount !== null && quote.advance_amount !== undefined) {
     lines.push(msg('quoteAdvanceLine', { amount: money(quote.advance_amount) }));
   }
@@ -167,6 +189,14 @@ const entryNodeIdFor = async (businessId, nodeId) => {
   }
 };
 
+/** The part of a priced Round Trip kept on the quote (and read by the quote text, booking and Quotes tab). */
+const pricingSnapshot = (priced) => (priced.method === 'formula'
+  ? {
+    method: 'formula', days: priced.days, oneWayKm: priced.oneWayKm, minKmPerDay: priced.minKmPerDay, billedKm: priced.billedKm,
+    ratePerKm: priced.ratePerKm, kmCharge: priced.kmCharge, allowance: priced.allowance
+  }
+  : { method: 'package' });
+
 const tripTypeOf = (value) => (bookingService.normalizeTripType(value) === 'round_trip' ? 'round_trip' : 'oneway');
 
 /** Prices the trip from the session, saves the quote (status sent) and returns the row. */
@@ -188,10 +218,16 @@ const createQuote = async (ctx, session, quoteNodeId) => {
   if (routeResult.error) throw routeResult.error;
 
   const days = parseInt(c.numberOfDays, 10);
+  // A Round Trip was priced at the vehicle tap (bookingGraph.service.js, the same priceVehicleTrip that priced
+  // the card): the quote uses that price, so the card, the tap and the quote cannot disagree.
+  const tapPricing = tripType === 'round_trip' && c.quotePricing ? c.quotePricing : null;
+  if (tapPricing && tapPricing.method === 'formula' && tapPricing.days !== days) {
+    throw new Error('Quote: the Round Trip was priced for a different number of days than the quote');
+  }
   const priced = computeQuote({
     baseFare,
     tripType,
-    days: Number.isInteger(days) && days >= 1 ? days : null,
+    roundTrip: tapPricing && tapPricing.method === 'formula' ? tapPricing : null,
     pickupMinute: Number.isInteger(c.pickupMinute) ? c.pickupMinute : null,
     tollOverride: routeResult.data ? routeResult.data.toll_included : null,
     settings
@@ -213,7 +249,9 @@ const createQuote = async (ctx, session, quoteNodeId) => {
       fromLabel: c.quoteFromLabel, toLabel: c.quoteToLabel, tripLabel: tripType === 'round_trip' ? 'Round Trip' : 'One Way',
       date: c.travelDate || null, pickupTime: c.pickupTime || null, pickupMinute: Number.isInteger(c.pickupMinute) ? c.pickupMinute : null,
       passengers: c.passengers || null, days: Number.isInteger(days) && days >= 1 ? days : null,
-      vehicleName: c.vehicleName || null, tollIncluded: priced.tollIncluded, flowEntryNodeId: entryNodeId
+      vehicleName: c.vehicleName || null, tollIncluded: priced.tollIncluded, flowEntryNodeId: entryNodeId,
+      // how a Round Trip was priced: method (package | formula) and, for the formula, days / billed km / rate / allowance
+      ...(tapPricing ? { pricing: pricingSnapshot(tapPricing) } : {})
     },
     base_fare: priced.baseFare,
     extras: priced.extras,
@@ -228,21 +266,27 @@ const createQuote = async (ctx, session, quoteNodeId) => {
 };
 
 /** A lead row (status handoff): "Other route", or no vehicle fits. Carries what the customer had chosen. */
-const saveHandoffQuote = async (ctx, session, reason, flowNodeId) => {
+const saveHandoffQuote = async (ctx, session, reason, flowNodeId, pricingReason = null) => {
   const businessId = ctx.tenant.businessId;
   const c = { ...session.collected, ...(session.displayOverrides || {}) };
   const { settings } = await travelQuoteService.getSettings(businessId);
   const now = new Date();
+  const days = parseInt(c.numberOfDays, 10);
   const { data, error } = await supabase.from('travel_quotes').insert({
     business_id: businessId,
     customer_id: ctx.customer.id,
     route_id: c.quoteRouteId || null,
+    vehicle_id: reason === 'price_on_request' ? (c.vehicleId || null) : null,
     from_city: c.pickupLocation || '',
     to_city: c.dropLocation || '',
     trip_type: c.tripType ? tripTypeOf(c.tripType) : '',
     collected: {
       reason, fromLabel: c.quoteFromLabel || null, toLabel: c.quoteToLabel || null, tripLabel: c.tripType || null,
-      passengers: c.passengers || null, date: c.travelDate || null, flowEntryNodeId: await entryNodeIdFor(businessId, flowNodeId)
+      passengers: c.passengers || null, date: c.travelDate || null, flowEntryNodeId: await entryNodeIdFor(businessId, flowNodeId),
+      // "Round Trip price needs the owner": what the customer chose and what was missing (missing_min_km, missing_distance, ...)
+      ...(reason === 'price_on_request'
+        ? { vehicleName: c.vehicleName || null, days: Number.isInteger(days) && days >= 1 ? days : null, pricingReason }
+        : {})
     },
     base_fare: 0,
     extras: [],
@@ -263,18 +307,20 @@ const saveHandoffQuote = async (ctx, session, reason, flowNodeId) => {
  * has it on, else the plain push) and returns the reply text.
  * @returns {Promise<{ claimed: boolean, replyText: string }>} claimed false = an escalation was already open
  */
-const raiseHandoff = async (ctx) => {
+const raiseHandoff = async (ctx, { quoteRequest = null, replyKey = null } = {}) => {
   const { tenant, customer, customerNumber } = ctx;
   const lang = languageOf(ctx);
   const pushHumanNeeded = () => notificationService.notifyOnce(tenant.businessId, 'human_needed', {
-    customerId: customer.id, customerName: customer.name, customerNumber
+    customerId: customer.id, customerName: customer.name, customerNumber, ...(quoteRequest ? { quoteRequest } : {})
   }, `${tenant.businessId}:${customer.id}`, 5 * 60);
 
   const settings = await handoffService.getActiveSettings(tenant.businessId);
   let claimed = true;
   if (settings) {
     try {
-      ({ claimed } = await handoffService.raise({ businessId: tenant.businessId, customer, customerNumber, reason: 'tap', settings }));
+      ({ claimed } = await handoffService.raise({
+        businessId: tenant.businessId, customer, customerNumber, reason: 'tap', settings, ...(quoteRequest ? { quoteRequest } : {})
+      }));
     } catch (error) {
       logger.error('Quote: could not raise the handoff, falling back to the plain push:', error);
       pushHumanNeeded();
@@ -282,9 +328,9 @@ const raiseHandoff = async (ctx) => {
   } else {
     pushHumanNeeded();
   }
-  const replyText = applyMessageTemplate(
-    settings ? handoffService.replyTextFor(settings, lang) : getSystemMessage('handoffReply', lang), tenant, customer
-  );
+  const replyText = replyKey
+    ? getSystemMessage(replyKey, lang)
+    : applyMessageTemplate(settings ? handoffService.replyTextFor(settings, lang) : getSystemMessage('handoffReply', lang), tenant, customer);
   return { claimed, replyText };
 };
 
@@ -319,12 +365,20 @@ const handleResult = async (ctx, session, quote) => {
       return { quoteId: row.id };
     }
 
-    // handoff: Other route / Other options / no routes / switch off
-    const { claimed, replyText } = await raiseHandoff(ctx);
+    // handoff: Other route / Other options / no routes / switch off / price_on_request
+    const priceRequest = quote.reason === 'price_on_request';
+    const c = session.collected || {};
+    const { claimed, replyText } = await raiseHandoff(ctx, priceRequest
+      ? {
+        // the owner's alert says what to price: route, vehicle, days
+        quoteRequest: { route: `${c.quoteFromLabel} → ${c.quoteToLabel}`, vehicle: c.vehicleName || null, days: parseInt(c.numberOfDays, 10) || null },
+        replyKey: 'quotePriceOnRequestReply'
+      }
+      : {});
     let quoteId = null;
     // A lead row per open escalation, not per tap; none when the feature is off (nothing to report on).
     if (claimed && quote.reason !== 'switch_off') {
-      quoteId = (await saveHandoffQuote(ctx, session, quote.reason, session.currentNodeId)).id;
+      quoteId = (await saveHandoffQuote(ctx, session, quote.reason, session.currentNodeId, quote.pricingReason || null)).id;
     }
     await deliver(ctx, { text: replyText, ruleId: session.ruleId || null });
     return { quoteId };

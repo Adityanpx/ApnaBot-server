@@ -9,7 +9,7 @@
 // Errors the owner can fix are thrown with .statusCode (errorHandler maps it).
 const supabase = require('../config/supabase');
 const { toCamelCase } = require('../utils/caseConvert');
-const { validateRouteInput, roundTripReadiness } = require('../utils/travelQuote');
+const { validateRouteInput, roundTripCandidates, roundTripReadiness } = require('../utils/travelQuote');
 const distanceMatrixService = require('./distanceMatrix.service');
 
 const fail = (statusCode, message, errors = null) => Object.assign(new Error(message), { statusCode, errors });
@@ -32,24 +32,12 @@ const numberOrNull = (v) => (v === null || v === undefined ? null : Number(v));
 
 /**
  * Whether Round Trip can be priced for the route (shown in the route editor as "Round Trip not
- * ready: add distance"): its vehicles are the active ones with an active one-way or Round Trip fare.
- * A vehicle's fixed Round Trip fare, or the route distance + the vehicle's min km and rate, prices it.
+ * ready: add distance"): its vehicles are the active ones with an active one-way or Round Trip fare
+ * (utils/travelQuote.js#roundTripCandidates - the same list the quote flow offers).
  */
 const roundTripFor = (route, fareRows) => {
   if (route.is_active === false) return { ready: false, reason: 'inactive' };
-  const byVehicle = new Map();
-  for (const row of fareRows) {
-    if (!row.is_active || !row.vehicle || row.vehicle.is_active === false) continue;
-    if (row.trip_type !== 'oneway' && row.trip_type !== 'round_trip') continue;
-    if (!byVehicle.has(row.vehicle_id)) {
-      byVehicle.set(row.vehicle_id, {
-        fare: null,
-        vehicle: { perKmRate: numberOrNull(row.vehicle.per_km_rate), minKmPerDay: numberOrNull(row.vehicle.min_km_per_day) }
-      });
-    }
-    if (row.trip_type === 'round_trip') byVehicle.get(row.vehicle_id).fare = numberOrNull(row.fare);
-  }
-  return roundTripReadiness({ oneWayKm: numberOrNull(route.one_way_distance_km), vehicles: [...byVehicle.values()] });
+  return roundTripReadiness({ oneWayKm: numberOrNull(route.one_way_distance_km), vehicles: roundTripCandidates(fareRows) });
 };
 
 const routeToApi = (route, fareRows) => ({

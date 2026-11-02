@@ -63,6 +63,13 @@ const TYPE_NAMES = Object.keys(TYPES);
 // {amount}, {days}, {preview} are filled from the payload; a line whose value is
 // missing falls back to `bodyNoWho` / `body` where given.
 const WHO_FALLBACK = { en: 'A customer', hi: 'एक ग्राहक', mr: 'एक ग्राहक' };
+const UNIT_WORDS = {
+  days: { en: 'days', hi: 'दिन', mr: 'दिवस' },
+  km: { en: 'km', hi: 'किमी', mr: 'किमी' }
+};
+const QUOTE_REQUEST_TITLE = {
+  en: 'Round Trip price needed', hi: 'राउंड ट्रिप का किराया चाहिए', mr: 'राउंड ट्रिपचे भाडे हवे आहे'
+};
 
 const TEXT = {
   booking_new: {
@@ -195,9 +202,17 @@ const buildText = (type, payload, language) => {
   const title = text.title[lang];
 
   if (type === 'booking_new') {
-    // customer · vehicle/service · date, whichever of them are known.
-    const parts = [payload.customerName || payload.customerNumber, payload.summary, payload.date].filter(Boolean);
+    // customer · vehicle/service · date (· days · billed km for a quoted Round Trip), whichever of them are known.
+    const parts = [payload.customerName || payload.customerNumber, payload.summary, payload.date,
+      payload.days ? `${payload.days} ${UNIT_WORDS.days[lang]}` : null,
+      payload.billedKm ? `${payload.billedKm} ${UNIT_WORDS.km[lang]}` : null].filter(Boolean);
     return { title, body: parts.length > 0 ? parts.join(' · ') : text.body[lang] };
+  }
+  if (type === 'human_needed' && payload.quoteRequest) {
+    // A Round Trip the owner has to price: who, route, vehicle, days.
+    const { route, vehicle, days } = payload.quoteRequest;
+    const parts = [who, route, vehicle, days ? `${days} ${UNIT_WORDS.days[lang]}` : null].filter(Boolean);
+    return { title: QUOTE_REQUEST_TITLE[lang], body: parts.join(' · ') };
   }
   if (type === 'payment_received' && !payload.amount) return { title, body: fill(text.bodyNoAmount[lang], vars) };
   if (type === 'human_needed' && payload.reminder) return { title, body: fill(text.bodyReminder[lang], vars) };

@@ -263,6 +263,12 @@ const routePickerText = () => ({
 
 const isQuoteFlow = (session) => !!(session.collected && session.collected.quoteRouteId);
 
+/** The days answer ("3") as a whole number of days, or null while it is not known yet / unreadable. */
+const quoteDaysOf = (value) => {
+  const days = parseInt(value, 10);
+  return Number.isInteger(days) && days >= 1 ? days : null;
+};
+
 /**
  * The engine hands the caller {quote:{action}} instead of a field when the quote flow needs the
  * webhook to act (services/quoteFlow.service.js): 'send' the priced quote, 'no_vehicle' (nothing
@@ -387,8 +393,16 @@ const computeLiveOptionsForNode = async (businessId, node, session) => {
   }
   if (node.nodeType === 'vehicle_carousel') {
     if (isQuoteFlow(session)) {
-      // A quote is priced from the rate card only (never the distance estimate) and only for vehicles
-      // that seat the party.
+      if (bookingService.normalizeTripType(session.collected.tripType) === 'round_trip') {
+        // Round Trip: every vehicle of the route priced for the days asked (a fixed package price, the
+        // distance + km formula, or "our team will confirm"), only vehicles that seat the party.
+        const roundTripOptions = await require('./travelQuote.service').listRoundTripVehicleOptions(
+          businessId, session.collected.quoteRouteId, quoteDaysOf(session.collected.numberOfDays)
+        );
+        return filterOptionsBySeats(roundTripOptions, session.collected.passengers);
+      }
+      // A One Way quote is priced from the rate card only (never the distance estimate) and only for
+      // vehicles that seat the party.
       const fares = await bookingService.findMatchingVehicleOptions(
         businessId, session.collected.pickupLocation, session.collected.dropLocation, session.collected.tripType
       );
@@ -441,11 +455,11 @@ const fallbackToStaticSibling = (nodes, fieldKey, session, servedCities, languag
  * node, re-prompt, caller re-fetches session to resend); otherwise fall
  * back to the static sibling. Mirrors rebuildCarouselOrFallback.
  */
-const rebuildOrFallback = async (businessId, nodes, currentNode, session, servedCities, languageCode) => {
+const rebuildOrFallback = async (businessId, nodes, currentNode, session, servedCities, languageCode, messageKey = 'vehicleNoLongerAvailable') => {
   const fresh = await computeLiveOptionsForNode(businessId, currentNode, session);
   if (fresh.length > 0) {
     session.currentNodeComputedOptions = fresh;
-    return { session, result: getSystemMessage('vehicleNoLongerAvailable', languageCode) };
+    return { session, result: getSystemMessage(messageKey, languageCode) };
   }
   // The static vehicle list has no fares: a quote flow with nothing left to offer goes to the team.
   if (isQuoteFlow(session)) return quoteResult(session, 'no_vehicle');
@@ -802,6 +816,30 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
       session.collected.routeFareId = freshRouteFare.id;
       session.collected.fareSource = 'route_fare';
       session.collected[currentNode.fieldKey] = session.collected.vehicleName;
+    } else if (tappedOption.source === 'quote_vehicle') {
+      // A Round Trip quote vehicle: priced again from fresh rows by the same function that priced the card.
+      const fresh = await require('./travelQuote.service').priceRoundTripVehicle(
+        businessId, session.collected.quoteRouteId, tappedOption.vehicleId, quoteDaysOf(session.collected.numberOfDays)
+      );
+      if (fresh.stale) return rebuildOrFallback(businessId, nodes, currentNode, session, servedCities, languageCode);
+      // The card showed a price (or "team will confirm"); if the rows changed since, show the cards again
+      // rather than quote something the customer did not see.
+      const freshTotal = fresh.priced.ok ? fresh.priced.total : null;
+      if (freshTotal !== (tappedOption.fare ?? null)) {
+        return rebuildOrFallback(businessId, nodes, currentNode, session, servedCities, languageCode, 'quotePriceChanged');
+      }
+
+      session.collected.vehicleId = tappedOption.vehicleId;
+      session.collected.vehicleName = fresh.vehicleName;
+      session.collected[currentNode.fieldKey] = fresh.vehicleName;
+      if (!fresh.priced.ok) {
+        // Missing min km / distance / rate / days: the owner confirms the price (a handoff lead, trip details in the alert).
+        return quoteResult(session, 'handoff', 'price_on_request', { pricingReason: fresh.priced.reason });
+      }
+      session.collected.vehicleFare = fresh.priced.baseFare;
+      session.collected.routeFareId = fresh.packageRowId;
+      session.collected.fareSource = fresh.priced.method === 'formula' ? 'rate_formula' : 'route_fare';
+      session.collected.quotePricing = fresh.priced;
     } else if (tappedOption.source === 'distance_estimate') {
       const { data: freshVehicle } = await supabase
         .from('vehicles')

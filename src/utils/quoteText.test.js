@@ -30,3 +30,17 @@ test('the reminder names the route, total, deadline and the right button, in eve
   assert.ok(buildReminderText(quote(), 'hi').includes('पुष्टि व भुगतान'));
   assert.ok(buildReminderText(quote(), 'mr').includes('पुष्टी व पेमेंट'));
 });
+
+test('carouselPriceText: formula, package and "team will confirm", in each language', () => {
+  const { carouselPriceText } = require('./quoteText');
+  const formula = { kind: 'formula', total: 18150, days: 3, billedKm: 750 };
+  assert.equal(carouselPriceText(formula, 'en'), '₹18150 • 3 day(s) • 750 km');
+  assert.equal(carouselPriceText(formula, 'hi'), '₹18150 • 3 दिन • 750 किमी');
+  assert.equal(carouselPriceText(formula, 'mr'), '₹18150 • 3 दिवस • 750 किमी');
+  const pkg = { kind: 'package', total: 7300, days: 2, billedKm: null };
+  assert.equal(carouselPriceText(pkg, 'en'), '₹7300 • 2 day(s) • package fare');
+  assert.equal(carouselPriceText({ ...pkg, days: null }, 'en'), '₹7300 • package fare');
+  assert.equal(carouselPriceText({ kind: 'on_request' }, 'en'), 'Price: our team will confirm');
+  assert.equal(carouselPriceText({ kind: 'on_request' }, 'mr'), 'भाडे: आमची टीम कळवेल');
+  assert.equal(carouselPriceText({ kind: 'formula', total: 8810, days: 1, billedKm: 370.8 }, 'en'), '₹8810 • 1 day(s) • 370.8 km');
+});

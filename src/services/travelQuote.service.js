@@ -8,7 +8,7 @@
 // read-only next to the settings so the Rates screen shows it in one place.
 const supabase = require('../config/supabase');
 const { toCamelCase } = require('../utils/caseConvert');
-const { DEFAULT_SETTINGS, validateSettingsInput } = require('../utils/travelQuote');
+const { DEFAULT_SETTINGS, validateSettingsInput, priceVehicleTrip, roundTripCandidates, roundTripReadiness } = require('../utils/travelQuote');
 const { getPeriodRanges } = require('./reports.service');
 
 const fail = (statusCode, message, errors = null) => Object.assign(new Error(message), { statusCode, errors });
@@ -135,22 +135,49 @@ const getQuoteReport = async (businessId, period) => {
   };
 };
 
+const ROUND_TRIP_FARE_SELECT = '*, vehicle:vehicles(id, custom_name, custom_photo_url, is_active, per_km_rate, min_km_per_day, driver_allowance_per_day, catalog:vehicle_type_catalog(name, photo_url, seats))';
+const numberOrNull = (v) => (v === null || v === undefined ? null : Number(v));
+const pairKey = (fromCity, toCity) => `${fromCity}>${toCity}`;
+
 /**
- * The routes a customer can be quoted for a trip type: active travel_routes that have at least one
- * active fare of that trip type on an active vehicle (the route_picker node's source; live, per turn).
+ * The routes a customer can be quoted for a trip type (the route_picker node's source; live, per turn).
+ *   oneway      active travel_routes with at least one active fare of that trip type on an active vehicle
+ *   round_trip  active travel_routes where at least one vehicle can be priced: it has a fixed Round Trip
+ *               fare, or the route has a one-way distance and the vehicle a min km and a per-km rate
+ *               (utils/travelQuote.js#roundTripReadiness - the same test the route editor shows)
  * @param {string} tripType  'oneway' | 'round_trip'
  * @returns {Promise<{id, fromCity, toCity, fromLabel, toLabel, region, sortOrder}[]>}
  */
 const listQuotableRoutes = async (businessId, tripType) => {
+  const roundTrip = tripType === 'round_trip';
+  const faresQuery = roundTrip
+    ? supabase.from('route_fares').select(ROUND_TRIP_FARE_SELECT).eq('business_id', businessId).in('trip_type', ['oneway', 'round_trip']).eq('is_active', true)
+    : supabase.from('route_fares').select('route_id, vehicle_id').eq('business_id', businessId).eq('trip_type', tripType).eq('is_active', true);
   const [routesRes, faresRes, vehiclesRes] = await Promise.all([
     supabase.from('travel_routes').select('*').eq('business_id', businessId).eq('is_active', true),
-    supabase.from('route_fares').select('route_id, vehicle_id').eq('business_id', businessId).eq('trip_type', tripType).eq('is_active', true),
+    faresQuery,
     supabase.from('vehicles').select('id').eq('business_id', businessId).eq('is_active', true)
   ]);
   for (const res of [routesRes, faresRes, vehiclesRes]) if (res.error) throw res.error;
-  const activeVehicles = new Set((vehiclesRes.data || []).map(v => v.id));
-  const routesWithFare = new Set((faresRes.data || []).filter(f => f.route_id && activeVehicles.has(f.vehicle_id)).map(f => f.route_id));
-  return (routesRes.data || []).filter(r => routesWithFare.has(r.id)).map(r => ({
+
+  let quotable;
+  if (roundTrip) {
+    const byPair = new Map();
+    for (const row of faresRes.data || []) {
+      const key = pairKey(row.from_city, row.to_city);
+      if (!byPair.has(key)) byPair.set(key, []);
+      byPair.get(key).push(row);
+    }
+    quotable = (route) => roundTripReadiness({
+      oneWayKm: numberOrNull(route.one_way_distance_km),
+      vehicles: roundTripCandidates(byPair.get(pairKey(route.from_city, route.to_city)))
+    }).ready;
+  } else {
+    const activeVehicles = new Set((vehiclesRes.data || []).map(v => v.id));
+    const routesWithFare = new Set((faresRes.data || []).filter(f => f.route_id && activeVehicles.has(f.vehicle_id)).map(f => f.route_id));
+    quotable = (route) => routesWithFare.has(route.id);
+  }
+  return (routesRes.data || []).filter(quotable).map(r => ({
     id: r.id,
     fromCity: r.from_city,
     toCity: r.to_city,
@@ -161,9 +188,102 @@ const listQuotableRoutes = async (businessId, tripType) => {
   }));
 };
 
+// ---- Round Trip pricing for the quote flow ------------------------------------------------------
+// The carousel card, the tap and the quote all price a vehicle through utils/travelQuote.js#priceVehicleTrip
+// with rows read fresh by loadRoundTripContext, so they cannot disagree.
+
+/** The route, its Round Trip candidate vehicles and the allowance basis, read fresh; null when the route is gone or off. */
+const loadRoundTripContext = async (businessId, routeId) => {
+  const { data: route, error: routeErr } = await supabase.from('travel_routes').select('*')
+    .eq('id', routeId).eq('business_id', businessId).eq('is_active', true).maybeSingle();
+  if (routeErr) throw routeErr;
+  if (!route) return null;
+  const { data: fares, error: faresErr } = await supabase.from('route_fares').select(ROUND_TRIP_FARE_SELECT)
+    .eq('business_id', businessId).eq('from_city', route.from_city).eq('to_city', route.to_city)
+    .in('trip_type', ['oneway', 'round_trip']).eq('is_active', true);
+  if (faresErr) throw faresErr;
+  return {
+    route,
+    candidates: roundTripCandidates(fares),
+    allowanceBasis: settingsFromRow(await loadSettingsRow(businessId)).allowanceBasis
+  };
+};
+
+/** One candidate vehicle priced for a Round Trip of `days` days: { ok:true, method, total, ... } or { ok:false, reason }. */
+const priceCandidate = (context, candidate, days) => priceVehicleTrip({
+  tripType: 'round_trip',
+  days,
+  fare: candidate.fare,
+  oneWayKm: numberOrNull(context.route.one_way_distance_km),
+  vehicle: candidate.vehicle,
+  allowanceBasis: context.allowanceBasis
+});
+
+/** What a carousel card shows for a priced vehicle (utils/quoteText.js#carouselPriceText turns it into words). */
+const priceDisplayOf = (priced, days) => (priced.ok
+  ? { kind: priced.method, total: priced.total, days, billedKm: priced.method === 'formula' ? priced.billedKm : null }
+  : { kind: 'on_request' });
+
+const vehicleNameOf = (row) => row.vehicle.custom_name || row.vehicle.catalog?.name || null;
+
+/**
+ * The vehicle carousel's options for a Round Trip quote: every candidate vehicle of the route with its price
+ * for `days` (a vehicle that can't be priced - or any formula vehicle while the days are still unknown - shows
+ * "our team will confirm"). Seat filtering is the caller's (filterOptionsBySeats).
+ * @param {number|null} days
+ */
+const listRoundTripVehicleOptions = async (businessId, routeId, days) => {
+  const context = await loadRoundTripContext(businessId, routeId);
+  if (!context) return [];
+  return context.candidates.map((candidate, index) => {
+    const priced = priceCandidate(context, candidate, days);
+    const { vehicle } = candidate.row;
+    return {
+      index,
+      routeFareId: candidate.row.id,
+      vehicleId: candidate.vehicleId,
+      name: vehicleNameOf(candidate.row),
+      photoUrl: vehicle.custom_photo_url || vehicle.catalog?.photo_url || null,
+      seats: vehicle.catalog?.seats || null,
+      fare: priced.ok ? priced.total : null,
+      source: 'quote_vehicle',
+      priceDisplay: priceDisplayOf(priced, days)
+    };
+  });
+};
+
+/**
+ * The tap: one vehicle priced again from fresh rows.
+ * @returns {Promise<{ stale:true } | { stale:false, priced:Object, vehicleName:string, packageRowId:string|null }>}
+ *   stale = the route or the vehicle is gone/off since the card was shown; packageRowId = the route_fares row
+ *   a fixed package price came from (null for a formula price, which comes from no row)
+ */
+const priceRoundTripVehicle = async (businessId, routeId, vehicleId, days) => {
+  const context = await loadRoundTripContext(businessId, routeId);
+  const candidate = context && context.candidates.find(c => c.vehicleId === vehicleId);
+  if (!candidate) return { stale: true };
+  return {
+    stale: false,
+    priced: priceCandidate(context, candidate, days),
+    vehicleName: vehicleNameOf(candidate.row),
+    packageRowId: candidate.fare !== null ? candidate.row.id : null
+  };
+};
+
 const BOOKING_FIELD_LABELS = {
   tripType: 'Trip type', pickupLocation: 'Pickup', dropLocation: 'Drop', travelDate: 'Date', pickupTime: 'Pickup time',
-  passengers: 'Passengers', numberOfDays: 'Days', vehicleName: 'Vehicle', quoteTotal: 'Quote total'
+  passengers: 'Passengers', numberOfDays: 'Days', vehicleName: 'Vehicle', quoteTotal: 'Quote total',
+  fareType: 'Fare type', billedKm: 'Billed km', ratePerKm: 'Rate per km (₹)', driverAllowance: 'Driver allowance (₹)'
+};
+
+/** The extra booking fields a priced Round Trip carries: how it was priced, the billed km, rate and allowance. */
+const pricingBookingFields = (pricing) => {
+  if (!pricing) return {};
+  if (pricing.method === 'package') return { fareType: 'Package fare' };
+  if (pricing.method !== 'formula') return {};
+  return {
+    fareType: 'By km', billedKm: pricing.billedKm, ratePerKm: pricing.ratePerKm, driverAllowance: pricing.allowance.amount
+  };
 };
 
 /**
@@ -194,7 +314,8 @@ const createQuoteBooking = async ({ quote, business, customer, customerNumber })
   const fields = {
     tripType: c.tripLabel, pickupLocation: c.fromLabel, dropLocation: c.toLabel, travelDate: c.date, pickupTime: c.pickupTime,
     passengers: c.passengers, ...(c.days ? { numberOfDays: c.days } : {}), vehicleName: c.vehicleName, vehicleId: quote.vehicle_id,
-    vehicleFare: quote.base_fare, fareSource: 'route_fare', routeFareId: quote.route_fare_id, quoteId: quote.id, quoteTotal: quote.total_amount
+    vehicleFare: quote.base_fare, fareSource: c.pricing?.method === 'formula' ? 'rate_formula' : 'route_fare', routeFareId: quote.route_fare_id,
+    quoteId: quote.id, quoteTotal: quote.total_amount, ...pricingBookingFields(c.pricing)
   };
   const insert = {
     business_id: quote.business_id,
@@ -223,7 +344,8 @@ const createQuoteBooking = async ({ quote, business, customer, customerNumber })
   const notificationService = require('./notification.service');
   notificationService.notify(quote.business_id, 'booking_new', {
     bookingId: booking.id, customerId: quote.customer_id, customerName: customer?.name, customerNumber,
-    summary: c.vehicleName || c.tripLabel || null, date: c.date || null
+    summary: c.vehicleName || c.tripLabel || null, date: c.date || null,
+    days: c.days || null, billedKm: c.pricing?.method === 'formula' ? c.pricing.billedKm : null
   });
   try {
     require('./socket.service').emitToBusiness(String(quote.business_id), 'new_booking', { booking, customerNumber });
@@ -241,4 +363,7 @@ const createQuoteBooking = async ({ quote, business, customer, customerNumber })
   return { booking, created: true };
 };
 
-module.exports = { STATUSES, getSettings, updateSettings, listQuotes, cancelQuote, getQuoteReport, listQuotableRoutes, createQuoteBooking };
+module.exports = {
+  STATUSES, getSettings, updateSettings, listQuotes, cancelQuote, getQuoteReport, listQuotableRoutes,
+  listRoundTripVehicleOptions, priceRoundTripVehicle, createQuoteBooking
+};

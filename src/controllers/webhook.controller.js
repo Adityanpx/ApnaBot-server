@@ -19,6 +19,7 @@ const { LANGUAGE_CATALOG, isValidLanguageCode } = require('../utils/languageCata
 const languagePickerService = require('../services/languagePicker.service');
 const { getLocalizedText, getListButtonLabel } = require('../utils/localization');
 const { getSystemMessage } = require('../utils/systemMessages');
+const { carouselPriceText } = require('../utils/quoteText');
 const { cleanValue } = require('../utils/templateValue');
 const { isIndefinitePause } = require('../utils/botPause');
 const { isChoiceFieldType, withTapHint } = require('../utils/bookingTapGuard');
@@ -538,7 +539,8 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
       for (const option of field.options) {
         const captionParts = [option.name];
         if (option.seats) captionParts.push(`${option.seats} seats`);
-        captionParts.push(`₹${option.fare}`);
+        // A Round Trip quote option carries how it was priced (package / by km / team confirms); every other option is its plain fare.
+        captionParts.push(option.priceDisplay ? carouselPriceText(option.priceDisplay, customer.preferredLanguage) : `₹${option.fare}`);
         const caption = captionParts.join(' • ');
         const vehicleButtons = [{ title: 'Book this', nextKeyword: `${field.nodeId}:${option.index}` }];
 

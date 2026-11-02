@@ -12,6 +12,21 @@ const formatUntil = (date) => new Date(date).toLocaleString('en-IN', {
 });
 
 /**
+ * The price part of a vehicle card in a Round Trip quote, joined with " • " like the rest of the caption.
+ * @param {{ kind:'package'|'formula'|'on_request', total?:number, days?:number|null, billedKm?:number|null }} display
+ * @param {string|null} lang
+ */
+const carouselPriceText = (display, lang) => {
+  const msg = (key, vars) => getSystemMessage(key, lang, vars);
+  if (display.kind === 'on_request') return msg('quoteCardOnRequest');
+  const parts = [`₹${display.total}`];
+  if (display.days) parts.push(msg('quoteCardDays', { days: display.days }));
+  if (display.kind === 'formula') parts.push(msg('quoteCardKm', { km: money(display.billedKm) }));
+  else parts.push(msg('quoteCardPackage'));
+  return parts.join(' • ');
+};
+
+/**
  * The plain-text reminder sent a few hours after a quote: route, total, how long it is open, and which
  * button of the quote above books it ("Confirm & pay" when an advance is asked, else "Confirm").
  * @param {Object} quote  a travel_quotes row (snake_case)
@@ -28,4 +43,4 @@ const buildReminderText = (quote, lang) => {
   });
 };
 
-module.exports = { money, formatUntil, buildReminderText };
+module.exports = { money, formatUntil, carouselPriceText, buildReminderText };

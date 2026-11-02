@@ -24,7 +24,7 @@ stub('./booking.service', {
 stub('./bookingGraph.service', { loadGraph: async () => state.graph });
 stub('./handoff.service', {
   getActiveSettings: async () => state.handoffSettings,
-  raise: async () => { state.raised += 1; return { claimed: state.claimed }; },
+  raise: async (args) => { state.raised += 1; state.raiseArgs = args; return { claimed: state.claimed }; },
   replyTextFor: () => 'HANDOFF TEXT'
 });
 stub('./notification.service', {
@@ -404,4 +404,165 @@ test('a tap from a chat of another business never finds the quote: nothing chang
   assert.equal(state.raised, 0);
   assert.equal(state.jobs.length, 4);
   assert.ok(state.jobs.every(j => j.message.startsWith('Sorry, this quote is no longer available')));
+});
+
+// ── Round Trip quotes: formula / package breakdown, days, snapshot, booking, owner alert ─────────────
+
+const { priceVehicleTrip } = require('../utils/travelQuote');
+const INNOVA = { perKmRate: 23, minKmPerDay: 250, driverAllowancePerDay: 300 };
+// What the vehicle tap leaves in the session (bookingGraph.service.js): the shared function's result
+const roundTripSession = ({ days = 3, fare = null, oneWayKm = 185, allowanceBasis = 'day', extra = {} } = {}) => {
+  const priced = priceVehicleTrip({ tripType: 'round_trip', days, fare, oneWayKm, vehicle: INNOVA, allowanceBasis });
+  return session({
+    tripType: 'Round Trip', numberOfDays: String(days), vehicleFare: priced.baseFare, routeFareId: fare ? 'rf-rt' : null,
+    quotePricing: priced, ...extra
+  });
+};
+
+test('Round Trip by formula: Pune -> Shirdi, 3 days = 18,150, with the Days line, the breakdown and the actual-km note', async () => {
+  await send(roundTripSession({ days: 3 }));
+  const [q] = quotes();
+  assert.deepEqual([q.trip_type, q.base_fare, q.total_amount, q.advance_amount], ['round_trip', 17250, 18150, 3630]);
+  assert.deepEqual(q.extras.map(e => [e.key, e.amount]), [['driver_allowance', 900]]);
+  assert.equal(q.collected.days, 3);
+  assert.deepEqual(q.collected.pricing, {
+    method: 'formula', days: 3, oneWayKm: 185, minKmPerDay: 250, billedKm: 750, ratePerKm: 23, kmCharge: 17250,
+    allowance: { perUnit: 300, units: 3, basis: 'day', amount: 900 }
+  });
+  const text = state.jobs[0].message;
+  for (const part of [
+    'Round Trip', 'Days: *3*', 'Fare: 750 km × ₹23/km = ₹17,250', 'Billed distance: 750 km (3 day(s) × 250 km minimum per day)',
+    'Driver allowance (3 day(s) × ₹300): ₹900', 'Total: *₹18,150*', 'Toll is extra', 'The final fare is by actual km if the trip runs more than the billed km.'
+  ]) assert.ok(text.includes(part), part);
+  assert.ok(text.indexOf('Days: *3*') < text.indexOf('Fare: 750 km'));
+  assert.ok(text.indexOf('Total:') < text.indexOf('The final fare is by actual km'));
+});
+
+test('Round Trip by formula, 1 day: 2 x distance is billed (370 km) = 8,810; per night the allowance is 0 for a same-day return', async () => {
+  await send(roundTripSession({ days: 1 }));
+  assert.equal(quotes()[0].total_amount, 8810);
+  assert.ok(state.jobs[0].message.includes('Billed distance: 370 km (there and back, 2 × 185 km)'));
+  state.jobs.length = 0;
+  await send(roundTripSession({ days: 1, allowanceBasis: 'night' }));
+  const q = quotes()[1];
+  assert.equal(q.total_amount, 8510);
+  assert.deepEqual(q.extras, []);
+  assert.ok(!state.jobs[0].message.includes('Driver allowance'));
+  state.jobs.length = 0;
+  await send(roundTripSession({ days: 3, allowanceBasis: 'night' }));
+  assert.equal(quotes()[2].total_amount, 17850);
+  assert.ok(state.jobs[0].message.includes('Driver allowance (2 night(s) × ₹300): ₹600'));
+});
+
+test('Round Trip by formula: the night charge and the minimum charge stay separate lines on top', async () => {
+  db.travel_quote_settings = [{ business_id: B1, night_charge: 250, night_start_minute: 1320, night_end_minute: 360, allowance_basis: 'day', toll_included: false, minimum_charge: 0, valid_hours: 24, reminder_after_hours: 3 }];
+  await send(roundTripSession({ days: 3, extra: { pickupMinute: 1380, pickupTime: '11:00 PM' } }));
+  const q = quotes()[0];
+  assert.deepEqual(q.extras.map(e => [e.key, e.amount]), [['driver_allowance', 900], ['night_charge', 250]]);
+  assert.equal(q.total_amount, 18400);
+  assert.ok(state.jobs[0].message.includes('Night charge: ₹250'));
+});
+
+test('Round Trip with a fixed package price: used as entered for any days, shown as "Package fare" with the Days line, no actual-km note', async () => {
+  for (const days of [1, 3, 9]) {
+    state.jobs.length = 0;
+    await send(roundTripSession({ days, fare: 7299 }));
+    const q = quotes().at(-1);
+    assert.deepEqual([q.base_fare, q.total_amount, q.extras], [7299, 7299, []]);
+    assert.deepEqual(q.collected.pricing, { method: 'package' });
+    const text = state.jobs[0].message;
+    assert.ok(text.includes(`Days: *${days}*`) && text.includes('Package fare: ₹7,299') && text.includes('Total: *₹7,299*'), text);
+    assert.ok(!text.includes('actual km') && !text.includes('Billed distance'));
+  }
+});
+
+test('One Way is unchanged: no Days line, no pricing snapshot, rounded to 10', async () => {
+  await send(session({ vehicleFare: 4999 }));
+  const q = quotes()[0];
+  assert.equal(q.total_amount, 5000);
+  assert.equal(q.collected.pricing, undefined);
+  assert.ok(!state.jobs[0].message.includes('Days:'));
+});
+
+test('Round Trip text in Hindi and Marathi: Days line, breakdown, allowance and the actual-km note', () => {
+  const q = {
+    id: uuid(778), trip_type: 'round_trip', base_fare: 17250, total_amount: 18150, advance_amount: null, expires_at: new Date().toISOString(),
+    extras: [{ key: 'driver_allowance', amount: 900 }],
+    collected: {
+      fromLabel: 'Pune', toLabel: 'Shirdi', days: 3, tollIncluded: false,
+      pricing: { method: 'formula', days: 3, oneWayKm: 185, minKmPerDay: 250, billedKm: 750, ratePerKm: 23, kmCharge: 17250, allowance: { perUnit: 300, units: 3, basis: 'day', amount: 900 } }
+    }
+  };
+  const hi = quoteFlow.buildQuoteText(q, 'hi');
+  for (const part of ['दिन: *3*', 'किराया: 750 किमी × ₹23/किमी = ₹17,250', 'बिल किया गया अंतर: 750 किमी (3 दिन × 250 किमी न्यूनतम प्रतिदिन)', 'ड्राइवर भत्ता (3 दिन × ₹300): ₹900', 'अंतिम किराया वास्तविक किमी']) {
+    assert.ok(hi.includes(part), part);
+  }
+  q.collected.pricing.allowance.basis = 'night';
+  const mr = quoteFlow.buildQuoteText(q, 'mr');
+  for (const part of ['दिवस: *3*', 'भाडे: 750 किमी × ₹23/किमी = ₹17,250', 'दररोज किमान 250 किमी', 'ड्रायव्हर भत्ता (3 रात्री × ₹300): ₹900', 'प्रत्यक्ष किमीनुसार']) {
+    assert.ok(mr.includes(part), part);
+  }
+});
+
+test('a Round Trip priced for other days than the quote is refused, never sent', async () => {
+  const s = roundTripSession({ days: 3 });
+  s.collected.numberOfDays = '4';
+  await assert.rejects(() => send(s), /different number of days/);
+  assert.equal(quotes().length, 0);
+});
+
+test('Confirm on a formula quote: the booking carries days, billed km, rate, allowance and the quote total; the owner alert names days and km', async () => {
+  await send(roundTripSession({ days: 3 }));
+  await tap(tapBtn(state.jobs[0], 0));
+  const [b] = bookings();
+  assert.equal(b.fare_amount, 18150);
+  assert.deepEqual(
+    [b.fields.numberOfDays, b.fields.billedKm, b.fields.ratePerKm, b.fields.driverAllowance, b.fields.fareType, b.fields.fareSource, b.fields.routeFareId, b.fields.vehicleFare],
+    [3, 750, 23, 900, 'By km', 'rate_formula', null, 17250]
+  );
+  assert.equal(b.field_labels.billedKm, 'Billed km');
+  assert.equal(b.field_labels.numberOfDays, 'Days');
+  const alert = state.pushes.find(p => p.type === 'booking_new');
+  assert.equal(alert.payload.days, 3);
+  assert.equal(alert.payload.billedKm, 750);
+});
+
+test('Confirm on a package quote: the booking says Package fare and carries the days, no billed km', async () => {
+  await send(roundTripSession({ days: 2, fare: 7300 }));
+  await tap(tapBtn(state.jobs[0], 0));
+  const [b] = bookings();
+  assert.deepEqual([b.fields.numberOfDays, b.fields.fareType, b.fields.billedKm, b.fields.fareSource, b.fields.routeFareId], [2, 'Package fare', undefined, 'route_fare', 'rf-rt']);
+  assert.equal(state.pushes.find(p => p.type === 'booking_new').payload.billedKm, null);
+});
+
+test('price_on_request: a handoff lead with the vehicle, days and what is missing; the alert names route, vehicle and days; the customer is told the owner will confirm', async () => {
+  state.handoffSettings = { enabled: true };
+  const s = session({ tripType: 'Round Trip', numberOfDays: '3', vehicleId: 'veh-2', vehicleName: 'Toyota Etios', vehicleFare: undefined });
+  const out = await send(s, { action: 'handoff', reason: 'price_on_request', pricingReason: 'missing_min_km' });
+  const [q] = quotes();
+  assert.deepEqual([q.status, q.vehicle_id, q.total_amount, q.advance_amount], ['handoff', 'veh-2', 0, null]);
+  assert.deepEqual(
+    [q.collected.reason, q.collected.vehicleName, q.collected.days, q.collected.pricingReason],
+    ['price_on_request', 'Toyota Etios', 3, 'missing_min_km']
+  );
+  assert.deepEqual(state.raiseArgs.quoteRequest, { route: 'Pune → Mumbai', vehicle: 'Toyota Etios', days: 3 });
+  assert.equal(out.quoteId, q.id);
+  assert.ok(state.jobs[0].message.startsWith('We will confirm the Round Trip price'));
+  assert.deepEqual(state.deleted, [[B1, '919000000001']]);
+});
+
+test('price_on_request without the handoff feature: the plain alert carries the same trip details', async () => {
+  const s = session({ tripType: 'Round Trip', numberOfDays: '2', vehicleId: 'veh-2', vehicleName: 'Toyota Etios' });
+  await send(s, { action: 'handoff', reason: 'price_on_request', pricingReason: 'missing_distance' });
+  const push = state.pushes.find(p => p.type === 'human_needed');
+  assert.deepEqual(push.payload.quoteRequest, { route: 'Pune → Mumbai', vehicle: 'Toyota Etios', days: 2 });
+  assert.equal(quotes()[0].collected.pricingReason, 'missing_distance');
+});
+
+test('other handoffs are unchanged: no quoteRequest, no vehicle on the lead', async () => {
+  state.handoffSettings = { enabled: true };
+  await send(session({ vehicleId: 'veh-1' }), { action: 'handoff', reason: 'other_route' });
+  assert.equal(state.raiseArgs.quoteRequest, undefined);
+  assert.equal(quotes()[0].vehicle_id ?? null, null);
+  assert.equal(quotes()[0].collected.pricingReason, undefined);
 });

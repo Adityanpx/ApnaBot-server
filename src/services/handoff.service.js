@@ -175,11 +175,12 @@ const pauseBotFor = async (businessId, customer, minutes) => {
 /**
  * Opens an escalation for a customer.
  * @param {{businessId: string, customer: object, customerNumber: string, reason: 'tap'|'keyword'|'unmatched'|'media', settings: object}} args
- *   customer is the camelCase row; it is updated in place (needsHumanAt, botPausedUntil)
+ *   customer is the camelCase row; it is updated in place (needsHumanAt, botPausedUntil).
+ *   quoteRequest ({ route, vehicle, days }, optional): a Round Trip the owner has to price - the alert names it.
  * @returns {Promise<{claimed: boolean}>} claimed false = one is already open (or, for 'unmatched', was
  *   cleared under 30 minutes ago): nothing was sent. Throws only if the claim itself fails.
  */
-const raise = async ({ businessId, customer, customerNumber, reason, settings }) => {
+const raise = async ({ businessId, customer, customerNumber, reason, settings, quoteRequest = null }) => {
   const now = new Date();
   let claim = supabase.from('customers')
     .update({ needs_human_at: now.toISOString(), needs_human_reason: reason })
@@ -205,7 +206,7 @@ const raise = async ({ businessId, customer, customerNumber, reason, settings })
 
   // Fire and forget; notify never throws.
   notificationService.notify(businessId, 'human_needed', {
-    customerId: customer.id, customerName: customer.name, customerNumber
+    customerId: customer.id, customerName: customer.name, customerNumber, ...(quoteRequest ? { quoteRequest } : {})
   });
 
   if (settings.reminderMinutes > 0) {

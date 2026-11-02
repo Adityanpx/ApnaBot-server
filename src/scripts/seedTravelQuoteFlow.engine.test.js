@@ -40,7 +40,21 @@ stub('../services/payment.service', {});
 stub('../services/distanceMatrix.service', {});
 stub('../services/business.service', { getBusinessById: async () => ({ id: BIZ, businessCategory: 'travels', travelSettings: {}, disabledBookingFields: [] }) });
 stub('../services/categoryFeature.service', { isEnabled: async () => true });
-stub('../services/travelQuote.service', { listQuotableRoutes: async () => state.routes });
+// Round Trip vehicles are priced by travelQuote.service (bookingGraph.roundTripQuote.test.js covers the real
+// pricing); here every fare row is a fixed package price, which is what the seeded SG Travels rows are today.
+stub('../services/travelQuote.service', {
+  listQuotableRoutes: async () => state.routes,
+  listRoundTripVehicleOptions: async () => state.fares.map((f, index) => ({
+    index, routeFareId: f.id, vehicleId: f.vehicle.id, name: f.vehicle.custom_name, photoUrl: null, seats: f.vehicle.catalog.seats,
+    fare: f.fare, source: 'quote_vehicle', priceDisplay: { kind: 'package', total: f.fare, days: null, billedKm: null }
+  })),
+  priceRoundTripVehicle: async (businessId, routeId, vehicleId) => {
+    const f = state.fares.find((x) => x.vehicle.id === vehicleId);
+    return f
+      ? { stale: false, priced: { ok: true, method: 'package', baseFare: f.fare, total: f.fare }, vehicleName: f.vehicle.custom_name, packageRowId: f.id }
+      : { stale: true };
+  }
+});
 stub('../services/handoff.service', { getSettings: async () => null });
 stub('../utils/logger', { info: () => {}, warn: () => {}, error: () => {}, debug: () => {} });
 
