@@ -18,6 +18,19 @@ const routeLine = (c, lang) => {
 /** 3500 -> "3,500" (Indian grouping). */
 const money = (amount) => Number(amount).toLocaleString('en-IN');
 
+/**
+ * "1 day" / "3 days" / "1 night" / "2 nights" in English, Hindi and Marathi (a language that tells them apart:
+ * Marathi "1 रात्र" / "2 रात्री"). Other languages get the bare number: their messages carry the unit themselves.
+ * @param {'day'|'night'} unit
+ * @param {number} count
+ * @param {string|null} lang
+ */
+const countText = (unit, count, lang) => {
+  if (lang && !['en', 'hi', 'mr'].includes(lang)) return String(count);
+  const key = `quote${unit === 'night' ? 'Night' : 'Day'}${Number(count) === 1 ? 'One' : 'Many'}`;
+  return getSystemMessage(key, lang, { n: count });
+};
+
 const IST = 'Asia/Kolkata';
 
 /**
@@ -47,8 +60,8 @@ const formatUntil = (date, lang = null) => {
 const carouselPriceText = (display, lang) => {
   const msg = (key, vars) => getSystemMessage(key, lang, vars);
   if (display.kind === 'on_request') return msg('quoteCardOnRequest');
-  const parts = [`₹${display.total}`];
-  if (display.days) parts.push(msg('quoteCardDays', { days: display.days }));
+  const parts = [`₹${money(display.total)}`];
+  if (display.days) parts.push(msg('quoteCardDays', { days: display.days, daysText: countText('day', display.days, lang) }));
   if (display.kind === 'formula') parts.push(msg('quoteCardKm', { km: money(display.billedKm) }));
   else parts.push(msg('quoteCardPackage'));
   return parts.join(' • ');
@@ -71,4 +84,4 @@ const buildReminderText = (quote, lang) => {
   });
 };
 
-module.exports = { routeLine, money, formatUntil, carouselPriceText, buildReminderText };
+module.exports = { countText, routeLine, money, formatUntil, carouselPriceText, buildReminderText };

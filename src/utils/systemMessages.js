@@ -540,9 +540,9 @@ const SYSTEM_MESSAGES = {
     mr: 'भाडे: {{km}} किमी × ₹{{rate}}/किमी = ₹{{amount}}'
   },
   quoteBilledByMin: {
-    en: 'Billed distance: {{km}} km ({{days}} day(s) × {{min}} km minimum per day)',
-    hi: 'बिल किया गया अंतर: {{km}} किमी ({{days}} दिन × {{min}} किमी न्यूनतम प्रतिदिन)',
-    mr: 'बिल केलेले अंतर: {{km}} किमी ({{days}} दिवस × दररोज किमान {{min}} किमी)'
+    en: 'Billed distance: {{km}} km ({{daysText}} × {{min}} km minimum per day)',
+    hi: 'बिल किया गया अंतर: {{km}} किमी ({{daysText}} × {{min}} किमी न्यूनतम प्रतिदिन)',
+    mr: 'बिल केलेले अंतर: {{km}} किमी ({{daysText}} × दररोज किमान {{min}} किमी)'
   },
   quoteBilledByDistance: {
     en: 'Billed distance: {{km}} km (there and back, 2 × {{one}} km)',
@@ -550,15 +550,22 @@ const SYSTEM_MESSAGES = {
     mr: 'बिल केलेले अंतर: {{km}} किमी (जाऊन-येऊन, 2 × {{one}} किमी)'
   },
   quoteExtraDriverDays: {
-    en: 'Driver allowance ({{units}} day(s) × ₹{{perUnit}}): ₹{{amount}}',
-    hi: 'ड्राइवर भत्ता ({{units}} दिन × ₹{{perUnit}}): ₹{{amount}}',
-    mr: 'ड्रायव्हर भत्ता ({{units}} दिवस × ₹{{perUnit}}): ₹{{amount}}'
+    en: 'Driver allowance ({{unitsText}} × ₹{{perUnit}}): ₹{{amount}}',
+    hi: 'ड्राइवर भत्ता ({{unitsText}} × ₹{{perUnit}}): ₹{{amount}}',
+    mr: 'ड्रायव्हर भत्ता ({{unitsText}} × ₹{{perUnit}}): ₹{{amount}}'
   },
   quoteExtraDriverNights: {
-    en: 'Driver allowance ({{units}} night(s) × ₹{{perUnit}}): ₹{{amount}}',
-    hi: 'ड्राइवर भत्ता ({{units}} रात × ₹{{perUnit}}): ₹{{amount}}',
-    mr: 'ड्रायव्हर भत्ता ({{units}} रात्री × ₹{{perUnit}}): ₹{{amount}}'
+    en: 'Driver allowance ({{unitsText}} × ₹{{perUnit}}): ₹{{amount}}',
+    hi: 'ड्राइवर भत्ता ({{unitsText}} × ₹{{perUnit}}): ₹{{amount}}',
+    mr: 'ड्रायव्हर भत्ता ({{unitsText}} × ₹{{perUnit}}): ₹{{amount}}'
   },
+  // "1 day" / "3 days", "1 night" / "2 nights": the count with its unit, put into {{daysText}} / {{unitsText}} of the three
+  // messages above and quoteCardDays by utils/quoteText.js#countText. Only en / hi / mr use them; the machine-translated
+  // languages keep their own {{days}} / {{units}} wording (their text has the unit inside it).
+  quoteDayOne: { en: '{{n}} day', hi: '{{n}} दिन', mr: '{{n}} दिवस' },
+  quoteDayMany: { en: '{{n}} days', hi: '{{n}} दिन', mr: '{{n}} दिवस' },
+  quoteNightOne: { en: '{{n}} night', hi: '{{n}} रात', mr: '{{n}} रात्र' },
+  quoteNightMany: { en: '{{n}} nights', hi: '{{n}} रात', mr: '{{n}} रात्री' },
   quotePackageFareLine: { en: 'Package fare: ₹{{amount}}', hi: 'पैकेज किराया: ₹{{amount}}', mr: 'पॅकेज भाडे: ₹{{amount}}' },
   quoteActualKmNote: {
     en: 'The final fare is by actual km if the trip runs more than the billed km.',
@@ -566,7 +573,7 @@ const SYSTEM_MESSAGES = {
     mr: 'प्रवास बिल केलेल्या किमीपेक्षा जास्त झाल्यास अंतिम भाडे प्रत्यक्ष किमीनुसार असेल.'
   },
   // The vehicle card's price for a Round Trip quote, joined with " • " (utils/quoteText.js#carouselPriceText).
-  quoteCardDays: { en: '{{days}} day(s)', hi: '{{days}} दिन', mr: '{{days}} दिवस' },
+  quoteCardDays: { en: '{{daysText}}', hi: '{{daysText}}', mr: '{{daysText}}' },
   quoteCardKm: { en: '{{km}} km', hi: '{{km}} किमी', mr: '{{km}} किमी' },
   quoteCardPackage: { en: 'package fare', hi: 'पैकेज किराया', mr: 'पॅकेज भाडे' },
   quoteCardOnRequest: { en: 'Price: our team will confirm', hi: 'किराया: हमारी टीम बताएगी', mr: 'भाडे: आमची टीम कळवेल' },

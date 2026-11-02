@@ -27,7 +27,7 @@ const { applyMessageTemplate } = require('../utils/messageTemplating');
 const { computeQuote, computeAdvance } = require('../utils/travelQuote');
 const { getSystemMessage } = require('../utils/systemMessages');
 const { quoteTapId } = require('../utils/quoteIds');
-const { money, formatUntil, routeLine } = require('../utils/quoteText');
+const { money, formatUntil, routeLine, countText } = require('../utils/quoteText');
 const { findFlowEntryNodeId } = require('../utils/flowGraphValidation');
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -50,7 +50,9 @@ const extraLine = (extra, lang, quote) => {
     const allowance = quote.collected?.pricing?.allowance;
     if (allowance) {
       const key = allowance.basis === 'night' ? 'quoteExtraDriverNights' : 'quoteExtraDriverDays';
-      return getSystemMessage(key, lang, { units: allowance.units, perUnit: money(allowance.perUnit), amount });
+      return getSystemMessage(key, lang, {
+        units: allowance.units, unitsText: countText(allowance.basis === 'night' ? 'night' : 'day', allowance.units, lang), perUnit: money(allowance.perUnit), amount
+      });
     }
     return getSystemMessage('quoteExtraDriver', lang, { days: quote.collected?.days ?? '', amount }); // a quote saved before per-vehicle allowances
   }
@@ -88,7 +90,7 @@ const buildQuoteText = (quote, lang) => {
       msg('quoteKmFareLine', { km: money(pricing.billedKm), rate: money(pricing.ratePerKm), amount: money(quote.base_fare) }),
       byDistance
         ? msg('quoteBilledByDistance', { km: money(pricing.billedKm), one: money(pricing.oneWayKm) })
-        : msg('quoteBilledByMin', { km: money(pricing.billedKm), days: pricing.days, min: money(pricing.minKmPerDay) }),
+        : msg('quoteBilledByMin', { km: money(pricing.billedKm), days: pricing.days, daysText: countText('day', pricing.days, lang), min: money(pricing.minKmPerDay) }),
       ...extras.map(e => extraLine(e, lang, quote))
     );
   } else if (pricing?.method === 'package') {

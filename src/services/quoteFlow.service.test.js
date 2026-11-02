@@ -432,8 +432,8 @@ test('Round Trip by formula: Pune -> Shirdi, 3 days = 18,150, with the Days line
   });
   const text = state.jobs[0].message;
   for (const part of [
-    'Round Trip', 'Days: *3*', 'Fare: 750 km × ₹23/km = ₹17,250', 'Billed distance: 750 km (3 day(s) × 250 km minimum per day)',
-    'Driver allowance (3 day(s) × ₹300): ₹900', 'Total: *₹18,150*', 'Toll is extra', 'The final fare is by actual km if the trip runs more than the billed km.'
+    'Round Trip', 'Days: *3*', 'Fare: 750 km × ₹23/km = ₹17,250', 'Billed distance: 750 km (3 days × 250 km minimum per day)',
+    'Driver allowance (3 days × ₹300): ₹900', 'Total: *₹18,150*', 'Toll is extra', 'The final fare is by actual km if the trip runs more than the billed km.'
   ]) assert.ok(text.includes(part), part);
   assert.ok(text.indexOf('Days: *3*') < text.indexOf('Fare: 750 km'));
   assert.ok(text.indexOf('Total:') < text.indexOf('The final fare is by actual km'));
@@ -452,7 +452,7 @@ test('Round Trip by formula, 1 day: 2 x distance is billed (370 km) = 8,810; per
   state.jobs.length = 0;
   await send(roundTripSession({ days: 3, allowanceBasis: 'night' }));
   assert.equal(quotes()[2].total_amount, 17850);
-  assert.ok(state.jobs[0].message.includes('Driver allowance (2 night(s) × ₹300): ₹600'));
+  assert.ok(state.jobs[0].message.includes('Driver allowance (2 nights × ₹300): ₹600'));
 });
 
 test('Round Trip by formula: the night charge and the minimum charge stay separate lines on top', async () => {
@@ -483,6 +483,26 @@ test('One Way is unchanged: no Days line, no pricing snapshot, rounded to 10', a
   assert.equal(q.total_amount, 5000);
   assert.equal(q.collected.pricing, undefined);
   assert.ok(!state.jobs[0].message.includes('Days:'));
+});
+
+test('the quote breakdown says 1 day / 3 days and 1 night / 2 nights (en, mr); a machine language keeps its own wording', () => {
+  const quote = (days, basis, units) => ({
+    id: uuid(780), trip_type: 'round_trip', base_fare: 17250, total_amount: 18150, advance_amount: null, expires_at: new Date().toISOString(),
+    extras: [{ key: 'driver_allowance', amount: 900 }],
+    collected: {
+      fromLabel: 'Pune', toLabel: 'Shirdi', days, tollIncluded: false,
+      pricing: { method: 'formula', days, oneWayKm: 185, minKmPerDay: 250, billedKm: 750, ratePerKm: 23, kmCharge: 17250, allowance: { perUnit: 300, units, basis, amount: 900 } }
+    }
+  });
+  const lines = (q, lang) => quoteFlow.buildQuoteText(q, lang).split('\n');
+  assert.ok(lines(quote(1, 'day', 1), 'en').includes('Billed distance: 750 km (1 day × 250 km minimum per day)'));
+  assert.ok(lines(quote(1, 'day', 1), 'en').includes('Driver allowance (1 day × ₹300): ₹900'));
+  assert.ok(lines(quote(2, 'night', 1), 'en').includes('Driver allowance (1 night × ₹300): ₹900'));
+  assert.ok(lines(quote(3, 'night', 2), 'en').includes('Driver allowance (2 nights × ₹300): ₹900'));
+  assert.ok(lines(quote(2, 'night', 1), 'mr').includes('ड्रायव्हर भत्ता (1 रात्र × ₹300): ₹900'));
+  assert.ok(lines(quote(3, 'night', 2), 'mr').includes('ड्रायव्हर भत्ता (2 रात्री × ₹300): ₹900'));
+  assert.ok(lines(quote(3, 'day', 3), 'gu').some((l) => l.includes('3') && !l.includes('{{')), 'a machine language still fills its own placeholders');
+  assert.ok(!lines(quote(3, 'day', 3), 'gu').some((l) => l.includes('{{')), 'no unfilled placeholder');
 });
 
 test('Round Trip text in Hindi and Marathi: Days line, breakdown, allowance and the actual-km note', () => {

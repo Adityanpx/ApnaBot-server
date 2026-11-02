@@ -119,7 +119,9 @@ test('the generated machine files are loaded: every machine key is a real key an
     assert.ok(Object.keys(table).length > 70, lang);
     for (const [key, text] of Object.entries(table)) {
       assert.ok(english[key] !== undefined, `${lang}.${key} is not a message key`);
-      assert.equal(checkPlaceholders(english[key], text).ok, true, `${lang}.${key} placeholders`);
+      // {{daysText}} / {{unitsText}} (count + unit, en / hi / mr only) stand for the machine text's own {{days}} / {{units}}
+      const expected = english[key].replace(/{{daysText}}/g, '{{days}}').replace(/{{unitsText}}/g, '{{units}}');
+      assert.equal(checkPlaceholders(expected, text).ok, true, `${lang}.${key} placeholders`);
       assert.equal(require('./systemMessagesReview').checkProtectedTerms(english[key], text), null, `${lang}.${key} protected terms`);
     }
   }

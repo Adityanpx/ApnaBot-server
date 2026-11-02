@@ -2089,6 +2089,15 @@ like a 1-day one), because the days were asked after the vehicle and nothing mul
   `services/{quoteFlow.service,bookingGraph.roundTripQuote,notification.service}.test.js`, `utils/{quoteText,systemMessages}.test.js`,
   `controllers/webhook.interactiveSites.test.js`, `scripts/{cutoverRoundTripDaysFirst,cutoverRoundTripDaysFirst.engine,deactivateSgRoundTripFares}.test.js`.
 
+### Round Trip quote wording (plurals, thousands separators)
+
+- The Round Trip quote breakdown and vehicle-card caption say "1 day / 3 days" and "1 night / 2 nights" (en / hi / mr; Marathi "1 रात्र" / "2 रात्री")
+  through `quoteDayOne|Many` / `quoteNightOne|Many` and `utils/quoteText.js#countText`, which fill `{{daysText}}` / `{{unitsText}}` in
+  `quoteBilledByMin`, `quoteExtraDriverDays|Nights` and `quoteCardDays`. The machine-translated languages keep their own `{{days}}` / `{{units}}`
+  text (the code passes both), so their review CSVs show the English source with the new variable for those four keys and the four new keys stay
+  English for them (never shown: `countText` returns the bare number for them). The card caption total uses the Indian thousands separator
+  (`₹12,600`). One Way cards (`₹3000`, webhook fallback) and the legacy `quoteExtraDriver` / booking-summary "days" lines are unchanged.
+
 ### Route name translations (migration `20261108120000_travel_routes_translations.sql`; server code built, web / Flutter edit fields NOT done)
 
 - `travel_routes` has nullable `from_label_translations`, `to_label_translations`, `region_translations` (`{ "<lang>": "<text>" }`, each

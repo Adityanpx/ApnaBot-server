@@ -34,15 +34,28 @@ test('the reminder names the route, total, deadline and the right button, in eve
 test('carouselPriceText: formula, package and "team will confirm", in each language', () => {
   const { carouselPriceText } = require('./quoteText');
   const formula = { kind: 'formula', total: 18150, days: 3, billedKm: 750 };
-  assert.equal(carouselPriceText(formula, 'en'), '₹18150 • 3 day(s) • 750 km');
-  assert.equal(carouselPriceText(formula, 'hi'), '₹18150 • 3 दिन • 750 किमी');
-  assert.equal(carouselPriceText(formula, 'mr'), '₹18150 • 3 दिवस • 750 किमी');
+  assert.equal(carouselPriceText(formula, 'en'), '₹18,150 • 3 days • 750 km');
+  assert.equal(carouselPriceText(formula, 'hi'), '₹18,150 • 3 दिन • 750 किमी');
+  assert.equal(carouselPriceText(formula, 'mr'), '₹18,150 • 3 दिवस • 750 किमी');
   const pkg = { kind: 'package', total: 7300, days: 2, billedKm: null };
-  assert.equal(carouselPriceText(pkg, 'en'), '₹7300 • 2 day(s) • package fare');
-  assert.equal(carouselPriceText({ ...pkg, days: null }, 'en'), '₹7300 • package fare');
+  assert.equal(carouselPriceText(pkg, 'en'), '₹7,300 • 2 days • package fare');
+  assert.equal(carouselPriceText({ ...pkg, days: null }, 'en'), '₹7,300 • package fare');
   assert.equal(carouselPriceText({ kind: 'on_request' }, 'en'), 'Price: our team will confirm');
   assert.equal(carouselPriceText({ kind: 'on_request' }, 'mr'), 'भाडे: आमची टीम कळवेल');
-  assert.equal(carouselPriceText({ kind: 'formula', total: 8810, days: 1, billedKm: 370.8 }, 'en'), '₹8810 • 1 day(s) • 370.8 km');
+  assert.equal(carouselPriceText({ kind: 'formula', total: 8810, days: 1, billedKm: 370.8 }, 'en'), '₹8,810 • 1 day • 370.8 km');
+});
+
+test('countText and the card caption: 1 day / 3 days, 1 night / 2 nights; thousands separators; other languages keep their own wording', () => {
+  const { countText, carouselPriceText } = require('./quoteText');
+  assert.deepEqual([1, 2, 10].map((n) => countText('day', n, 'en')), ['1 day', '2 days', '10 days']);
+  assert.deepEqual([1, 2].map((n) => countText('night', n, 'en')), ['1 night', '2 nights']);
+  assert.deepEqual([1, 2].map((n) => countText('night', n, 'hi')), ['1 रात', '2 रात']);
+  assert.deepEqual([1, 2].map((n) => countText('night', n, 'mr')), ['1 रात्र', '2 रात्री']);
+  assert.deepEqual([1, 3].map((n) => countText('day', n, 'mr')), ['1 दिवस', '3 दिवस']);
+  assert.equal(countText('day', 3, null), '3 days');
+  assert.equal(countText('day', 3, 'gu'), '3'); // their messages carry the unit
+  assert.equal(carouselPriceText({ kind: 'formula', total: 1234567, days: 1, billedKm: 1200 }, 'en'), '₹12,34,567 • 1 day • 1,200 km');
+  assert.equal(carouselPriceText({ kind: 'package', total: 12600, days: 3, billedKm: null }, 'gu'), '₹12,600 • 3 દિવસ(ઓ) • પેકેજ ભાડું');
 });
 
 test('formatUntil: English is unchanged; Hindi and Marathi get their month name, Latin digits and AM/PM', () => {
