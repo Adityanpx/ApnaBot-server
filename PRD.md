@@ -2075,6 +2075,22 @@ like a 1-day one), because the days were asked after the vehicle and nothing mul
   `services/{quoteFlow.service,bookingGraph.roundTripQuote,notification.service}.test.js`, `utils/{quoteText,systemMessages}.test.js`,
   `controllers/webhook.interactiveSites.test.js`, `scripts/{cutoverRoundTripDaysFirst,cutoverRoundTripDaysFirst.engine,deactivateSgRoundTripFares}.test.js`.
 
+### Route name translations (migration `20261108120000_travel_routes_translations.sql`; server code built, web / Flutter edit fields NOT done)
+
+- `travel_routes` has nullable `from_label_translations`, `to_label_translations`, `region_translations` (`{ "<lang>": "<text>" }`, each
+  <= 24 characters, a list row) and `auto_translations` (machine markers, same bookkeeping as `flow_nodes`). Vehicle names are NOT translated
+  (brand names). English is the final fallback everywhere: a route with no translation reads exactly as before.
+- **Filling:** `translateBusinessFlow` (the owner's Translate button, `POST /api/translate/flow`, and the signup run) now also reads the
+  business's routes (`translationSlots.routeSlots`: the shown From / To name - the label, else the title-cased city key - and the region) and
+  fills only the missing slots, never an existing translation, marking them machine-made. `only: 'catalog'` skips routes.
+- **Owner edits:** `POST/PUT /api/travel/routes` accept `fromLabelTranslations` / `toLabelTranslations` / `regionTranslations` (null or {} clears;
+  `en` and unknown codes rejected) and return `autoTranslated`. Changing a label or region without sending new translations drops the old
+  translations of that text (a renamed place is never shown under its old name); Translate fills them again.
+- **Reads:** the route picker rows carry `labelTranslations` (From, To and region rows, so a typed translated name also picks the row); the quote
+  stores `collected.fromLabelTranslations / toLabelTranslations` when it is created, and the quote text and the reminder name the route in the
+  customer's language (`utils/quoteText.js#routeLine`). Quotes saved before this have none: English. The vehicle carousel shows no route name.
+- **Not done:** the web Rates route editor has no fields for the translations or the machine badge; the owner-facing alert and the Quotes tab stay English.
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism

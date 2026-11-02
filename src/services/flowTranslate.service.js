@@ -13,7 +13,7 @@ const azure = require('./azureTranslate.service');
 const slotsUtil = require('../utils/translationSlots');
 const { readStatus, statusSummary, isTranslating } = require('../utils/translationStatus');
 
-const { nodeSlots, edgeSlots, businessSlots, catalogSettingsSlots, catalogCollectionSlots, catalogItemSlots, isMissing, markAuto, clone } = slotsUtil;
+const { nodeSlots, edgeSlots, businessSlots, routeSlots, catalogSettingsSlots, catalogCollectionSlots, catalogItemSlots, isMissing, markAuto, clone } = slotsUtil;
 
 const NODE_COLUMNS = ['label_translations', 'button_text_translations', 'form_title_translations', 'carousel_cards', 'options', 'auto_translations'];
 const EDGE_COLUMNS = ['label_translations', 'description_translations', 'auto_translations'];
@@ -21,6 +21,7 @@ const BUSINESS_COLUMNS = [
   'welcome_message_translations', 'stop_message_translations', 'start_message_translations',
   'cancel_message_translations', 'flow_fields', 'auto_translations'
 ];
+const ROUTE_COLUMNS = ['from_label_translations', 'to_label_translations', 'region_translations', 'auto_translations'];
 const CATALOG_COLUMNS = ['settings', 'auto_translations'];
 const COLLECTION_COLUMNS = ['title_translations', 'body_translations', 'price_label_translations', 'auto_translations'];
 const ITEM_COLUMNS = ['caption_translations', 'auto_translations'];
@@ -120,15 +121,17 @@ const translateBusinessFlow = async ({ businessId, lang, scope, only = null }) =
   if (track) await setStatus(businessId, lang, 'pending');
   try {
     const catalogOnly = only === 'catalog';
-    const [nodesRes, edgesRes, businessRes, catalogRes, collectionsRes, itemsRes] = await Promise.all([
+    const [nodesRes, edgesRes, businessRes, catalogRes, collectionsRes, itemsRes, routesRes] = await Promise.all([
       supabase.from('flow_nodes').select('*').eq('business_id', businessId),
       supabase.from('flow_edges').select('*').eq('business_id', businessId),
       supabase.from('businesses').select('welcome_message, welcome_message_translations, stop_message, stop_message_translations, start_message, start_message_translations, cancel_message, cancel_message_translations, flow_fields, auto_translations').eq('id', businessId).single(),
       supabase.from('catalogs').select('*').eq('business_id', businessId).maybeSingle(),
       supabase.from('catalog_collections').select('*').eq('business_id', businessId),
-      supabase.from('catalog_items').select('*').eq('business_id', businessId)
+      supabase.from('catalog_items').select('*').eq('business_id', businessId),
+      // the quote flow's routes (none for most businesses): their names and regions are shown in the route picker
+      catalogOnly ? { data: [], error: null } : supabase.from('travel_routes').select('*').eq('business_id', businessId)
     ]);
-    for (const res of [nodesRes, edgesRes, businessRes, catalogRes, collectionsRes, itemsRes]) if (res.error) throw res.error;
+    for (const res of [nodesRes, edgesRes, businessRes, catalogRes, collectionsRes, itemsRes, routesRes]) if (res.error) throw res.error;
 
     const originalNodes = nodesRes.data || [];
     const originalEdges = edgesRes.data || [];
@@ -136,6 +139,7 @@ const translateBusinessFlow = async ({ businessId, lang, scope, only = null }) =
     const originalCatalog = catalogRes.data || null;
     const originalCollections = collectionsRes.data || [];
     const originalItems = itemsRes.data || [];
+    const originalRoutes = routesRes.data || [];
     const nodes = clone(originalNodes);
     const edges = clone(originalEdges);
     const business = clone(originalBusiness);
@@ -143,9 +147,11 @@ const translateBusinessFlow = async ({ businessId, lang, scope, only = null }) =
     const catalog = clone(originalCatalog);
     const collections = clone(originalCollections);
     const items = clone(originalItems);
+    const routes = clone(originalRoutes);
     const entries = [
       ...(catalogOnly ? [] : buildGraphEntries(nodes, edges)),
       ...(catalogOnly ? [] : [{ kind: 'business', row: business, slots: businessSlots(business) }]),
+      ...routes.map((row) => ({ kind: 'route', row, slots: routeSlots(row) })),
       ...(catalog ? [{ kind: 'catalog', row: catalog, slots: catalogSettingsSlots(catalog) }] : []),
       ...collections.map((row) => ({ kind: 'collection', row, slots: catalogCollectionSlots(row) })),
       ...items.map((row) => ({ kind: 'item', row, slots: catalogItemSlots(row) }))
@@ -160,6 +166,7 @@ const translateBusinessFlow = async ({ businessId, lang, scope, only = null }) =
         business: { original: () => originalBusiness, columns: BUSINESS_COLUMNS, table: 'businesses' },
         catalog: { original: () => originalCatalog, columns: CATALOG_COLUMNS, table: 'catalogs' },
         collection: { original: () => originalCollections.find((c) => c.id === entry.row.id), columns: COLLECTION_COLUMNS, table: 'catalog_collections' },
+        route: { original: () => originalRoutes.find((r) => r.id === entry.row.id), columns: ROUTE_COLUMNS, table: 'travel_routes' },
         item: { original: () => originalItems.find((i) => i.id === entry.row.id), columns: ITEM_COLUMNS, table: 'catalog_items' }
       };
       const target = TARGETS[entry.kind];

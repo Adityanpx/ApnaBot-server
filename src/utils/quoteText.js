@@ -3,6 +3,18 @@
 // No requires beyond systemMessages, so both load it without config.
 const { getSystemMessage } = require('./systemMessages');
 
+/**
+ * "From → To" for a saved quote (collected), in the customer's language: the route's stored translation,
+ * else the English label. Quotes saved before routes were translated have no translations: English.
+ */
+const routeLine = (c, lang) => {
+  const pick = (label, translations) => {
+    const t = lang && translations ? translations[lang] : undefined;
+    return typeof t === 'string' && t.trim() !== '' ? t : label;
+  };
+  return `${pick(c.fromLabel, c.fromLabelTranslations)} → ${pick(c.toLabel, c.toLabelTranslations)}`;
+};
+
 /** 3500 -> "3,500" (Indian grouping). */
 const money = (amount) => Number(amount).toLocaleString('en-IN');
 
@@ -52,11 +64,11 @@ const buildReminderText = (quote, lang) => {
   const c = quote.collected || {};
   const hasAdvance = quote.advance_amount !== null && quote.advance_amount !== undefined;
   return getSystemMessage('quoteReminder', lang, {
-    route: `${c.fromLabel} → ${c.toLabel}`,
+    route: routeLine(c, lang),
     total: money(quote.total_amount),
     until: formatUntil(quote.expires_at, lang),
     button: getSystemMessage(hasAdvance ? 'quoteBtnConfirmPay' : 'quoteBtnConfirm', lang)
   });
 };
 
-module.exports = { money, formatUntil, carouselPriceText, buildReminderText };
+module.exports = { routeLine, money, formatUntil, carouselPriceText, buildReminderText };

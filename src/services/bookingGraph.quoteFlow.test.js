@@ -138,6 +138,21 @@ test('a route with no labels is quoted as the title-cased city keys; a long cust
   assert.equal(b.session.collected.quoteToLabel, long);
 });
 
+test('route names and regions show in the customer language; English when a route has none; the choice keeps the translations for the quote', async () => {
+  state.routes = [
+    route(1, { toLabel: 'Shirdi', toLabelTranslations: { mr: 'शिर्डी' }, fromLabelTranslations: { mr: 'पुणे' } }),
+    route(2, { toLabel: 'Nashik' })
+  ];
+  const { session } = await start();
+  const { result } = await say(session, 'One Way', 'mr');
+  assert.deepEqual(result.options.slice(0, 2).map(o => o.label), ['शिर्डी', 'Nashik']);
+  const picked = await say(session, 'शिर्डी', 'mr'); // typing the translated name picks the row
+  assert.equal(picked.session.collected.quoteRouteId, 'r1');
+  assert.deepEqual(picked.session.collected.quoteToLabelTranslations, { mr: 'शिर्डी' });
+  assert.deepEqual(picked.session.collected.quoteFromLabelTranslations, { mr: 'पुणे' });
+  assert.equal(picked.session.collected.quoteToLabel, 'Shirdi');
+});
+
 test('a typed city name or a row number also picks the row; an unknown reply re-asks without moving', async () => {
   const { session } = await start();
   let r = await say(session, 'One Way');

@@ -119,3 +119,17 @@ test('routeLabel: a null label becomes the title-cased city key; a custom label 
   const [row] = view([{ id: 'r', fromCity: 'pune', toCity: 'x', fromLabel: null, toLabel: long, region: null, sortOrder: 0 }], null, text).rows;
   assert.equal(row.label.length, 24);
 });
+
+test('route and region translations ride on the list rows (the customer\'s language is picked later); no translation, no key', () => {
+  const rs = [
+    { id: 'a', fromCity: 'pune', toCity: 'shirdi', fromLabel: null, toLabel: 'Shirdi', region: 'West', sortOrder: 0,
+      fromLabelTranslations: { mr: 'पुणे' }, toLabelTranslations: { mr: 'शिर्डी' }, regionTranslations: { mr: 'पश्चिम' } },
+    { id: 'b', fromCity: 'pune', toCity: 'nashik', fromLabel: null, toLabel: 'Nashik', region: 'North', sortOrder: 1 }
+  ];
+  const to = view(rs, null, text).rows;
+  assert.deepEqual(to[0].labelTranslations, { mr: 'शिर्डी' });
+  assert.equal('labelTranslations' in to[1] && to[1].labelTranslations !== undefined, false);
+  const many = Array.from({ length: 10 }, (_, i) => ({ ...rs[i % 2], id: `x${i}`, toCity: `c${i}`, toLabel: `C${i}`, region: i < 5 ? 'West' : 'North' }));
+  const regions = view(many, null, text).rows.filter((r) => r.value.startsWith('region:'));
+  assert.deepEqual(regions.find((r) => r.value === 'region:West').labelTranslations, { mr: 'पश्चिम' });
+});

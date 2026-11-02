@@ -146,7 +146,7 @@ const pairKey = (fromCity, toCity) => `${fromCity}>${toCity}`;
  *               fare, or the route has a one-way distance and the vehicle a min km and a per-km rate
  *               (utils/travelQuote.js#roundTripReadiness - the same test the route editor shows)
  * @param {string} tripType  'oneway' | 'round_trip'
- * @returns {Promise<{id, fromCity, toCity, fromLabel, toLabel, region, sortOrder}[]>}
+ * @returns {Promise<{id, fromCity, toCity, fromLabel, toLabel, fromLabelTranslations, toLabelTranslations, region, regionTranslations, sortOrder}[]>}
  */
 const listQuotableRoutes = async (businessId, tripType) => {
   const roundTrip = tripType === 'round_trip';
@@ -183,7 +183,10 @@ const listQuotableRoutes = async (businessId, tripType) => {
     toCity: r.to_city,
     fromLabel: r.from_label,
     toLabel: r.to_label,
+    fromLabelTranslations: r.from_label_translations || null,
+    toLabelTranslations: r.to_label_translations || null,
     region: r.region,
+    regionTranslations: r.region_translations || null,
     sortOrder: r.sort_order ?? 0
   }));
 };

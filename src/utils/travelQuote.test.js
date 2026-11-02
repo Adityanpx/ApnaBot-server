@@ -265,3 +265,12 @@ test('filterOptionsBySeats: keeps what seats the party, unknown seats stay, inde
   assert.equal(filterOptionsBySeats(options, 'unknown'), options);
   assert.deepEqual(filterOptionsBySeats([{ index: 0, seats: 4 }], '7+'), []);
 });
+
+test('validateRouteInput: label / region translations are { language: text <= 24 }, never en, null or {} clears', () => {
+  const ok = validateRouteInput({ toLabelTranslations: { mr: ' शिर्डी ', gu: '' }, regionTranslations: null, fromLabelTranslations: {} }, { isEdit: true });
+  assert.deepEqual(ok.errors, []);
+  assert.deepEqual(ok.value, { to_label_translations: { mr: 'शिर्डी' }, region_translations: null, from_label_translations: null });
+  for (const bad of [{ en: 'Pune' }, { xx: 'Pune' }, { mr: 'x'.repeat(25) }, { mr: 5 }, 'text', ['a']]) {
+    assert.equal(validateRouteInput({ fromLabelTranslations: bad }, { isEdit: true }).errors.length, 1, JSON.stringify(bad));
+  }
+});

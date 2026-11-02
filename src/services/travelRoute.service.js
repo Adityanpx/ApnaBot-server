@@ -10,6 +10,7 @@
 const supabase = require('../config/supabase');
 const { toCamelCase } = require('../utils/caseConvert');
 const { validateRouteInput, roundTripCandidates, roundTripReadiness } = require('../utils/travelQuote');
+const { shapeRouteAuto } = require('../utils/translationSlots');
 const distanceMatrixService = require('./distanceMatrix.service');
 
 const fail = (statusCode, message, errors = null) => Object.assign(new Error(message), { statusCode, errors });
@@ -42,12 +43,17 @@ const roundTripFor = (route, fareRows) => {
   return roundTripReadiness({ oneWayKm: numberOrNull(route.one_way_distance_km), vehicles: roundTripCandidates(fareRows) });
 };
 
-const routeToApi = (route, fareRows) => ({
-  ...toCamelCase(route),
-  oneWayDistanceKm: numberOrNull(route.one_way_distance_km),
-  roundTrip: roundTripFor(route, fareRows),
-  fares: fareRows.map(fareToApi)
-});
+// autoTranslated { fromLabel | toLabel | region: [lang] } = the translations still holding the machine's text (the apps badge them)
+const routeToApi = (route, fareRows) => {
+  const { autoTranslations, ...rest } = toCamelCase(route);
+  return {
+    ...rest,
+    autoTranslated: shapeRouteAuto(route),
+    oneWayDistanceKm: numberOrNull(route.one_way_distance_km),
+    roundTrip: roundTripFor(route, fareRows),
+    fares: fareRows.map(fareToApi)
+  };
+};
 
 const loadFares = async (businessId) => {
   const { data, error } = await supabase.from('route_fares').select(FARE_SELECT).eq('business_id', businessId);
@@ -168,6 +174,24 @@ const applyFares = async (route, fares) => {
   }
 };
 
+// A translation belongs to the English text it was made from: when the owner changes a label or the region and
+// sends no new translations with it, the old ones are dropped (and their machine marks) so a renamed place is
+// never shown under its old name. Auto-translate fills them again.
+const TRANSLATED_TEXTS = [['from_label', 'from_label_translations', 'fromLabel'], ['to_label', 'to_label_translations', 'toLabel'], ['region', 'region_translations', 'region']];
+const staleTranslationReset = (existing, columns) => {
+  const reset = {};
+  let marks = null;
+  for (const [textColumn, translationsColumn, slot] of TRANSLATED_TEXTS) {
+    if (columns[textColumn] === undefined || columns[translationsColumn] !== undefined) continue;
+    if ((columns[textColumn] ?? null) === (existing[textColumn] ?? null)) continue;
+    reset[translationsColumn] = null;
+    marks = marks || { ...(existing.auto_translations || {}) };
+    delete marks[slot];
+  }
+  if (marks) reset.auto_translations = Object.keys(marks).length > 0 ? marks : null;
+  return reset;
+};
+
 /**
  * Creates a route, or - when the owner already has this from/to pair - updates it (the same
  * upsert behaviour as POST /api/route-fares). Only the fields sent are written.
@@ -178,8 +202,11 @@ const createRoute = async (businessId, body) => {
   const { fares = [], ...columns } = value;
   await assertVehiclesBelong(businessId, fares);
 
+  const { data: pair, error: pairErr } = await supabase.from('travel_routes').select('*')
+    .eq('business_id', businessId).eq('from_city', columns.from_city).eq('to_city', columns.to_city).maybeSingle();
+  if (pairErr) throw pairErr;
   const { data: route, error } = await supabase.from('travel_routes')
-    .upsert({ business_id: businessId, ...columns }, { onConflict: 'business_id,from_city,to_city' })
+    .upsert({ business_id: businessId, ...columns, ...(pair ? staleTranslationReset(pair, columns) : {}) }, { onConflict: 'business_id,from_city,to_city' })
     .select().single();
   if (error) throw error;
   await applyFares(route, fares);
@@ -207,7 +234,7 @@ const updateRoute = async (businessId, id, body) => {
   const wasActive = existing.is_active;
   let route = existing;
   if (Object.keys(columns).length > 0) {
-    const { data, error } = await supabase.from('travel_routes').update(columns).eq('id', id).select().single();
+    const { data, error } = await supabase.from('travel_routes').update({ ...columns, ...staleTranslationReset(existing, columns) }).eq('id', id).select().single();
     if (error) throw error;
     route = data;
   }
@@ -263,4 +290,4 @@ const deleteRoute = async (businessId, id) => {
   if (error) throw error;
 };
 
-module.exports = { listRoutes, createRoute, updateRoute, fillDistance, deleteRoute };
+module.exports = { staleTranslationReset, listRoutes, createRoute, updateRoute, fillDistance, deleteRoute };

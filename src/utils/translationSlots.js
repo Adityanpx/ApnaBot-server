@@ -20,6 +20,7 @@ const { toCamelCase } = require('./caseConvert');
 const { LIMITS, edgeLabelLimit } = require('./textLimits');
 const { FORM_TITLE_MAX } = require('./formTitle');
 const { CARD_BODY_MAX } = require('./carouselPayload');
+const { routeLabel } = require('./routePicker');
 
 const textHash = (text) => crypto.createHash('sha1').update(String(text)).digest('hex').slice(0, 12);
 
@@ -119,6 +120,21 @@ const businessSlots = (business) => {
   return slots;
 };
 
+// ---- Routes (travel_routes) ----
+/**
+ * Slots of a travel_routes row: the From / To names (the label, or the title-cased city key when there is none - the
+ * text the customer is shown) and the region. Each is a WhatsApp list row, so 24 characters.
+ */
+const routeSlots = (route) => {
+  const slots = [];
+  const from = routeLabel(route.from_label, route.from_city);
+  const to = routeLabel(route.to_label, route.to_city);
+  if (hasText(from)) slots.push(mapSlot(route, 'from_label_translations', 'fromLabel', from, LIMITS.LIST_ROW_TITLE));
+  if (hasText(to)) slots.push(mapSlot(route, 'to_label_translations', 'toLabel', to, LIMITS.LIST_ROW_TITLE));
+  if (hasText(route.region)) slots.push(mapSlot(route, 'region_translations', 'region', route.region.trim(), LIMITS.LIST_ROW_TITLE));
+  return slots;
+};
+
 // ---- Catalogue (catalogs.settings, catalog_collections, catalog_items) ----
 const CATALOG_SETTING_TEXTS = [
   ['text', LIMITS.INTERACTIVE_BODY], ['emptyText', LIMITS.INTERACTIVE_BODY],
@@ -202,12 +218,13 @@ const shapeNodeForApi = (node) => shapeRowForApi(node, nodeSlots(node));
 const shapeEdgeForApi = (edge, parentNode) => shapeRowForApi(edge, edgeSlots(edge, parentNode));
 
 /** { <slot>: [lang] } for the catalogue pieces, same contract as the nodes' autoTranslated. */
+const shapeRouteAuto = (row) => autoTranslatedOf(row, routeSlots(row));
 const shapeSettingsAuto = (row) => autoTranslatedOf(row, catalogSettingsSlots(row));
 const shapeCollectionAuto = (row) => autoTranslatedOf(row, catalogCollectionSlots(row));
 const shapeItemAuto = (row) => autoTranslatedOf(row, catalogItemSlots(row));
 
 module.exports = {
   shapeNodeForApi, shapeEdgeForApi,
-  textHash, clone, nodeSlots, edgeSlots, businessSlots, isMissing, markAuto, autoTranslatedOf, businessRowFromCamel,
+  textHash, clone, nodeSlots, edgeSlots, businessSlots, routeSlots, shapeRouteAuto, isMissing, markAuto, autoTranslatedOf, businessRowFromCamel,
   catalogSettingsSlots, catalogCollectionSlots, catalogItemSlots, shapeSettingsAuto, shapeCollectionAuto, shapeItemAuto
 };

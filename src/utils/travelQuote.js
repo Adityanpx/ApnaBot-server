@@ -1,6 +1,7 @@
 // Travel quotes: input validation for the rate card (routes, fares, extras) and the
 // pure price / advance maths the quote step uses. No DB access.
 const { LIMITS } = require('./flowSpec');
+const { isValidLanguageCode } = require('./languageCatalog');
 
 const TRIP_TYPES = ['oneway', 'round_trip'];
 const CITY_MAX = 60;
@@ -44,6 +45,17 @@ const validateRouteInput = (body, { isEdit = false } = {}) => {
     const v = input[key] === '' ? null : input[key];
     if (!isOptionalText(v, LABEL_MAX)) errors.push(`${key} must be text of at most ${LABEL_MAX} characters`);
     else value[column] = textOrNull(v);
+  }
+  // Per-language texts of the three above ({ "hi": "..." }); null or {} clears them. English is the label itself.
+  for (const [key, column] of [['fromLabelTranslations', 'from_label_translations'], ['toLabelTranslations', 'to_label_translations'], ['regionTranslations', 'region_translations']]) {
+    if (input[key] === undefined) continue;
+    const v = input[key];
+    if (v === null) { value[column] = null; continue; }
+    const entries = v && typeof v === 'object' && !Array.isArray(v) ? Object.entries(v) : null;
+    const bad = !entries || entries.some(([lang, text]) => lang === 'en' || !isValidLanguageCode(lang) || (text !== null && !(typeof text === 'string' && text.trim().length <= LABEL_MAX)));
+    if (bad) { errors.push(`${key} must be { language code: text of at most ${LABEL_MAX} characters }`); continue; }
+    const kept = Object.fromEntries(entries.filter(([, text]) => typeof text === 'string' && text.trim() !== '').map(([lang, text]) => [lang, text.trim()]));
+    value[column] = Object.keys(kept).length > 0 ? kept : null;
   }
   if (input.tollIncluded !== undefined) {
     if (input.tollIncluded !== null && typeof input.tollIncluded !== 'boolean') errors.push('tollIncluded must be true, false or null');

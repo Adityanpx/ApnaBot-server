@@ -581,3 +581,13 @@ test('other handoffs are unchanged: no quoteRequest, no vehicle on the lead', as
   assert.equal(quotes()[0].vehicle_id ?? null, null);
   assert.equal(quotes()[0].collected.pricingReason, undefined);
 });
+
+test('the quote names the route in the customer\'s language when the quote carries the route\'s translations; English otherwise', () => {
+  const q = {
+    id: uuid(779), trip_type: 'oneway', base_fare: 3000, total_amount: 3000, advance_amount: null, expires_at: new Date().toISOString(), extras: [],
+    collected: { fromLabel: 'Pune', toLabel: 'Shirdi', tollIncluded: false, fromLabelTranslations: { mr: 'पुणे' }, toLabelTranslations: { mr: 'शिर्डी' } }
+  };
+  assert.ok(quoteFlow.buildQuoteText(q, 'mr').split('\n').includes('पुणे → शिर्डी'));
+  assert.ok(quoteFlow.buildQuoteText(q, 'hi').split('\n').includes('Pune → Shirdi'), 'no Hindi translation: English');
+  assert.ok(quoteFlow.buildQuoteText(q, 'en').split('\n').includes('Pune → Shirdi'));
+});

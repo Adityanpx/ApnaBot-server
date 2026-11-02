@@ -27,7 +27,7 @@ const { applyMessageTemplate } = require('../utils/messageTemplating');
 const { computeQuote, computeAdvance } = require('../utils/travelQuote');
 const { getSystemMessage } = require('../utils/systemMessages');
 const { quoteTapId } = require('../utils/quoteIds');
-const { money, formatUntil } = require('../utils/quoteText');
+const { money, formatUntil, routeLine } = require('../utils/quoteText');
 const { findFlowEntryNodeId } = require('../utils/flowGraphValidation');
 
 const HOUR_MS = 60 * 60 * 1000;
@@ -61,7 +61,7 @@ const extraLine = (extra, lang, quote) => {
 const tripLines = (quote, lang) => {
   const c = quote.collected || {};
   const msg = (key, vars) => getSystemMessage(key, lang, vars);
-  const lines = [`${c.fromLabel} → ${c.toLabel}`,
+  const lines = [routeLine(c, lang),
     msg('quoteTripLine', { trip: msg(quote.trip_type === 'round_trip' ? 'quoteTripRoundTrip' : 'quoteTripOneWay') })];
   if (quote.trip_type === 'round_trip' && c.days) lines.push(msg('quoteDaysLine', { days: c.days }));
   if (c.date) lines.push(msg('quoteDateLine', { date: c.date }));
@@ -248,7 +248,9 @@ const createQuote = async (ctx, session, quoteNodeId) => {
     to_city: c.dropLocation,
     trip_type: tripType,
     collected: {
-      fromLabel: c.quoteFromLabel, toLabel: c.quoteToLabel, tripLabel: tripType === 'round_trip' ? 'Round Trip' : 'One Way',
+      fromLabel: c.quoteFromLabel, toLabel: c.quoteToLabel,
+      fromLabelTranslations: c.quoteFromLabelTranslations || null, toLabelTranslations: c.quoteToLabelTranslations || null,
+      tripLabel: tripType === 'round_trip' ? 'Round Trip' : 'One Way',
       date: c.travelDate || null, pickupTime: c.pickupTime || null, pickupMinute: Number.isInteger(c.pickupMinute) ? c.pickupMinute : null,
       passengers: c.passengers || null, days: Number.isInteger(days) && days >= 1 ? days : null,
       vehicleName: c.vehicleName || null, tollIncluded: priced.tollIncluded, flowEntryNodeId: entryNodeId,

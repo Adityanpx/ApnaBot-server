@@ -28,7 +28,7 @@ const byOrder = (a, b) => (a.sortOrder ?? 0) - (b.sortOrder ?? 0) || String(a.la
 const fromCities = (routes) => {
   const seen = new Map();
   for (const r of routes) {
-    if (!seen.has(r.fromCity)) seen.set(r.fromCity, { value: `from:${r.fromCity}`, label: cityLabel(r.fromLabel, r.fromCity), sortOrder: r.sortOrder });
+    if (!seen.has(r.fromCity)) seen.set(r.fromCity, { value: `from:${r.fromCity}`, label: cityLabel(r.fromLabel, r.fromCity), labelTranslations: r.fromLabelTranslations, sortOrder: r.sortOrder });
   }
   return [...seen.values()].sort(byOrder);
 };
@@ -38,7 +38,7 @@ const destinationsFrom = (routes, from) => routes.filter((r) => r.fromCity === f
 const regionKey = (route) => (route.region && route.region.trim() ? route.region.trim() : NO_REGION);
 
 const cityItems = (routes) => routes
-  .map((r) => ({ value: `to:${r.id}`, label: cityLabel(r.toLabel, r.toCity), sortOrder: r.sortOrder }))
+  .map((r) => ({ value: `to:${r.id}`, label: cityLabel(r.toLabel, r.toCity), labelTranslations: r.toLabelTranslations, sortOrder: r.sortOrder }))
   .sort(byOrder);
 
 /** Distinct regions of `routes` as list items, first-seen by sort order. */
@@ -49,7 +49,7 @@ const regionItems = (routes, text) => {
     if (!seen.has(key)) {
       seen.set(key, key === NO_REGION
         ? { value: `region:${NO_REGION}`, label: text.otherPlaces.en, labelTranslations: text.otherPlaces.translations }
-        : { value: `region:${key}`, label: clip(key) });
+        : { value: `region:${key}`, label: clip(key), labelTranslations: r.regionTranslations });
     }
   }
   return [...seen.values()];

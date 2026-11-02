@@ -64,3 +64,13 @@ test('the reminder carries the localized validity moment', () => {
   assert.ok(buildReminderText(q, 'hi').includes('11 नव॰, 7:30 PM'));
   assert.ok(buildReminderText(q, 'mr').includes('11 नोव्हें, 7:30 PM'));
 });
+
+test('routeLine: the customer\'s language when the quote has it, else the English label (old quotes have none)', () => {
+  const { routeLine } = require('./quoteText');
+  const c = { fromLabel: 'Pune', toLabel: 'Shirdi', fromLabelTranslations: { mr: 'पुणे' }, toLabelTranslations: { mr: 'शिर्डी', hi: ' ' } };
+  assert.equal(routeLine(c, 'mr'), 'पुणे → शिर्डी');
+  assert.equal(routeLine(c, 'hi'), 'Pune → Shirdi');
+  assert.equal(routeLine(c, 'gu'), 'Pune → Shirdi');
+  assert.equal(routeLine(c, null), 'Pune → Shirdi');
+  assert.equal(routeLine({ fromLabel: 'Pune', toLabel: 'Shirdi' }, 'mr'), 'Pune → Shirdi');
+});
