@@ -1,5 +1,6 @@
 const travelRouteService = require('../../services/travelRoute.service');
 const travelQuoteService = require('../../services/travelQuote.service');
+const quoteReadinessService = require('../../services/quoteReadiness.service');
 const { successResponse, errorResponse } = require('../../utils/response');
 const logger = require('../../utils/logger');
 
@@ -14,6 +15,18 @@ const handler = (name, fn) => async (req, res, next) => {
     next(error);
   }
 };
+
+/**
+ * GET /api/travel/quote-readiness[?keyword=&aliases=a,b] - the checklist for enabling the chat quote flow:
+ * { ready, installed, keyword, acknowledgements, items[] } (services/quoteReadiness.service.js). Works while the
+ * travel_quotes switch is off: that is one of its items.
+ */
+const getQuoteReadiness = handler('getQuoteReadiness', async (req, res) => {
+  const keyword = typeof req.query.keyword === 'string' && req.query.keyword.trim() ? req.query.keyword : undefined;
+  const aliases = typeof req.query.aliases === 'string' ? req.query.aliases.split(',').map((a) => a.trim()).filter(Boolean) : undefined;
+  const readiness = await quoteReadinessService.getQuoteReadiness(req.user.businessId, { keyword, aliases });
+  return successResponse(res, 200, readiness);
+});
 
 /** GET /api/travel/routes */
 const getRoutes = handler('getRoutes', async (req, res) => {
@@ -78,6 +91,6 @@ const getQuoteReport = handler('getQuoteReport', async (req, res) => {
 });
 
 module.exports = {
-  getRoutes, createRoute, updateRoute, fillRouteDistance, deleteRoute,
+  getQuoteReadiness, getRoutes, createRoute, updateRoute, fillRouteDistance, deleteRoute,
   getSettings, updateSettings, getQuotes, cancelQuote, getQuoteReport
 };

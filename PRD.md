@@ -1877,8 +1877,8 @@ shows an informational entry; uploads are not simulated.
 
 Phase 1 of travel automation: an instant fare quote from an owner-defined route rate card, with an advance to confirm. Parts: A server
 (data + owner API + report), B web Rates screen, **C bot + sweep (built; see "Part C" below)**, D Flutter Rates screen (**not built - Flutter has no Rates or quote screens at all**), E Travel default
-template (only after a separate OK). **Part C is live only for a business whose flow has the quote nodes AND whose `travel_quotes` switch
-is on: today that is SG Travels, after `scripts/seedTravelQuoteFlow.js --confirm` is run. Deploying the code changes nothing for any other business.**
+template (only after a separate OK). **Part C runs only for a business whose flow has the quote nodes AND whose `travel_quotes` switch
+is on; the nodes are installed per business by the generic installer (`services/quoteFlowInstaller.service.js`, see "Quote flow for every travel business"). Deploying the code changes nothing for any business.**
 
 - **Feature switch `travel_quotes`** (`categoryFeature.service.js#FEATURES`): applies to `travels` and `cab`, **off for every business**
   until Super Admin switches it on (category switch or per-business override). All routes below 404 `FEATURE_DISABLED` while off, and always
@@ -1939,12 +1939,12 @@ is on: today that is SG Travels, after `scripts/seedTravelQuoteFlow.js --confirm
 
 ### Part C - the chat quote (route_picker / quote nodes, taps, sweep)
 
-- **Flow (SG Travels, seeded):** entry = a "Get a quote" button on the "Our Rates" reply (first button) or the keyword `quote`
+- **Flow (installed per business by the installer):** entry = a "Get a quote" button on the "Our Rates" reply (first button) or the keyword `quote`
   (`booking_trigger` reply, exact; aliases get a quote / quotation / कोटेशन). Questions: `tripType` (One Way / Round Trip) ->
-  `routePicker` -> `passengers` (1-4 / 5-6 / 7+) -> vehicle carousel (rate-card fares only, filtered by seats) -> `travelDate` (+ typed
+  `routePicker` -> `passengers` (1-4 / 5-6 / 7+) -> [`numberOfDays` (Round Trip only, 1-9)] -> vehicle carousel (rate-card fares only, filtered by seats) -> `travelDate` (+ typed
   "Other date") -> `pickupTime` (9 slots + typed "Other time", re-asked when unreadable - the night charge depends on it) ->
-  `numberOfDays` (round trip only, 1-9) -> `quote`. All copy en / hi / mr in `label_translations`. **As seeded the days come after the
-  pickup time; `scripts/cutoverRoundTripDaysFirst.js` (see "Round Trip pricing") moves them before the vehicle carousel for Round Trip.**
+  `quote`. All copy en / hi / mr in `label_translations`. **The days are asked before the vehicle carousel for Round Trip (the installer's default order; SG Travels was first seeded
+  with them after the pickup time and cut over later).**
 - **Node types** (migration `20261105120000`: `flow_nodes_node_type_check` + `flow_nodes_is_computed_only_for_computed_types` now allow
   `route_picker`, `quote`): both `is_computed`, created only by the seed script (`VALID_QUESTION_NODE_TYPES` unchanged - no editor
   creates them). `utils/flowGraphValidation.js#QUESTION_SUBGRAPH_TYPES` is the one list of question-subgraph types (GET /api/flow-graph/full,
@@ -1981,16 +1981,10 @@ is on: today that is SG Travels, after `scripts/seedTravelQuoteFlow.js --confirm
 - **Canvas**: the quote nodes show as read-only computed question nodes. The batch save used to refuse any edge leaving a
   `vehicle_carousel` - which would have failed every save of a seeded flow - so a *stored* carousel edge is now kept (a *new* one is still
   refused). The simulator answers "Quote step (not simulated)" for the quote step.
-- **Seed script** `src/scripts/seedTravelQuoteFlow.js`: SG Travels only (hard-coded id; refuses any other id, Search cab AI, a business
-  without the `travel_quotes` switch on or without an active route with an active fare). Dry run by default; `--confirm` writes 11 nodes + 13
-  edges through `save_flow_graph_full` (one transaction, only the new rows, nothing existing touched - verified byte-for-byte afterwards) and
-  flushes the flow cache; every row carries a fixed id from `5eed7a01-0000-4000-8000-…` (the tag), so a second run is refused and
-  `--rollback --confirm` removes exactly those rows. `--expect-nodes/--expect-edges` pin the plan. The main menu ("hi", 3 buttons) is left
-  alone because WhatsApp shows at most 3 reply buttons (a 4th would hide Contact Us); `--menu-button` adds a first menu button once the menu
-  is a list. Apply the migration first, then deploy, then run the script.
-- **Deploy order:** migration `20261105120000` -> server (commits 2-6) -> `seedTravelQuoteFlow.js` dry run -> `--confirm` (the cutover for SG
-  Travels: its customers get the new entry immediately, no flag). Search cab AI, Pradip, Jyotirling, every template and the Travel default
-  snapshot are untouched.
+- **Installing the flow** (changed 2026-11-03): the SG-only seed script is replaced by the generic installer for any travels / cab business - see "Quote flow for every travel
+  business". It writes 11 nodes + 12 edges per business with ids derived from the business id, dry run by default, restore point first, byte-identical check afterwards, rollback.
+  Apply the migration first, then deploy, then install per business (a one-time cutover for that business: its customers get the new entry immediately, no flag). Search cab AI, Pradip,
+  Jyotirling, every template and the Travel default snapshot are untouched.
 - **Follow-ups / not done:** (1) the exact pickup address / location pin step after Confirm; (2) owner-editable "what is included" text;
   (3) ~~`sendFieldPrompt` hardcodes English "Book this" / "Other options" on the vehicle carousel~~ - done, now `systemMessages` en / hi / mr (see "Round Trip pricing");
   (4) the owner cannot mute the two new alerts; (5) machine-translated languages other than en / hi / mr fall back to English for the new
@@ -2000,7 +1994,7 @@ is on: today that is SG Travels, after `scripts/seedTravelQuoteFlow.js --confirm
   separately in `createQuoteBooking` and `createBookingAndConfirmation`.
 - Tests: `utils/{routePicker,pickupTime,quoteIds,quoteText}.test.js`, `utils/travelQuote.test.js` (seats), `services/bookingGraph.quoteFlow.test.js`,
   `services/quoteFlow.service.test.js`, `services/quoteSweep.service.test.js`, `services/payment.service.quote.test.js`,
-  `controllers/{webhook.quoteTap,flowGraphPreview.quote,flowGraph.quoteNodes}.test.js`, `scripts/seedTravelQuoteFlow{,.canvas,.engine}.test.js`.
+  `controllers/{webhook.quoteTap,flowGraphPreview.quote,flowGraph.quoteNodes}.test.js`, `services/quoteFlowInstaller.{service,engine,canvas}.test.js` (they replaced `scripts/seedTravelQuoteFlow*.test.js`).
 
 ### Round Trip pricing (migration `20261106120000_round_trip_pricing.sql`; server code built, web screens built (Fleet vehicle fields, Rates route editor / settings), Flutter screens and the live cutover NOT done)
 
@@ -2060,20 +2054,17 @@ like a 1-day one), because the days were asked after the vehicle and nothing mul
   hi / mr = localized month, Latin digits, AM / PM ("11 नव॰, 7:30 PM"). **This carousel text is shared by every flow with a vehicle carousel:
   Search cab AI (active carousel node, 8 vehicles, distance-estimate tier), Jyotirling, Pradip and SG Travels - their Hindi / Marathi
   customers now see it translated; English customers see no change.**
-- **Scripts** (both dry-run by default, hard-scoped to SG Travels' id, refuse Search cab AI, `--confirm` / `--rollback`, tested with fixtures,
-  **never run yet**): `scripts/cutoverRoundTripDaysFirst.js` deletes the 3 tagged edges `timeToDays`, `timeManualToDays`, `daysToQuote` and
-  creates `paxToDays` (`5eed7a01-...115`, Round Trip only, order -1) and `daysToVehicle` (`...116`) - no node, no non-tagged row touched;
-  verifies every path still reaches the quote and One Way is unchanged; a customer mid-flow (5-minute sessions) at the time question goes
-  straight to the quote, so apply when quiet. `scripts/deactivateSgRoundTripFares.js` sets `route_fares.is_active = false` and `off_reason = 'manual'` (never deletes) on the
+- **Scripts** (**2026-11-03: `cutoverRoundTripDaysFirst.js` and `seedTravelQuoteFlow.js` are deleted** - the installer's plan already asks the days before the vehicles; the cutover
+  had been applied on SG). `scripts/deactivateSgRoundTripFares.js` (dry-run by default, hard-scoped to SG Travels' id, refuses Search cab AI) sets `route_fares.is_active = false` and `off_reason = 'manual'` (never deletes) on the
   listed active round_trip rows only, after writing a manifest `logs/sg-round-trip-fares-deactivated.json` (the tag; `--rollback` re-activates and clears the marker on
-  exactly the manifest rows still off); refuses unless the flow is cut over, SG has no other active vehicle carousel, every route keeps an
-  active One Way fare, and every route would still be offered for Round Trip afterwards (`--allow-routes-off` overrides); `--routes=pune>shirdi`,
-  `--expect-rows=N`. `seedTravelQuoteFlow.js` now reserves the two cutover edge ids (its `--rollback` removes them too).
-- **Deploy order / cutovers** (SG Travels, no feature flag): 1) apply BOTH migrations (`20261106120000` and `20261107120000_route_fares_off_reason.sql`), 2) deploy the server - with the 36 fixed Round Trip fares
-  still active SG customers see `package fare` captions, the Days line, and Round Trip totals exact instead of rounded to 10, 3) the owner sets
-  min km / allowance per vehicle, distance per route and the allowance basis (web: Fleet vehicle form, Rates -> Routes, Rates -> Settings; **Flutter has no screen for these**), 4)
-  `cutoverRoundTripDaysFirst.js` dry run, `--confirm`, 5) `deactivateSgRoundTripFares.js` dry run, `--confirm`. Today the fare script
-  refuses: no SG route has a distance and no vehicle a min km. `verifyBookingGraph.js --business=<SG>` was run after the first migration: it inserts and deletes a temporary customer `VERIFY_BOOKING_GRAPH_TEST` (net zero rows, nothing sent), Round Trip PASS, One Way FAIL "missing: numberOfDays" - the same on the code from before this work: the script treats every required field as required in every branch, and the days question is Round Trip only.
+  exactly the manifest rows still off); it now refuses unless the installed quote flow has the days-first edges (derived ids), SG has no other active vehicle carousel, every route keeps an
+  active One Way fare, and every route would still be offered for Round Trip afterwards (`--allow-routes-off` overrides); `--routes=pune>shirdi`, `--expect-rows=N`.
+  It is to be deleted with its tests once the owner has switched the remaining fares off in Rates.
+- **Deploy order / cutovers** (SG Travels, no feature flag; **superseded 2026-11-03**: the cutover script is gone, days-first is the installer's default, and on SG the cutover and the
+  fare switch-off had already been applied by 2026-11-02 - see "Quote flow for every travel business"): migrations `20261106120000` and `20261107120000_route_fares_off_reason.sql` are applied; the
+  owner sets min km / allowance per vehicle, distance per route and the allowance basis (web: Fleet vehicle form, Rates -> Routes, Rates -> Settings; **Flutter has no screen for these**); the
+  remaining fixed Round Trip fares are switched off in Rates (per-fare Turn off). `verifyBookingGraph.js --business=<SG>` was run once after the first migration: it inserts and deletes a temporary customer
+  `VERIFY_BOOKING_GRAPH_TEST` (net zero rows, nothing sent), Round Trip PASS, One Way FAIL "missing: numberOfDays" - the same on the code from before this work: the script treats every required field as required in every branch, and the days question is Round Trip only. It is not run against real businesses any more.
 - **Search cab AI**: no quote flow, no `route_fares`; the migration and API additions are nullable and change nothing for it; only the shared
   carousel text above reaches its Hindi / Marathi customers.
 - **Follow-ups / not done**:
@@ -2096,7 +2087,7 @@ like a 1-day one), because the days were asked after the vehicle and nothing mul
   `broadcast.bodyLimit`, `notification.hooks`, and a `defaultSetup.service` test that hangs `npm test` past 60 s (run test files one by one).
 - Tests: `utils/travelQuote.test.js`, `routes/travelQuote.routes.test.js`, `controllers/travel/vehicle.controller.test.js`,
   `services/{quoteFlow.service,bookingGraph.roundTripQuote,notification.service}.test.js`, `utils/{quoteText,systemMessages}.test.js`,
-  `controllers/webhook.interactiveSites.test.js`, `scripts/{cutoverRoundTripDaysFirst,cutoverRoundTripDaysFirst.engine,deactivateSgRoundTripFares}.test.js`.
+  `controllers/webhook.interactiveSites.test.js`, `scripts/deactivateSgRoundTripFares.test.js` (the cutover script and its tests were deleted 2026-11-03).
 
 ### One place per setting (distance estimate, route fares, new-business defaults; 2026-11-02)
 
@@ -2142,8 +2133,8 @@ data, no column dropped.
   when `travel_quotes` is on (a note links to Rates -> Routes). Help article "Travel rates and quotes" (en / hi) updated.
 - **Not done**: **Flutter still edits the old fields** (Settings: round trip km, Driver DA switch and amount; the Distance fares switch also in Fleet) and
   its vehicle form has no min km / allowance and there is no allowance-basis setting, so Flutter-only owners cannot set the per-vehicle fields yet - add
-  them, then remove the old Flutter fields. The chat quote flow exists only for SG Travels (`seedTravelQuoteFlow.js` is SG-only, `travel_quotes` is off
-  for every business), so other travel businesses, new signups included, get route fares + the distance estimate only. **One-time cutover (no feature
+  them, then remove the old Flutter fields. The chat quote flow is installed per business by the generic installer (`quoteFlowInstaller.service.js`; SG Travels only so far, `travel_quotes` is off
+  for every business), so other travel businesses, new signups included, get route fares + the distance estimate until the quote flow is installed for them (see "Quote flow for every travel business"). **One-time cutover (no feature
   flag): deploying this server changes live prices - the estimate now uses the quote formula (1-day Round Trips on routes over 125 km, per-vehicle min km,
   allowance by `allowance_basis`: SG Travels' estimate gains its Rs300 per night) and Round Trip confirmations say nights on a night basis.**
 - Tests: `services/{booking.distanceEstimate,bookingGraph.distanceEstimate,travelDefaults.newBusiness}.test.js`,
@@ -2171,7 +2162,7 @@ data, no column dropped.
   (`utils/quoteChat.js#quoteFlowEntry`). If so: `quoteChatExpired` ("That quote chat expired. Tap *Get a quote* to start again.", en / hi / mr)
   with one `quoteBtnStart` button (`quote:start:{entryNodeId}`, `utils/quoteIds.js`), which `handleQuoteTap` routes to `handleStart` and restarts
   the flow at its entry (the entry is re-checked against the business's graph). Other flows and the machine languages (English text) otherwise unchanged.
-- Only SG Travels has a route picker today (checked 2026-11-02); Search cab AI has none, so it is unaffected. The `sessionTimeout` text still says
+- Only a business with the quote flow installed has a route picker (SG Travels on 2026-11-02); Search cab AI has none, so it is unaffected. The `sessionTimeout` text still says
   "Send 'book'" - for SG Travels that keyword opens the web booking form, not the quote chat (the quote keyword is `quote`, exact); see the proposal
   in the 2026-11-02 report - not changed.
 
@@ -2190,6 +2181,65 @@ data, no column dropped.
   stores `collected.fromLabelTranslations / toLabelTranslations` when it is created, and the quote text and the reminder name the route in the
   customer's language (`utils/quoteText.js#routeLine`). Quotes saved before this have none: English. The vehicle carousel shows no route name.
 - **Not done:** the web Rates route editor has no fields for the translations or the machine badge; the owner-facing alert and the Quotes tab stay English.
+
+### Quote flow for every travel business (generic installer + readiness checklist; 2026-11-03, no migration)
+
+Why: the chat quote flow existed only for SG Travels (hard-coded id, fixed node ids, two SG-only scripts). SG Travels is a demo with no real
+users for this feature, so nothing legacy is kept: the quote flow is installed per business by one generic, additive installer, and SG is moved
+onto it once. **Decision (owner, 2026-11-03): enablement model B** - Super Admin's per-business `travel_quotes` override is the entitlement (keep the
+category switch off: a category-wide switch would also hide the Fleet "Route Fares" tab for every travel business); the owner's own Enable button
+(with the readiness checklist below) is the activation and Disable removes the installed nodes (no inactive leftovers). A Round Trip with no priceable
+route does NOT block Enable: the owner ticks "Round Trip goes to my team". First rollout = a test travel business owned by the platform owner, never a
+client's bot. **Search cab AI is excluded by id (looked up fresh from `businesses`) in every script and endpoint.**
+
+- **Ids** (`utils/quoteFlowIds.js`): `derive(businessId)` = UUIDv5 of businessId + node / edge + slot under a fixed namespace (never change the namespace
+  or rename a slot: the slot name is part of the id; the derived ids are pinned in its test). Needed because `flow_nodes.id` / `flow_edges.id` are
+  global primary keys and `save_flow_graph_full` upserts `on conflict (id) do update set business_id = excluded.business_id`: a fixed id written for
+  a second business would MOVE the first business's row. `isOurs` / `isOurNode` / `isOurEdge` use the same derivation. No business id appears in the module.
+- **Installer** (`services/quoteFlowInstaller.service.js`; CLI `node src/scripts/installTravelQuoteFlow.js --business=<id> [--keyword=] [--aliases=] [--menu-button] [--ack-round-trip-team] [--rollback] [--confirm] [--expect-nodes= --expect-edges=]`,
+  `--business` required, **dry run unless `--confirm`**): writes 11 nodes + 12 edges (13 with `--menu-button`) through `save_flow_graph_full` in one
+  transaction with ONLY the new rows; saves the current flow as a restore point (`flow_snapshots`, Versions tab) first and writes nothing if that fails;
+  re-reads afterwards and checks every other node / edge is byte-identical; flushes the flow cache. Rollback removes exactly the derived ids (refused if an
+  edge that is not ours was wired into them; also saves a restore point). Entry = a "Get a quote" button on the Rates reply (first button) + a keyword reply
+  (default `quote` exact, with the English / Hindi aliases only for that keyword; any other keyword is a parameter). **Round Trip asks the days BEFORE the
+  vehicle carousel** (`passengers -> numberOfDays` only for Round Trip, display order -1, then `-> vehicle`; One Way never meets the days question) - this is the
+  installer's default order, so `cutoverRoundTripDaysFirst.js` is gone; the plan walks both trip types before writing. Refuses: Search cab AI (by id), a
+  non-travels / cab category, the switch off, no priceable One Way route, no priceable Round Trip route without the acknowledgement, an active reply that
+  already answers the keyword or an alias, a shadowed existing message (real matcher, both ways), an existing route picker / quote node of its own, a
+  question with a field key that exists only in the quote flow (`passengers`, `routePicker`, `quote`), a derived id owned by another business, a Rates
+  reply that already has 3 buttons (the main menu with 3 buttons is left alone, WhatsApp shows at most 3). Needs migration `20261105120000` (applied).
+  Copy is en / hi / mr; other enabled languages show English until the owner presses Translate (see the readiness item).
+- **Shared field keys** (found 2026-11-02, fixed in `c274955`): Search cab AI, Pradip and Jyotirling run the 17-node "Travels default" with its own
+  `tripType` / `travelDate` x2 / `pickupTime` x2 / `numberOfDays` / `vehicleType` questions, and the engine used to find a typed "Other date / time" sibling by
+  field key over the whole business (first match, unordered rows), so a quote customer could land in the legacy "Do you need AC?" questions.
+  `bookingGraph.service.js#resolveQuoteManualSibling` now resolves the sibling inside the current question's own flow **for quote sessions only**
+  (`isQuoteFlow`); every other flow still uses `resolveManualSibling` unchanged. `loadGraph` has no ORDER BY and was left alone: a scan of all 325 nodes
+  found no business with two text questions for a typed-sibling key. Fixture of the real flow: `test-support/travelsDefaultFlow.json` +
+  `travelsDefaultFlowFixture.js`.
+- **Readiness checklist** (`GET /api/travel/quote-readiness[?keyword=&aliases=]`, `services/quoteReadiness.service.js`; read-only, any business member,
+  **answers while the switch is OFF** - "switch on?" is one of its items): `{ ready, installed: {state: not_installed | installed | partial | conflict, nodes, edges},
+  keyword, acknowledgements: [{key:'round_trip_to_team', required}], items[] }`, each item `{key, status: ok | warn | block, title, detail}`; `ready` = nothing
+  blocks. Items: `not_protected` (Search cab AI), `category`, `feature`, `routes_one_way` (block), `routes_round_trip` (warn + acknowledgement, with the per-route
+  reasons), `vehicles` (rate / min km / allowance per vehicle), `seats` (a group size nobody fits; unknown seats are offered to every group size, never hidden),
+  `settings` (row saved), `advance` (off = Confirm books without payment; on without a QR = the team shares details), `whatsapp`, `subscription` (both warn,
+  they do not block the install), `keyword`, `rates_button` (block at 3 buttons, warn when there is no Rates reply), `flow`, `languages` (en / hi / mr built in,
+  others need Translate; route names without a translation counted per language), `translation_budget`. Same sources as the bot and the installer
+  (`listQuotableRoutes`, `planInstall`, `findProtectedBusinessIds`), so it cannot disagree with them.
+- **SG Travels** (live state read select-only 2026-11-02, **this overrides the older "never run yet" / "today: SG after the seed script" lines above**): the old
+  `5eed7a01` install is present (11 nodes, 12 edges) AND the days-first cutover is applied (`paxToDays` / `daysToVehicle` exist); 33 of the 36 fixed Round Trip
+  fares are switched off (`off_reason = 'manual'`), 3 are still active; 12 routes all with a distance, all translated; 3 vehicles with min km 250 and allowance 300;
+  settings: night basis, night charge 300, minimum 300; 3 saved quotes. `scripts/reinstallSgQuoteFlowOnce.js` (ONE-TIME, dry run by default, **not run yet**) saves a
+  restore point, removes the old tagged rows and installs the derived-id flow in the same `save_flow_graph_full` call (the Rates button comes back), then verifies
+  every other row and `travel_quotes` are untouched; it is the only file that names the old ids and is deleted right after it has run (together with
+  `deactivateSgRoundTripFares.js`, which only remains so its tests keep loading). A customer mid-quote when it is applied is asked to start again: apply when quiet.
+- **The three live bots** (select-only 2026-11-02): Search cab AI, Pradip and Jyotirling have the "Travels default" (Search cab AI differs only in edge display
+  orders), the "hi" menu is a full 3-button reply, the Rates reply has 1 button (room for "Get a quote"), no routes, no `travel_quote_settings`, no installed quote flow;
+  Search cab AI also has advance off and no payment QR. Nothing was or will be written to them by this work.
+- **Not done:** the owner Enable / Disable endpoints and the web / Flutter screens (step 6: they call the installer's `run` with the readiness result and the
+  acknowledgement); a translation step in Enable (the checklist only reports); `verifyBookingGraph.js` was NOT run on any real business (it inserts and deletes a
+  customer row there) - the baseline is the in-memory engine tests; the `defaultSetup.service` test file times out (pre-existing, same at HEAD).
+- Tests: `utils/quoteFlowIds.test.js`, `services/quoteFlowInstaller.{service,engine,canvas}.test.js`, `services/quoteReadiness.service.test.js`,
+  `routes/travelQuote.readiness.routes.test.js`, `services/bookingGraph.defaultPlusQuote.test.js`, `scripts/reinstallSgQuoteFlowOnce.test.js`.
 
 ## Known gaps / deferred work
 
@@ -2732,3 +2782,4 @@ data, no column dropped.
 - 2026-11-05: travel quotes part C (chat quote: `route_picker` / `quote` nodes, `quote:` taps, quote sweep, quote bookings, `scripts/seedTravelQuoteFlow.js`) - see "Travel quotes" > "Part C". Migration `20261105120000_flow_quote_node_types.sql` must be applied BEFORE the server; nothing changes for any business until the seed script is run for SG Travels.
 - 2026-11-02: Round Trip pricing (formula, per-vehicle min km / allowance, route distance + Google fill, allowance basis, priced carousel cards, `price_on_request` hand-off, carousel strings and quote date in en / hi / mr, `cutoverRoundTripDaysFirst.js`, `deactivateSgRoundTripFares.js`) - see "Travel quotes" > "Round Trip pricing". Migration `20261106120000_round_trip_pricing.sql` must be applied BEFORE the server. Server only: no web / Flutter screens yet, both SG Travels scripts not run, so the as-seeded SG flow still asks the days after the vehicle and the 36 fixed Round Trip fares are still active.
 - 2026-11-02: one place per setting - distance estimate uses the quote's Round Trip formula (vehicle min km / allowance, allowance basis, 2x one-way floor; old settings only fallback), `/api/route-fares` follows the Rates rules (off_reason, validation), new travel businesses no longer get the old driver-DA switch, night-basis Driver DA says nights (en hi mr + 8 machine languages), web Settings / Fleet de-duplicated (apnabot-web 9813160) - see "One place per setting". Server only changes live prices on deploy (no feature flag); Flutter not done.
+- 2026-11-03: quote flow for every travel business - generic additive installer (`services/quoteFlowInstaller.service.js`, CLI `scripts/installTravelQuoteFlow.js`, per-business UUIDv5 ids in `utils/quoteFlowIds.js`, days-first Round Trip as the default, refuses Search cab AI by id), the scoped "Other date/time" lookup for quote sessions, `GET /api/travel/quote-readiness`, one-time SG Travels reinstall script (NOT run yet); `seedTravelQuoteFlow.js` and `cutoverRoundTripDaysFirst.js` deleted - see "Quote flow for every travel business". No migration. Committed locally, not pushed; owner Enable / Disable endpoints and screens (step 6) not built.

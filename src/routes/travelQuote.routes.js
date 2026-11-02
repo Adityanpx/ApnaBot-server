@@ -8,7 +8,13 @@ const { requireCategoryFeature } = require('../middleware/categoryFeature.middle
 // Available only while 'travel_quotes' is on for the business (its category switch or its own
 // override - Super Admin -> Features); 404 FEATURE_DISABLED otherwise. Reading is open to any
 // business member; writes need requireRole('owner') like /api/route-fares.
-router.use(protect, requireBusiness, requireCategoryFeature('travel_quotes'));
+router.use(protect, requireBusiness);
+
+// The readiness checklist is the one route that works while the switch is OFF: "is the switch on?" is one of its items.
+// It is read-only and open to any business member.
+router.get('/quote-readiness', travelQuoteController.getQuoteReadiness);
+
+router.use(requireCategoryFeature('travel_quotes'));
 
 // Route rate card: a route with its per-vehicle prices (route_fares rows)
 router.get('/routes', travelQuoteController.getRoutes);
