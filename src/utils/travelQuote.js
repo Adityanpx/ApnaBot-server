@@ -13,6 +13,57 @@ const ALLOWANCE_BASES = ['day', 'night'];
 const normalizeCity = (value) => String(value ?? '').trim().replace(/\s+/g, ' ').toLowerCase();
 
 const isNumber = (v) => typeof v === 'number' && Number.isFinite(v);
+
+/**
+ * The route_fares columns an explicit on / off writes: false = switched off on purpose (off_reason
+ * 'manual', which a route switched off and on again leaves alone), true = switched back on (marker
+ * cleared). Nothing when isActive is not given. Shared by Rates -> Routes and Fleet -> Route Fares.
+ */
+const fareSwitchColumns = (isActive) => {
+  if (isActive === undefined) return {};
+  return isActive ? { is_active: true, off_reason: null } : { is_active: false, off_reason: 'manual' };
+};
+
+// The trip types route_fares accepts (its CHECK constraint). Rates -> Routes edits oneway / round_trip
+// (TRIP_TYPES); Fleet -> Route Fares may also hold outstation / local rows.
+const ROUTE_FARE_TRIP_TYPES = ['oneway', 'round_trip', 'outstation', 'local'];
+
+/**
+ * Checks a body for POST / PUT /api/route-fares (Fleet -> Route Fares) with the same rules as a fare in
+ * Rates -> Routes: city keys normalised the same way, from and to different, a fare that is a number
+ * above 0, isActive a boolean. `isEdit` only checks (and returns) the keys that were sent.
+ * @returns {{ errors:string[], value:{ fromCity?, toCity?, tripType?, vehicleId?, fare?, isActive? } }}
+ */
+const validateRouteFareInput = (body, { isEdit = false } = {}) => {
+  const errors = [];
+  const value = {};
+  const input = body && typeof body === 'object' ? body : {};
+  for (const [key, label] of [['fromCity', 'fromCity'], ['toCity', 'toCity']]) {
+    if (isEdit && input[key] === undefined) continue;
+    const city = normalizeCity(input[key]);
+    if (!city || city.length > CITY_MAX) errors.push(`${label} is required (max ${CITY_MAX} characters)`);
+    value[key] = city;
+  }
+  if (value.fromCity && value.toCity && value.fromCity === value.toCity) errors.push('fromCity and toCity must be different');
+  if (!isEdit || input.tripType !== undefined) {
+    const tripType = input.tripType === undefined ? 'oneway' : input.tripType;
+    if (!ROUTE_FARE_TRIP_TYPES.includes(tripType)) errors.push(`tripType must be one of: ${ROUTE_FARE_TRIP_TYPES.join(', ')}`);
+    value.tripType = tripType;
+  }
+  if (!isEdit || input.vehicleId !== undefined) {
+    if (typeof input.vehicleId !== 'string' || !input.vehicleId) errors.push('vehicleId is required');
+    value.vehicleId = input.vehicleId;
+  }
+  if (!isEdit || input.fare !== undefined) {
+    if (!(isNumber(input.fare) && input.fare > 0)) errors.push('fare must be a number above 0');
+    value.fare = input.fare;
+  }
+  if (input.isActive !== undefined) {
+    if (typeof input.isActive !== 'boolean') errors.push('isActive must be true or false');
+    else value.isActive = input.isActive;
+  }
+  return { errors, value };
+};
 const isOptionalText = (v, max) => v === null || (typeof v === 'string' && v.trim().length <= max);
 const textOrNull = (v) => (typeof v === 'string' && v.trim() !== '' ? v.trim() : null);
 
@@ -395,6 +446,6 @@ const filterOptionsBySeats = (options, passengers) => {
 
 module.exports = {
   minSeatsFor, filterOptionsBySeats,
-  TRIP_TYPES, DEFAULT_SETTINGS, normalizeCity, validateRouteInput, validateSettingsInput, validateVehicleFareInput,
+  TRIP_TYPES, ROUTE_FARE_TRIP_TYPES, fareSwitchColumns, validateRouteFareInput, DEFAULT_SETTINGS, normalizeCity, validateRouteInput, validateSettingsInput, validateVehicleFareInput,
   isNightMinute, computeRoundTripFare, priceVehicleTrip, roundTripCandidates, roundTripReadiness, computeQuote, computeAdvance
 };

@@ -9,7 +9,7 @@
 // Errors the owner can fix are thrown with .statusCode (errorHandler maps it).
 const supabase = require('../config/supabase');
 const { toCamelCase } = require('../utils/caseConvert');
-const { validateRouteInput, roundTripCandidates, roundTripReadiness } = require('../utils/travelQuote');
+const { validateRouteInput, roundTripCandidates, roundTripReadiness, fareSwitchColumns } = require('../utils/travelQuote');
 const { shapeRouteAuto } = require('../utils/translationSlots');
 const distanceMatrixService = require('./distanceMatrix.service');
 
@@ -122,10 +122,7 @@ const assertVehiclesBelong = async (businessId, fares) => {
  * The columns an explicit fares[].isActive writes: false = switched off on purpose (off_reason 'manual'),
  * true = switched back on (marker cleared). Nothing when the entry does not say.
  */
-const switchColumns = (f) => {
-  if (f.isActive === undefined) return {};
-  return f.isActive ? { is_active: true, off_reason: null } : { is_active: false, off_reason: 'manual' };
-};
+const switchColumns = (f) => fareSwitchColumns(f.isActive);
 
 /**
  * Saves the listed fares (or deletes the ones marked remove) for a route. A fare that already exists only gets

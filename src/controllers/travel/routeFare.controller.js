@@ -2,6 +2,7 @@ const supabase = require('../../config/supabase');
 const { toCamelCase } = require('../../utils/caseConvert');
 const { successResponse, errorResponse } = require('../../utils/response');
 const logger = require('../../utils/logger');
+const { validateRouteFareInput, fareSwitchColumns } = require('../../utils/travelQuote');
 
 /**
  * GET /api/route-fares
@@ -37,16 +38,19 @@ const getRouteFares = async (req, res, next) => {
 
 /**
  * POST /api/route-fares
- * Create (or update, if the route+vehicle+tripType combo already exists) a route fare
+ * Create (or update, if the route+vehicle+tripType combo already exists) a route fare. The same rules as
+ * a fare in Rates -> Routes (validateRouteFareInput); saving here switches the fare on and clears a manual
+ * switch-off marker (off_reason), so the row never reads "active but switched off by hand".
  */
 const createRouteFare = async (req, res, next) => {
   try {
-    const { fromCity, toCity, tripType = 'oneway', vehicleId, fare } = req.body;
     const businessId = req.user.businessId;
 
-    if (!fromCity || !toCity || !vehicleId || fare === undefined) {
-      return errorResponse(res, 400, 'fromCity, toCity, vehicleId, and fare are required');
+    const { errors, value } = validateRouteFareInput(req.body);
+    if (errors.length > 0) {
+      return errorResponse(res, 400, errors[0], errors);
     }
+    const { fromCity, toCity, tripType, vehicleId, fare } = value;
 
     const { data: vehicle } = await supabase
       .from('vehicles').select('id').eq('id', vehicleId).eq('business_id', businessId).maybeSingle();
@@ -54,19 +58,16 @@ const createRouteFare = async (req, res, next) => {
       return errorResponse(res, 404, 'Vehicle not found');
     }
 
-    const normalizedFromCity = fromCity.toLowerCase().trim();
-    const normalizedToCity = toCity.toLowerCase().trim();
-
     const { data: routeFare, error } = await supabase
       .from('route_fares')
       .upsert({
         business_id: businessId,
-        from_city: normalizedFromCity,
-        to_city: normalizedToCity,
+        from_city: fromCity,
+        to_city: toCity,
         trip_type: tripType,
         vehicle_id: vehicleId,
         fare,
-        is_active: true
+        ...fareSwitchColumns(true)
       }, { onConflict: 'business_id,from_city,to_city,trip_type,vehicle_id' })
       .select()
       .single();
@@ -81,7 +82,9 @@ const createRouteFare = async (req, res, next) => {
 
 /**
  * PUT /api/route-fares/:id
- * Update a route fare
+ * Update a route fare. A switch-off sets off_reason 'manual' and a switch-on clears it (the same columns
+ * as Rates -> Routes), so a route switched off and on again does not bring a fare back that was switched
+ * off by hand. Saving a price alone never changes whether the fare is on.
  */
 const updateRouteFare = async (req, res, next) => {
   try {
@@ -95,7 +98,11 @@ const updateRouteFare = async (req, res, next) => {
       return errorResponse(res, 404, 'Route fare not found');
     }
 
-    const { fromCity, toCity, tripType, vehicleId, fare, isActive } = req.body;
+    const { errors, value } = validateRouteFareInput(req.body, { isEdit: true });
+    if (errors.length > 0) {
+      return errorResponse(res, 400, errors[0], errors);
+    }
+    const { fromCity, toCity, tripType, vehicleId, fare, isActive } = value;
     const updates = {};
 
     if (vehicleId !== undefined) {
@@ -107,11 +114,11 @@ const updateRouteFare = async (req, res, next) => {
       updates.vehicle_id = vehicleId;
     }
 
-    if (fromCity !== undefined) updates.from_city = fromCity.toLowerCase().trim();
-    if (toCity !== undefined) updates.to_city = toCity.toLowerCase().trim();
+    if (fromCity !== undefined) updates.from_city = fromCity;
+    if (toCity !== undefined) updates.to_city = toCity;
     if (tripType !== undefined) updates.trip_type = tripType;
     if (fare !== undefined) updates.fare = fare;
-    if (isActive !== undefined) updates.is_active = isActive;
+    Object.assign(updates, fareSwitchColumns(isActive));
 
     const { data: routeFare, error } = await supabase
       .from('route_fares').update(updates).eq('id', id).select().single();
