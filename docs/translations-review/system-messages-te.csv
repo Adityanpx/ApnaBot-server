@@ -131,7 +131,7 @@ quoteTollExtra,Toll is extra and not included in this fare.,టోల్ అద�
 quoteAdvanceLine,Advance to confirm: *₹{{amount}}*,ధృవీకరించడం కొరకు అడ్వాన్సు: *₹{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
 quoteValidUntil,This quote is valid until {{until}}.,ఈ కోట్ {{until}} వరకు చెల్లుబాటు అవుతుంది.,,Keep unchanged: {{until}}
 quoteReminder,"Your trip quote for *{{route}}* (*₹{{total}}*) is still open until {{until}}. Tap *{{button}}* on the quote above to book, or reply here if you have any questions.",*{{route}}* (₹ *{{total}}*) కోసం మీ ట్రిప్ కోట్ {{until}} వరకు తెరిచి ఉంటుంది. బుక్ చేయడానికి పై కోట్ పై *{{button}}* నొక్కండి లేదా మీకు ఏవైనా ప్రశ్నలు ఉంటే ఇక్కడ ప్రత్యుత్తరం ఇవ్వండి.,,Keep unchanged: {{route}} {{total}} {{until}} {{button}}; *bold* markers must stay around the same words
-quoteBtnConfirmPay,Confirm & pay,,,Machine translation was over the 20-character limit and was dropped: English is used until a short reviewed text is given
+quoteBtnConfirmPay,Confirm & pay,ధృవీకరించండి,,"Machine text of the short ""Confirm"" (quoteBtnConfirm): the translation of the full ""Confirm & pay"" was over the 20-character button limit. A reviewer may give a short text with ""pay"" in it."
 quoteBtnConfirm,Confirm,ధృవీకరించండి,,
 quoteBtnChange,Change,మార్చు,,
 quoteBtnTalk,Talk to us,మాతో మాట్లాడండి,,

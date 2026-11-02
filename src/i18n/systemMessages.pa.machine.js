@@ -123,6 +123,7 @@ module.exports = {
   "quoteAdvanceLine": "ਪੁਸ਼ਟੀ ਕਰਨ ਲਈ ਪੇਸ਼ਗੀ: *₹{{amount}}*",
   "quoteValidUntil": "ਇਹ ਹਵਾਲਾ {{until}} ਤੱਕ ਜਾਇਜ਼ ਹੈ.",
   "quoteReminder": "*{{route}}* (₹ *{{total}})*ਲਈ ਤੁਹਾਡਾ ਟ੍ਰਿਪ ਹਵਾਲਾ ਅਜੇ ਵੀ {{until}} ਤੱਕ ਖੁੱਲਾ ਹੈ। ਬੁੱਕ ਕਰਨ ਲਈ ਉਪਰੋਕਤ ਹਵਾਲੇ 'ਤੇ *{{button}}* ਟੈਪ ਕਰੋ, ਜਾਂ ਜੇ ਤੁਹਾਡੇ ਕੋਈ ਪ੍ਰਸ਼ਨ ਹਨ ਤਾਂ ਇੱਥੇ ਜਵਾਬ ਦਿਓ।",
+  "quoteBtnConfirmPay": "ਪੁਸ਼ਟੀ ਕਰੋ",
   "quoteBtnConfirm": "ਪੁਸ਼ਟੀ ਕਰੋ",
   "quoteBtnChange": "ਬਦਲੋ",
   "quoteBtnTalk": "ਸਾਡੇ ਨਾਲ ਗੱਲ ਕਰੋ",

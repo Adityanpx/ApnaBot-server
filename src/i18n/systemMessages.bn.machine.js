@@ -122,6 +122,7 @@ module.exports = {
   "quoteAdvanceLine": "নিশ্চিত করার জন্য অগ্রিম অর্থ: *₹{{amount}}*",
   "quoteValidUntil": "এই উদ্ধৃতিটি {{until}} পর্যন্ত বৈধ।",
   "quoteReminder": "*{{route}}* (₹ *{{total}})*এর জন্য আপনার ট্রিপ কোট এখনও {{until}} অবধি খোলা রয়েছে। বুক করতে উপরের উদ্ধৃতিতে *{{button}} আলতো* চাপুন, বা আপনার যদি কোনও প্রশ্ন থাকে তবে এখানে উত্তর দিন।",
+  "quoteBtnConfirmPay": "নিশ্চিত করুন",
   "quoteBtnConfirm": "নিশ্চিত করুন",
   "quoteBtnChange": "পরিবর্তন",
   "quoteBtnTalk": "আমাদের সাথে কথা বলুন",

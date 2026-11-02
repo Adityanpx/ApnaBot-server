@@ -129,9 +129,11 @@ cutover and the menu picker had always resolved empty in practice.
   `quoteExtraDriverDays`, `quoteExtraDriverNights` (allowance), `quoteExtraMinimum`, `quoteTotalLine`, `quoteTollIncluded`, `quoteTollExtra`
   (toll), `quoteAdvanceLine`, `quoteActualKmNote`, `quoteCardDays` / `quoteCardKm` / `quoteCardPackage` / `quoteCardOnRequest`,
   `quotePriceOnRequestReply`, `quotePriceChanged` and `quoteValidUntil`; the rest (prompts, buttons, `routePicker*`) is lower risk but equally
-  unreviewed. Keys that stay **English** in the listed languages: `quoteBtnConfirmPay` (gu kn ta te ml bn pa or: the translation was over the
-  20-character button limit and was dropped), `quoteBtnPaid` and `vehicleBookThis` (ta: over 20), `qrHowTo` (ta bn: Azure lost the bold
-  marks). A short reviewed text fixes each: put it in the language's CSV `reviewed_translation` and import without `--source=machine`.
+  unreviewed. Keys that stay **English**: `qrHowTo` (ta bn: Azure lost the bold marks). Three machine texts were over WhatsApp's 20-character button limit
+  and were replaced by short ones: `quoteBtnConfirmPay` (all 8 languages) now carries the machine text of the short "Confirm"
+  (`quoteBtnConfirm`), so that button no longer says "& pay"; Tamil `quoteBtnPaid` ("செலுத்தி விட்டேன்") and `vehicleBookThis`
+  ("இதை பதிவு செய்") are **Claude-written wording, not Azure output** - they need a native-speaker check like everything else here. The CSV note
+  on each says so. A reviewed text goes in the language's CSV `reviewed_translation` and is imported without `--source=machine`.
 - Verified via `src/scripts/verifyBookingGraph.js`. Rewritten 2026-09-07 to
   be fully generic — no hardcoded business id, vehicle id, route-fare id,
   or expected fare/value anywhere in the script, and no default business

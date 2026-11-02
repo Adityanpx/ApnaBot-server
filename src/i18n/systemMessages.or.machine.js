@@ -123,6 +123,7 @@ module.exports = {
   "quoteAdvanceLine": "ନିଶ୍ଚିତ କରିବାକୁ ଅଗ୍ରୀମ: *₹{{amount}}*",
   "quoteValidUntil": "ଏହି ଉଦ୍ଧୃତି {{until}} ପର୍ଯ୍ୟନ୍ତ ବୈଧ ଅଟେ ।",
   "quoteReminder": "*{{route}}* (₹ *{{total}})*ପାଇଁ ଆପଣଙ୍କର ଯାତ୍ରା କୋଟ୍ {{until}} ପର୍ଯ୍ୟନ୍ତ ଖୋଲା ଅଛି । ବୁକ୍ କରିବାକୁ ଉପରୋକ୍ତ କୋଟ୍ ଉପରେ *{{button}} ଟ୍ୟାପ୍* କରନ୍ତୁ, କିମ୍ବା ଯଦି ଆପଣଙ୍କର କୌଣସି ପ୍ରଶ୍ନ ଅଛି ତେବେ ଏଠାରେ ଉତ୍ତର ଦିଅନ୍ତୁ ।",
+  "quoteBtnConfirmPay": "ନିଶ୍ଚିତ କରନ୍ତୁ",
   "quoteBtnConfirm": "ନିଶ୍ଚିତ କରନ୍ତୁ",
   "quoteBtnChange": "ପରିବର୍ତ୍ତନ କରନ୍ତୁ",
   "quoteBtnTalk": "ଆମ ସହିତ କଥା ହୁଅନ୍ତୁ",

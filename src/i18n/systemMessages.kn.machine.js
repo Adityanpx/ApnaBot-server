@@ -123,6 +123,7 @@ module.exports = {
   "quoteAdvanceLine": "ದೃಢೀಕರಿಸಲು ಮುಂಗಡ: *₹{{amount}}*",
   "quoteValidUntil": "ಈ ಉಲ್ಲೇಖವು {{until}} ರವರೆಗೆ ಮಾನ್ಯವಾಗಿರುತ್ತದೆ.",
   "quoteReminder": "*{{route}}* (₹ *{{total}})*ಗಾಗಿ ನಿಮ್ಮ ಟ್ರಿಪ್ ಉಲ್ಲೇಖವು {{until}} ರವರೆಗೆ ಇನ್ನೂ ತೆರೆದಿರುತ್ತದೆ. ಬುಕ್ ಮಾಡಲು ಮೇಲಿನ ಉಲ್ಲೇಖದ ಮೇಲೆ *{{button}}* ಟ್ಯಾಪ್ ಮಾಡಿ ಅಥವಾ ನಿಮ್ಮಲ್ಲಿ ಯಾವುದೇ ಪ್ರಶ್ನೆಗಳಿದ್ದರೆ ಇಲ್ಲಿ ಉತ್ತರಿಸಿ.",
+  "quoteBtnConfirmPay": "ದೃಢೀಕರಿಸಿ",
   "quoteBtnConfirm": "ದೃಢೀಕರಿಸಿ",
   "quoteBtnChange": "ಬದಲಿಸಿ",
   "quoteBtnTalk": "ನಮ್ಮೊಂದಿಗೆ ಮಾತನಾಡಿ",

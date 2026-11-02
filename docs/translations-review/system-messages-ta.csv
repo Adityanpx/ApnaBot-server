@@ -10,7 +10,7 @@ handoffClosed,Thank you! 🙏 We are closed right now. Our team will reply to yo
 mediaReceived,Thanks! We've received your file. Our team will reply with details shortly.,நன்றி! உங்கள் கோப்பை நாங்கள் பெற்றுள்ளோம். எங்கள் குழு விரைவில் விவரங்களுடன் பதிலளிக்கும்.,,
 locationNotConfigured,"Sorry, our location is not set up yet.","மன்னிக்கவும், எங்கள் இருப்பிடம் இன்னும் அமைக்கப்படவில்லை.",,
 vehicleSeats,{{seats}} seats,{{seats}} இடங்கள்,,Keep unchanged: {{seats}}
-vehicleBookThis,Book this,,,Machine translation was over the 20-character limit and was dropped: English is used until a short reviewed text is given
+vehicleBookThis,Book this,இதை பதிவு செய்,,Claude-written short wording (not Azure output): the machine translation was over the 20-character button limit. Needs a native-speaker check.
 vehicleOtherPrompt,Don't see the vehicle you want?,நீங்கள் விரும்பும் வாகனத்தை பார்க்கவில்லையா?,,
 vehicleOtherBtn,Other options,பிற விருப்பங்கள்,,
 vehicleTapOne,Please tap one of the vehicle options above.,மேலே உள்ள வாகன விருப்பங்களில் ஒன்றைத் தட்டவும்.,,
@@ -131,11 +131,11 @@ quoteTollExtra,Toll is extra and not included in this fare.,சுங்கச�
 quoteAdvanceLine,Advance to confirm: *₹{{amount}}*,உறுதிப்படுத்த முன்பணம்: *₹{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
 quoteValidUntil,This quote is valid until {{until}}.,இந்த மேற்கோள் {{until}} வரை செல்லுபடியாகும்.,,Keep unchanged: {{until}}
 quoteReminder,"Your trip quote for *{{route}}* (*₹{{total}}*) is still open until {{until}}. Tap *{{button}}* on the quote above to book, or reply here if you have any questions.",*{{route}}* (₹ *{{total}}*) க்கான உங்கள் பயண மேற்கோள் {{until}} வரை திறந்திருக்கும். முன்பதிவு செய்ய மேலே உள்ள மேற்கோளில் *{{button}} என்பதைத்* தட்டவும் அல்லது ஏதேனும் கேள்விகள் இருந்தால் இங்கே பதிலளிக்கவும்.,,Keep unchanged: {{route}} {{total}} {{until}} {{button}}; *bold* markers must stay around the same words
-quoteBtnConfirmPay,Confirm & pay,,,Machine translation was over the 20-character limit and was dropped: English is used until a short reviewed text is given
+quoteBtnConfirmPay,Confirm & pay,உறுதிப்படுத்தவும்,,"Machine text of the short ""Confirm"" (quoteBtnConfirm): the translation of the full ""Confirm & pay"" was over the 20-character button limit. A reviewer may give a short text with ""pay"" in it."
 quoteBtnConfirm,Confirm,உறுதிப்படுத்தவும்,,
 quoteBtnChange,Change,மாற்றம்,,
 quoteBtnTalk,Talk to us,எங்களுடன் பேசுங்கள்,,
-quoteBtnPaid,I've paid,,,Machine translation was over the 20-character limit and was dropped: English is used until a short reviewed text is given
+quoteBtnPaid,I've paid,செலுத்தி விட்டேன்,,Claude-written short wording (not Azure output): the machine translation was over the 20-character button limit. Needs a native-speaker check.
 quoteBtnNew,New quote,புதிய மேற்கோள்,,
 quoteNoVehicle,"Sorry, we don't have a vehicle for your group size on this route. Tap *Talk to us* and our team will help you.","மன்னிக்கவும், இந்த பாதையில் உங்கள் குழு அளவிற்கான வாகனம் எங்களிடம் இல்லை. *எங்களுடன் பேசுங்கள் என்பதைத்* தட்டவும், எங்கள் குழு உங்களுக்கு உதவும்.",,*bold* markers must stay around the same words
 quoteExpired,This quote has expired. Tap below to get a new one.,இந்த மேற்கோள் காலாவதியாகிவிட்டது. புதியதைப் பெற கீழே தட்டவும்.,,

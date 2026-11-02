@@ -131,7 +131,7 @@ quoteTollExtra,Toll is extra and not included in this fare.,ಟೋಲ್ ಹೆ�
 quoteAdvanceLine,Advance to confirm: *₹{{amount}}*,ದೃಢೀಕರಿಸಲು ಮುಂಗಡ: *₹{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
 quoteValidUntil,This quote is valid until {{until}}.,ಈ ಉಲ್ಲೇಖವು {{until}} ರವರೆಗೆ ಮಾನ್ಯವಾಗಿರುತ್ತದೆ.,,Keep unchanged: {{until}}
 quoteReminder,"Your trip quote for *{{route}}* (*₹{{total}}*) is still open until {{until}}. Tap *{{button}}* on the quote above to book, or reply here if you have any questions.",*{{route}}* (₹ *{{total}})*ಗಾಗಿ ನಿಮ್ಮ ಟ್ರಿಪ್ ಉಲ್ಲೇಖವು {{until}} ರವರೆಗೆ ಇನ್ನೂ ತೆರೆದಿರುತ್ತದೆ. ಬುಕ್ ಮಾಡಲು ಮೇಲಿನ ಉಲ್ಲೇಖದ ಮೇಲೆ *{{button}}* ಟ್ಯಾಪ್ ಮಾಡಿ ಅಥವಾ ನಿಮ್ಮಲ್ಲಿ ಯಾವುದೇ ಪ್ರಶ್ನೆಗಳಿದ್ದರೆ ಇಲ್ಲಿ ಉತ್ತರಿಸಿ.,,Keep unchanged: {{route}} {{total}} {{until}} {{button}}; *bold* markers must stay around the same words
-quoteBtnConfirmPay,Confirm & pay,,,Machine translation was over the 20-character limit and was dropped: English is used until a short reviewed text is given
+quoteBtnConfirmPay,Confirm & pay,ದೃಢೀಕರಿಸಿ,,"Machine text of the short ""Confirm"" (quoteBtnConfirm): the translation of the full ""Confirm & pay"" was over the 20-character button limit. A reviewer may give a short text with ""pay"" in it."
 quoteBtnConfirm,Confirm,ದೃಢೀಕರಿಸಿ,,
 quoteBtnChange,Change,ಬದಲಿಸಿ,,
 quoteBtnTalk,Talk to us,ನಮ್ಮೊಂದಿಗೆ ಮಾತನಾಡಿ,,

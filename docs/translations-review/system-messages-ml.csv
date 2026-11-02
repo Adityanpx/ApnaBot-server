@@ -131,7 +131,7 @@ quoteTollExtra,Toll is extra and not included in this fare.,"ടോൾ അധി
 quoteAdvanceLine,Advance to confirm: *₹{{amount}}*,സ്ഥിരീകരിക്കുന്നതിനുള്ള അഡ്വാൻസ്: ₹ *{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
 quoteValidUntil,This quote is valid until {{until}}.,ഈ ഉദ്ധരണി {{until}} വരെ സാധുവാണ്.,,Keep unchanged: {{until}}
 quoteReminder,"Your trip quote for *{{route}}* (*₹{{total}}*) is still open until {{until}}. Tap *{{button}}* on the quote above to book, or reply here if you have any questions.",*{{route}}* (₹ *{{total}})*നുള്ള നിങ്ങളുടെ ട്രിപ്പ് ക്വോട്ട് {{until}} വരെ തുറന്നിരിക്കുന്നു. ബുക്ക് ചെയ്യുന്നതിന് മുകളിലുള്ള ഉദ്ധരണിയിൽ *{{button}} ടാപ്പുചെയ്യുക* അല്ലെങ്കിൽ നിങ്ങൾക്ക് എന്തെങ്കിലും ചോദ്യങ്ങൾ ഉണ്ടെങ്കിൽ ഇവിടെ മറുപടി നൽകുക.,,Keep unchanged: {{route}} {{total}} {{until}} {{button}}; *bold* markers must stay around the same words
-quoteBtnConfirmPay,Confirm & pay,,,Machine translation was over the 20-character limit and was dropped: English is used until a short reviewed text is given
+quoteBtnConfirmPay,Confirm & pay,സ്ഥിരീകരിക്കുക,,"Machine text of the short ""Confirm"" (quoteBtnConfirm): the translation of the full ""Confirm & pay"" was over the 20-character button limit. A reviewer may give a short text with ""pay"" in it."
 quoteBtnConfirm,Confirm,സ്ഥിരീകരിക്കുക,,
 quoteBtnChange,Change,മാറ്റം,,
 quoteBtnTalk,Talk to us,ഞങ്ങളോട് സംസാരിക്കൂ,,

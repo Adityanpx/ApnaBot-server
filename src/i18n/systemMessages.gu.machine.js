@@ -123,6 +123,7 @@ module.exports = {
   "quoteAdvanceLine": "પુષ્ટિ કરવા માટે એડવાન્સઃ *₹{{amount}}*",
   "quoteValidUntil": "આ અવતરણ {{until}} સુધી માન્ય છે.",
   "quoteReminder": "*{{route}}* (₹ *{{total}})*માટે તમારું ટ્રિપ ક્વોટ હજી પણ {{until}} સુધી ખુલ્લું છે. બુક કરવા માટે ઉપરના ક્વોટ પર *{{button}} પર* ટેપ કરો, અથવા જો તમને કોઈ પ્રશ્નો હોય તો અહીં જવાબ આપો.",
+  "quoteBtnConfirmPay": "ખાતરી કરો",
   "quoteBtnConfirm": "ખાતરી કરો",
   "quoteBtnChange": "બદલો",
   "quoteBtnTalk": "અમારી સાથે વાત કરો",

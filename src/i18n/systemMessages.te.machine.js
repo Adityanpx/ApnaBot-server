@@ -123,6 +123,7 @@ module.exports = {
   "quoteAdvanceLine": "ధృవీకరించడం కొరకు అడ్వాన్సు: *₹{{amount}}*",
   "quoteValidUntil": "ఈ కోట్ {{until}} వరకు చెల్లుబాటు అవుతుంది.",
   "quoteReminder": "*{{route}}* (₹ *{{total}}*) కోసం మీ ట్రిప్ కోట్ {{until}} వరకు తెరిచి ఉంటుంది. బుక్ చేయడానికి పై కోట్ పై *{{button}}* నొక్కండి లేదా మీకు ఏవైనా ప్రశ్నలు ఉంటే ఇక్కడ ప్రత్యుత్తరం ఇవ్వండి.",
+  "quoteBtnConfirmPay": "ధృవీకరించండి",
   "quoteBtnConfirm": "ధృవీకరించండి",
   "quoteBtnChange": "మార్చు",
   "quoteBtnTalk": "మాతో మాట్లాడండి",

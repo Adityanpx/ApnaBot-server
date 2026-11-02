@@ -131,7 +131,7 @@ quoteTollExtra,Toll is extra and not included in this fare.,টোল অতি�
 quoteAdvanceLine,Advance to confirm: *₹{{amount}}*,নিশ্চিত করার জন্য অগ্রিম অর্থ: *₹{{amount}}*,,Keep unchanged: {{amount}}; *bold* markers must stay around the same words
 quoteValidUntil,This quote is valid until {{until}}.,এই উদ্ধৃতিটি {{until}} পর্যন্ত বৈধ।,,Keep unchanged: {{until}}
 quoteReminder,"Your trip quote for *{{route}}* (*₹{{total}}*) is still open until {{until}}. Tap *{{button}}* on the quote above to book, or reply here if you have any questions.","*{{route}}* (₹ *{{total}})*এর জন্য আপনার ট্রিপ কোট এখনও {{until}} অবধি খোলা রয়েছে। বুক করতে উপরের উদ্ধৃতিতে *{{button}} আলতো* চাপুন, বা আপনার যদি কোনও প্রশ্ন থাকে তবে এখানে উত্তর দিন।",,Keep unchanged: {{route}} {{total}} {{until}} {{button}}; *bold* markers must stay around the same words
-quoteBtnConfirmPay,Confirm & pay,,,Machine translation was over the 20-character limit and was dropped: English is used until a short reviewed text is given
+quoteBtnConfirmPay,Confirm & pay,নিশ্চিত করুন,,"Machine text of the short ""Confirm"" (quoteBtnConfirm): the translation of the full ""Confirm & pay"" was over the 20-character button limit. A reviewer may give a short text with ""pay"" in it."
 quoteBtnConfirm,Confirm,নিশ্চিত করুন,,
 quoteBtnChange,Change,পরিবর্তন,,
 quoteBtnTalk,Talk to us,আমাদের সাথে কথা বলুন,,
