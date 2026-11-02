@@ -2,7 +2,7 @@
 // Placeholders, *bold*, _italic_, emojis and line breaks must survive a machine translation.
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const { protect, restore, padTerms, isFaithful, placeholdersOf } = require('./translateProtect');
+const { protect, restore, padTerms, isFaithful, placeholdersOf, cleanShortLabel } = require('./translateProtect');
 
 const SAMPLE = '*Hello* {{customer_name}} 👋\n_Welcome_ to {{businessName}} & co <3';
 
@@ -78,4 +78,27 @@ test('isFaithful: bold or italic wrapping only a placeholder is a span, and stil
   assert.equal(isFaithful('Fare: *₹{{fare}}*', 'किराया: ₹{{fare}}'), 'Bold formatting lost.');
   assert.equal(isFaithful('Code _{{code}}_ ok', 'कोड _{{code}}_ ठीक'), null);
   assert.equal(isFaithful('Hi {{customer_name}} bye', 'नमस्ते {{customer_name}} अलविदा'), null, 'underscores inside a placeholder are not italic');
+});
+
+test('cleanShortLabel: a short label loses stray edges the source did not have', () => {
+  assert.equal(cleanShortLabel('Pune', 'पुणे .'), 'पुणे');
+  assert.equal(cleanShortLabel('Mumbai Airport', 'मुंबई विमानतळ .'), 'मुंबई विमानतळ');
+  assert.equal(cleanShortLabel('Pune', ' पुणे । '), 'पुणे');
+  assert.equal(cleanShortLabel('Pune', 'पुणे'), 'पुणे');
+  assert.equal(cleanShortLabel('Mumbai & Konkan', 'मुंबई आणि कोकण.'), 'मुंबई आणि कोकण');
+});
+
+test('cleanShortLabel: a source with its own full stop keeps the translated one; only whitespace goes', () => {
+  assert.equal(cleanShortLabel('Done.', 'हो गया। '), 'हो गया।');
+  assert.equal(cleanShortLabel('Done.', 'Done. '), 'Done.');
+});
+
+test('cleanShortLabel: long, multi-line or blank sources and non-strings are returned untouched', () => {
+  const long = 'Thank you for booking with us, we will confirm shortly';
+  assert.equal(cleanShortLabel(long, 'धन्यवाद .'), 'धन्यवाद .');
+  assert.equal(cleanShortLabel('Hi\nthere', 'नमस्ते .'), 'नमस्ते .');
+  assert.equal(cleanShortLabel('Welcome to us all, dear friends of the open road', 'स्वागत है। '), 'स्वागत है। ');
+  assert.equal(cleanShortLabel('', 'x .'), 'x .');
+  assert.equal(cleanShortLabel('Pune', null), null);
+  assert.equal(cleanShortLabel('Pune', ' . '), '.', 'never returns an empty label');
 });

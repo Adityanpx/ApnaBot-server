@@ -462,3 +462,13 @@ test('catalogue: a second run translates nothing', async () => {
   assert.equal(again.translated, 0);
   assert.equal(azureCalls.length, 0);
 });
+
+test('a short label with a stray " ." from the machine is cleaned before it is returned and cached; a long text is left as it came', async () => {
+  azureBehaviour = async (body, to) => ({ data: body.map(b => ({ translations: [{ text: `${b.Text} .`, to }] })) });
+  const long = 'Thank you for choosing us, we will confirm your booking shortly';
+  const result = await translation.translateTexts({ businessId: BIZ, texts: ['Pune', long], to: ['hi'], scope: 'owner' });
+  assert.equal(result.translations.hi[0], 'Pune');
+  assert.equal(result.translations.hi[1], `${long} .`);
+  const cached = db.translation_cache.find(r => r.source_hash === translation.sha256('Pune'));
+  assert.equal(cached.translated_text, 'Pune', 'the cache holds the cleaned text');
+});

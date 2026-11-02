@@ -97,6 +97,20 @@ const restore = (html) => {
 };
 
 /**
+ * A short label (route name, region, button) sometimes comes back from the machine with stray edges
+ * ("Pune" -> "पुणे ."). For a short one-line source this trims the result and drops a trailing "." / "।"
+ * (and the spaces before it) that the source did not have. Longer or multi-line texts are returned as they are.
+ */
+const SHORT_LABEL_MAX = 40;
+const cleanShortLabel = (source, translated) => {
+  const src = String(source ?? '').trim();
+  if (typeof translated !== 'string' || src === '' || src.length >= SHORT_LABEL_MAX || /[\r\n]/.test(src)) return translated;
+  const trimmed = translated.trim();
+  if (/[.।]$/.test(src)) return trimmed;
+  return trimmed.replace(/[\s.।]+$/u, '') || trimmed;
+};
+
+/**
  * Does `translated` keep everything `source` had that must survive? Same placeholders (as a
  * multiset), same number of bold and italic spans, same number of line breaks, same emojis.
  * @returns {string|null} why not, or null when faithful
@@ -114,4 +128,4 @@ const isFaithful = (source, translated) => {
   return null;
 };
 
-module.exports = { protect, restore, padTerms, spaceAroundPlaceholders, isFaithful, placeholdersOf };
+module.exports = { protect, restore, padTerms, spaceAroundPlaceholders, isFaithful, placeholdersOf, cleanShortLabel, SHORT_LABEL_MAX };

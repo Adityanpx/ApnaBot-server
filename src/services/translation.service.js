@@ -11,7 +11,7 @@ const supabase = require('../config/supabase');
 const logger = require('../utils/logger');
 const { istMonthKey } = require('../utils/ist');
 const { isValidLanguageCode } = require('../utils/languageCatalog');
-const { protect, restore, padTerms, isFaithful } = require('../utils/translateProtect');
+const { protect, restore, padTerms, isFaithful, cleanShortLabel } = require('../utils/translateProtect');
 const azure = require('./azureTranslate.service');
 const appConfig = require('./appConfig.service');
 const { TranslateError } = azure;
@@ -132,7 +132,7 @@ const translateTexts = async ({ businessId, texts, to, scope, protectTerms }) =>
         if (list.length === 0) continue;
         const raw = await azure.translateHtml(list.map((source) => protect(source, { terms: protectTerms })), lang);
         list.forEach((source, i) => {
-          const restored = raw[i] == null ? null : padTerms(restore(raw[i]), protectTerms);
+          const restored = raw[i] == null ? null : cleanShortLabel(source, padTerms(restore(raw[i]), protectTerms));
           const problem = restored == null ? 'No translation returned.' : isFaithful(source, restored);
           if (problem) {
             failures.set(`${lang}:${source}`, problem);
