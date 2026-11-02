@@ -91,10 +91,7 @@ const toDateQuestion = async () => {
   return r.session;
 };
 
-// Step 2 of the quote-for-every-travel-business work fixes the lookup; until then the three walks that go wrong with the
-// legacy nodes listed first are marked todo (they fail, and say so, without failing the suite).
 for (const [order, build] of Object.entries(ORDERS)) {
-  const knownBroken = order === 'legacy nodes first' ? { todo: 'resolveManualSibling picks the legacy question' } : {};
   test(`${order}: the quote flow reaches the date question and the quote path is intact (tripType also exists as a legacy question)`, async () => {
     Object.assign(graph, build());
     const session = await toDateQuestion();
@@ -102,13 +99,13 @@ for (const [order, build] of Object.entries(ORDERS)) {
     assert.equal(session.collected.quoteRouteId, 'r1');
   });
 
-  test(`${order}: "Other date" leads to the QUOTE flow's own typed-date question`, knownBroken, async () => {
+  test(`${order}: "Other date" leads to the QUOTE flow's own typed-date question`, async () => {
     Object.assign(graph, build());
     const r = await say(await toDateQuestion(), 'Other date');
     assert.equal(r.session.currentNodeId, seed.N.travelDateManual);
   });
 
-  test(`${order}: "Other time" leads to the QUOTE flow's own typed-time question`, knownBroken, async () => {
+  test(`${order}: "Other time" leads to the QUOTE flow's own typed-time question`, async () => {
     Object.assign(graph, build());
     let r = await say(await toDateQuestion(), 'Today');
     assert.equal(r.result.fieldKey, 'pickupTime');
@@ -116,7 +113,7 @@ for (const [order, build] of Object.entries(ORDERS)) {
     assert.equal(r.session.currentNodeId, seed.N.pickupTimeManual);
   });
 
-  test(`${order}: a typed date and time carry on through the quote nodes to the quote`, knownBroken, async () => {
+  test(`${order}: a typed date and time carry on through the quote nodes to the quote`, async () => {
     Object.assign(graph, build());
     const tomorrow = new Date(Date.now() + 86400000);
     const typed = `${String(tomorrow.getDate()).padStart(2, '0')}/${String(tomorrow.getMonth() + 1).padStart(2, '0')}/${tomorrow.getFullYear()}`;
@@ -126,5 +123,26 @@ for (const [order, build] of Object.entries(ORDERS)) {
     r = await say(r.session, 'Other time');
     r = await say(r.session, '6:30 AM');
     assert.deepEqual(r.result, { quote: { action: 'send', reason: null, nodeId: seed.N.quote } });
+  });
+}
+
+// The scoped lookup is for quote sessions only: a session that walks the legacy booking questions (started at the legacy
+// trip type question) still resolves "Other date" with the plain field-key lookup, exactly as before - the first text
+// question with that key in the order the rows come back, whichever flow it belongs to.
+const legacyTripType = legacyNodes.find((n) => n.field_key === 'tripType').id;
+const legacyTravelDateText = legacyNodes.find((n) => n.field_key === 'travelDate' && n.content_type === 'text').id;
+const EXPECTED_PLAIN_LOOKUP = { 'legacy nodes first': legacyTravelDateText, 'quote nodes first': seed.N.travelDateManual };
+
+for (const [order, build] of Object.entries(ORDERS)) {
+  test(`${order}: a NON-quote session still uses the plain field-key lookup for "Other date" (unchanged)`, async () => {
+    Object.assign(graph, build());
+    const started = await bookingGraph.startGraphSessionAtNode(BIZ, legacyTripType, fixture.RATES, 'en');
+    let r = await say(started.session, 'One Way');
+    r = await say(r.session, 'Pune');
+    r = await say(r.session, 'Mumbai');
+    assert.equal(r.result.fieldKey, 'travelDate');
+    assert.equal(r.session.collected.quoteRouteId, undefined, 'not a quote session');
+    r = await say(r.session, 'Other date');
+    assert.equal(r.session.currentNodeId, EXPECTED_PLAIN_LOOKUP[order]);
   });
 }

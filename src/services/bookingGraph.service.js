@@ -360,6 +360,33 @@ const nodeToFieldLocalized = (node, servedCities, computedOptions, languageCode,
 const resolveManualSibling = (nodes, fieldKey) =>
   nodes.find(n => n.nodeType === 'question' && n.fieldKey === fieldKey && n.contentType === 'text' && !n.isComputed) || null;
 
+/**
+ * resolveManualSibling for a QUOTE session. A business can hold several questions with one field key (the legacy
+ * booking questions of the Travels default sit next to the quote flow's own), and resolveManualSibling takes the first
+ * in database order - which can be the legacy one and drop the customer into the old booking questions. Here the
+ * sibling must belong to the current question's own flow: the questions connected to it by edges in either direction
+ * (a typed sibling has no edge INTO it, only out to where the list question also goes). Reply nodes are not walked:
+ * the Rates and menu replies are shared entry points that lead into every flow. When the flow holds no such sibling
+ * the plain lookup is the answer, so this never finds less than resolveManualSibling does.
+ */
+const resolveQuoteManualSibling = (nodes, edges, currentNode) => {
+  const typeOf = new Map(nodes.map(n => [n.id, n.nodeType]));
+  const inFlow = new Set([currentNode.id]);
+  const queue = [currentNode.id];
+  while (queue.length > 0) {
+    const id = queue.shift();
+    for (const edge of edges) {
+      const other = edge.fromNodeId === id ? edge.toNodeId : (edge.toNodeId === id ? edge.fromNodeId : null);
+      if (other && !inFlow.has(other) && typeOf.get(other) && typeOf.get(other) !== 'reply') {
+        inFlow.add(other);
+        queue.push(other);
+      }
+    }
+  }
+  const own = nodes.find(n => inFlow.has(n.id) && n.nodeType === 'question' && n.fieldKey === currentNode.fieldKey && n.contentType === 'text' && !n.isComputed);
+  return own || resolveManualSibling(nodes, currentNode.fieldKey);
+};
+
 /** (business_id, field_key, is_computed=false, node_type='question') static fallback lookup — used for vehicleType today. */
 const resolveStaticFallback = (nodes, fieldKey) =>
   nodes.find(n => n.nodeType === 'question' && n.fieldKey === fieldKey && !n.isComputed) || null;
@@ -922,7 +949,9 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
     }
 
     if (OTHER_SENTINELS[currentNode.fieldKey] === resolvedOption.value) {
-      const siblingNode = resolveManualSibling(nodes, currentNode.fieldKey);
+      const siblingNode = isQuoteFlow(session)
+        ? resolveQuoteManualSibling(nodes, edges, currentNode)
+        : resolveManualSibling(nodes, currentNode.fieldKey);
       if (!siblingNode) {
         logger.error('bookingGraph: sentinel option matched but no manual sibling node exists', { businessId, fieldKey: currentNode.fieldKey });
       } else {
