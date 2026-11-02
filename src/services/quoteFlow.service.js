@@ -102,7 +102,7 @@ const buildQuoteText = (quote, lang) => {
   if (quote.advance_amount !== null && quote.advance_amount !== undefined) {
     lines.push(msg('quoteAdvanceLine', { amount: money(quote.advance_amount) }));
   }
-  lines.push('', msg('quoteValidUntil', { until: formatUntil(quote.expires_at) }));
+  lines.push('', msg('quoteValidUntil', { until: formatUntil(quote.expires_at, lang) }));
   return lines.join('\n');
 };
 

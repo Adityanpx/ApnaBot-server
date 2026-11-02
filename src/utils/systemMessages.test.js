@@ -112,3 +112,25 @@ test('every travel-quote message exists in every language; button titles fit 20 
     for (const lang of LANGUAGES) assert.ok(SYSTEM_MESSAGES[key][lang].length <= 20, `${key}.${lang} is ${SYSTEM_MESSAGES[key][lang].length} characters`);
   }
 });
+
+test('the vehicle carousel and choose-one messages: English is the exact text the code used to hardcode; hi / mr exist and the buttons fit 20 characters', () => {
+  const { getSystemMessage } = require('./systemMessages');
+  assert.equal(getSystemMessage('vehicleBookThis', 'en'), 'Book this');
+  assert.equal(getSystemMessage('vehicleOtherBtn', 'en'), 'Other options');
+  assert.equal(getSystemMessage('vehicleOtherPrompt', 'en'), "Don't see the vehicle you want?");
+  assert.equal(getSystemMessage('vehicleSeats', 'en', { seats: 4 }), '4 seats');
+  assert.equal(getSystemMessage('vehicleTapOne', 'en'), 'Please tap one of the vehicle options above.');
+  assert.equal(getSystemMessage('chooseOneOf', 'en'), 'Please choose one of:');
+  // no language and an unknown one fall back to English
+  assert.equal(getSystemMessage('vehicleBookThis'), 'Book this');
+  assert.equal(getSystemMessage('vehicleBookThis', 'xx'), 'Book this');
+  for (const key of ['vehicleBookThis', 'vehicleOtherBtn']) {
+    for (const lang of ['en', 'hi', 'mr']) assert.ok([...getSystemMessage(key, lang)].length <= 20, `${key} ${lang}`);
+  }
+  for (const key of ['vehicleSeats', 'vehicleBookThis', 'vehicleOtherPrompt', 'vehicleOtherBtn', 'vehicleTapOne', 'chooseOneOf']) {
+    for (const lang of ['hi', 'mr']) {
+      assert.notEqual(getSystemMessage(key, lang, { seats: 4 }), getSystemMessage(key, 'en', { seats: 4 }), `${key} ${lang}`);
+    }
+  }
+  assert.equal(getSystemMessage('vehicleSeats', 'hi', { seats: 7 }), '7 सीटें');
+});

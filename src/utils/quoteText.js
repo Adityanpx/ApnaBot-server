@@ -6,10 +6,26 @@ const { getSystemMessage } = require('./systemMessages');
 /** 3500 -> "3,500" (Indian grouping). */
 const money = (amount) => Number(amount).toLocaleString('en-IN');
 
-/** "2 Nov, 7:30 pm" in India time. */
-const formatUntil = (date) => new Date(date).toLocaleString('en-IN', {
-  timeZone: 'Asia/Kolkata', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true
-});
+const IST = 'Asia/Kolkata';
+
+/**
+ * The "valid until" moment in India time.
+ *   English (and any language without its own month names here): "2 Nov, 7:30 pm", exactly as before.
+ *   Hindi / Marathi: the month name in that language, Latin digits, and the time with AM / PM like the pickup
+ *   options: "2 नव॰, 7:30 PM" / "2 नोव्हें, 7:30 PM" (the Devanagari digits ICU would give are not used).
+ * @param {string|Date} date
+ * @param {string|null} [lang]
+ */
+const formatUntil = (date, lang = null) => {
+  const when = new Date(date);
+  if (lang !== 'hi' && lang !== 'mr') {
+    return when.toLocaleString('en-IN', { timeZone: IST, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit', hour12: true });
+  }
+  const day = when.toLocaleDateString(`${lang}-IN-u-nu-latn`, { timeZone: IST, day: 'numeric', month: 'short' });
+  const time = Object.fromEntries(new Intl.DateTimeFormat('en-IN', { timeZone: IST, hour: 'numeric', minute: '2-digit', hour12: true })
+    .formatToParts(when).map(part => [part.type, part.value]));
+  return `${day}, ${time.hour}:${time.minute} ${String(time.dayPeriod).toUpperCase()}`;
+};
 
 /**
  * The price part of a vehicle card in a Round Trip quote, joined with " • " like the rest of the caption.
@@ -38,7 +54,7 @@ const buildReminderText = (quote, lang) => {
   return getSystemMessage('quoteReminder', lang, {
     route: `${c.fromLabel} → ${c.toLabel}`,
     total: money(quote.total_amount),
-    until: formatUntil(quote.expires_at),
+    until: formatUntil(quote.expires_at, lang),
     button: getSystemMessage(hasAdvance ? 'quoteBtnConfirmPay' : 'quoteBtnConfirm', lang)
   });
 };

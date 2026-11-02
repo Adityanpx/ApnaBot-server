@@ -538,11 +538,11 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
       let sentCount = 0;
       for (const option of field.options) {
         const captionParts = [option.name];
-        if (option.seats) captionParts.push(`${option.seats} seats`);
+        if (option.seats) captionParts.push(getSystemMessage('vehicleSeats', customer.preferredLanguage, { seats: option.seats }));
         // A Round Trip quote option carries how it was priced (package / by km / team confirms); every other option is its plain fare.
         captionParts.push(option.priceDisplay ? carouselPriceText(option.priceDisplay, customer.preferredLanguage) : `₹${option.fare}`);
         const caption = captionParts.join(' • ');
-        const vehicleButtons = [{ title: 'Book this', nextKeyword: `${field.nodeId}:${option.index}` }];
+        const vehicleButtons = [{ title: getSystemMessage('vehicleBookThis', customer.preferredLanguage), nextKeyword: `${field.nodeId}:${option.index}` }];
 
         const vehicleMsg = await createMessageSoft({
           business_id: tenant.businessId,
@@ -604,8 +604,8 @@ const sendFieldPrompt = async (ctx, field, introTextOverride = null) => {
 
       // Escape hatch: let the customer opt out of the carousel if their
       // preferred vehicle isn't listed.
-      const otherOptionsText = "Don't see the vehicle you want?";
-      const otherOptionsButtons = [{ title: 'Other options', nextKeyword: `${field.nodeId}:other` }];
+      const otherOptionsText = getSystemMessage('vehicleOtherPrompt', customer.preferredLanguage);
+      const otherOptionsButtons = [{ title: getSystemMessage('vehicleOtherBtn', customer.preferredLanguage), nextKeyword: `${field.nodeId}:other` }];
       const otherOptionsMsg = await createMessageSoft({
         business_id: tenant.businessId,
         customer_id: customer.id,

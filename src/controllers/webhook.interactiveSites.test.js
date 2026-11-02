@@ -257,6 +257,24 @@ for (const [name, c] of Object.entries(CASES)) {
   });
 }
 
+// The carousel text follows the customer's language; English (the golden case above) is the exact text it always was.
+for (const [lang, expected] of Object.entries({
+  hi: { seats: '4 सीटें', book: 'यह बुक करें', prompt: 'जो वाहन चाहिए वह नहीं दिख रहा?', other: 'अन्य विकल्प' },
+  mr: { seats: '4 सीट', book: 'हे बुक करा', prompt: 'हवे असलेले वाहन दिसत नाही का?', other: 'इतर पर्याय' }
+})) {
+  test(`vehicle carousel in ${lang}: seats, "Book this", the escape prompt and its button are translated`, async () => {
+    CASES['vehicle carousel'].arrange();
+    db.customers[0].preferred_language = lang;
+    enabledLanguages = ['en', lang];
+    await CASES['vehicle carousel'].act();
+    const rows = botRows().map(r => r.interactive_payload).filter(Boolean);
+    assert.deepEqual(rows.map(p => p.body), [`Swift • ${expected.seats} • ₹1200`, 'Innova • ₹2000', expected.prompt]);
+    assert.deepEqual(rows.map(p => p.options[0].title), [expected.book, expected.book, expected.other]);
+    assert.ok(rows.every(p => [...p.options[0].title].length <= 20));
+    assert.deepEqual(rows.map(p => p.options[0].id), ['v1:0', 'v1:1', 'v1:other']); // the ids never change
+  });
+}
+
 test('the web-form link row never holds the link or its token', async () => {
   CASES['flow web-form link button'].arrange();
   await say('price');

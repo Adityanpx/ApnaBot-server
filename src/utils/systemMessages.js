@@ -64,6 +64,23 @@ const SYSTEM_MESSAGES = {
     hi: 'माफ़ कीजिए, हमारा लोकेशन अभी सेट नहीं किया गया है।',
     mr: 'माफ करा, आमचे लोकेशन अजून सेट केलेले नाही.'
   },
+  // The vehicle carousel (webhook.controller.js#sendFieldPrompt). Button titles: max 20 characters in every language.
+  vehicleSeats: { en: '{{seats}} seats', hi: '{{seats}} सीटें', mr: '{{seats}} सीट' },
+  vehicleBookThis: { en: 'Book this', hi: 'यह बुक करें', mr: 'हे बुक करा' },
+  vehicleOtherPrompt: {
+    en: "Don't see the vehicle you want?",
+    hi: 'जो वाहन चाहिए वह नहीं दिख रहा?',
+    mr: 'हवे असलेले वाहन दिसत नाही का?'
+  },
+  vehicleOtherBtn: { en: 'Other options', hi: 'अन्य विकल्प', mr: 'इतर पर्याय' },
+  vehicleTapOne: {
+    en: 'Please tap one of the vehicle options above.',
+    hi: 'कृपया ऊपर दिए वाहन विकल्पों में से एक चुनें।',
+    mr: 'कृपया वरील वाहन पर्यायांपैकी एक निवडा.'
+  },
+  // The start of the reply to an answer that is none of a buttons / list question's options: "<this> A, B, C"
+  // (the owner's labels are appended as they are, not passed through the placeholder cleaner).
+  chooseOneOf: { en: 'Please choose one of:', hi: 'कृपया इनमें से एक चुनें:', mr: 'कृपया यापैकी एक निवडा:' },
   vehicleNoLongerAvailable: {
     en: 'Sorry, that vehicle is no longer available for this route. Here are the current options:',
     hi: 'माफ़ कीजिए, यह गाड़ी इस रूट के लिए अब उपलब्ध नहीं है। ये मौजूदा विकल्प हैं:',

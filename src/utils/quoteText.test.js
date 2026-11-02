@@ -44,3 +44,23 @@ test('carouselPriceText: formula, package and "team will confirm", in each langu
   assert.equal(carouselPriceText({ kind: 'on_request' }, 'mr'), 'भाडे: आमची टीम कळवेल');
   assert.equal(carouselPriceText({ kind: 'formula', total: 8810, days: 1, billedKm: 370.8 }, 'en'), '₹8810 • 1 day(s) • 370.8 km');
 });
+
+test('formatUntil: English is unchanged; Hindi and Marathi get their month name, Latin digits and AM/PM', () => {
+  const at = '2026-11-11T14:00:00.000Z'; // 7:30 pm India time
+  assert.equal(formatUntil(at), '11 Nov, 7:30 pm');
+  assert.equal(formatUntil(at, 'en'), '11 Nov, 7:30 pm');
+  assert.equal(formatUntil(at, 'ta'), '11 Nov, 7:30 pm'); // no month names here: the English form, like its English message
+  assert.equal(formatUntil(at, 'hi'), '11 नव॰, 7:30 PM');
+  assert.equal(formatUntil(at, 'mr'), '11 नोव्हें, 7:30 PM');
+  // midnight, noon and a single-digit day; never Devanagari digits
+  assert.equal(formatUntil('2026-01-01T18:35:00Z', 'hi'), '2 जन॰, 12:05 AM');
+  assert.equal(formatUntil('2026-03-05T06:30:00Z', 'mr'), '5 मार्च, 12:00 PM');
+  for (const lang of ['hi', 'mr']) assert.ok(!/[०-९]/.test(formatUntil(at, lang)), lang);
+});
+
+test('the reminder carries the localized validity moment', () => {
+  const q = { total_amount: 3500, advance_amount: null, expires_at: '2026-11-11T14:00:00.000Z', collected: { fromLabel: 'Pune', toLabel: 'Shirdi' } };
+  assert.ok(buildReminderText(q, 'en').includes('11 Nov, 7:30 pm'));
+  assert.ok(buildReminderText(q, 'hi').includes('11 नव॰, 7:30 PM'));
+  assert.ok(buildReminderText(q, 'mr').includes('11 नोव्हें, 7:30 PM'));
+});

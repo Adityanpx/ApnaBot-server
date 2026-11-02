@@ -764,7 +764,7 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
     const row = matchPickerRow(session.currentNodeComputedOptions || [], trimmedReply);
     if (!row) {
       const labels = (session.currentNodeComputedOptions || []).map(bookingService.normalizeOption).map(opt => getLocalizedText(opt, 'label', languageCode));
-      return { session, result: 'Please choose one of: ' + labels.join(', ') };
+      return { session, result: `${getSystemMessage('chooseOneOf', languageCode)} ${labels.join(', ')}` };
     }
     const outcome = routePicker.choose(routes, session.routePicker, row.value, text);
     if (outcome.other) return quoteResult(session, 'handoff', 'other_route');
@@ -794,7 +794,7 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
     const asNumber = Number(trimmedReply);
     const tappedOption = Number.isInteger(asNumber) ? options.find(opt => opt.index === asNumber) : null;
     if (!tappedOption) {
-      return { session, result: 'Please tap one of the vehicle options above.' };
+      return { session, result: getSystemMessage('vehicleTapOne', languageCode) };
     }
 
     if (tappedOption.source === 'route_fare') {
@@ -910,7 +910,7 @@ const advanceGraphSession = async ({ businessId, session, reply, languageCode })
 
     if (!resolvedOption) {
       const localizedLabels = options.map(opt => getLocalizedText(opt, 'label', languageCode));
-      return { session, result: 'Please choose one of: ' + localizedLabels.join(', ') };
+      return { session, result: `${getSystemMessage('chooseOneOf', languageCode)} ${localizedLabels.join(', ')}` };
     }
 
     if (OTHER_SENTINELS[currentNode.fieldKey] === resolvedOption.value) {

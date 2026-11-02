@@ -139,6 +139,17 @@ test('a typed city name or a row number also picks the row; an unknown reply re-
   assert.equal(r2.session.collected.quoteRouteId, 'r1');
 });
 
+test('the "choose one of" and "tap a vehicle" replies follow the customer language; English is unchanged', async () => {
+  const { session } = await start();
+  const picker = await say(session, 'One Way', 'hi');
+  const bad = await say(picker.session, 'Atlantis', 'hi');
+  assert.equal(bad.result, 'कृपया इनमें से एक चुनें: City 1, City 2, अन्य रूट');
+  const { session: s2 } = await toPassengers();
+  const carousel = await say(s2, '1-4', 'mr');
+  assert.equal((await say(carousel.session, 'zzz', 'mr')).result, 'कृपया वरील वाहन पर्यायांपैकी एक निवडा.');
+  assert.equal((await say(carousel.session, 'zzz', 'en')).result, 'Please tap one of the vehicle options above.');
+});
+
 test('"Other route" hands off', async () => {
   const { session } = await start();
   const r = await say((await say(session, 'One Way')).session, 'other');
