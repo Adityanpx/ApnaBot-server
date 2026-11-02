@@ -13,6 +13,9 @@ router.use(protect, requireBusiness);
 // The readiness checklist is the one route that works while the switch is OFF: "is the switch on?" is one of its items.
 // It is read-only and open to any business member.
 router.get('/quote-readiness', travelQuoteController.getQuoteReadiness);
+// Enable / Disable also work while the switch is OFF (Enable is what turns it on). Owner only; the business is the login's.
+router.post('/quote-flow/enable', requireRole('owner'), travelQuoteController.enableQuoteFlow);
+router.post('/quote-flow/disable', requireRole('owner'), travelQuoteController.disableQuoteFlow);
 
 router.use(requireCategoryFeature('travel_quotes'));
 

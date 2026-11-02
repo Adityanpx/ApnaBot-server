@@ -28,6 +28,7 @@ const categoryFeatureController = require('../controllers/categoryFeature.contro
 const ownerMediaController = require('../controllers/ownerMedia.controller');
 const copySetupController = require('../controllers/copySetup.controller');
 const trialController = require('../controllers/trial.controller');
+const travelQuoteController = require('../controllers/travel/travelQuote.controller');
 
 // All admin routes — superadmin only
 router.use(protect, requireRole('superadmin'));
@@ -64,6 +65,12 @@ router.put('/businesses/:id/preview-credits',          grantPreviewCredits);
 // category switch; { override: true | false | null }
 router.get('/businesses/:id/features',                 categoryFeatureController.getBusinessFeatures);
 router.put('/businesses/:id/features/:feature',        categoryFeatureController.setBusinessFeature);
+
+// Travel quote flow for a chosen business: the owner's readiness checklist, and Enable (override on + install flow) /
+// Disable (remove flow + override off). Search cab AI is refused by id. Body of enable: { keyword?, aliases?, acknowledgeRoundTripTeam? }
+router.get('/businesses/:id/quote-readiness',          travelQuoteController.adminGetQuoteReadiness);
+router.post('/businesses/:id/quote-flow/enable',       travelQuoteController.adminEnableQuoteFlow);
+router.post('/businesses/:id/quote-flow/disable',      travelQuoteController.adminDisableQuoteFlow);
 
 // Owner phone-app media: download the last <=7 days of phone-app photos/videos/PDFs
 // after the 'owner_phone_media' switch is turned on

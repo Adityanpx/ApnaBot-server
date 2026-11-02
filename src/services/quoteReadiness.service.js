@@ -4,7 +4,7 @@
 //   ok     nothing to do
 //   warn   the flow would run, but something the owner should know or fix (or acknowledge)
 //   block  the quote flow cannot be enabled until this is fixed
-// ready = no item blocks. A Round Trip with no priceable route does not block: it asks the owner to acknowledge
+// ready = no item blocks; enabled = the switch is on AND the flow is installed. A Round Trip with no priceable route does not block: it asks the owner to acknowledge
 // "Round Trip goes to my team" (acknowledgements[], required: true), as decided.
 //
 // buildReadiness() is pure (facts in, checklist out) so every rule is tested without a database; getQuoteReadiness()
@@ -69,8 +69,9 @@ const buildReadiness = (facts) => {
   }
   const travel = installer.CATEGORIES.includes(facts.category);
   add('category', travel ? 'ok' : 'block', 'Travel business', travel ? `Category ${facts.category}.` : 'The quote flow is for travels and cab businesses only.');
-  add('feature', facts.featureOn ? 'ok' : 'block', 'Quotes switched on for your business',
-    facts.featureOn ? 'Travel quotes are switched on.' : 'Travel quotes are not switched on for your business yet. Ask the platform team to switch them on.');
+  // Not a blocker: pressing "Enable quotes" is what switches it on (services/quoteFlowSwitch.service.js).
+  add('feature', facts.featureOn ? 'ok' : 'warn', 'Quotes switched on for your business',
+    facts.featureOn ? 'Travel quotes are switched on.' : 'Travel quotes are switched off. Pressing Enable quotes switches them on.');
 
   // ── routes and fares ──────────────────────────────────────────────────────────────────────────
   const activeRoutes = facts.routes.filter((r) => r.isActive !== false);
@@ -197,7 +198,7 @@ const buildReadiness = (facts) => {
     text: 'Round Trip goes to my team',
     required: facts.roundTripRoutes === 0
   }];
-  return { ready, installed, keyword: { value: keyword, aliases }, acknowledgements, items };
+  return { ready, enabled: !!facts.featureOn && installedState === 'installed', installed, keyword: { value: keyword, aliases }, acknowledgements, items };
 };
 
 // ── Gathering the facts (select-only) ───────────────────────────────────────────────────────────

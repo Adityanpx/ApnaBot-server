@@ -1,6 +1,7 @@
 const travelRouteService = require('../../services/travelRoute.service');
 const travelQuoteService = require('../../services/travelQuote.service');
 const quoteReadinessService = require('../../services/quoteReadiness.service');
+const quoteFlowSwitchService = require('../../services/quoteFlowSwitch.service');
 const { successResponse, errorResponse } = require('../../utils/response');
 const logger = require('../../utils/logger');
 
@@ -27,6 +28,43 @@ const getQuoteReadiness = handler('getQuoteReadiness', async (req, res) => {
   const readiness = await quoteReadinessService.getQuoteReadiness(req.user.businessId, { keyword, aliases });
   return successResponse(res, 200, readiness);
 });
+
+// Body of enable: { keyword?, aliases?, acknowledgeRoundTripTeam? } and nothing else (the business is never read from it).
+const parseEnableBody = (body = {}) => {
+  const { keyword, aliases, acknowledgeRoundTripTeam } = body || {};
+  if (keyword !== undefined && (typeof keyword !== 'string' || keyword.trim().length < 1 || keyword.trim().length > 40)) return { error: 'keyword must be 1-40 characters' };
+  if (aliases !== undefined && (!Array.isArray(aliases) || aliases.length > 10 || aliases.some((a) => typeof a !== 'string' || a.trim().length > 40))) return { error: 'aliases must be a list of up to 10 short words' };
+  if (acknowledgeRoundTripTeam !== undefined && typeof acknowledgeRoundTripTeam !== 'boolean') return { error: 'acknowledgeRoundTripTeam must be true or false' };
+  return { value: { keyword: keyword === undefined ? undefined : keyword.trim(), aliases, acknowledgeRoundTripTeam: acknowledgeRoundTripTeam === true } };
+};
+
+const sendSwitchResult = (res, result) => (result.ok
+  ? successResponse(res, result.status, { readiness: result.readiness, alreadyEnabled: !!result.alreadyEnabled }, result.message)
+  : errorResponse(res, result.status, result.message, { code: result.code, readiness: result.readiness || null, blockers: result.blockers || [] }));
+
+/** POST /api/travel/quote-flow/enable (owner) - turn the quotes switch on for this business AND install the flow. Idempotent. */
+const enableQuoteFlow = handler('enableQuoteFlow', async (req, res) => {
+  const parsed = parseEnableBody(req.body);
+  if (parsed.error) return errorResponse(res, 400, parsed.error);
+  return sendSwitchResult(res, await quoteFlowSwitchService.enableQuoteFlow(req.user.businessId, parsed.value));
+});
+
+/** POST /api/travel/quote-flow/disable (owner) - remove the quote flow and turn the switch off. Idempotent. */
+const disableQuoteFlow = handler('disableQuoteFlow', async (req, res) => sendSwitchResult(res, await quoteFlowSwitchService.disableQuoteFlow(req.user.businessId)));
+
+/** GET /api/admin/businesses/:id/quote-readiness (superadmin) - the same checklist, for a chosen business. */
+const adminGetQuoteReadiness = handler('adminGetQuoteReadiness', async (req, res) => {
+  const keyword = typeof req.query.keyword === 'string' && req.query.keyword.trim() ? req.query.keyword : undefined;
+  return successResponse(res, 200, await quoteReadinessService.getQuoteReadiness(req.params.id, { keyword }));
+});
+
+/** POST /api/admin/businesses/:id/quote-flow/enable|disable (superadmin) - the same as the owner's buttons, for a chosen business. */
+const adminEnableQuoteFlow = handler('adminEnableQuoteFlow', async (req, res) => {
+  const parsed = parseEnableBody(req.body);
+  if (parsed.error) return errorResponse(res, 400, parsed.error);
+  return sendSwitchResult(res, await quoteFlowSwitchService.enableQuoteFlow(req.params.id, parsed.value));
+});
+const adminDisableQuoteFlow = handler('adminDisableQuoteFlow', async (req, res) => sendSwitchResult(res, await quoteFlowSwitchService.disableQuoteFlow(req.params.id)));
 
 /** GET /api/travel/routes */
 const getRoutes = handler('getRoutes', async (req, res) => {
@@ -91,6 +129,6 @@ const getQuoteReport = handler('getQuoteReport', async (req, res) => {
 });
 
 module.exports = {
-  getQuoteReadiness, getRoutes, createRoute, updateRoute, fillRouteDistance, deleteRoute,
+  getQuoteReadiness, enableQuoteFlow, disableQuoteFlow, adminGetQuoteReadiness, adminEnableQuoteFlow, adminDisableQuoteFlow, getRoutes, createRoute, updateRoute, fillRouteDistance, deleteRoute,
   getSettings, updateSettings, getQuotes, cancelQuote, getQuoteReport
 };

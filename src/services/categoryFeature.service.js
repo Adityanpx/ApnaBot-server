@@ -188,4 +188,4 @@ const setBusinessOverride = async (businessId, feature, override) => {
   if (error) throw error;
 };
 
-module.exports = { FEATURES, appliesTo, isEnabled, listForCategory, setEnabled, listForBusiness, effectiveForBusiness, setBusinessOverride };
+module.exports = { FEATURES, appliesTo, isEnabled, listForCategory, setEnabled, listForBusiness, effectiveForBusiness, getBusinessOverride, setBusinessOverride };

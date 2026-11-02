@@ -2224,7 +2224,20 @@ client's bot. **Search cab AI is excluded by id (looked up fresh from `businesse
   `settings` (row saved), `advance` (off = Confirm books without payment; on without a QR = the team shares details), `whatsapp`, `subscription` (both warn,
   they do not block the install), `keyword`, `rates_button` (block at 3 buttons, warn when there is no Rates reply), `flow`, `languages` (en / hi / mr built in,
   others need Translate; route names without a translation counted per language), `translation_budget`. Same sources as the bot and the installer
-  (`listQuotableRoutes`, `planInstall`, `findProtectedBusinessIds`), so it cannot disagree with them.
+  (`listQuotableRoutes`, `planInstall`, `findProtectedBusinessIds`), so it cannot disagree with them. (Changed with the Enable button, below: the `feature` item is
+  now a **warn**, not a block, when the switch is off, and the response gained `enabled` = switch on AND flow installed.)
+- **Enable / Disable quotes - one button for the override and the flow** (2026-11-03, no migration, `services/quoteFlowSwitch.service.js`). **Enable** = the
+  per-business `travel_quotes` override ON (`business_features`) -> the installer (same restore point in `flow_snapshots`, additive write, byte-identical check);
+  if the install fails (refused, threw, or wrote rows that failed the check - those are rolled back too) the override goes back to what it was (no row -> no row,
+  explicit off -> off, already on -> stays on). **Disable** = installer rollback (exactly the business's derived-id rows) -> override set to an explicit OFF
+  (not deleted, so a category-level ON cannot turn it back on); if the rollback fails the override is left as it was. Both are idempotent, return the new
+  readiness, and refuse Search cab AI by id (403 `PROTECTED_BUSINESS`, checked before anything of the business is read). Enable is refused (409 `NOT_READY`, with
+  `blockers[]`) while any readiness item other than `feature` blocks, and (409 `ACKNOWLEDGEMENT_REQUIRED`) for a Round Trip with no priceable route until
+  `acknowledgeRoundTripTeam: true` is sent. Owner API: `POST /api/travel/quote-flow/enable` (body only `{keyword?, aliases?, acknowledgeRoundTripTeam?}`) and
+  `/disable` - `requireRole('owner')` (staff 403), business from the login, registered before the `travel_quotes` feature gate so they work while it is off.
+  Super Admin API: `GET /api/admin/businesses/:id/quote-readiness`, `POST /api/admin/businesses/:id/quote-flow/enable|disable` (same service, chosen business).
+  Errors carry `errors: {code, readiness, blockers}`. Tests: `services/quoteFlowSwitch.service.test.js` (real installer + real override code on an in-memory
+  database), `routes/travelQuote.readiness.routes.test.js`. **Enabling is a one-time cutover for that business** (its customers get the entry immediately, no flag).
 - **SG Travels** (live state read select-only 2026-11-02, **this overrides the older "never run yet" / "today: SG after the seed script" lines above**): the old
   `5eed7a01` install is present (11 nodes, 12 edges) AND the days-first cutover is applied (`paxToDays` / `daysToVehicle` exist); 33 of the 36 fixed Round Trip
   fares are switched off (`off_reason = 'manual'`), 3 are still active; 12 routes all with a distance, all translated; 3 vehicles with min km 250 and allowance 300;

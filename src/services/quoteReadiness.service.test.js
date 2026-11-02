@@ -52,9 +52,10 @@ test('every item has a key, a status, a title and a detail', () => {
   }
 });
 
-test('the switch off blocks; a non-travel category blocks; the protected live business blocks', () => {
-  assert.equal(check(readiness.buildReadiness(goodFacts({ featureOn: false })), 'feature').status, 'block');
-  assert.equal(readiness.buildReadiness(goodFacts({ featureOn: false })).ready, false);
+test('the switch off only warns (Enable quotes turns it on) and enabled is false; a non-travel category blocks; the protected live business blocks', () => {
+  assert.equal(check(readiness.buildReadiness(goodFacts({ featureOn: false })), 'feature').status, 'warn');
+  assert.equal(readiness.buildReadiness(goodFacts({ featureOn: false })).ready, true);
+  assert.equal(readiness.buildReadiness(goodFacts({ featureOn: false })).enabled, false);
   assert.equal(check(readiness.buildReadiness(goodFacts({ category: 'salon' })), 'category').status, 'block');
   const protectedRun = readiness.buildReadiness(goodFacts({ protectedBusiness: true }));
   assert.equal(check(protectedRun, 'not_protected').status, 'block');
