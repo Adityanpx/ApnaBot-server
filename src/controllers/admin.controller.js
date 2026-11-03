@@ -4,13 +4,13 @@ const bookingService = require('../services/booking.service');
 const subscriptionService = require('../services/subscription.service');
 const tenantService = require('../services/tenant.service');
 const adminService = require('../services/admin.service');
+const adminBusinessList = require('../services/adminBusinessList.service');
 const businessService = require('../services/business.service');
 const { isTravelFeaturedCategory, computeFeatureFlags } = require('../config/categoryFeatures');
 const businessCategoryService = require('../services/businessCategory.service');
 const { invalidateRulesCache } = require('../services/chatbot.service');
 const { successResponse, errorResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
-const { sanitizeSearchTerm } = require('../utils/searchTerm');
 const logger = require('../utils/logger');
 const {
   isPrice, validateDurationOptions, buildDurationOptions, validatePlanExtras, cleanFeatures, comparePlans
@@ -44,44 +44,21 @@ const toCamelCaseDeep = (row, nestedKeys = []) => {
  */
 const getBusinesses = async (req, res, next) => {
   try {
-    const { page = 1, limit = 20, search, isActive, businessCategory } = req.query;
+    const { page = 1, limit = 20 } = req.query;
     const pageNum = parseInt(page);
     const limitNum = parseInt(limit);
     const from = (pageNum - 1) * limitNum;
     const to = from + limitNum - 1;
 
-    let query = supabase.from('businesses').select('*', { count: 'exact' });
-
-    // Name / city, plus the owner's phone when the term has 4+ digits (matched on users.phone,
-    // then folded in as owner_user_id.in.(uuids) - ids come from the database, not the request).
-    const term = sanitizeSearchTerm(search);
-    if (term) {
-      const clauses = [`name.ilike.%${term}%`, `city.ilike.%${term}%`];
-      const digits = term.replace(/\D/g, '');
-      if (digits.length >= 4) {
-        const { data: phoneOwners, error: phoneErr } = await supabase
-          .from('users').select('id').eq('role', 'owner').ilike('phone', `%${digits}%`).limit(200);
-        if (phoneErr) throw phoneErr;
-        const ids = (phoneOwners || []).map((u) => u.id);
-        if (ids.length > 0) clauses.push(`owner_user_id.in.(${ids.join(',')})`);
-      }
-      query = query.or(clauses.join(','));
-    }
-    if (isActive !== undefined) query = query.eq('is_active', isActive === 'true');
-    if (businessCategory) query = query.eq('business_category', businessCategory);
-
-    const { data, error, count } = await query.order('created_at', { ascending: false }).range(from, to);
+    // Filters (search incl. owner name / email / phone, isActive, businessCategory, connected) are shared with the CSV export.
+    const applyFilters = await adminBusinessList.buildBusinessFilter(adminBusinessList.parseBusinessFilters(req.query));
+    const { data, error, count } = await applyFilters(supabase.from('businesses').select('*', { count: 'exact' }))
+      .order('created_at', { ascending: false }).range(from, to);
     if (error) throw error;
 
     const rows = data || [];
-    const ownerIds = [...new Set(rows.map((b) => b.owner_user_id).filter(Boolean))];
-    let ownersById = {};
-    if (ownerIds.length > 0) {
-      const { data: owners, error: ownersErr } = await supabase
-        .from('users').select('id, name, email, phone').in('id', ownerIds);
-      if (ownersErr) throw ownersErr;
-      ownersById = Object.fromEntries((owners || []).map((o) => [o.id, o]));
-    }
+    const ownersById = await adminBusinessList.loadOwners(rows);
+    const subscriptionsByBusinessId = await adminBusinessList.loadCurrentSubscriptions(rows.map((b) => b.id));
 
     // Batched (not per-row) attachTravelSettings equivalent — see
     // business.service.js's attachTravelSettings/flattenTravelSettings for
@@ -107,7 +84,10 @@ const getBusinesses = async (req, res, next) => {
         ownerUserId: owner ? toCamelCase(owner) : b.owner_user_id,
         ownerName: owner ? owner.name : null,
         ownerEmail: owner ? owner.email : null,
-        ownerPhone: owner ? owner.phone || null : null
+        ownerPhone: owner ? owner.phone || null : null,
+        // Newest active-or-trial subscription; both null when the business has none
+        plan: subscriptionsByBusinessId[b.id] ? subscriptionsByBusinessId[b.id].plan : null,
+        subscriptionStatus: subscriptionsByBusinessId[b.id] ? subscriptionsByBusinessId[b.id].status : null
       };
       if (isTravelFeaturedCategory(b.business_category, b.sub_categories)) {
         const travelSettingsRow = travelSettingsByBusinessId[b.id];

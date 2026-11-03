@@ -10,18 +10,22 @@ const tables = { businesses: [], users: [], subscriptions: [], customers: [], bo
 let orArgs; let phoneLookups;
 
 const from = (table) => {
-  const filters = []; let phoneLike = null;
-  const run = () => {
-    let rows = tables[table].filter((r) => filters.every((f) => f(r)));
-    if (phoneLike) rows = rows.filter((r) => (r.phone || '').includes(phoneLike));
-    return rows.map((r) => ({ ...r }));
-  };
+  const filters = [];
+  const run = () => tables[table].filter((r) => filters.every((f) => f(r))).map((r) => ({ ...r }));
   const q = {
     select: () => q,
     eq: (c, v) => { filters.push((r) => r[c] === v); return q; },
     in: (c, vals) => { filters.push((r) => vals.includes(r[c])); return q; },
-    ilike: (c, pattern) => { if (c === 'phone') { phoneLike = pattern.replace(/%/g, ''); phoneLookups.push(pattern); } return q; },
     or: (expr) => {
+      if (table === 'users') {
+        // Owner lookup: name / email always, phone only when the term had 4+ digits
+        const get = (col) => { const m = new RegExp(`${col}\\.ilike\\.%([^%,]*)%`).exec(expr); return m ? m[1].toLowerCase() : null; };
+        const digits = get('phone');
+        if (digits !== null) phoneLookups.push(expr);
+        filters.push((r) => (r.name || '').toLowerCase().includes(get('name')) || (r.email || '').toLowerCase().includes(get('email'))
+          || (digits !== null && (r.phone || '').includes(digits)));
+        return q;
+      }
       orArgs = expr;
       const m = /owner_user_id\.in\.\(([^)]*)\)/.exec(expr);
       const term = /name\.ilike\.%([^%]*)%/.exec(expr)[1].toLowerCase();

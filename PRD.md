@@ -2273,6 +2273,24 @@ client's bot. **Search cab AI is excluded by id (looked up fresh from `businesse
   formula-safe too).
 - Tests: `utils/csv.test.js`, `controllers/adminRegistrations.controller.test.js`.
 
+### Businesses list: owner search, plan / status, connected filter, category summary, CSV (2026-11-03, no migration)
+
+- **`GET /api/admin/businesses`** (`controllers/admin.controller.js#getBusinesses`; filters now live in `services/adminBusinessList.service.js`, shared
+  with the CSV export). New: `connected=true|false` (`is_whatsapp_connected`); `search` also matches the owner's **name and email** (and, with 4+
+  digits, phone) - one owner lookup (`role = 'owner'`, first 200) is ORed in as `owner_user_id.in.(...)`. Each row gains `plan`
+  (`{ id, name, displayName }` or null) and `subscriptionStatus` (`'active' | 'trial'` or null): the newest `active`/`trial` subscription
+  (`pickCurrentSubscription`: latest `end_date`, then `created_at`); `expired` / `pending_start` rows do not count. The rows already carry
+  `isWhatsappConnected`, `requestedCategoryText` (set for `general` businesses that typed a category) and `subCategories` (for `multi_brand`).
+- **`GET /api/admin/businesses/category-summary`**: `{ total, categories: [{ value, label, count }] }` over all businesses (active or not), biggest
+  first; label from `business_categories`, the raw value when a category is not in that table.
+- **`GET /api/admin/businesses/export.csv`**: same filters, all rows. Columns: Business, Category, Category detail (the typed category for `general`,
+  the sub-category labels joined with `; ` for `multi_brand`), Owner, Owner email, Owner phone, City, WhatsApp number, WhatsApp connected (yes / no),
+  Plan, Status (subscription), Active (yes / no), Created. Missing plan / status / phone are empty cells. One `[admin-export]` log line per export.
+- `utils/fetchAllPages.js` (`fetchAllPages`, `fetchByIds`): reads past the 1000-row cap and chunks `.in()` id lists (100 per request).
+- Tests: `utils/fetchAllPages.test.js`, `services/adminBusinessList.service.test.js`, `controllers/adminBusinessReports.controller.test.js`,
+  `controllers/admin.businessListPlan.test.js`; `controllers/admin.ownerPhone.test.js` mock updated for the combined owner lookup;
+  support fake: `test-support/fakeAdminBusinessDb.js`.
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism

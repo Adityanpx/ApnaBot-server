@@ -27,7 +27,8 @@ const {
 const categoryFeatureController = require('../controllers/categoryFeature.controller');
 const ownerMediaController = require('../controllers/ownerMedia.controller');
 const copySetupController = require('../controllers/copySetup.controller');
-const registrationsController = require('../controllers/adminRegistrations.controller');
+const businessReportsController = require('../controllers/adminBusinessReports.controller');
+const registrationsController =require('../controllers/adminRegistrations.controller');
 const trialController =require('../controllers/trial.controller');
 const travelQuoteController = require('../controllers/travel/travelQuote.controller');
 
@@ -35,7 +36,11 @@ const travelQuoteController = require('../controllers/travel/travelQuote.control
 router.use(protect, requireRole('superadmin'));
 
 // Businesses
+// Filters: search (business, city, owner name / email / phone), isActive, businessCategory, connected (WhatsApp)
 router.get('/businesses',                getBusinesses);
+// Both must stay above /businesses/:id
+router.get('/businesses/category-summary', businessReportsController.categorySummary);
+router.get('/businesses/export.csv',     businessReportsController.exportBusinessesCsv);
 router.get('/businesses/:id',            getBusinessById);
 router.put('/businesses/:id/toggle',     toggleBusiness);
 // Body { businessCategory } - also recomputes the travel-settings flags; flow not re-seeded.

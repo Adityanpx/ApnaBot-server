@@ -3,9 +3,9 @@ const { successResponse } = require('../utils/response');
 const { getPagination } = require('../utils/pagination');
 const { sanitizeSearchTerm } = require('../utils/searchTerm');
 const { toCsv } = require('../utils/csv');
+const { fetchAllPages: fetchAll } = require('../utils/fetchAllPages');
 const logger = require('../utils/logger');
 
-const PAGE_SIZE = 1000; // PostgREST returns at most 1000 rows per request
 const DAY_MS = 24 * 60 * 60 * 1000;
 
 const CSV_COLUMNS = [
@@ -17,17 +17,6 @@ const CSV_COLUMNS = [
   { key: 'daysSince', header: 'Days since' },
   { key: 'lastLoginAt', header: 'Last login' }
 ];
-
-/** Every page of a query built by `build(from, to)` (an awaited supabase range query). */
-const fetchAll = async (build) => {
-  const rows = [];
-  for (let from = 0; ; from += PAGE_SIZE) {
-    const { data, error } = await build(from, from + PAGE_SIZE - 1);
-    if (error) throw error;
-    rows.push(...(data || []));
-    if (!data || data.length < PAGE_SIZE) return rows;
-  }
-};
 
 /** The filters a list / export request carries, normalised (query-string booleans are 'true'). */
 const parseFilters = (query = {}) => ({
@@ -107,4 +96,4 @@ const exportNoBusinessCsv = async (req, res, next) => {
   }
 };
 
-module.exports = { listNoBusiness, exportNoBusinessCsv, findNoBusinessOwners, fetchAll };
+module.exports = { listNoBusiness, exportNoBusinessCsv, findNoBusinessOwners };

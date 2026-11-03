@@ -139,15 +139,3 @@ test('export: logs user id, filters and row count', async () => {
   assert.match(logs[0], /"unverifiedOnly":true/);
   assert.match(logs[0], /rows=1/);
 });
-
-test('fetchAll: keeps paging until a short page comes back', async () => {
-  const pages = [Array(1000).fill({}), Array(5).fill({})];
-  const calls = [];
-  const rows = await reg.fetchAll(async (a, b) => { calls.push([a, b]); return { data: pages[calls.length - 1], error: null }; });
-  assert.equal(rows.length, 1005);
-  assert.deepEqual(calls, [[0, 999], [1000, 1999]]);
-});
-
-test('fetchAll: throws the query error', async () => {
-  await assert.rejects(reg.fetchAll(async () => ({ data: null, error: new Error('boom') })), /boom/);
-});
