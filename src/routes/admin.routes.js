@@ -27,7 +27,8 @@ const {
 const categoryFeatureController = require('../controllers/categoryFeature.controller');
 const ownerMediaController = require('../controllers/ownerMedia.controller');
 const copySetupController = require('../controllers/copySetup.controller');
-const trialController = require('../controllers/trial.controller');
+const registrationsController = require('../controllers/adminRegistrations.controller');
+const trialController =require('../controllers/trial.controller');
 const travelQuoteController = require('../controllers/travel/travelQuote.controller');
 
 // All admin routes — superadmin only
@@ -42,6 +43,10 @@ router.put('/businesses/:id/category',   changeBusinessCategory);
 router.delete('/businesses/:id',         deleteBusiness);
 router.put('/businesses/:id/plan',       changeBusinessPlan);
 router.put('/businesses/:id/extend',     extendSubscription);
+
+// Owners who registered but never created a business (list + CSV export; filters: search, includeInactive, unverifiedOnly)
+router.get('/registrations/no-business',               registrationsController.listNoBusiness);
+router.get('/registrations/no-business/export.csv',    registrationsController.exportNoBusinessCsv);
 
 // Free trial: settings (app_config) and the once-per-WhatsApp-number claims
 router.get('/trial-settings',                          trialController.getSettings);

@@ -2258,6 +2258,21 @@ client's bot. **Search cab AI is excluded by id (looked up fresh from `businesse
 - Tests: `utils/quoteFlowIds.test.js`, `services/quoteFlowInstaller.{service,engine,canvas}.test.js`, `services/quoteReadiness.service.test.js`,
   `routes/travelQuote.readiness.routes.test.js`, `services/bookingGraph.defaultPlusQuote.test.js`, `scripts/reinstallSgQuoteFlowOnce.test.js`.
 
+## Super Admin user lists: "registered, no business" + CSV (built 2026-11-03, no migration)
+
+- **`GET /api/admin/registrations/no-business`** (`controllers/adminRegistrations.controller.js`, superadmin via the `/api/admin` router guard). Owners
+  (`users.role = 'owner'`) with no `businesses` row whose `owner_user_id` is theirs. Query: `page`, `limit` (max 100), `search` (name / email / phone,
+  sanitised), `includeInactive=true` (default hides `is_active = false`), `unverifiedOnly=true` (`is_verified = false`). Rows: `id, name, email,
+  phone (null when none), verified, isActive, registeredAt, daysSince, lastLoginAt (null = never)`. Filtering and paging happen in JS after paging
+  through both tables 1000 rows at a time (fine at current volume).
+- **`GET /api/admin/registrations/no-business/export.csv`**: same filters, all rows, `Verified` as yes / no, empty cells where there is no phone or login.
+  Logs one `[admin-export]` line per export (user id, filters, row count) - no audit table. No masking.
+- **`utils/csv.js`** (`csvCell`, `toCsv`): the shared CSV writer. Text cells starting with `= + - @` tab or CR get a leading `'` (spreadsheet formula
+  injection) - except a cell that is only a phone / plain number (`^\+?[0-9][0-9 ()-]*$`, e.g. `+919284128827`), because in a CSV file the `'`
+  would show literally; numbers and booleans are untouched. `storageCleanup.service.js` now uses it instead of its own private `csvCell` (its export is therefore
+  formula-safe too).
+- Tests: `utils/csv.test.js`, `controllers/adminRegistrations.controller.test.js`.
+
 ## Known gaps / deferred work
 
 1. **Local Rental / no-rental-packages-configured detour.** The mechanism

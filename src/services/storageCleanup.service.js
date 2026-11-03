@@ -9,6 +9,7 @@ const logger = require('../utils/logger');
 const inventory = require('./storageInventory.service');
 const { CHAT_KINDS, KINDS, PREFIX_KIND, KNOWN_PREFIXES } = require('../utils/storageKinds');
 const { istDayStart, istMonthStart } = require('../utils/ist');
+const { csvCell } = require('../utils/csv');
 
 const PENDING_MS = 24 * 60 * 60 * 1000;
 const INSERT_CHUNK = 500;
@@ -219,10 +220,6 @@ const getRun = async (runId, { itemLimit = 200, status = null } = {}) => {
   return { run, items: items || [] };
 };
 
-const csvCell = (v) => {
-  const s = v === null || v === undefined ? '' : (typeof v === 'object' ? JSON.stringify(v) : String(v));
-  return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
 const CSV_COLUMNS = ['r2_key', 'url', 'business_id', 'kind', 'size_bytes', 'object_date', 'in_use', 'used_by', 'status', 'pending_delete_at', 'error', 'attempts'];
 
 /** The run's items as CSV text (the audit trail). */
