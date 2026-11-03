@@ -2290,6 +2290,10 @@ client's bot. **Search cab AI is excluded by id (looked up fresh from `businesse
 - **`GET /api/admin/businesses/export.csv`**: same filters, all rows. Columns: Business, Category, Category detail (the typed category for `general`,
   the sub-category labels joined with `; ` for `multi_brand`), Owner, Owner email, Owner phone, City, WhatsApp number, WhatsApp connected (yes / no),
   Plan, Status (subscription), Active (yes / no), Created. Missing plan / status / phone are empty cells. One `[admin-export]` log line per export.
+- **Super Admin screen** (repo `ApnaBot-SuperAdmin`, `/businesses`): a category summary strip (chips with counts; a chip filters the list), new
+  WhatsApp (Connected / Not connected), Plan and Subscription columns ("-" with no live subscription; the existing Status column stays Active /
+  Inactive), the typed category under General and the sub-categories under Multi brand, a "WhatsApp connection" filter, search placeholder "business,
+  city or owner", and an Export CSV button that sends the filters the list is showing.
 - `utils/fetchAllPages.js` (`fetchAllPages`, `fetchByIds`): reads past the 1000-row cap and chunks `.in()` id lists (100 per request).
 - Tests: `utils/fetchAllPages.test.js`, `services/adminBusinessList.service.test.js`, `controllers/adminBusinessReports.controller.test.js`,
   `controllers/admin.businessListPlan.test.js`; `controllers/admin.ownerPhone.test.js` mock updated for the combined owner lookup;
