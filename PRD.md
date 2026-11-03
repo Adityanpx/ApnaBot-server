@@ -2272,6 +2272,10 @@ client's bot. **Search cab AI is excluded by id (looked up fresh from `businesse
   would show literally; numbers and booleans are untouched. `storageCleanup.service.js` now uses it instead of its own private `csvCell` (its export is therefore
   formula-safe too).
 - Tests: `utils/csv.test.js`, `controllers/adminRegistrations.controller.test.js`.
+- **Super Admin screen** (repo `ApnaBot-SuperAdmin`, NOT apnabot-web): `/registrations` ("Registered, no business" in the nav) - table with name, email,
+  phone (call + WhatsApp links via `lib/ownerContact.js`, "-" if none), verified, registered date, days since, last login ("Never"); search, "Unverified
+  only" and "Show inactive" switches; Export CSV (`lib/downloadCsv.js` fetches with the auth header and adds a UTF-8 BOM so Excel reads Hindi / Marathi
+  names). Pages of 20.
 
 ### Businesses list: owner search, plan / status, connected filter, category summary, CSV (2026-11-03, no migration)
 
