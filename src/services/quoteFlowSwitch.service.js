@@ -1,6 +1,10 @@
 // "Enable quotes" / "Disable quotes" for ONE travel business: the per-business travel_quotes override and the quote flow
 // (services/quoteFlowInstaller.service.js) moved together, so the owner (or Super Admin) needs one button, not two keys.
 //
+// A new travels business is signed up with the flow already installed but dormant (no "Get a quote" button, keyword reply
+// inactive; installDormantQuoteFlow below, called only by defaultSetup). Enable on such a business runs the same readiness
+// checks, then only adds the button and activates the keyword reply (installer mode 'activate'); Disable removes everything.
+//
 //   enable   refused for Search cab AI (by id), for a readiness checklist with a blocking item, and for a Round Trip
 //            with no priceable route until it is acknowledged. Then: override ON -> installer (restore point in
 //            flow_snapshots, additive write, byte-identical check) -> if the install fails, the override goes back to what
@@ -95,10 +99,13 @@ const enableQuoteFlow = async (businessId, body = {}, overrides = {}) => {
     return { ok: true, status: 200, message: 'Quotes enabled.', readiness: await deps.getReadiness(businessId, entry) };
   }
 
+  // 'dormant' = installed at signup with no button and an inactive keyword: only those two are switched on (mode 'activate').
+  // Anything else is a normal install.
+  const mode = readiness.installed.state === 'dormant' ? 'activate' : 'install';
   let result;
   try {
     result = await deps.runInstaller({
-      mode: 'install', confirm: true, businessId, keyword: body.keyword, aliases: body.aliases, ackRoundTripToTeam: !!body.acknowledgeRoundTripTeam
+      mode, confirm: true, businessId, keyword: body.keyword, aliases: body.aliases, ackRoundTripToTeam: !!body.acknowledgeRoundTripTeam
     });
   } catch (error) {
     deps.logger.error(`quote flow: install failed for ${businessId}:`, error);
@@ -136,6 +143,29 @@ const openRates = async (businessId, overrides = {}) => {
   return { ok: true, status: 200, message: 'The Rates page is open. Add your routes and prices, then press Enable quotes.', readiness: await deps.getReadiness(businessId, {}) };
 };
 
+/**
+ * Signup only (services/defaultSetup.service.js): installs the quote flow DORMANT into a brand-new travels business - the
+ * nodes and internal edges, no "Get a quote" button, keyword reply inactive, no readiness gate, no restore point. The
+ * travel_quotes switch is not touched (it stays off). Never throws: a failure is logged and the business keeps its normal
+ * default flow. Search cab AI is refused by the installer (by id), as everywhere.
+ * @returns {Promise<{ ok: boolean, code: number|null }>}
+ */
+const installDormantQuoteFlow = async (businessId, overrides = {}) => {
+  const deps = { ...defaultDeps(), ...overrides };
+  try {
+    const result = await deps.runInstaller({ mode: 'install', confirm: true, businessId, dormantAtSignup: true });
+    if (result.code !== 0) {
+      if (result.code === 2) { try { await deps.runInstaller({ mode: 'rollback', confirm: true, businessId }); } catch (undoError) { deps.logger.error(`quote flow: could not undo the dormant install of ${businessId}:`, undoError); } }
+      deps.logger.error(`quote flow: dormant install refused for ${businessId}: ${refusalOf(result.lines) || `exit ${result.code}`}`);
+      return { ok: false, code: result.code };
+    }
+    return { ok: true, code: 0 };
+  } catch (error) {
+    deps.logger.error(`quote flow: dormant install failed for ${businessId}:`, error);
+    return { ok: false, code: null };
+  }
+};
+
 /** @param {string} businessId @param {Object} [overrides] dependencies, for tests */
 const disableQuoteFlow = async (businessId, overrides = {}) => {
   const deps = { ...defaultDeps(), ...overrides };
@@ -157,4 +187,4 @@ const disableQuoteFlow = async (businessId, overrides = {}) => {
   return { ok: true, status: 200, message: 'Quotes disabled.', readiness: await deps.getReadiness(businessId, {}), log: result.lines };
 };
 
-module.exports = { FEATURE, PROTECTED_MESSAGE, enableQuoteFlow, openRates, disableQuoteFlow };
+module.exports = { FEATURE, PROTECTED_MESSAGE, enableQuoteFlow, openRates, installDormantQuoteFlow, disableQuoteFlow };

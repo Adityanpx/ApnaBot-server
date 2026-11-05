@@ -84,6 +84,17 @@ const applyDefaultSetup = async (businessId) => {
       const { error: seedErr } = await supabase
         .from('businesses').update({ seeded_from_template_name: template.name }).eq('id', businessId);
       if (seedErr) throw seedErr;
+      // A new travels business also gets the tappable quote flow, DORMANT: installed but unreachable (no "Get a quote"
+      // button, keyword reply inactive, travel_quotes stays off) until the owner presses Enable quotes. The same installer
+      // as Enable, never throws, and a failure here only means the business keeps the normal default flow.
+      if (category === 'travels' && template.category === 'travels') {
+        try {
+          const dormant = await require('./quoteFlowSwitch.service').installDormantQuoteFlow(businessId);
+          result.quoteFlowDormant = dormant.ok;
+        } catch (quoteErr) {
+          logger.error('applyDefaultSetup: dormant quote flow install failed - business keeps the normal default flow', { businessId, error: quoteErr.message });
+        }
+      }
       Object.assign(result, { applied: true, reason: undefined, templateId: template.id, templateName: template.name });
     }
 

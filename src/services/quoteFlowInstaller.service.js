@@ -30,6 +30,14 @@
 // flow of its own, and a Round Trip with no offerable route unless the owner acknowledged "Round Trip goes to my team".
 // Needs migration 20261105120000_flow_quote_node_types.sql applied (otherwise the RPC fails as a whole, nothing is written).
 //
+// DORMANT INSTALL (signup only, options.dormantAtSignup, used by defaultSetup.service and nothing else): a brand-new
+// travels business gets the 11 nodes and the 11 internal edges, but NOT the "Get a quote" button on "Our Rates", and the
+// keyword reply is written with is_active:false - so no customer can reach the flow. It skips the switch / routes /
+// Round Trip gate (a new business has none of them yet) and the restore point (the signup default is its first version);
+// everything else (Search cab AI refusal, the field-key / keyword / path / copy checks) still applies. Mode 'activate'
+// (Enable on such a business) then runs the FULL readiness gate and adds only the button edge + activates the keyword
+// reply; every other row stays byte-identical.
+//
 // Dry-run by default: run() with confirm false prints exactly what it would do and writes nothing.
 // The CLI is src/scripts/installTravelQuoteFlow.js.
 const { LIMITS } = require('../utils/flowSpec');
@@ -125,12 +133,12 @@ const firstOrder = (existingEdges) => Math.min(0, ...existingEdges.map((e) => e.
  *   synonyms only for the default keyword)
  * @returns {{ nodes: Object[], edges: Object[] }} rows exactly as save_flow_graph_full takes them
  */
-const buildPlan = ({ businessId, anchors, menuButton = false, ids = derive(businessId), keyword = DEFAULT_KEYWORD, aliases = keyword === DEFAULT_KEYWORD ? DEFAULT_ALIASES : [] }) => {
+const buildPlan = ({ businessId, anchors, menuButton = false, dormant = false, ids = derive(businessId), keyword = DEFAULT_KEYWORD, aliases = keyword === DEFAULT_KEYWORD ? DEFAULT_ALIASES : [] }) => {
   const { N, E } = ids;
   const nodes = [
     nodeRow({
       id: N.trigger, node_type: 'reply', keyword, match_type: 'exact', hindi_aliases: aliases,
-      reply_kind: 'booking_trigger', content_type: 'text', ...translated(COPY.triggerLabel)
+      reply_kind: 'booking_trigger', content_type: 'text', is_active: !dormant, ...translated(COPY.triggerLabel)
     }),
     question(N.tripType, 1, 'tripType', 'Trip type', COPY.tripType, { content_type: 'buttons', options: COPY.tripTypeOptions }),
     nodeRow({
@@ -171,14 +179,19 @@ const buildPlan = ({ businessId, anchors, menuButton = false, ids = derive(busin
     edgeRow({ id: E.timeManualToQuote, from_node_id: N.pickupTimeManual, to_node_id: N.quote })
   ];
 
-  const button = (id, fromNode, existingEdges) => edgeRow({
-    id, from_node_id: fromNode.id, to_node_id: N.tripType, label: COPY.menuButton.en,
-    label_translations: { hi: COPY.menuButton.hi, mr: COPY.menuButton.mr }, display_order: firstOrder(existingEdges)
-  });
-  if (anchors.rates) edges.push(button(E.rates, anchors.rates, anchors.ratesEdges));
-  if (menuButton && anchors.menu) edges.push(button(E.menu, anchors.menu, anchors.menuEdges));
+  // A dormant plan has no entry button at all: the customer cannot reach the flow until Enable adds it.
+  if (!dormant) {
+    if (anchors.rates) edges.push(entryButton(ids, E.rates, anchors.rates, anchors.ratesEdges));
+    if (menuButton && anchors.menu) edges.push(entryButton(ids, E.menu, anchors.menu, anchors.menuEdges));
+  }
   return { nodes, edges };
 };
+
+/** The "Get a quote" button edge from a reply (Rates / main menu) to the trip type question, shown before its other buttons. */
+const entryButton = (ids, id, fromNode, existingEdges) => edgeRow({
+  id, from_node_id: fromNode.id, to_node_id: ids.N.tripType, label: COPY.menuButton.en,
+  label_translations: { hi: COPY.menuButton.hi, mr: COPY.menuButton.mr }, display_order: firstOrder(existingEdges)
+});
 
 // ── Checks ──────────────────────────────────────────────────────────────────────────────────────
 
@@ -289,7 +302,8 @@ const fingerprint = (rows) => JSON.stringify([...rows].sort((a, b) => (a.id < b.
  * @returns {{ checks: {ok:boolean,text:string}[], notes: string[], refusal: string|null, plan: Object|null, anchors: Object }}
  */
 const planInstall = ({ businessId, baseNodes, baseEdges, options = {}, ids = derive(businessId) }) => {
-  const menuButton = !!options.menuButton;
+  const dormant = !!options.dormant;
+  const menuButton = !dormant && !!options.menuButton;
   const keyword = String(options.keyword || DEFAULT_KEYWORD).trim().toLowerCase();
   const aliases = options.aliases !== undefined && options.aliases !== null
     ? options.aliases.map((a) => String(a).trim()).filter(Boolean)
@@ -317,7 +331,8 @@ const planInstall = ({ businessId, baseNodes, baseEdges, options = {}, ids = der
   const anchors = findAnchors(baseNodes, baseEdges);
   if (anchors.rates) record(true, `"Our Rates" reply found (${anchors.ratesEdges.length} button(s) today)`);
   else notes.push('"Our Rates" reply not found - its button is skipped (the keyword entry still works)');
-  if (anchors.rates && anchors.rates.content_type === 'buttons' && anchors.ratesEdges.length >= LIMITS.MAX_BUTTONS) {
+  if (dormant) notes.push('dormant install: no "Get a quote" button is added and the keyword reply is inactive; Enable activates them (and then checks the Rates reply has room)');
+  if (!dormant && anchors.rates && anchors.rates.content_type === 'buttons' && anchors.ratesEdges.length >= LIMITS.MAX_BUTTONS) {
     record(false, 'the "Our Rates" reply has room for one more button');
     return refuse(`the "Our Rates" reply already has ${anchors.ratesEdges.length} buttons (WhatsApp shows 3); a new one would hide another.`);
   }
@@ -331,14 +346,76 @@ const planInstall = ({ businessId, baseNodes, baseEdges, options = {}, ids = der
     notes.push(`main menu "${anchors.menu.keyword}" is a ${anchors.menu.content_type} reply with ${anchors.menuEdges.length} button(s) - left alone (use the menu button option once it has room)`);
   }
 
-  const plan = buildPlan({ businessId, anchors, menuButton, ids, keyword, aliases });
+  const plan = buildPlan({ businessId, anchors, menuButton, dormant, ids, keyword, aliases });
   const copy = copyProblems(plan);
   if (!record(copy.length === 0, 'all copy fits WhatsApp limits (buttons 20, list rows 24) and has en / hi / mr')) return refuse(copy.join('; '));
-  const shadow = triggerShadowProblems(baseNodes, plan.nodes.find((n) => n.id === ids.N.trigger));
+  // Judged as the ACTIVE reply it becomes (a dormant trigger is written inactive, but the matcher only sees active ones):
+  // the check is "once Enable switches it on, does it behave", so a collision is caught at signup and again at Enable.
+  const shadow = triggerShadowProblems(baseNodes, { ...plan.nodes.find((n) => n.id === ids.N.trigger), is_active: true });
   if (!record(shadow.length === 0, `the "${keyword}" keyword takes no message that an existing reply answers today`)) return refuse(shadow.join('; '));
   const paths = pathProblems(plan, ids);
   if (!record(paths.length === 0, 'One Way and Round Trip both reach the quote; Round Trip asks the days once, before the vehicles; One Way never does')) return refuse(paths.join('; '));
   return { checks, notes, refusal: null, plan, anchors };
+};
+
+/**
+ * Enable on a dormant install: what the activation writes and whether it may. Pure.
+ *   - the keyword reply (the stored one, or the keyword the owner typed at Enable) is switched to active: the SAME stored row
+ *     with only is_active (and, when the owner chose another keyword, keyword / aliases) changed
+ *   - the "Get a quote" button edge on "Our Rates" is added (when there is such a reply and the edge is not there yet)
+ * Refuses when the flow is not fully installed, when the keyword / an alias is now answered by another active reply (it
+ * may have been created since signup), when the new trigger would take a message an existing reply answers today, or when
+ * "Our Rates" already shows 3 buttons.
+ * @returns {{ checks: {ok:boolean,text:string}[], notes: string[], refusal: string|null, alreadyActive: boolean, trigger: Object|null, edge: Object|null }}
+ */
+const planActivation = ({ businessId, baseNodes, baseEdges, installedNodes, installedEdges, options = {}, ids = derive(businessId) }) => {
+  const checks = [];
+  const notes = [];
+  const record = (ok, text) => { checks.push({ ok, text }); return ok; };
+  const refuse = (refusal) => ({ checks, notes, refusal, alreadyActive: false, trigger: null, edge: null });
+
+  if (!record(installedNodes.length === ids.nodeIds.length, `all ${ids.nodeIds.length} quote-flow nodes are present (${installedNodes.length})`)) {
+    return refuse('the quote flow is not fully installed here; roll it back and install it again.');
+  }
+  const current = installedNodes.find((n) => n.id === ids.N.trigger);
+  if (current.is_active !== false) return { checks, notes, refusal: null, alreadyActive: true, trigger: null, edge: null };
+
+  const typed = options.keyword !== undefined && options.keyword !== null && String(options.keyword).trim() !== '';
+  const keyword = typed ? String(options.keyword).trim().toLowerCase() : String(current.keyword || '').trim().toLowerCase();
+  let aliases;
+  if (options.aliases !== undefined && options.aliases !== null) aliases = options.aliases.map((a) => String(a).trim()).filter(Boolean);
+  else if (typed) aliases = keyword === DEFAULT_KEYWORD ? DEFAULT_ALIASES : [];
+  else aliases = current.hindi_aliases || [];
+  if (!record(keyword.length > 0 && keyword.length <= 40, `the entry keyword "${keyword}" is 1-40 characters`)) return refuse('the keyword must be 1-40 characters.');
+  const taken = takenWords(baseNodes, [keyword, ...aliases]);
+  if (!record(taken.length === 0, `no active reply uses the keyword "${keyword}" or its aliases`)) {
+    return refuse(`already used by an active reply: ${taken.join(', ')}. Choose another keyword.`);
+  }
+
+  const trigger = nodeRow({});
+  for (const key of NODE_KEYS) if (current[key] !== undefined && current[key] !== null) trigger[key] = current[key];
+  Object.assign(trigger, { is_active: true, keyword, hindi_aliases: aliases });
+  const shadow = triggerShadowProblems(baseNodes, trigger);
+  if (!record(shadow.length === 0, `the "${keyword}" keyword takes no message that an existing reply answers today`)) return refuse(shadow.join('; '));
+
+  const anchors = findAnchors(baseNodes, baseEdges);
+  let edge = null;
+  if (installedEdges.some((e) => e.id === ids.E.rates)) notes.push('the "Get a quote" button is already on "Our Rates"');
+  else if (!anchors.rates) notes.push('"Our Rates" reply not found - no button is added (the keyword entry works)');
+  else if (anchors.rates.content_type === 'buttons' && anchors.ratesEdges.length >= LIMITS.MAX_BUTTONS) {
+    record(false, 'the "Our Rates" reply has room for one more button');
+    return refuse(`the "Our Rates" reply already has ${anchors.ratesEdges.length} buttons (WhatsApp shows 3); a new one would hide another. Remove a button first.`);
+  } else {
+    record(true, `"Our Rates" reply has room for the button (${anchors.ratesEdges.length} button(s) today)`);
+    edge = entryButton(ids, ids.E.rates, anchors.rates, anchors.ratesEdges);
+  }
+  return { checks, notes, refusal: null, alreadyActive: false, trigger, edge };
+};
+
+/** What a signup (dormant) install may skip: only the business-level gate, never the category. */
+const dormantGate = (business) => {
+  const ok = business.business_category === 'travels';
+  return { checks: [{ ok, text: `category is travels (${business.business_category}) - the only category a signup install is for` }], notes: [], refusal: ok ? null : 'a signup (dormant) install is for travels businesses only.' };
 };
 
 /**
@@ -422,7 +499,9 @@ const run = async (options, deps) => {
   const { mode, confirm, businessId, expectNodes = null, expectEdges = null } = options;
   const fail = (message) => { log(`\nREFUSED: ${message}`); return 1; };
 
-  log(`MODE: ${mode === 'rollback' ? 'ROLLBACK' : 'INSTALL'} ${confirm ? '--confirm (writes)' : '(dry run - nothing is written)'}`);
+  const dormant = options.dormantAtSignup === true;
+  log(`MODE: ${mode === 'rollback' ? 'ROLLBACK' : mode === 'activate' ? 'ACTIVATE' : dormant ? 'INSTALL (dormant, signup)' : 'INSTALL'} ${confirm ? '--confirm (writes)' : '(dry run - nothing is written)'}`);
+  if (dormant && mode !== 'install') return fail('the signup (dormant) option is for an install only.');
   if (!businessId) return fail('a business id is required.');
   log(`Scope: business ${businessId}`);
 
@@ -488,6 +567,49 @@ const run = async (options, deps) => {
     return clean && untouched ? 0 : 2;
   }
 
+  // ---------------------------------------------------------------- activate (Enable on a dormant install)
+  if (mode === 'activate') {
+    if (installedNodes.length === 0 && installedEdges.length === 0) return fail('the quote flow is not installed; Enable installs it on a business that has none.');
+    const gate = await readinessGate({ businessId, business, options, deps });
+    printChecks(gate.checks);
+    for (const note of gate.notes) log(`  i ${note}`);
+    if (gate.refusal) return fail(gate.refusal);
+    const act = planActivation({ businessId, baseNodes, baseEdges, installedNodes, installedEdges, options, ids });
+    printChecks(act.checks);
+    for (const note of act.notes) log(`  i ${note}`);
+    if (act.refusal) return fail(act.refusal);
+    if (act.alreadyActive) { log('\nAlready active: the keyword reply is on. Nothing to do.'); return 0; }
+    log(`\nPlan: activate the keyword reply "${act.trigger.keyword}"${act.edge ? ' and add the "Get a quote" button on "Our Rates"' : ''}. Every other row is left byte-identical.`);
+    if (!confirm) { log('\nDry run only. Re-run with --confirm to apply.'); return 0; }
+
+    if (existingNodes.length > 0) {
+      try {
+        await saveSnapshot(businessId, snapshotName('Before activating the quote flow'), existingNodes, existingEdges);
+        log('Restore point saved (Versions tab).');
+      } catch (error) {
+        return fail(`could not save a restore point (${error.message}). Nothing was changed.`);
+      }
+    }
+    const { error } = await supabase.rpc('save_flow_graph_full', {
+      p_business_id: businessId, p_node_upserts: [act.trigger], p_node_deletes: [], p_edge_upserts: act.edge ? [act.edge] : [], p_edge_deletes: []
+    });
+    if (error) throw error;
+
+    const afterNodes = await read('flow_nodes');
+    const afterEdges = await read('flow_edges');
+    const others = (rows, id) => rows.filter((r) => r.id !== id);
+    const before = existingNodes.find((n) => n.id === ids.N.trigger);
+    const after = afterNodes.find((n) => n.id === ids.N.trigger);
+    const triggerOk = !!after && after.is_active === true && NODE_KEYS.every((k) => k === 'is_active' || k === 'keyword' || k === 'hindi_aliases'
+      || JSON.stringify(after[k] ?? null) === JSON.stringify(before[k] ?? null));
+    const edgeOk = !act.edge || afterEdges.some((e) => e.id === act.edge.id);
+    const untouched = fingerprint(others(afterNodes, ids.N.trigger)) === fingerprint(others(existingNodes, ids.N.trigger)) &&
+      fingerprint(others(afterEdges, act.edge && act.edge.id)) === fingerprint(others(existingEdges, act.edge && act.edge.id));
+    await invalidateCache(businessId);
+    log(`\nActivated. Keyword reply active and otherwise unchanged: ${triggerOk ? 'yes' : 'NO'}. Button present: ${edgeOk ? 'yes' : 'NO'}. Every other node and edge byte-identical: ${untouched ? 'yes' : 'NO'}. Flow cache flushed.`);
+    return triggerOk && edgeOk && untouched ? 0 : 2;
+  }
+
   // ---------------------------------------------------------------- install
   if (!record(installedNodes.length === 0 && installedEdges.length === 0, 'not installed yet (none of this business\'s quote-flow ids exist)')) {
     log(`\nAlready installed: ${installedNodes.length} node(s), ${installedEdges.length} edge(s). Nothing to do (use --rollback to remove them).`);
@@ -497,12 +619,12 @@ const run = async (options, deps) => {
   if (strangerErr) throw strangerErr;
   if (!record((strangers || []).length === 0, 'none of the derived ids is used by another business')) return fail('one of the derived ids exists in another business');
 
-  const gate = await readinessGate({ businessId, business, options, deps });
+  const gate = dormant ? dormantGate(business) : await readinessGate({ businessId, business, options, deps });
   printChecks(gate.checks);
   for (const note of gate.notes) log(`  i ${note}`);
   if (gate.refusal) return fail(gate.refusal);
 
-  const flow = planInstall({ businessId, baseNodes, baseEdges, options, ids });
+  const flow = planInstall({ businessId, baseNodes, baseEdges, options: { ...options, dormant }, ids });
   printChecks(flow.checks);
   for (const note of flow.notes) log(`  i ${note}`);
   if (flow.refusal) return fail(flow.refusal);
@@ -516,7 +638,8 @@ const run = async (options, deps) => {
   if (expectEdges !== null && expectEdges !== plan.edges.length) return fail(`--expect-edges=${expectEdges} but the plan has ${plan.edges.length} edges.`);
   if (!confirm) { log('\nDry run only. Re-run with --confirm to apply (optionally --expect-nodes / --expect-edges from the counts above).'); return 0; }
 
-  if (existingNodes.length > 0) {
+  // A dormant (signup) install has no restore point: the business has nothing of its own yet and the default is its first version.
+  if (existingNodes.length > 0 && !dormant) {
     try {
       await saveSnapshot(businessId, snapshotName('Before quote flow'), existingNodes, existingEdges);
       log('\nRestore point saved (Versions tab).');
@@ -541,6 +664,6 @@ const run = async (options, deps) => {
 
 module.exports = {
   PROTECTED_NAME, CATEGORIES, OWN_FIELD_KEYS, COPY, DEFAULT_KEYWORD, DEFAULT_ALIASES,
-  findAnchors, firstOrder, edgeRow, buildPlan, copyProblems, triggerShadowProblems, takenWords, walkPlan, pathProblems,
+  findAnchors, firstOrder, edgeRow, entryButton, buildPlan, planActivation, dormantGate, copyProblems, triggerShadowProblems, takenWords, walkPlan, pathProblems,
   planInstall, readinessGate, findProtectedBusinessIds, snapshotName, describePlan, fingerprint, run
 };

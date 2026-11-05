@@ -58,8 +58,12 @@ const buildReadiness = (facts) => {
   // ── installed state ───────────────────────────────────────────────────────────────────────────
   const foreign = baseNodes.filter((n) => n.node_type === 'route_picker' || n.node_type === 'quote');
   let installedState = 'not_installed';
-  if (ownNodes.length === ids.nodeIds.length) installedState = 'installed';
-  else if (ownNodes.length > 0 || ownEdges.length > 0) installedState = 'partial';
+  // 'dormant' = installed at signup and not switched on yet: the keyword reply is inactive AND the Rates button is not there.
+  // (A paused keyword with its button still present, or a deleted button with an active keyword, is just 'installed'.)
+  const dormantTrigger = ownNodes.find((n) => n.id === ids.N.trigger);
+  if (ownNodes.length === ids.nodeIds.length) {
+    installedState = dormantTrigger && dormantTrigger.is_active === false && !ownEdges.some((e) => e.id === ids.E.rates) ? 'dormant' : 'installed';
+  } else if (ownNodes.length > 0 || ownEdges.length > 0) installedState = 'partial';
   else if (foreign.length > 0) installedState = 'conflict';
   const installed = { state: installedState, nodes: ownNodes.length, edges: ownEdges.length };
 
@@ -140,8 +144,10 @@ const buildReadiness = (facts) => {
 
   // ── the flow: keyword, Rates button, anything else in the way ─────────────────────────────────
   const entry = facts.entry || {};
-  const keyword = String(entry.keyword || installer.DEFAULT_KEYWORD).trim().toLowerCase();
-  const aliases = entry.aliases || (keyword === installer.DEFAULT_KEYWORD ? installer.DEFAULT_ALIASES : []);
+  // A dormant install already has its keyword; unless the owner is considering another one, that is the one checked.
+  const stored = installedState === 'dormant' && dormantTrigger && !entry.keyword ? dormantTrigger : null;
+  const keyword = String(entry.keyword || (stored && stored.keyword) || installer.DEFAULT_KEYWORD).trim().toLowerCase();
+  const aliases = entry.aliases || (stored ? (stored.hindi_aliases || []) : (keyword === installer.DEFAULT_KEYWORD ? installer.DEFAULT_ALIASES : []));
   if (installedState === 'installed') {
     add('keyword', 'ok', 'Keyword', 'The quote flow is installed.');
     add('rates_button', 'ok', 'Rates button', 'The quote flow is installed.');
