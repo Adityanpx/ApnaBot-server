@@ -127,17 +127,19 @@ const login = async (req, res, next) => {
     const { data: user } = await supabase
       .from('users').select('*').eq('email', email.toLowerCase()).maybeSingle();
 
-    if (!user) {
-      return errorResponse(res, 401, 'Invalid credentials');
+    // Clients translate by errors.code; message is the English fallback. A superadmin account
+    // answers like an unknown email here - the Super Admin app uses /admin-login instead.
+    if (!user || user.role === 'superadmin') {
+      return errorResponse(res, 404, 'No account found with this email', { code: 'USER_NOT_FOUND' });
     }
 
     if (user.is_active === false) {
-      return errorResponse(res, 403, 'Account is deactivated');
+      return errorResponse(res, 403, 'Account is deactivated', { code: 'ACCOUNT_DEACTIVATED' });
     }
 
     const isMatch = await bcrypt.compare(password, user.password_hash);
     if (!isMatch) {
-      return errorResponse(res, 401, 'Invalid credentials');
+      return errorResponse(res, 401, 'Incorrect password', { code: 'WRONG_PASSWORD' });
     }
 
     if (!user.is_verified) {

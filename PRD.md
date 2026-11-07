@@ -1193,6 +1193,24 @@ messages are byte-for-byte unchanged; only what is written to `messages` changed
   `sessions:{userId}` lists a user's sids. The refresh token is a JWT `{ userId, sid, jti }`; the access
   token also carries `sid`. Two devices no longer kick each other out (the old single `refresh:{userId}`
   slot is gone, with no fallback).
+- **Login error contract (2026-11-07).** `POST /api/auth/login` errors carry the code in `errors.code`
+  (English `message` is only a fallback; clients translate by code): unknown email = **404 `USER_NOT_FOUND`**;
+  wrong password = **401 `WRONG_PASSWORD`**; inactive = 403 `ACCOUNT_DEACTIVATED` (message unchanged);
+  unverified = 403 `EMAIL_NOT_VERIFIED` (unchanged, checked after the password); missing fields = 400. A
+  **superadmin account behaves like an unknown email on this route** (404 `USER_NOT_FOUND`, even with the right
+  password). The Super Admin app uses **`POST /api/auth/admin-login`** instead: every failure (unknown, wrong
+  password, inactive, unverified, not a superadmin) is the same 401 `Invalid credentials`, errors null; it does a
+  dummy bcrypt compare for an unknown email so timing does not differ. Both routes share `completeLogin`.
+  **Deploy order:** server with `admin-login` first, then switch Super Admin to it, then the public `/login`
+  change (commit 2) - the Super Admin app breaks if the public change lands before it switches.
+  Client notes: Flutter maps a 401 to a fixed "Session expired" text and web redirects to /login on a 401
+  without a stored refresh token, so both must read `errors.code` for login 401s (client tasks, not done here).
+- **Auth rate limits (`middleware/rateLimiter.middleware.js`, in-process memory, on top of `globalLimiter`).**
+  `loginLimiter`: 10 per 15 min per IP + lower-cased email; `loginIpLimiter`: 60 per 15 min per IP (generous
+  because mobile-data users share an IP); both count **failed attempts only** (`skipSuccessfulRequests`) and
+  apply to `/login` and `/admin-login`. `forgotPasswordLimiter`: 5 per hour per IP + email. A 429 is
+  `{success:false, message, data:null, errors:{code:'RATE_LIMITED'}}`. Forgot-password still always answers the
+  same 200 message.
 - **`POST /api/auth/refresh` rotates.** It returns `accessToken` AND a new `refreshToken` (clients must store
   it every time). The old token stays valid for a **30-second grace window**; a call inside the window gets
   the session's current token back, so parallel or retried refreshes all work. A reuse after the window
@@ -2852,3 +2870,4 @@ client's bot. **Search cab AI is excluded by id (looked up fresh from `businesse
 - 2026-11-02: Round Trip pricing (formula, per-vehicle min km / allowance, route distance + Google fill, allowance basis, priced carousel cards, `price_on_request` hand-off, carousel strings and quote date in en / hi / mr, `cutoverRoundTripDaysFirst.js`, `deactivateSgRoundTripFares.js`) - see "Travel quotes" > "Round Trip pricing". Migration `20261106120000_round_trip_pricing.sql` must be applied BEFORE the server. Server only: no web / Flutter screens yet, both SG Travels scripts not run, so the as-seeded SG flow still asks the days after the vehicle and the 36 fixed Round Trip fares are still active.
 - 2026-11-02: one place per setting - distance estimate uses the quote's Round Trip formula (vehicle min km / allowance, allowance basis, 2x one-way floor; old settings only fallback), `/api/route-fares` follows the Rates rules (off_reason, validation), new travel businesses no longer get the old driver-DA switch, night-basis Driver DA says nights (en hi mr + 8 machine languages), web Settings / Fleet de-duplicated (apnabot-web 9813160) - see "One place per setting". Server only changes live prices on deploy (no feature flag); Flutter not done.
 - 2026-11-03: quote flow for every travel business - generic additive installer (`services/quoteFlowInstaller.service.js`, CLI `scripts/installTravelQuoteFlow.js`, per-business UUIDv5 ids in `utils/quoteFlowIds.js`, days-first Round Trip as the default, refuses Search cab AI by id), the scoped "Other date/time" lookup for quote sessions, `GET /api/travel/quote-readiness`, one-time SG Travels reinstall script (NOT run yet); `seedTravelQuoteFlow.js` and `cutoverRoundTripDaysFirst.js` deleted - see "Quote flow for every travel business". No migration. Committed locally, not pushed; owner Enable / Disable endpoints and screens (step 6) not built.
+- 2026-11-07: login error codes (`USER_NOT_FOUND` / `WRONG_PASSWORD` / `ACCOUNT_DEACTIVATED`), `POST /api/auth/admin-login`, auth rate limits - see "Login error contract" next to the session notes. Server only: Flutter, web and Super Admin not yet updated; Super Admin must switch to `admin-login` BEFORE the public `/login` change deploys.

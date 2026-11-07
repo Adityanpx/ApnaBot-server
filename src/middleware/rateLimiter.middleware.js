@@ -39,7 +39,46 @@ const connectLogLimiter = rateLimit({
   message: { success: false, message: 'Too many connect logs, please try again later', data: null, errors: null }
 });
 
+// ── Auth limiters (POST /api/auth/login, /admin-login, /forgot-password) ──
+// Applied on those routes on top of globalLimiter. In-process memory store like the others
+// (single server instance). 429 uses the standard error body; errors.code lets clients translate.
+const authLimitBody = (message) => ({ success: false, message, data: null, errors: { code: 'RATE_LIMITED' } });
+const emailKey = (req) => {
+  const email = req.body && typeof req.body.email === 'string' ? req.body.email.trim().toLowerCase() : '';
+  return `${ipKeyGenerator(req.ip)}|${email}`;
+};
+
+// Per IP + email: stops guessing one account's password. Only failed attempts count, so a
+// successful login never eats the budget.
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  keyGenerator: emailKey,
+  skipSuccessfulRequests: true,
+  message: authLimitBody('Too many login attempts, please try again in 15 minutes')
+});
+
+// Per IP only, deliberately generous: many real users share one mobile-data (CGNAT) IP, so this
+// only stops one address sweeping many emails/passwords.
+const loginIpLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  keyGenerator: (req) => ipKeyGenerator(req.ip),
+  skipSuccessfulRequests: true,
+  message: authLimitBody('Too many login attempts from this network, please try again in 15 minutes')
+});
+
+const forgotPasswordLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  max: 5,
+  keyGenerator: emailKey,
+  message: authLimitBody('Too many reset requests, please try again in an hour')
+});
+
 module.exports = {
+  loginLimiter,
+  loginIpLimiter,
+  forgotPasswordLimiter,
   connectLogLimiter,
   globalLimiter,
   webhookLimiter,
