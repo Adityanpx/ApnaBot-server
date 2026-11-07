@@ -144,32 +144,65 @@ const login = async (req, res, next) => {
       return errorResponse(res, 403, 'Please verify your email before logging in', { code: 'EMAIL_NOT_VERIFIED' });
     }
 
-    await supabase.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', user.id);
-
-    const permissions = {
-      canViewChats: user.can_view_chats,
-      canManageRules: user.can_manage_rules,
-      canManageBookings: user.can_manage_bookings,
-      canViewCustomers: user.can_view_customers,
-      canManageBilling: user.can_manage_billing
-    };
-
-    const payload = {
-      userId: user.id,
-      businessId: user.business_id,
-      role: user.role,
-      permissions
-    };
-
-    const { accessToken, refreshToken } = await startSession(user.id, payload);
-
-    return successResponse(res, 200, {
-      user: toUserResponse(user),
-      accessToken,
-      refreshToken
-    }, 'Login successful');
+    return await completeLogin(res, user);
   } catch (error) {
     logger.error('Login error:', error);
+    next(error);
+  }
+};
+
+// Shared tail of login and adminLogin: stamp last_login_at, open the session, send the tokens.
+const completeLogin = async (res, user) => {
+  await supabase.from('users').update({ last_login_at: new Date().toISOString() }).eq('id', user.id);
+
+  const permissions = {
+    canViewChats: user.can_view_chats,
+    canManageRules: user.can_manage_rules,
+    canManageBookings: user.can_manage_bookings,
+    canViewCustomers: user.can_view_customers,
+    canManageBilling: user.can_manage_billing
+  };
+
+  const payload = {
+    userId: user.id,
+    businessId: user.business_id,
+    role: user.role,
+    permissions
+  };
+
+  const { accessToken, refreshToken } = await startSession(user.id, payload);
+
+  return successResponse(res, 200, {
+    user: toUserResponse(user),
+    accessToken,
+    refreshToken
+  }, 'Login successful');
+};
+
+// Super Admin login (POST /api/auth/admin-login). Deliberately reveals nothing: every failure
+// (unknown email, wrong password, inactive, unverified, not a superadmin) is the same 401, and a
+// dummy bcrypt compare keeps the unknown-email path as slow as the others.
+let dummyHash = null;
+const getDummyHash = () => (dummyHash = dummyHash || bcrypt.hashSync('not-a-real-password', 12));
+const adminLogin = async (req, res, next) => {
+  try {
+    const { email, password } = req.body || {};
+
+    if (!email || !password || typeof email !== 'string' || typeof password !== 'string') {
+      return errorResponse(res, 400, 'Email and password are required');
+    }
+
+    const { data: user } = await supabase
+      .from('users').select('*').eq('email', email.toLowerCase()).maybeSingle();
+
+    const isMatch = await bcrypt.compare(password, user ? user.password_hash : getDummyHash());
+    if (!user || !isMatch || user.role !== 'superadmin' || user.is_active === false || !user.is_verified) {
+      return errorResponse(res, 401, 'Invalid credentials');
+    }
+
+    return await completeLogin(res, user);
+  } catch (error) {
+    logger.error('Admin login error:', error);
     next(error);
   }
 };
@@ -458,6 +491,7 @@ module.exports = {
   updateMe,
   register,
   login,
+  adminLogin,
   refresh,
   logout,
   forgotPassword,
