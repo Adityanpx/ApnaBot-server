@@ -37,7 +37,10 @@ const businessFieldMap = {
   businessLatitude: 'business_latitude', businessLongitude: 'business_longitude',
   stopMessage: 'stop_message', stopMessageTranslations: 'stop_message_translations',
   startMessage: 'start_message', startMessageTranslations: 'start_message_translations',
-  cancelMessage: 'cancel_message', cancelMessageTranslations: 'cancel_message_translations'
+  cancelMessage: 'cancel_message', cancelMessageTranslations: 'cancel_message_translations',
+  // "Tell customers when the bot pauses" (pauseNotice.service.js): switch + optional wording for the timed pause.
+  notifyPauseEnabled: 'notify_pause_enabled',
+  notifyPauseText: 'notify_pause_text', notifyPauseTextTranslations: 'notify_pause_text_translations'
 };
 
 // Moved out of `businesses` into business_travel_settings (migration
@@ -179,7 +182,9 @@ const createBusiness = async (ownerUserId, data) => {
       webhook_verify_token: webhookVerifyToken,
       is_active: true,
       is_whatsapp_connected: false,
-      booking_engine: 'graph'
+      booking_engine: 'graph',
+      // Existing businesses have this off (column default); only businesses created from now on start with it on.
+      notify_pause_enabled: true
     }).select().single();
     if (error) throw error;
 

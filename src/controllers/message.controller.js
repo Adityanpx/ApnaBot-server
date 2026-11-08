@@ -9,6 +9,7 @@ const { withWindowExpiresAt } = require('./customer.controller');
 const { INDEFINITE_PAUSE_SENTINEL, BOT_PAUSE_DURATION_MS, isIndefinitePause } = require('../utils/botPause');
 const customerPipelineService = require('../services/customerPipeline.service');
 const handoffService = require('../services/handoff.service');
+const pauseNoticeService = require('../services/pauseNotice.service');
 const paymentService = require('../services/payment.service');
 const logger = require('../utils/logger');
 const { displayContent } = require('../utils/inboundMessage');
@@ -255,8 +256,9 @@ const loadManualSendTarget = async (businessId, customerNumber) => {
 /**
  * Side effects of a genuine staff send, shared by sendMessage and
  * sendPaymentQr. Returns the customer's (possibly updated) botPausedUntil.
+ * `business` (camelCase) is only used for the "bot paused" notice below.
  */
-const afterManualSend = async (customer) => {
+const afterManualSend = async (customer, business = null) => {
   // A genuine staff reply is the New->Contacted trigger (see
   // customerPipeline.service.js) — a no-op if the customer is already past
   // 'new' or has been manually marked 'lost'.
@@ -269,6 +271,7 @@ const afterManualSend = async (customer) => {
   // The same write also stamps last_activity_at (inbox order); it never
   // touches last_message_at, which only an inbound message may move.
   let botPausedUntil = customer.botPausedUntil;
+  const wasPaused = !!botPausedUntil && new Date(botPausedUntil).getTime() > Date.now();
   const customerUpdate = { last_activity_at: new Date().toISOString() };
   if (!isIndefinitePause(botPausedUntil)) {
     botPausedUntil = new Date(Date.now() + BOT_PAUSE_DURATION_MS).toISOString();
@@ -278,6 +281,11 @@ const afterManualSend = async (customer) => {
     .from('customers').update(customerUpdate).eq('id', customer.id);
   if (updateErr) {
     logger.error('Error pausing bot / stamping activity after manual send:', updateErr);
+  } else if (!wasPaused && customerUpdate.bot_paused_until) {
+    // The bot just went active -> paused because of this staff message: tell the customer, after the staff
+    // message, without making the sender wait (the service never throws; the catch is belt and braces).
+    pauseNoticeService.maybeSendPauseNotice({ businessId: customer.businessId, business, customer, pausedUntil: botPausedUntil, indefinite: false })
+      .catch((err) => logger.error('Error sending the pause notice after manual send:', err));
   }
 
   // A person answering closes an open "customer needs a person" alert (and its reminder). The pause
@@ -338,7 +346,7 @@ const sendMessage = async (req, res, next) => {
 
     logger.info(`Manual message queued to ${customerNumber} for business ${businessId}`);
 
-    const botPausedUntil = await afterManualSend(customer);
+    const botPausedUntil = await afterManualSend(customer, business);
 
     return successResponse(res, 201, { ...outboundMsg, botPausedUntil }, 'Message queued for delivery');
   } catch (error) {
@@ -434,7 +442,7 @@ const sendPaymentQr = async (req, res, next) => {
 
     logger.info(`Payment QR queued to ${customerNumber} for business ${businessId}`);
 
-    const botPausedUntil = await afterManualSend(customer);
+    const botPausedUntil = await afterManualSend(customer, business);
 
     return successResponse(res, 201, { ...outboundMsg, botPausedUntil }, 'Payment QR queued for delivery');
   } catch (error) {
@@ -464,6 +472,15 @@ const setBotPause = async (req, res, next) => {
       ? (duration === 'forever' ? INDEFINITE_PAUSE_SENTINEL : new Date(Date.now() + BOT_PAUSE_DURATION_MS).toISOString())
       : null;
 
+    // Read first only when pausing: the pause notice goes out only when the bot goes active -> paused.
+    let previous = null;
+    if (paused) {
+      const { data: before, error: beforeErr } = await supabase
+        .from('customers').select('*').eq('id', customerId).eq('business_id', businessId).maybeSingle();
+      if (beforeErr) throw beforeErr;
+      previous = before;
+    }
+
     const { data: updatedCustomer, error } = await supabase
       .from('customers')
       .update({ bot_paused_until: botPausedUntil })
@@ -471,6 +488,15 @@ const setBotPause = async (req, res, next) => {
       .select().maybeSingle();
     if (error) throw error;
     if (!updatedCustomer) return errorResponse(res, 404, 'Customer not found');
+
+    if (paused && previous) {
+      const wasPaused = !!previous.bot_paused_until && new Date(previous.bot_paused_until).getTime() > Date.now();
+      if (!wasPaused) {
+        pauseNoticeService.maybeSendPauseNotice({
+          businessId, customer: toCamelCase(previous), pausedUntil: botPausedUntil, indefinite: duration === 'forever'
+        }).catch((err) => logger.error('Error sending the pause notice after the pause toggle:', err));
+      }
+    }
 
     return successResponse(res, 200, toCamelCase(updatedCustomer), paused ? 'Bot paused for customer' : 'Bot resumed for customer');
   } catch (error) {

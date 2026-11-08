@@ -8,13 +8,19 @@ const clone = (v) => (v === undefined ? v : JSON.parse(JSON.stringify(v)));
 
 const compare = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
 
-// 'col.not.is.null' / 'col.is.null' pieces of an .or() string
+// 'col.not.is.null' / 'col.is.null' / 'col.lt|lte|gt|gte.<value>' pieces of an .or() string
 const orPredicate = (expr) => {
   const preds = expr.split(',').map((piece) => {
     const eq = piece.match(/^([a-z0-9_]+)\.eq\.(.+)$/);
     if (eq) return (r) => String(r[eq[1]]) === eq[2];
     const neq = piece.match(/^([a-z0-9_]+)\.neq\.(.+)$/);
     if (neq) return (r) => JSON.stringify(r[neq[1]] ?? null) !== neq[2];
+    const cmp = piece.match(/^([a-z0-9_]+)\.(lt|lte|gt|gte)\.(.+)$/);
+    if (cmp) {
+      const [, col, op, val] = cmp;
+      return (r) => r[col] !== null && r[col] !== undefined &&
+        (op === 'lt' ? r[col] < val : op === 'lte' ? r[col] <= val : op === 'gt' ? r[col] > val : r[col] >= val);
+    }
     const m = piece.match(/^([a-z0-9_]+)\.(not\.)?is\.null$/);
     if (!m) throw new Error(`fake supabase: unsupported or() piece "${piece}"`);
     const [, col, neg] = m;

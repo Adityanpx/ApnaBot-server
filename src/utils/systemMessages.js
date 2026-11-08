@@ -258,6 +258,20 @@ const SYSTEM_MESSAGES = {
     mr: 'सर्व तयार आहे — संदेश पुन्हा सुरू झाले आहेत.'
   },
 
+  // ── The bot paused because the owner / staff replied (services/pauseNotice.service.js) ──
+  // Timed: the customer's START can lift it, so it says so ('START' is the typed keyword, so it stays in
+  // English). Indefinite: START does NOT lift it, so that text must never mention START (pauseNotice.test.js).
+  pauseNoticeTimed: {
+    en: '👋 Our team is now chatting with you, so the automatic assistant is paused for 24 hours. To turn it back on, reply START.',
+    hi: '👋 हमारी टीम अब आपसे बात कर रही है, इसलिए ऑटोमैटिक असिस्टेंट 24 घंटे के लिए रुका हुआ है। इसे फिर से चालू करने के लिए START लिखकर भेजें।',
+    mr: '👋 आमची टीम आता तुमच्याशी बोलत आहे, म्हणून ऑटोमॅटिक असिस्टंट २४ तासांसाठी थांबवला आहे. तो पुन्हा सुरू करण्यासाठी START पाठवा.'
+  },
+  pauseNoticeIndefinite: {
+    en: '👋 Our team is now chatting with you. The automatic assistant will stay off until the team turns it back on.',
+    hi: '👋 हमारी टीम अब आपसे बात कर रही है। ऑटोमैटिक असिस्टेंट तब तक बंद रहेगा जब तक टीम इसे फिर से चालू नहीं करती।',
+    mr: '👋 आमची टीम आता तुमच्याशी बोलत आहे. टीम तो पुन्हा सुरू करेपर्यंत ऑटोमॅटिक असिस्टंट बंद राहील.'
+  },
+
   // ── Opt-in link consent (webhook.controller.js, utils/optInLink.js) ──
   // Sent when a customer messages a JOIN-<code> from an opt-in link / QR
   // poster. Must name the business and mention STOP in every language

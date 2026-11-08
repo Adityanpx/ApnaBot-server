@@ -20,6 +20,7 @@ const tenantService = require('./tenant.service');
 const notificationService = require('./notification.service');
 const customerPipelineService = require('./customerPipeline.service');
 const handoffService = require('./handoff.service');
+const pauseNoticeService = require('./pauseNotice.service');
 const { echoMediaOf, isOwnerMediaEnabled, storeEchoMedia } = require('./echoMedia.service');
 const { toCamelCase } = require('../utils/caseConvert');
 const { cleanValue } = require('../utils/templateValue');
@@ -191,6 +192,7 @@ const echoPauseLog = (wamid, businessId, matched, paused, reason) =>
 const decideEchoPause = async ({ businessId, customerId, wamid }) => {
   let matched = false;
   let paused = false;
+  let noticeFor = null;
   let reason = '';
   try {
     // Once the API row has its wamid, the echo row is deleted and the API row
@@ -205,7 +207,7 @@ const decideEchoPause = async ({ businessId, customerId, wamid }) => {
       reason = 'echo of a message sent through the API';
     } else {
       const { data: customer, error: custErr } = await supabase
-        .from('customers').select('id, bot_paused_until').eq('id', customerId).maybeSingle();
+        .from('customers').select('*').eq('id', customerId).maybeSingle();
       if (custErr) throw custErr;
       if (!customer) {
         reason = 'customer not found';
@@ -214,15 +216,20 @@ const decideEchoPause = async ({ businessId, customerId, wamid }) => {
         if (isIndefinitePause(customer.bot_paused_until)) {
           reason = 'indefinite pause kept';
         } else {
+          const wasPaused = !!customer.bot_paused_until && new Date(customer.bot_paused_until).getTime() > Date.now();
           const until = new Date(Date.now() + BOT_PAUSE_DURATION_MS).toISOString();
           const { error: pauseErr } = await supabase.from('customers').update({ bot_paused_until: until }).eq('id', customerId);
           if (pauseErr) throw pauseErr;
           paused = true;
+          if (!wasPaused) noticeFor = { customer: toCamelCase(customer), pausedUntil: until };
         }
         // A genuine staff reply moves New -> Contacted, paused or not.
         await customerPipelineService.advancePipelineStage(customerId, 'contacted');
         // ...and closes an open "customer needs a person" alert (never throws; no-op when none is open).
         await handoffService.clearQuietly({ businessId, customerId });
+        // The bot just went active -> paused because of the owner's phone reply: tell the customer (only when the
+        // business switched it on and the 24h window is open; never throws). Only reachable with ECHO_AUTO_PAUSE on.
+        if (noticeFor) await pauseNoticeService.maybeSendPauseNotice({ businessId, ...noticeFor, indefinite: false });
       }
     }
   } catch (err) {

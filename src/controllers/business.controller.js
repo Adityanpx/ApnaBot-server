@@ -379,6 +379,21 @@ const updateBusiness = async (req, res, next) => {
       req.body.state = stateInput.value;
     }
 
+    // "Tell customers when the bot pauses" (pauseNotice.service.js): a real boolean, and short plain texts.
+    if (req.body.notifyPauseEnabled !== undefined && typeof req.body.notifyPauseEnabled !== 'boolean') {
+      return errorResponse(res, 400, 'notifyPauseEnabled must be true or false');
+    }
+    if (req.body.notifyPauseText !== undefined && req.body.notifyPauseText !== null &&
+        (typeof req.body.notifyPauseText !== 'string' || req.body.notifyPauseText.length > 1000)) {
+      return errorResponse(res, 400, 'notifyPauseText must be text of at most 1000 characters');
+    }
+    if (req.body.notifyPauseTextTranslations !== undefined && req.body.notifyPauseTextTranslations !== null) {
+      const t = req.body.notifyPauseTextTranslations;
+      const ok = t && typeof t === 'object' && !Array.isArray(t) &&
+        Object.values(t).every((v) => typeof v === 'string' && v.length <= 1000);
+      if (!ok) return errorResponse(res, 400, 'notifyPauseTextTranslations must be { <language>: text } with texts of at most 1000 characters');
+    }
+
     if (req.body.requireAdvancePayment === true) {
       // type/value can arrive in this same request, or already be set on the
       // business from a prior save (toggling on again after toggling off) —

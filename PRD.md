@@ -830,6 +830,23 @@ for what is actually deployed before assuming.
   a duplicate echo logs `apiRowMatched yes ... (wamid already stored)` - that is how to
   tell from the Render logs whether Meta echoes API-sent messages (unverified).
   Flag off = nothing scheduled, nothing logged.
+- **Pause notice - "tell customers when the bot pauses"** (built 2026-11-08, migration `20261030120000_pause_notice.sql`, uncommitted
+  until pushed; apply the migration BEFORE deploying the code). When an owner / staff message switches the bot from active to paused
+  for a customer, the customer gets ONE bot text (`services/pauseNotice.service.js`, saved as an outbound `bot` message, queued, pushed
+  to the inbox). Triggers: dashboard send / payment-QR send (`afterManualSend`), the owner's pause toggle (`setBotPause`, `paused:true`
+  only; resuming sends nothing), and the phone-app echo (`decideEchoPause`, so only with `ECHO_AUTO_PAUSE` on). Never when already
+  paused (handoff / earlier reply / indefinite), never for handoff or customer-STOP pauses, never when the pause expires.
+  Sent after the owner's message and never awaited by it; any failure is logged and swallowed.
+  Rules: only inside the customer's 24h window (`windowAwareSend#isWindowOpen`; no template, never-written = skipped); at most one per
+  customer per 24h (guarded UPDATE on `customers.pause_notice_sent_at`, released if nothing was sent); `businesses.notify_pause_enabled`
+  must be true - DEFAULT FALSE for every existing business (Search cab AI included, no backfill), TRUE for businesses created after this
+  shipped (`createBusiness`). Texts: timed pause = the owner's `notify_pause_text` (+ `notify_pause_text_translations`) else system
+  message `pauseNoticeTimed` (en/hi/mr; other languages fall back to English), and says reply START; indefinite ("forever") pause =
+  ALWAYS system message `pauseNoticeIndefinite`, which never mentions START (a customer's START does not lift it, and an owner's custom
+  wording could say so). The three text/switch fields are saved through `PUT /api/business` (`notifyPauseEnabled` boolean,
+  `notifyPauseText` <= 1000 chars or null, `notifyPauseTextTranslations` { lang: text }) and returned by `GET /api/business`. They are
+  NOT in the auto-translate slots (translationSlots.js) yet. Web / Flutter settings UI not built. Known limit: the notice and the
+  owner's message are two queue jobs (worker concurrency 5), so in rare cases Meta could deliver the notice first.
 - **Outbound ids + statuses.** Every send that has a `messages` row saves Meta's
   wamid on it: the BullMQ worker (covers bot replies, dashboard sends, payment
   QR / confirmations) and the template path of `windowAwareSend` (follow-ups,
