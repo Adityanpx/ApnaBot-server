@@ -1,7 +1,7 @@
 -- "Tell customers when the bot pauses": when the owner or staff replies and that switches the bot off for
 -- the customer, the customer gets one short notice saying so and how it resumes.
 --
--- ADDITIVE ONLY. No backfill, no change to any existing row's values.
+-- ADDITIVE ONLY and idempotent (add column if not exists). No backfill, no change to any existing row's values.
 --
 --   businesses.notify_pause_enabled          the switch. DEFAULT FALSE, so every existing business (Search cab AI
 --                                            included) stays off. New signups are inserted with TRUE by
@@ -16,10 +16,10 @@
 
 begin;
 
-alter table businesses add column notify_pause_enabled boolean not null default false;
-alter table businesses add column notify_pause_text text;
-alter table businesses add column notify_pause_text_translations jsonb;
+alter table businesses add column if not exists notify_pause_enabled boolean not null default false;
+alter table businesses add column if not exists notify_pause_text text;
+alter table businesses add column if not exists notify_pause_text_translations jsonb;
 
-alter table customers add column pause_notice_sent_at timestamptz;
+alter table customers add column if not exists pause_notice_sent_at timestamptz;
 
 commit;

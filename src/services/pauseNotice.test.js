@@ -190,12 +190,12 @@ test('database failure: nothing thrown', async () => {
 // ---- defaults / migration -------------------------------------------------------------
 
 test('migration is additive: the switch defaults to false, no backfill, no row changes', () => {
-  const sql = fs.readFileSync(path.join(__dirname, '../../supabase/migrations/20261030120000_pause_notice.sql'), 'utf8')
+  const sql = fs.readFileSync(path.join(__dirname, '../../supabase/migrations/20261108130000_pause_notice.sql'), 'utf8')
     .split('\n').filter((l) => !l.trim().startsWith('--')).join('\n').toLowerCase();
-  assert.match(sql, /add column notify_pause_enabled boolean not null default false/);
-  assert.match(sql, /add column notify_pause_text text/);
-  assert.match(sql, /add column notify_pause_text_translations jsonb/);
-  assert.match(sql, /alter table customers add column pause_notice_sent_at timestamptz/);
+  assert.match(sql, /add column if not exists notify_pause_enabled boolean not null default false/);
+  assert.match(sql, /add column if not exists notify_pause_text text/);
+  assert.match(sql, /add column if not exists notify_pause_text_translations jsonb/);
+  assert.match(sql, /alter table customers add column if not exists pause_notice_sent_at timestamptz/);
   assert.doesNotMatch(sql, /\b(update|delete|insert|drop|truncate)\b/);
 });
 

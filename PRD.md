@@ -830,7 +830,7 @@ for what is actually deployed before assuming.
   a duplicate echo logs `apiRowMatched yes ... (wamid already stored)` - that is how to
   tell from the Render logs whether Meta echoes API-sent messages (unverified).
   Flag off = nothing scheduled, nothing logged.
-- **Pause notice - "tell customers when the bot pauses"** (built 2026-11-08, migration `20261030120000_pause_notice.sql`, uncommitted
+- **Pause notice - "tell customers when the bot pauses"** (built 2026-11-08, migration `20261108130000_pause_notice.sql`, uncommitted
   until pushed; apply the migration BEFORE deploying the code). When an owner / staff message switches the bot from active to paused
   for a customer, the customer gets ONE bot text (`services/pauseNotice.service.js`, saved as an outbound `bot` message, queued, pushed
   to the inbox). Triggers: dashboard send / payment-QR send (`afterManualSend`), the owner's pause toggle (`setBotPause`, `paused:true`
