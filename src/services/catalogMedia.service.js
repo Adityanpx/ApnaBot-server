@@ -39,7 +39,7 @@ const uploadCatalogImages = async (businessId, files) => {
       continue;
     }
     if (storageFull) {
-      results.push({ index, filename, ok: false, code: 'STORAGE_LIMIT', error: 'Not uploaded: your storage is full. Delete unused media or upgrade your plan.' });
+      results.push({ index, filename, ok: false, code: 'STORAGE_LIMIT', error: 'Storage limit reached. Delete unused media to free space.' });
       continue;
     }
     try {

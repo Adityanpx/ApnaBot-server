@@ -76,10 +76,10 @@ const inviteStaff = async (req, res, next) => {
     const subscription = await subscriptionService.getActiveSubscription(businessId);
 
     if (!subscription) {
-      return errorResponse(res, 403, 'No active subscription. Cannot add staff.');
+      return errorResponse(res, 403, 'No active plan. Cannot add staff.');
     }
     if (!subscription.plan.staff_enabled) {
-      return errorResponse(res, 403, 'Staff feature not available on your plan. Please upgrade.');
+      return errorResponse(res, 403, "Staff isn't included in your current plan.");
     }
 
     const maxStaff = subscription.plan.max_staff || 0;
@@ -91,7 +91,7 @@ const inviteStaff = async (req, res, next) => {
       .eq('is_active', true);
 
     if (currentCount >= maxStaff) {
-      return errorResponse(res, 403, `Staff limit reached (${maxStaff}). Please upgrade your plan.`);
+      return errorResponse(res, 403, "Your plan doesn't include more staff members.");
     }
 
     // Check email not already registered

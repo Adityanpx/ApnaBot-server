@@ -162,22 +162,21 @@ test('video on a plan without it: 403 PLAN_LIMIT_VIDEO', async () => {
   ];
   const { status, body } = await put({ videoMediaId: VIDEO });
   assert.equal(status, 403);
-  assert.equal(body.message, 'Video in replies is available on the Business plan.');
+  assert.equal(body.message, "Video in replies isn't included in your current plan.");
   assert.equal(body.errors.code, 'PLAN_LIMIT_VIDEO');
   assert.equal(node().video_media_id, null);
 });
 
-test('video refusal names the CHEAPEST active plan that allows video, not a hard-coded one', async () => {
+test('video refusal never names or steers to another plan', async () => {
   plan = PRO;
   db.plans = [
     { name: 'business', display_name: 'Business', price: 699, is_active: true, video_per_reply: true },
-    { name: 'studio', display_name: 'Studio', price: 499, is_active: true, video_per_reply: true },
-    { name: 'legacy', display_name: 'Legacy', price: 99, is_active: false, video_per_reply: true }
+    { name: 'studio', display_name: 'Studio', price: 499, is_active: true, video_per_reply: true }
   ];
   const { body } = await put({ videoMediaId: VIDEO });
-  assert.equal(body.message, 'Video in replies is available on the Studio plan.');
+  assert.equal(body.message, "Video in replies isn't included in your current plan.");
   db.plans = [];
-  assert.equal((await put({ videoMediaId: VIDEO })).body.message, 'Video in replies is not available on your plan.');
+  assert.equal((await put({ videoMediaId: VIDEO })).body.message, "Video in replies isn't included in your current plan.");
 });
 
 test('downgraded owner: text edits, photo swaps and removals still work; only an increase is blocked', async () => {

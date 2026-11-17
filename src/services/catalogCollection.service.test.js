@@ -69,7 +69,7 @@ test('plan cap: only ACTIVE collections count; the 4th active on Basic is a 403 
   const over = await svc.createCollection(B1, { title: 'D' });
   assert.equal(over.error.status, 403);
   assert.deepEqual(over.error.errors, { code: 'PLAN_LIMIT_CATALOG_COLLECTIONS', limit: 3, plan: 'Basic' });
-  assert.match(over.error.message, /Basic plan shows up to 3 collections/);
+  assert.match(over.error.message, /^Collection limit for your plan reached.$/);
   const draft = await svc.createCollection(B1, { title: 'D', isActive: false });
   assert.equal(draft.error, undefined);
   const activate = await svc.updateCollection(B1, draft.collection.id, { isActive: true });

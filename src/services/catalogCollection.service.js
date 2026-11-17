@@ -104,7 +104,7 @@ const planCapError = async (businessId, increase) => {
   const { name, carouselMaxCards } = await planOf(businessId);
   const rows = must(await supabase.from('catalog_collections').select('id').eq('business_id', businessId).eq('is_active', true));
   if (rows.length + increase > carouselMaxCards) {
-    return fail(403, `Your ${name} plan shows up to ${carouselMaxCards} collections in the catalogue carousel. Switch another collection off first, or upgrade your plan.`,
+    return fail(403, 'Collection limit for your plan reached.',
       { code: 'PLAN_LIMIT_CATALOG_COLLECTIONS', limit: carouselMaxCards, plan: name }).error;
   }
   return null;

@@ -158,25 +158,25 @@ const TEXT = {
   usage_100: {
     title: { en: 'Message limit reached', hi: 'मैसेज लिमिट पूरी हो गई', mr: 'मेसेज मर्यादा संपली' },
     body: {
-      en: 'Your bot has stopped replying. Upgrade your plan to continue',
-      hi: 'आपके बॉट ने जवाब देना बंद कर दिया है। जारी रखने के लिए प्लान अपग्रेड करें',
-      mr: 'तुमच्या बॉटने उत्तर देणे थांबवले आहे. सुरू ठेवण्यासाठी प्लॅन अपग्रेड करा'
+      en: "Your bot has stopped replying because this month's message limit is reached.",
+      hi: 'इस महीने की मैसेज लिमिट पूरी होने के कारण आपके बॉट ने जवाब देना बंद कर दिया है।',
+      mr: 'या महिन्याची मेसेज मर्यादा संपल्यामुळे तुमच्या बॉटने उत्तर देणे थांबवले आहे.'
     }
   },
   plan_expiring: {
     title: { en: 'Plan expiring soon', hi: 'प्लान जल्द समाप्त होगा', mr: 'प्लॅन लवकरच संपेल' },
     body: {
-      en: 'Your plan ends in {days} days. Renew to keep your bot running',
-      hi: 'आपका प्लान {days} दिन में समाप्त हो रहा है। बॉट चालू रखने के लिए रिन्यू करें',
-      mr: 'तुमचा प्लॅन {days} दिवसांत संपत आहे. बॉट सुरू ठेवण्यासाठी रिन्यू करा'
+      en: 'Your plan ends in {days} days.',
+      hi: 'आपका प्लान {days} दिन में समाप्त हो रहा है।',
+      mr: 'तुमचा प्लॅन {days} दिवसांत संपत आहे.'
     }
   },
   plan_expired: {
     title: { en: 'Plan expired', hi: 'प्लान समाप्त हो गया', mr: 'प्लॅन संपला' },
     body: {
-      en: 'Your bot has stopped replying. Renew your plan to restart it',
-      hi: 'आपके बॉट ने जवाब देना बंद कर दिया है। फिर से चालू करने के लिए प्लान रिन्यू करें',
-      mr: 'तुमच्या बॉटने उत्तर देणे थांबवले आहे. पुन्हा सुरू करण्यासाठी प्लॅन रिन्यू करा'
+      en: 'Your bot has stopped replying because your plan has ended.',
+      hi: 'आपका प्लान समाप्त हो गया है, इसलिए आपके बॉट ने जवाब देना बंद कर दिया है।',
+      mr: 'तुमचा प्लॅन संपला आहे, म्हणून तुमच्या बॉटने उत्तर देणे थांबवले आहे.'
     }
   },
   quality_dropped: {

@@ -70,7 +70,7 @@ test('send: Basic (100) - 100 recipients go, 101 is a 403 PLAN_BROADCAST_LIMIT a
   broadcastState = { ...draft }; queued.length = 0; audience = people(101);
   const res = await call(sendBroadcast);
   assert.equal(res.statusCode, 403);
-  assert.equal(res.body.message, 'This plan sends a broadcast to up to 100 customers. Upgrade for more.');
+  assert.equal(res.body.message, 'This plan sends a broadcast to up to 100 customers.');
   assert.deepEqual(res.body.errors, { code: 'PLAN_BROADCAST_LIMIT', limit: 100, plan: 'Basic' });
   assert.equal(broadcastState.status, 'draft', 'the draft is untouched');
   assert.equal(queued.length, 0);

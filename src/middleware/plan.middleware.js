@@ -32,7 +32,7 @@ const requireFeature = (featureName) => {
 
       // Check if subscription exists and is active
       if (!subscription || !['active', 'trial'].includes(subscription.status)) {
-        return errorResponse(res, 403, 'No active subscription. Please subscribe to continue.');
+        return errorResponse(res, 403, 'No active plan. Your bot is paused.');
       }
 
       // Get the plan
@@ -55,7 +55,7 @@ const requireFeature = (featureName) => {
       }
 
       if (!featureEnabled) {
-        return errorResponse(res, 403, 'This feature is not available on your current plan. Please upgrade.');
+        return errorResponse(res, 403, "This feature isn't included in your current plan.");
       }
 
       // Attach subscription to req

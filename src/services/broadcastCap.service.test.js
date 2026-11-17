@@ -43,10 +43,10 @@ test('overCapRefusal: exactly the cap is fine; plan cap -> 403 PLAN_BROADCAST_LI
   const byPlan = capFromPlan(plan(100), 2000);
   assert.equal(overCapRefusal(100, byPlan), null);
   assert.deepEqual(overCapRefusal(101, byPlan), {
-    status: 403, message: 'This plan sends a broadcast to up to 100 customers. Upgrade for more.',
+    status: 403, message: 'This plan sends a broadcast to up to 100 customers.',
     code: 'PLAN_BROADCAST_LIMIT', limit: 100, plan: 'Basic'
   });
-  assert.equal(planLimitMessage(500), 'This plan sends a broadcast to up to 500 customers. Upgrade for more.');
+  assert.equal(planLimitMessage(500), 'This plan sends a broadcast to up to 500 customers.');
   const byEnv = capFromPlan(plan(-1), 2000);
   assert.equal(overCapRefusal(2000, byEnv), null);
   const refused = overCapRefusal(2001, byEnv);

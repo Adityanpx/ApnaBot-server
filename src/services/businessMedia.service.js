@@ -94,7 +94,7 @@ const uploadBusinessMedia = async (businessId, file, options = {}) => {
 
   const subscription = await getActiveSubscription(businessId);
   if (!subscription || !subscription.plan) {
-    const err = new Error('No active subscription. Please subscribe to continue.');
+    const err = new Error('No active plan. Your bot is paused.');
     err.statusCode = 403;
     throw err;
   }
@@ -110,10 +110,7 @@ const uploadBusinessMedia = async (businessId, file, options = {}) => {
 
   const limitBytes = subscription.plan.storage_limit_mb * 1024 * 1024;
   if (business.storage_used_bytes + finalFileSize > limitBytes) {
-    const err = new Error(
-      `This upload would exceed your plan's storage limit (${subscription.plan.storage_limit_mb}MB). ` +
-      'Delete unused media or upgrade your plan.'
-    );
+    const err = new Error('Storage limit reached. Delete unused media to free space.');
     err.statusCode = 400;
     err.code = 'STORAGE_LIMIT';
     throw err;

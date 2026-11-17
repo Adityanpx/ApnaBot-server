@@ -33,7 +33,7 @@ const getBroadcastCap = async (businessId) => {
   return capFromPlan(data?.plan || null, envCap);
 };
 
-const planLimitMessage = (cap) => `This plan sends a broadcast to up to ${cap} customers. Upgrade for more.`;
+const planLimitMessage = (cap) => `This plan sends a broadcast to up to ${cap} customers.`;
 
 /** The existing env-cap refusal, unchanged wording. */
 const envLimitMessage = (count, cap) =>

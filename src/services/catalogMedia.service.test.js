@@ -98,7 +98,7 @@ test('storage quota: files are stored until the quota is hit, the rest report ST
   plan = { name: 'basic', display_name: 'Basic', storage_limit_mb: (size * 2.5) / (1024 * 1024) };
   const res = await uploadCatalogImages(B1, [file(one, 'image/jpeg', 'a.jpg'), file(one, 'image/jpeg', 'b.jpg'), file(one, 'image/jpeg', 'c.jpg'), file(one, 'image/jpeg', 'd.jpg')]);
   assert.deepEqual(res.results.map(r => r.ok ? 'ok' : r.code), ['ok', 'ok', 'STORAGE_LIMIT', 'STORAGE_LIMIT']);
-  assert.match(res.results[2].error, /storage limit/);
+  assert.match(res.results[2].error, /Storage limit reached/);
   assert.equal(uploads.length, 2, 'the 4th file was not even processed');
   assert.equal(db.business_media.length, 2);
 });

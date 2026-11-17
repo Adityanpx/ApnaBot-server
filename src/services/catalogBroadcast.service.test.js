@@ -455,12 +455,12 @@ test('plan broadcast_recipient_limit: preview and send are held to min(plan, env
   withPlanLimit(2);
   const p = await preview({ collectionIds: C.slice(0, 2) });
   assert.deepEqual([p.data.audience.overCap, p.data.audience.cap], [true, 2]);
-  assert.deepEqual(p.data.errors.map((e) => [e.code, e.message]), [['PLAN_BROADCAST_LIMIT', 'This plan sends a broadcast to up to 2 customers. Upgrade for more.']]);
+  assert.deepEqual(p.data.errors.map((e) => [e.code, e.message]), [['PLAN_BROADCAST_LIMIT', 'This plan sends a broadcast to up to 2 customers.']]);
   assert.deepEqual([p.data.canPrepare, p.data.canSend], [false, false]);
 
   const out = await send({ collectionIds: C.slice(0, 2) });
   assert.deepEqual([out.status, out.errors.code, out.errors.limit, out.errors.plan], [403, 'PLAN_BROADCAST_LIMIT', 2, 'Basic']);
-  assert.equal(out.message, 'This plan sends a broadcast to up to 2 customers. Upgrade for more.');
+  assert.equal(out.message, 'This plan sends a broadcast to up to 2 customers.');
   assert.equal(db.broadcasts.length, 0);
   assert.equal(queued.length, 0);
 
